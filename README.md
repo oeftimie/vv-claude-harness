@@ -87,7 +87,7 @@ This harness addresses the core challenge of multi-session continuity, but sever
 * What's the right granularity for features? Too coarse and you're back to one-shotting. Too fine and you spend all your time on coordination overhead. The sweet spot probably varies by project and I'm looking at folks to explore and let me know
 
 ## Getting started
-Everything 
+Everything you need is in this repo, including my [Claude.md](https://github.com/oeftimie/vv-claude-harness/blob/main/CLAUDE.md) 
 
 
 ---
