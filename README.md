@@ -1,5 +1,5 @@
 # Ovidiu's Claude Code harness 
-This is my harness system for Claude Code, a combination between Anthropic's guidelines of long running tasks and this https://github.com/OthmanAdi/planning-with-files implementation of the Manus style persistent markdown planning 
+This is my harness system for Claude Code, a combination between Anthropic's guidelines of long running tasks and this https://github.com/OthmanAdi/planning-with-files implementation of the [Manus style persistent markdown planning](https://github.com/OthmanAdi/planning-with-files) 
 
 
 Every AI coding agent has the same Achilles heel: memory. Not the technical kind (context windows are growing). The practical kind. Start a complex project with Claude Code or Cursor. Work for an hour. Hit a context limit or close the session. Come back the next day. The agent has no idea what happened. It's like onboarding a new contractor every morning who's never seen the codebase.
@@ -91,5 +91,3 @@ Everything you need is in this repo, including my [Claude.md](https://github.com
 
 
 ---
-
-*This article describes a harness architecture combining [Anthropic's research on effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) with the [Manus-style planning-with-files pattern](https://github.com/OthmanAdi/planning-with-files). The full implementation is available as a Claude Code skill package.*
