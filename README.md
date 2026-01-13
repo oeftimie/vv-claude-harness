@@ -89,5 +89,13 @@ This harness addresses the core challenge of multi-session continuity, but sever
 ## Getting started
 Everything you need is in this repo, including my [Claude.md](https://github.com/oeftimie/vv-claude-harness/blob/main/CLAUDE.md) 
 
+### Some screenshots from my sessions
+<img width="1248" height="1076" alt="Screenshot 2026-01-09 at 12 47 25" src="https://github.com/user-attachments/assets/25b4be66-c384-4225-92a6-cd4d2c8964a8" />
+<img width="849" height="766" alt="Screenshot 2026-01-09 at 12 42 01" src="https://github.com/user-attachments/assets/031c3dfb-4a35-4b6b-bac9-200049c7ee28" />
+
+
+### UI test automation with XCode & Claude Code
+https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
+
 
 ---
