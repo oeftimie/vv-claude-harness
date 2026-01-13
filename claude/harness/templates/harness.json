@@ -1,0 +1,22 @@
+{
+  "project": "PROJECT_NAME",
+  "description": "Brief project description",
+  "stacks": [
+    {
+      "name": "ios",
+      "path": "./",
+      "scheme": "MyApp",
+      "simulator": "iPhone 15"
+    },
+    {
+      "name": "node",
+      "path": "./backend",
+      "test_command": "npm test"
+    },
+    {
+      "name": "python",
+      "path": "./scripts"
+    }
+  ],
+  "smoke_test": "./scripts/smoke-test.sh"
+}
