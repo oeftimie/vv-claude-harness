@@ -1,4 +1,4 @@
-# Ovidiu's claude harness 
+# Ovidiu's Claude Code harness 
 This is my harness system for Claude Code, a combination between Anthropic's guidelines of long running tasks and this https://github.com/OthmanAdi/planning-with-files implementation of the Manus style persistent markdown planning 
 
 
