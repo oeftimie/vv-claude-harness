@@ -76,6 +76,11 @@ Putting them together: the initializer creates `features.json` (Anthropic patter
 
 The filesystem becomes the connective tissue. Not because files are the optimal data structure for agent memory (they're not), but because they're the optimal trade-off between simplicity, transparency, and effectiveness. We can always build something more sophisticated later, but this works today, and during my break I alreayd pushed one MacOs app - [Lan Lens](https://apps.apple.com/us/app/lanlensapp/id6757317898?mt=12) and one iOS one [NOTAM App](https://apps.apple.com/us/app/notams-app/id6757545391) to the Apple AppStore.  
 
+*Core principles* as I have seen working reliablly:  
+* *Predictable input* : this means that when Claude does the orchestration and starts the sub agents, we must provide a way for each sub-agent to check that the initalization state is the same, thus avoiding the subagent taking it on a tagent to fix whatever it thinks it's broken, but outside of the defined prompt.
+* *Prescribed output format* : we must define for each subagent what the exit expectations are. testing, checks,  etc. So that when it returns to the orchestrator (Claude) they all return at the same level of quality.
+* *Progressive discovery* : The way the context is stored must be hierarchical to protect the agent's context window ad much as possible. Drop MCP tools if they'r not necesary. if there is an API, prefer to ask the subagent to build the necessary API calls based on a api documentation, rather than loading 100 tools in the context. 
+
 ## What remains unsolved
 
 This harness addresses the core challenge of multi-session continuity, but several questions remain open.
