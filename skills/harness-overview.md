@@ -1,3 +1,8 @@
+---
+name: harness-overview
+description: Explain the long-running agent harness and when to use it.
+---
+
 # Long-Running Agent Harness
 
 A setup for multi-session projects where work spans many context windows.
@@ -152,7 +157,7 @@ Translated to this harness:
 
 1. [ ] Copy `initializer-prompt.md` to your prompts directory
 2. [ ] Copy `coding-agent-prompt.md` to your prompts directory
-3. [ ] Copy templates (`features.json`, `claude-progress.txt`, `init.sh`)
+3. [ ] Copy templates (`features.json`, `claude-progress.txt`, `init.sh`) from the plugin templates directory
 4. [ ] For first session: use initializer prompt
 5. [ ] For subsequent sessions: use coding agent prompt
 6. [ ] Ensure git is initialized in project

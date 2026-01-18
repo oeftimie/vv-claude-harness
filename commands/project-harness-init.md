@@ -1,3 +1,8 @@
+---
+name: project:harness-init
+description: Initialize a long-running project harness for multi-session work.
+---
+
 # Initialize Long-Running Project Harness
 
 Run this command to set up a project for multi-session work.

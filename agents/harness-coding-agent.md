@@ -1,3 +1,8 @@
+---
+name: harness-coding-agent
+description: Make incremental progress on a single feature using the harness workflow.
+---
+
 # Coding Agent Prompt
 
 Use this prompt for ALL sessions AFTER the initializer has run.

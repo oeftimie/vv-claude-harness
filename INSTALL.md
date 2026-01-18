@@ -3,32 +3,29 @@
 ## Quick Install
 
 ```bash
-cp -r claude/* ~/.claude/
-
-# Make init.sh template executable
-chmod +x ~/.claude/harness/templates/init.sh
+claude plugins install /path/to/vv-claude-harness
 
 # Verify
-ls -la ~/.claude/harness/
-ls -la ~/.claude/commands/
+claude plugins list
 ```
 
 ## What's Included
 
 ```
-claude/
-├── commands/
-│   ├── project-harness-init.md      # /project:harness-init command
-│   └── project-harness-continue.md  # /project:harness-continue command
-└── harness/
-    ├── README.md                    # Documentation (optional)
-    ├── initializer-prompt.md        # First session instructions
-    ├── coding-agent-prompt.md       # Subsequent session instructions
-    └── templates/
-        ├── init.sh                  # Multi-language build/test script
-        ├── harness.json             # Project config template
-        ├── features.json            # Feature list template
-        └── claude-progress.txt      # Progress log template
+claude-plugin.json
+commands/
+├── project-harness-init.md      # /project:harness-init command
+└── project-harness-continue.md  # /project:harness-continue command
+agents/
+├── harness-initializer.md       # First session agent
+└── harness-coding-agent.md      # Subsequent session agent
+skills/
+└── harness-overview.md          # Harness overview and guidance
+templates/
+├── init.sh                      # Multi-language build/test script
+├── harness.json                 # Project config template
+├── features.json                # Feature list template
+└── claude-progress.txt          # Progress log template
 ```
 
 ## Usage

@@ -1,3 +1,8 @@
+---
+name: project:harness-continue
+description: Start a coding session using the long-running project harness.
+---
+
 # Continue Long-Running Project
 
 Run this command at the START of every coding session (after initialization).

@@ -1,0 +1,22 @@
+{
+  "name": "vv-claude-harness",
+  "version": "1.0.0",
+  "description": "Long-running project harness with commands, agents, and templates for multi-session work.",
+  "commands": [
+    "commands/project-harness-init.md",
+    "commands/project-harness-continue.md"
+  ],
+  "agents": [
+    "agents/harness-initializer.md",
+    "agents/harness-coding-agent.md"
+  ],
+  "skills": [
+    "skills/harness-overview.md"
+  ],
+  "resources": [
+    "templates/claude-progress.txt",
+    "templates/features.json",
+    "templates/harness.json",
+    "templates/init.sh"
+  ]
+}

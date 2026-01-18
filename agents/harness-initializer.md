@@ -1,3 +1,8 @@
+---
+name: harness-initializer
+description: Set up scaffolding for multi-session work without implementing features.
+---
+
 # Initializer Agent Prompt
 
 Use this prompt for the FIRST session of a new long-running project.
