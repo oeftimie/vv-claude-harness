@@ -4,7 +4,70 @@ A setup for multi-session projects where work spans many context windows.
 
 Based on:
 - [Anthropic: Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
-- Claude 4 Best Practices: Multi-context window workflows
+- [Manus-style planning-with-files pattern](https://github.com/OthmanAdi/planning-with-files)
+
+---
+
+## Quick Start
+
+```bash
+# First session: initialize project
+cd ~/Projects/MyApp
+claude
+/project:harness-init
+# Describe what you want to build...
+
+# Every subsequent session: continue work
+claude
+/project:harness-continue
+```
+
+---
+
+## How It Works
+
+### File Structure (in ~/.claude/)
+
+```
+~/.claude/
+├── commands/
+│   ├── project-harness-init.md      # Slash command entry point
+│   └── project-harness-continue.md  # Slash command entry point
+└── harness/
+    ├── initializer-prompt.md        # Full instructions (referenced by command)
+    ├── coding-agent-prompt.md       # Full instructions (referenced by command)
+    └── templates/
+        ├── init.sh                  # Copied into your project
+        ├── harness.json             # Copied into your project (multi-stack)
+        ├── features.json            # Copied into your project
+        ├── claude-progress.txt      # Copied into your project
+        └── context_summary.md       # Copied into your project
+```
+
+### Invocation Flow
+
+```
+You type: /project:harness-init
+                │
+                ▼
+Claude reads: ~/.claude/commands/project-harness-init.md
+                │
+                ▼
+Command says: "Read ~/.claude/harness/initializer-prompt.md"
+                │
+                ▼
+Claude reads full instructions
+                │
+                ▼
+Claude uses templates from ~/.claude/harness/templates/
+                │
+                ▼
+Creates scaffolding in YOUR project directory
+```
+
+**Commands** are lightweight entry points with quick reference summaries.
+**Prompts** contain the full detailed instructions.
+**Templates** are copied into your project during initialization.
 
 ---
 
@@ -27,19 +90,24 @@ Based on:
 
 ### Phase 1: Initializer Agent (First Session Only)
 
+**Invoke:** `/project:harness-init`
+
 Creates the scaffolding that enables incremental work:
 
 | Artifact | Purpose |
 |----------|---------|
+| `.harness.json` | Project configuration (tech stacks) |
 | `init.sh` | Script to start dev environment, run smoke test |
 | `features.json` | Comprehensive feature list (JSON, all `passes: false`) |
 | `claude-progress.txt` | Log of what each agent session accomplished |
 | `context_summary.md` | Persistent context across sessions |
 | Initial git commit | Baseline for all future work |
 
-**Prompt:** Use `initializer-prompt.md`
+**Full instructions:** `~/.claude/harness/initializer-prompt.md`
 
 ### Phase 2: Coding Agent (All Subsequent Sessions)
+
+**Invoke:** `/project:harness-continue`
 
 Makes incremental progress, one feature at a time:
 
@@ -52,22 +120,90 @@ Makes incremental progress, one feature at a time:
 | Update artifacts | Leave clear handoff for next agent |
 | Commit progress | Never leave uncommitted changes |
 
-**Prompt:** Use `coding-agent-prompt.md`
+**Full instructions:** `~/.claude/harness/coding-agent-prompt.md`
 
 ---
 
-## File Structure
+## Multi-Language Support
+
+The `init.sh` script supports multiple tech stacks via auto-detection or explicit configuration.
+
+### Auto-Detection
+
+If no `.harness.json` exists, `init.sh` detects:
+
+| Stack | Detection |
+|-------|-----------|
+| iOS/Swift | `*.xcodeproj`, `*.xcworkspace`, `Package.swift` |
+| Node.js | `package.json` |
+| Python | `requirements.txt`, `pyproject.toml`, `setup.py` |
+| Go | `go.mod` |
+| Rust | `Cargo.toml` |
+
+### Explicit Configuration
+
+For multi-stack projects, the initializer creates `.harness.json`:
+
+```json
+{
+  "project": "MyFullStackApp",
+  "stacks": [
+    {"name": "ios", "path": "./", "scheme": "MyApp"},
+    {"name": "node", "path": "./backend"}
+  ],
+  "smoke_test": "./scripts/e2e-test.sh"
+}
+```
+
+### Local Overrides (Optional)
+
+For machine-specific settings that shouldn't be committed to git, create `.harness-local.sh`:
+
+```bash
+# .harness-local.sh - Machine-specific overrides (add to .gitignore)
+
+# Override iOS scheme for this machine
+export IOS_SCHEME="MyApp-Debug"
+
+# Local environment variables
+export NODE_ENV="development"
+export DATABASE_URL="postgres://localhost/dev"
+
+# Custom smoke test function (optional)
+smoke_test() {
+    curl -sf http://localhost:3000/health || exit 1
+}
+```
+
+**When to use:**
+- Different iOS schemes per developer machine
+- Local database URLs or API keys
+- Custom smoke tests for your environment
+- Paths that vary between machines
+
+**Note:** Add `.harness-local.sh` to your `.gitignore`. It's sourced by `init.sh` if present.
+
+---
+
+## File Structure (in your project)
 
 ```
 project/
-├── init.sh                 # Environment startup script
-├── features.json           # Feature list (JSON, not Markdown)
-├── claude-progress.txt     # Agent session log
-├── context_summary.md      # Persistent context
-├── task_plan.md            # Current task (per-session)
-├── notes.md                # Research notes (per-session)
+├── .harness.json           # Project configuration (created by initializer)
+├── .harness-local.sh       # Machine-specific overrides (optional, gitignored)
+├── init.sh                 # Environment startup script (created by initializer)
+├── features.json           # Feature list with test tracking (created by initializer)
+├── claude-progress.txt     # Agent session log (created by initializer, updated each session)
+├── context_summary.md      # Persistent context (created by initializer, updated each session)
+├── task_plan.md            # Current task plan (created per-session by coding agent)
+├── notes.md                # Research notes (created per-session by coding agent)
+├── tests/                  # Test files (created by coding agent, referenced in features.json)
 └── .git/                   # Version control (essential)
 ```
+
+**Initializer creates:** `.harness.json`, `init.sh`, `features.json`, `claude-progress.txt`, `context_summary.md`
+
+**Coding agent creates/updates:** `task_plan.md`, `notes.md`, test files; updates `features.json` (passes, test_file, coverage), `claude-progress.txt`, `context_summary.md`
 
 ---
 
@@ -85,22 +221,25 @@ The structured format with explicit `"passes": false` creates a clear contract. 
 
 ### First Session
 ```
-1. Run initializer-prompt.md
-2. Initializer creates scaffolding
-3. Initializer commits to git
-4. Initializer reports completion
+1. cd into project directory
+2. Run: /project:harness-init
+3. Describe what you want to build
+4. Initializer creates scaffolding
+5. Initializer commits to git
+6. Initializer reports completion
 ```
 
 ### Every Subsequent Session
 ```
-1. Run coding-agent-prompt.md
-2. Agent reads progress files + git log
-3. Agent runs init.sh (smoke test)
-4. Agent picks highest-priority incomplete feature
-5. Agent implements + tests ONE feature
-6. Agent updates all artifacts
-7. Agent commits progress
-8. Agent hands off to next session
+1. cd into project directory
+2. Run: /project:harness-continue
+3. Agent reads progress files + git log
+4. Agent runs init.sh (smoke test)
+5. Agent picks highest-priority incomplete feature
+6. Agent implements + tests ONE feature
+7. Agent updates all artifacts
+8. Agent commits progress
+9. Agent hands off to next session
 ```
 
 ---
@@ -127,8 +266,47 @@ The harness complements your existing setup:
 Translated to this harness:
 - NEVER remove features from `features.json`
 - NEVER edit feature descriptions to make them easier to pass
-- NEVER mark `passes: true` without end-to-end testing
+- NEVER mark `passes: true` without automated tests
+- NEVER mark `passes: true` with coverage < 95% for touched code
 - NEVER leave the codebase in a broken state
+- NEVER ask Ovidiu to test manually when tooling works
+
+---
+
+## Testing Requirements
+
+### Coverage Threshold
+
+**95% coverage required** for code touched by each feature.
+
+The coding agent runs all tests and reports coverage. A feature is not complete without automated tests.
+
+### Test Tooling
+
+| Stack | Test Runner | Coverage |
+|-------|-------------|----------|
+| iOS/Swift | `xcodebuild test` | Xcode reports |
+| Node.js | `npm test -- --coverage` | Jest/nyc |
+| Python | `pytest --cov=.` | pytest-cov |
+| Go | `go test -cover ./...` | Built-in |
+| Rust | `cargo tarpaulin` | tarpaulin |
+
+### Browser E2E Tests
+
+For web applications requiring browser automation:
+- Assumes **Playwright MCP** is installed
+- If unavailable, agent reports to user and requests help configuring
+
+### Test Tracking
+
+Each feature in `features.json` tracks:
+```json
+{
+  "passes": true,
+  "test_file": "tests/test_feature.py",
+  "coverage": 97.2
+}
+```
 
 ---
 
@@ -148,14 +326,44 @@ Translated to this harness:
 
 ---
 
-## Setup Checklist
+## Installation
 
-1. [ ] Copy `initializer-prompt.md` to your prompts directory
-2. [ ] Copy `coding-agent-prompt.md` to your prompts directory
-3. [ ] Copy templates (`features.json`, `claude-progress.txt`, `init.sh`)
-4. [ ] For first session: use initializer prompt
-5. [ ] For subsequent sessions: use coding agent prompt
-6. [ ] Ensure git is initialized in project
+```bash
+# Unzip and copy to ~/.claude/
+unzip claude-harness.zip
+cp -r claude/* ~/.claude/
+
+# Make template executable
+chmod +x ~/.claude/harness/templates/init.sh
+
+# Verify
+ls ~/.claude/commands/project-harness-*.md
+ls ~/.claude/harness/*.md
+```
+
+### Dependencies
+
+The `init.sh` script requires:
+
+| Dependency | Required | Purpose |
+|------------|----------|---------|
+| `jq` | Yes | JSON parsing for `.harness.json` |
+| `xcpretty` | No (iOS only) | Prettier Xcode build output |
+
+**Install on macOS:**
+```bash
+brew install jq
+gem install xcpretty  # Optional, for iOS
+```
+
+### Verify Commands Work
+
+```bash
+cd ~/Projects/SomeProject
+claude
+# Type: /project:harness
+# Should autocomplete to harness-init and harness-continue
+```
 
 ---
 

@@ -3,6 +3,8 @@
 ## Quick Install
 
 ```bash
+# Extract and copy to ~/.claude/
+unzip claude-harness.zip
 cp -r claude/* ~/.claude/
 
 # Make init.sh template executable
@@ -18,18 +20,47 @@ ls -la ~/.claude/commands/
 ```
 claude/
 ├── commands/
-│   ├── project-harness-init.md      # /project:harness-init command
-│   └── project-harness-continue.md  # /project:harness-continue command
+│   ├── project-harness-init.md      # /project:harness-init (invokes initializer-prompt.md)
+│   └── project-harness-continue.md  # /project:harness-continue (invokes coding-agent-prompt.md)
 └── harness/
-    ├── README.md                    # Documentation (optional)
-    ├── initializer-prompt.md        # First session instructions
-    ├── coding-agent-prompt.md       # Subsequent session instructions
+    ├── README.md                    # Documentation (optional, not used at runtime)
+    ├── initializer-prompt.md        # Full instructions for first session
+    ├── coding-agent-prompt.md       # Full instructions for subsequent sessions
     └── templates/
         ├── init.sh                  # Multi-language build/test script
         ├── harness.json             # Project config template
         ├── features.json            # Feature list template
-        └── claude-progress.txt      # Progress log template
+        ├── claude-progress.txt      # Progress log template
+        └── context_summary.md       # Persistent context template
 ```
+
+## Dependencies
+
+The `init.sh` script requires:
+
+| Dependency | Required | Install |
+|------------|----------|---------|
+| `jq` | Yes | `brew install jq` |
+| `xcpretty` | No (iOS only) | `gem install xcpretty` |
+
+## How It Works
+
+```
+/project:harness-init
+        │
+        ▼
+commands/project-harness-init.md
+        │
+        ▼ (references)
+harness/initializer-prompt.md  ──▶  Creates scaffolding files
+        │
+        ▼ (uses templates from)
+harness/templates/*
+```
+
+**Commands** are lightweight entry points (invoked via `/project:harness-*`).
+**Prompts** contain the full detailed instructions.
+**Templates** are copied into your project during initialization.
 
 ## Usage
 

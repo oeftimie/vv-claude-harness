@@ -72,33 +72,50 @@ Analyze the project and create explicit configuration:
 
 ### 2. `init.sh`
 
-Copy from template. The script will read `.harness.json` and run appropriate setup for each stack.
+Copy from template at `~/.claude/harness/templates/init.sh`. The script will read `.harness.json` and run appropriate setup for each stack.
+
+**Note:** The script requires `jq` for JSON parsing. For iOS projects, `xcpretty` improves build output.
 
 ### 3. `features.json`
 
-Based on the user's requirements, create a comprehensive feature list in JSON format:
+Based on the user's requirements, create a comprehensive feature list. Use template at `~/.claude/harness/templates/features.json`:
 
 ```json
 {
+  "project": "ProjectName",
+  "created": "2026-01-18",
+  "total_features": 25,
+  "passing": 0,
   "features": [
     {
       "id": "F001",
       "category": "core",
-      "description": "User can open a new chat",
+      "description": "User can create a new task",
       "priority": 1,
       "steps": [
-        "Navigate to main interface",
-        "Click 'New Chat' button",
-        "Verify new conversation is created"
+        "Navigate to task list",
+        "Click 'Add Task' button",
+        "Enter task details",
+        "Verify task appears in list"
       ],
-      "passes": false
+      "passes": false,
+      "test_file": null,
+      "coverage": null,
+      "notes": ""
     }
   ]
 }
 ```
 
+**Fields:**
+- `passes`: Set to `true` by coding agent when feature is complete with tests
+- `test_file`: Set by coding agent to the test file/directory covering this feature
+- `coverage`: Set by coding agent to the coverage percentage (must be ≥ 95%)
+- `notes`: Any blockers, decisions, or context
+
 **Rules for features.json:**
-- Every feature starts with `"passes": false`
+- Every feature starts with `"passes": false`, `"test_file": null`, `"coverage": null`
+- Update `total_features` to match actual count
 - Use JSON format (not Markdown) - this prevents accidental modification
 - Be comprehensive - expand the user's high-level prompt into specific, testable features
 - Order by priority (dependencies first)
@@ -130,12 +147,21 @@ Status: Environment setup complete
 
 ### 5. `context_summary.md`
 
-Create the persistent context file with:
+Create from template at `~/.claude/harness/templates/context_summary.md`. Initialize with:
 - Active Context: "Project initialized, ready for F001"
 - Cross-Cutting Concerns: Tech stack, constraints, key decisions
 - Domain sections as needed
 
-### 6. Initial Git Commit
+### 6. Optional: `.harness-local.sh`
+
+Inform the user they can create this file for machine-specific overrides (not committed to git):
+- Custom iOS scheme names
+- Local environment variables
+- Custom smoke test functions
+
+See template comments in `init.sh` for details.
+
+### 7. Initial Git Commit
 
 ```bash
 git add .
@@ -160,6 +186,7 @@ Before ending this session:
 - [ ] `init.sh` created (copied from template)
 - [ ] `features.json` created with all features identified
 - [ ] `claude-progress.txt` created
-- [ ] `context_summary.md` created
+- [ ] `context_summary.md` created (from template)
+- [ ] User informed about `.harness-local.sh` option
 - [ ] All files committed to git
 - [ ] Report summary to Ovidiu

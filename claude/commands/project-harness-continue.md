@@ -4,151 +4,69 @@ Run this command at the START of every coding session (after initialization).
 
 ---
 
-## Session Start Routine
+## Instructions
+
+Read and follow the detailed instructions in `~/.claude/harness/coding-agent-prompt.md`.
+
+---
+
+## Session Start Routine (Quick Reference)
 
 Execute IN ORDER. Do not skip steps.
 
-### Step 1: Orient
 ```bash
-pwd
-ls -la
-```
+# 1. Orient
+pwd && ls -la
 
-Verify you're in the right project directory.
-
-### Step 2: Read Progress Log
-```bash
+# 2. Read progress
 cat claude-progress.txt
-```
 
-Understand:
-- What did the last agent work on?
-- What was completed?
-- What was left undone?
-- What did they say the next agent should do?
+# 3. Check git
+git status && git log --oneline -10
 
-### Step 3: Check Git State
-```bash
-git status
-git log --oneline -10
-```
-
-Verify:
-- No uncommitted changes from previous session
-- Understand recent commits
-
-### Step 4: Check Feature Status
-```bash
-cat features.json | jq '.features[] | select(.passes == false) | {id, priority, description}' | head -20
-```
-
-Or without jq:
-```bash
+# 4. Check features
 cat features.json
-```
 
-Identify:
-- Highest priority feature with `"passes": false`
-- Total progress (how many passing vs total)
-
-### Step 5: Verify Environment
-```bash
+# 5. Verify environment (FIX IF BROKEN)
 ./init.sh
-```
 
-If this fails:
-- Fix environment issues FIRST
-- Log the issue in claude-progress.txt
-- Do NOT proceed to new features until environment works
-
-### Step 6: Read Context
-```bash
+# 6. Read context
 cat context_summary.md
 ```
 
-Refresh:
-- Active focus
-- Cross-cutting concerns
-- Relevant domain knowledge
+---
+
+## Work Rules
+
+- Work on **ONE** feature only (highest priority with `passes: false`)
+- Test **end-to-end** before marking complete
+- Update **all artifacts** before session ends
+- Commit progress **frequently**
 
 ---
 
-## Ready to Work
+## Session End Routine (Quick Reference)
 
-After completing all 6 steps, you may begin work on ONE feature.
-
-Remember:
-- Work on ONE feature only
-- Test end-to-end before marking complete
-- Update all artifacts before session ends
-- Commit progress frequently
-
----
-
-## Session End Routine
-
-Before ending, execute these steps:
-
-### Step 1: Verify App Works
 ```bash
+# 1. Verify app works
 ./init.sh
-```
 
-### Step 2: Commit All Progress
-```bash
-git add .
-git commit -m "[Feature ID] [Brief description]"
-```
+# 2. Commit progress
+git add . && git commit -m "[Feature ID] description"
 
-### Step 3: Update features.json
+# 3. Update features.json (passes: true if complete)
 
-If feature complete and tested:
-- Change `"passes": false` to `"passes": true`
-- Do NOT modify anything else
+# 4. Append to claude-progress.txt
 
-### Step 4: Append to claude-progress.txt
+# 5. Update context_summary.md
 
-```
----
-## Session N: [Feature ID]
-Date: [date]
-Agent: Coding Agent
-
-### Worked On:
-- [Feature ID]: [description]
-
-### Completed:
-- [list]
-
-### Incomplete/Blocked:
-- [list with reasons]
-
-### For Next Agent:
-- [immediate next steps]
-- [gotchas or context needed]
-
-### Git Commits:
-- [hash]: [message]
-```
-
-### Step 5: Update context_summary.md
-
-Add any:
-- Decisions made
-- Patterns discovered
-- Gotchas encountered
-
-### Step 6: Final Verification
-```bash
-git status  # Should be clean
-./init.sh   # Should pass
+# 6. Final check
+git status && ./init.sh
 ```
 
 ---
 
 ## If Running Out of Context
-
-If you notice context getting full:
 
 1. STOP current work immediately
 2. Commit whatever progress exists

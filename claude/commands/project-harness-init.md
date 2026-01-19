@@ -4,130 +4,43 @@ Run this command to set up a project for multi-session work.
 
 ---
 
-## Pre-Flight Check
+## Instructions
 
-Before initializing, verify:
-- [ ] Git repository exists (or will create one)
-- [ ] Project requirements are clear
-- [ ] This is a multi-session project (not a quick task)
+Read and follow the detailed instructions in `~/.claude/harness/initializer-prompt.md`.
 
----
-
-## Initialization Steps
-
-### Step 1: Create Scaffolding Files
-
-Create these files in the project root:
-
-**init.sh:**
-```bash
-#!/bin/bash
-# Customize for your project's tech stack
-set -e
-echo "=== Session Initialization ==="
-echo "[1/3] Installing dependencies..."
-# Add your dependency commands
-echo "[2/3] Starting development server..."
-# Add your server start command
-echo "[3/3] Running smoke test..."
-# Add your smoke test
-echo "=== Initialization Complete ==="
-```
-
-**features.json:**
-```json
-{
-  "project": "[PROJECT_NAME]",
-  "created": "[DATE]",
-  "total_features": 0,
-  "passing": 0,
-  "features": []
-}
-```
-
-**claude-progress.txt:**
-```
-# Progress Log
-
-Read this at the START of every session.
+Use templates from `~/.claude/harness/templates/`:
+- `init.sh` — Multi-language build/test script
+- `features.json` — Feature list template  
+- `claude-progress.txt` — Progress log template
+- `context_summary.md` — Persistent context template
+- `harness.json` — Project configuration template (for multi-stack projects)
 
 ---
 
-## Session 1: Initialization
-Date: [DATE]
-Agent: Initializer
-Status: Pending
+## Quick Summary
 
-### To Create:
-- [ ] init.sh
-- [ ] features.json (populated)
-- [ ] context_summary.md
-- [ ] Initial git commit
+You are the **Initializer Agent**. Your job:
 
----
-```
-
-### Step 2: Analyze Requirements
-
-Based on the user's prompt, create a comprehensive feature list:
-- Expand high-level requirements into specific, testable features
-- Each feature should have clear verification steps
-- Order by priority (dependencies first)
-- Aim for 10-50+ features for complex projects
-
-### Step 3: Populate features.json
-
-For each feature:
-```json
-{
-  "id": "F001",
-  "category": "core|auth|ui|api|etc",
-  "description": "Specific, testable description",
-  "priority": 1,
-  "steps": [
-    "What to do",
-    "What to verify",
-    "Expected outcome"
-  ],
-  "passes": false,
-  "notes": ""
-}
-```
-
-### Step 4: Create context_summary.md
-
-Initialize with:
-- Active Context: "Project initialized, ready for F001"
-- Cross-Cutting Concerns: Tech stack, constraints
-- Domain sections as needed
-
-### Step 5: Git Commit
-
-```bash
-chmod +x init.sh
-git add .
-git commit -m "Initialize multi-session harness"
-```
-
-### Step 6: Update claude-progress.txt
-
-Mark initialization complete, note what's ready for next agent.
+1. **Analyze** existing project (if any) or user requirements
+2. **Create** `.harness.json` with detected/configured stacks
+3. **Create** `init.sh` from template
+4. **Expand** user's requirements into comprehensive `features.json` (10-50+ features)
+5. **Create** `claude-progress.txt` and `context_summary.md`
+6. **Commit** everything to git
+7. **Report** to Ovidiu what was created
 
 ---
 
-## Handoff
+## Critical Rules
 
-After initialization:
-1. Report to Ovidiu what was created
-2. Summarize feature count and categories
-3. Confirm first feature (F001) is ready for implementation
-4. Next session should use coding-agent-prompt.md
+- Do NOT implement any features
+- Do NOT write application code
+- Do NOT mark any features as passing
+- Do NOT skip scaffolding files
+- Do NOT proceed without git
 
 ---
 
-## Do NOT
+## After Initialization
 
-- Implement any features (that's for coding agent)
-- Skip any scaffolding files
-- Leave features.json empty
-- Forget the git commit
+Next session uses `/project:harness-continue` to begin coding work.

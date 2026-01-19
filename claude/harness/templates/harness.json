@@ -10,8 +10,7 @@
     },
     {
       "name": "node",
-      "path": "./backend",
-      "test_command": "npm test"
+      "path": "./backend"
     },
     {
       "name": "python",
