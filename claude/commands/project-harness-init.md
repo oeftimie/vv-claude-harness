@@ -1,46 +1,62 @@
-# Initialize Long-Running Project Harness
+# /project:harness-init
 
-Run this command to set up a project for multi-session work.
+Initialize a new project with harness scaffolding.
 
----
+## Templates Location
 
-## Instructions
+Templates are in `~/.claude/templates/`. Use these as starting points.
 
-Read and follow the detailed instructions in `~/.claude/harness/initializer-prompt.md`.
+## What It Creates
 
-Use templates from `~/.claude/harness/templates/`:
-- `init.sh` — Multi-language build/test script
-- `features.json` — Feature list template  
-- `claude-progress.txt` — Progress log template
-- `context_summary.md` — Persistent context template
-- `harness.json` — Project configuration template (for multi-stack projects)
+```
+project-root/
+├── .harness/
+│   ├── harness.json           # Project config
+│   ├── features.json          # Feature tracking
+│   ├── claude-progress.txt    # Session log
+│   └── init.sh                # Build/test script
+├── .context/
+│   └── modules.yaml           # Module map + locks
+├── context_summary.md         # Persistent learnings (4-file pattern)
+├── task_plan.md               # Current task tracking (4-file pattern)
+└── notes.md                   # Research notes (4-file pattern, create as needed)
+```
 
----
+## Steps
 
-## Quick Summary
+1. **Gather requirements**
+   - What are you building?
+   - What's the tech stack?
+   - Any existing code?
 
-You are the **Initializer Agent**. Your job:
+2. **Create .harness/** (use templates from ~/.claude/templates/)
+   - harness.json with project config
+   - features.json with initial features
+   - claude-progress.txt initialized
+   - init.sh for build/test (make executable)
 
-1. **Analyze** existing project (if any) or user requirements
-2. **Create** `.harness.json` with detected/configured stacks
-3. **Create** `init.sh` from template
-4. **Expand** user's requirements into comprehensive `features.json` (10-50+ features)
-5. **Create** `claude-progress.txt` and `context_summary.md`
-6. **Commit** everything to git
-7. **Report** to Ovidiu what was created
+3. **Analyze project structure**
+   - Look for package.json, go.mod, etc.
+   - Identify domain boundaries
+   - Propose module map
 
----
+4. **Create .context/modules.yaml**
+   - Present proposed modules to user
+   - Wait for confirmation
+   - Create with all locks null
 
-## Critical Rules
+5. **Create 4-file pattern files**
+   - context_summary.md - initialize with project context
+   - task_plan.md - initialize for first task
 
-- Do NOT implement any features
-- Do NOT write application code
-- Do NOT mark any features as passing
-- Do NOT skip scaffolding files
-- Do NOT proceed without git
+6. **Git commit**
+   ```bash
+   git add .harness/ .context/ context_summary.md task_plan.md
+   git commit -m "Initialize harness v2.1 scaffolding"
+   ```
 
----
+7. **Report completion**
 
 ## After Initialization
 
-Next session uses `/project:harness-continue` to begin coding work.
+Run `/project:harness-continue` to start working on features.

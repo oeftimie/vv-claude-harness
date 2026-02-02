@@ -1,77 +1,59 @@
-# Continue Long-Running Project
+# /project:harness-continue
 
-Run this command at the START of every coding session (after initialization).
+Continue working on a harness-managed project.
 
----
+## Prerequisites
 
-## Instructions
+Project must have `.harness/` and `.context/` directories.
+If not, run `/project:harness-init` first.
 
-Read and follow the detailed instructions in `~/.claude/harness/coding-agent-prompt.md`.
+## Session Flow
 
----
+### Start
+1. Orient: read progress, git log, features.json, modules.yaml
+2. Select feature (priority, not assigned, modules available)
+3. Claim modules via context-graph skill
+4. Update features.json: `assigned_to`, `modules_claimed`
+5. Run smoke test: `./.harness/init.sh`
 
-## Session Start Routine (Quick Reference)
+### Implement
+6. TDD: failing test → implement → verify → refactor
+7. Coverage >= 95% on touched code
 
-Execute IN ORDER. Do not skip steps.
+### End
+8. Run all tests
+9. Update `.harness/claude-progress.txt`
+10. Update `features.json` (passes, assigned_to=null, etc.)
+11. Update `context_summary.md` with learnings
+12. Release modules via context-graph skill
+13. Git commit
+14. Leave handoff notes if incomplete
 
-```bash
-# 1. Orient
-pwd && ls -la
+## Quick Reference
 
-# 2. Read progress
-cat claude-progress.txt
-
-# 3. Check git
-git status && git log --oneline -10
-
-# 4. Check features
-cat features.json
-
-# 5. Verify environment (FIX IF BROKEN)
-./init.sh
-
-# 6. Read context
-cat context_summary.md
+**Claim modules:**
+```
+Use context-graph skill: claim
+Modules needed: [list]
+Feature: F00X - [description]
 ```
 
----
-
-## Work Rules
-
-- Work on **ONE** feature only (highest priority with `passes: false`)
-- Test **end-to-end** before marking complete
-- Update **all artifacts** before session ends
-- Commit progress **frequently**
-
----
-
-## Session End Routine (Quick Reference)
-
-```bash
-# 1. Verify app works
-./init.sh
-
-# 2. Commit progress
-git add . && git commit -m "[Feature ID] description"
-
-# 3. Update features.json (passes: true if complete)
-
-# 4. Append to claude-progress.txt
-
-# 5. Update context_summary.md
-
-# 6. Final check
-git status && ./init.sh
+**Release modules:**
+```
+Use context-graph skill: release
 ```
 
----
+**Check status:**
+```
+Use context-graph skill: status
+```
 
-## If Running Out of Context
+## Rules
 
-1. STOP current work immediately
-2. Commit whatever progress exists
-3. Write detailed handoff in claude-progress.txt
-4. Update context_summary.md
-5. End session cleanly
+- ONE feature per session
+- Claim before coding
+- Release before ending
+- Tests required (95% coverage)
+- Never modify unclaimed modules
 
-The next agent will continue from your handoff.
+See `~/.claude/rules/harness/` for detailed protocols.

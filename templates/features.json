@@ -1,6 +1,7 @@
 {
   "project": "PROJECT_NAME",
-  "created": "DATE",
+  "created": "YYYY-MM-DD",
+  "harness_version": "2.1",
   "total_features": 0,
   "passing": 0,
   "features": [
@@ -9,14 +10,16 @@
       "category": "core",
       "description": "Brief description of what the feature does",
       "priority": 1,
+      "modules_required": ["module1", "module2"],
+      "modules_claimed": [],
       "steps": [
         "Step 1: What to do",
-        "Step 2: What to verify",
-        "Step 3: Expected outcome"
+        "Step 2: What to verify"
       ],
       "passes": false,
       "test_file": null,
       "coverage": null,
+      "assigned_to": null,
       "notes": ""
     }
   ]
