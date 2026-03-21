@@ -1,5 +1,5 @@
 #!/bin/bash
-# Harness v3.2 - TaskCompleted quality gate hook
+# Harness v3.2.2 - TaskCompleted quality gate hook
 # Runs when a teammate marks a task as complete.
 # Exit code 0 = accept completion
 # Exit code 2 = reject completion, send feedback to teammate
@@ -14,15 +14,19 @@ INPUT=$(cat)
 
 # Run the project's test suite
 echo "Running test suite..." >&2
-if [ -f ".harness/init.sh" ]; then
-    TEST_OUTPUT=$(bash .harness/init.sh 2>&1) || {
-        echo "Task rejected: tests are failing. Fix the failures before marking complete."
-        echo ""
-        echo "Test output (last 20 lines):"
-        echo "$TEST_OUTPUT" | tail -20
-        exit 2
-    }
+if [ ! -f ".harness/init.sh" ]; then
+    echo "Task rejected: .harness/init.sh not found. Cannot verify tests pass."
+    echo "Run /harness-init to create the test script, or create it manually."
+    exit 2
 fi
+
+TEST_OUTPUT=$(bash .harness/init.sh 2>&1) || {
+    echo "Task rejected: tests are failing. Fix the failures before marking complete."
+    echo ""
+    echo "Test output (last 20 lines):"
+    echo "$TEST_OUTPUT" | tail -20
+    exit 2
+}
 
 # Check that features.json hasn't been left stale
 if [ -f ".harness/features.json" ]; then

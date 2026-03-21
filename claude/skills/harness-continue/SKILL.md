@@ -1,9 +1,9 @@
 ---
 name: harness-continue
-description: Continue working on a harness-managed project (v3.2.1). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
+description: Continue working on a harness-managed project (v3.2.2). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
 ---
 
-# Harness Continue v3.2.1
+# Harness Continue v3.2.2
 
 ## Step 1: Orient Yourself
 
@@ -78,37 +78,32 @@ Which do you prefer?
 
 1. Select highest-priority incomplete feature
 2. Update `features.json`: set status to `"in-progress"`, set `assigned_to` to `"single-session"`
-3. Create a structured task list using TodoWrite (these survive compaction):
+3. Create a structured task list using TaskCreate (these survive compaction):
 
 ```
-TodoWrite({
-  todos: [
-    { id: "1", content: "Read existing code in [scope directories]", status: "in_progress" },
-    { id: "2", content: "Write failing test for [feature description]", status: "not_started" },
-    { id: "3", content: "Implement minimum code to pass", status: "not_started" },
-    { id: "4", content: "Run full test suite", status: "not_started" },
-    { id: "5", content: "Verify coverage >= 95% on touched code", status: "not_started" },
-    { id: "6", content: "Update features.json", status: "not_started" },
-    { id: "7", content: "Update context_summary.md with learnings", status: "not_started" }
-  ]
-})
+TaskCreate({ subject: "Read existing code in [scope directories]", description: "Understand patterns before implementing", activeForm: "Reading existing code" })
+TaskCreate({ subject: "Write failing test for [feature]", description: "[feature description] — TDD red phase", activeForm: "Writing failing test" })
+TaskCreate({ subject: "Implement minimum code to pass", description: "TDD green phase", activeForm: "Implementing feature" })
+TaskCreate({ subject: "Run full test suite", description: "Verify no regressions" })
+TaskCreate({ subject: "Verify coverage >= 95% on touched code", description: "Coverage gate" })
+TaskCreate({ subject: "Update features.json", description: "Set status to passing, populate test_file and coverage" })
+TaskCreate({ subject: "Update context_summary.md with learnings", description: "Persist decisions and patterns" })
 ```
 
-**Update todo status after every meaningful step.** Don't wait for a clean breakpoint. Todos are your crash-recovery journal: if compaction hits unexpectedly, stale todos are worse than no todos.
+Use `TaskUpdate` to mark each task `in_progress` when starting and `completed` when done. Tasks are your crash-recovery journal: if compaction hits unexpectedly, stale tasks are worse than no tasks.
 
 4. Run smoke test: `./.harness/init.sh`
 
 ### Implement with TDD
 
 1. Write failing test that defines "done" for this feature
-   - Update TodoWrite: test written
+   - TaskUpdate: mark test task `in_progress`
 2. Confirm it fails (proves test is valid)
 3. Implement minimum code to pass
-   - Update TodoWrite: implementation started
+   - TaskUpdate: mark implementation task `in_progress`
 4. Confirm test passes
-   - Update TodoWrite: test passing
+   - TaskUpdate: mark test task `completed`
 5. Refactor if needed
-   - Update TodoWrite: refactor complete
 6. Repeat until feature is complete
 7. Run full suite; coverage >= 95% on touched code
 
@@ -126,13 +121,15 @@ If approaching context limit, compact at a clean breakpoint:
 - After a clear phase completes
 
 Before compacting, ensure:
-- TodoWrite has your current task state (should already be current if you're updating after every step)
+- Task list has your current state (should already be current if you're updating after every step)
 - `context_summary.md` has any important context that must survive
 
 Use `/compact` with a focus instruction, e.g.:
 ```
 /compact Focus on: current feature F003 state, TDD progress, decisions made about auth architecture
 ```
+
+After compaction, the **PostCompact hook** fires automatically and reminds you to re-read `.harness/context_summary.md` and the task list. Follow that reminder — it's your recovery path.
 
 ### Session End
 
@@ -164,14 +161,14 @@ Before spending tokens on teammates, produce a decomposition plan:
 2. Use `scope` and `depends_on` from each feature to identify parallelism opportunities and dependency chains
 3. Design the team:
    - Which teammates, what scope (from features.json `scope` field), what model (Sonnet for implementers, Opus for reviewers)
-   - Which tasks depend on which (from features.json `depends_on` field, mapped to `TaskCreate` `blocked_by` chains)
+   - Which tasks depend on which (from features.json `depends_on` field, mapped to `TaskUpdate` `addBlockedBy` calls after task creation)
    - Whether any teammate needs `require_plan_approval: true`
 4. Present the plan to the user:
 
 ```
 I propose this team structure:
 
-Lead (Opus, delegate mode): coordination, synthesis, final review
+Lead (Opus, plan mode): coordination, synthesis, final review
 Teammate "api" (Sonnet): F001 - owns src/api/ and tests/api/
 Teammate "ui" (Sonnet): F002 - owns src/components/ and tests/components/
   → blocked by "api" (F002 depends_on F001)
@@ -192,7 +189,7 @@ Wait for user approval before proceeding to Phase 2.
 
 ### Phase 2: Execute
 
-1. Activate **delegate mode** (Shift+Tab) to restrict yourself to coordination-only tools. Do not edit code directly.
+1. Activate **plan mode** (Shift+Tab) to restrict yourself to coordination-only tools. Do not edit code directly.
 
 2. Update `features.json`: set `assigned_to` for each feature being worked on.
 
@@ -201,11 +198,19 @@ Wait for user approval before proceeding to Phase 2.
    TeamCreate({ team_name: "PROJECT-sprint-N", description: "Parallel implementation of F001 and F002" })
    ```
 
-4. Create tasks with dependency chains (derived from features.json `depends_on`):
+4. Create tasks, then set dependency chains (derived from features.json `depends_on`):
    ```
-   TaskCreate({ subject: "F001: Build API endpoint", description: "[detailed spec]", status: "pending" })
-   TaskCreate({ subject: "F002: Build UI consuming API", description: "[detailed spec]", status: "blocked", blocked_by: ["1"] })
-   TaskCreate({ subject: "Review F001 + F002", description: "[review criteria]", status: "blocked", blocked_by: ["1", "2"] })
+   # Create all tasks first (they start as pending by default)
+   TaskCreate({ subject: "F001: Build API endpoint", description: "[detailed spec]", activeForm: "Building API endpoint" })
+   # → task id "1"
+   TaskCreate({ subject: "F002: Build UI consuming API", description: "[detailed spec]", activeForm: "Building UI layer" })
+   # → task id "2"
+   TaskCreate({ subject: "Review F001 + F002", description: "[review criteria]", activeForm: "Reviewing implementation" })
+   # → task id "3"
+
+   # Then set dependencies via TaskUpdate
+   TaskUpdate({ taskId: "2", addBlockedBy: ["1"] })
+   TaskUpdate({ taskId: "3", addBlockedBy: ["1", "2"] })
    ```
 
 5. Spawn teammates using templates from `team-spawn-prompts.md` in this skill's directory:
@@ -232,12 +237,12 @@ Wait for user approval before proceeding to Phase 2.
 3. Resolve conflicts if teammates need overlapping files
 4. After 3 check-ins with no progress from a teammate, take over that scope or spawn a replacement
 
-The `TeammateIdle` hook automatically assigns remaining features to idle teammates, so you don't need to manually reassign after each task completes.
+The `TeammateIdle` hook prompts idle teammates to pick up remaining features, so you don't need to manually reassign after each task completes.
 
 ### Phase 4: Synthesize
 
 When all teammates complete:
-1. Exit delegate mode if needed for hands-on review
+1. Exit plan mode if needed for hands-on review
 2. Run the full test suite
 3. If integration issues arise, follow the Integration Failure Recovery protocol in the Agent Teams rules:
    - Identify conflicting changes via `git diff`
@@ -281,10 +286,10 @@ Document the blocker in `claude-progress.txt` and `context_summary.md`. Move to 
 Fix them before starting new work. This is priority zero.
 
 **Context is getting heavy mid-session:**
-Compact at the next clean breakpoint. TodoWrite should already be current (you're updating after every step). Ensure `context_summary.md` has any important context, then `/compact`.
+Compact at the next clean breakpoint. Task list should already be current (you're updating after every step). Ensure `context_summary.md` has any important context, then `/compact`.
 
 **Teammate crashes or stalls:**
-The 5-minute heartbeat timeout will notify the lead. Spawn a replacement teammate for the stalled scope, or take over the scope directly (exit delegate mode). Update `assigned_to` in features.json.
+The 5-minute heartbeat timeout will notify the lead. Spawn a replacement teammate for the stalled scope, or take over the scope directly (exit plan mode). Update `assigned_to` in features.json.
 
 **Lead session interrupted:**
 In-process teammates are lost if the lead dies. Use tmux display mode for long-running team sessions. On restart, read `claude-progress.txt`, `features.json` (check `assigned_to` fields), and `context_summary.md` to reconstruct state. Features with `assigned_to` set but status still `in-progress` were likely interrupted mid-work.

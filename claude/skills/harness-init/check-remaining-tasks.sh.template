@@ -1,5 +1,5 @@
 #!/bin/bash
-# Harness v3.2 - TeammateIdle hook
+# Harness v3.2.2 - TeammateIdle hook
 # Runs when a teammate is about to go idle.
 # Exit code 0 = allow idle (no more work)
 # Exit code 2 = send feedback, keep teammate working

@@ -4,6 +4,8 @@ Templates for spawning teammates in harness-managed projects. The lead fills in 
 
 Each template includes a `model` recommendation. The lead specifies this in the `Task()` call, not in the prompt text itself.
 
+For features with independent scopes, the lead can add `isolation: "worktree"` to the `Task()` call to give the teammate a physically isolated copy of the repo. See the Worktree Isolation section in agent-teams-protocol.md for when to use this.
+
 ---
 
 ## Template: Feature Implementer
@@ -19,6 +21,7 @@ Feature: [FEATURE_ID] - [FEATURE_DESCRIPTION]
 Files you own: [DIRECTORY_LIST from features.json scope]
 Test files you own: [TEST_DIRECTORY_LIST from features.json scope]
 Files you must NOT touch: [BOUNDARIES]
+Scope enforcement: A PreToolUse hook blocks edits outside your scope. Your scope file is at .claude/teammate-scope.txt.
 
 ## Your Deliverable
 Implement [FEATURE_DESCRIPTION] with:
@@ -35,7 +38,7 @@ Implement [FEATURE_DESCRIPTION] with:
 ## Session Start
 1. Run ./.harness/init.sh to verify the build is green
 2. Read existing code in your scope to understand patterns
-3. Claim your task: TaskUpdate({ taskId: "[TASK_ID]", status: "in_progress" })
+3. Claim your task: TaskUpdate({ taskId: "[TASK_ID]", status: "in_progress", owner: "[YOUR_NAME]" })
 
 ## TDD Rules
 1. Write failing test that defines "done"
@@ -109,7 +112,7 @@ When interface changes after agreement:
   SendMessage({ type: "message", recipient: "[OTHER_TEAMMATE]", content: "Interface change: [what changed, why]. Please update your code accordingly." })
 
 ## Quality Gate
-Same as Feature Implementer: TaskCompleted hook verifies tests, TeammateIdle hook auto-assigns.
+Same as Feature Implementer: TaskCompleted hook verifies tests, TeammateIdle hook prompts reassignment.
 ```
 
 ---

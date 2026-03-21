@@ -3,6 +3,8 @@ globs:
   - .harness/**
 ---
 
+<!-- This rule loads when Claude reads .harness/ files. The /harness-continue workflow reads these files in Step 1, ensuring the protocol is active before team operations begin. -->
+
 # Agent Teams Protocol
 
 Rules for coordinating work through Claude Code's native Agent Teams. These activate when a `.harness/` directory exists and apply when a lead agent spawns teammates for parallel work.
@@ -51,7 +53,7 @@ Every feature in `.harness/features.json` uses this shape:
 
 **`scope`**: directories and files this feature owns. Used in spawn prompts to define teammate boundaries.
 
-**`depends_on`**: array of feature IDs (e.g., `["F001"]`). Maps directly to `TaskCreate` `blocked_by` chains.
+**`depends_on`**: array of feature IDs (e.g., `["F001"]`). Maps to `TaskUpdate` `addBlockedBy` calls after task creation.
 
 **`assigned_to`**: teammate name when Agent Teams is active, `null` otherwise. Helps the lead reconstruct state if the session dies and restarts.
 
@@ -75,7 +77,7 @@ The lead specifies model in the `Task()` call via `model: "sonnet"` or `model: "
 
 ## Lead Agent Responsibilities
 
-The lead agent is the coordinator. It operates in **delegate mode** (Shift+Tab) by default, restricting itself to coordination-only tools: spawning, messaging, task management, and shutdown. No code editing.
+The lead agent is the coordinator. It operates in **plan mode** (Shift+Tab) by default, restricting itself to coordination-only tools: spawning, messaging, task management, and shutdown. No code editing.
 
 The lead:
 
@@ -83,11 +85,11 @@ The lead:
 2. Produces a decomposition plan (Phase 1 of the workflow in harness-continue)
 3. Presents the plan to the user for approval before spawning any teammates
 4. Creates the team via `TeamCreate`
-5. Creates tasks via `TaskCreate`, using `depends_on` from features.json to set `blocked_by` chains
+5. Creates tasks via `TaskCreate`, then sets dependencies via `TaskUpdate` with `addBlockedBy` (derived from features.json `depends_on`)
 6. Spawns teammates via `Task` with team_name, model, and role-specific prompts
 7. Monitors progress via `TaskList` and incoming `SendMessage` messages
 8. Resolves conflicts if two teammates need overlapping files
-9. Reviews completed work (exit delegate mode if needed for code review)
+9. Reviews completed work (exit plan mode if needed for code review)
 10. Synthesizes results after all teammates complete
 11. Updates `.harness/features.json` (status, assigned_to, test_file, coverage)
 12. Updates `.harness/context_summary.md` with decisions and patterns from the session
@@ -105,7 +107,7 @@ Each teammate is a focused implementer. It:
 1. Reads its spawn prompt for scope, deliverable, and constraints
 2. If `require_plan_approval` is true: sends a `plan_approval_request` via `SendMessage` and waits for a direct message approval from the lead before writing any code
 3. Runs `.harness/init.sh` to verify the project builds
-4. Claims its task via `TaskUpdate(status: "in_progress")`
+4. Claims its task via `TaskUpdate({ taskId: "[ID]", status: "in_progress", owner: "[teammate-name]" })`
 5. Works ONLY within its assigned scope (files, directories)
 6. Follows TDD: write failing test, implement, verify, refactor
 7. Sends messages via `SendMessage` to the lead or other teammates as needed
@@ -115,7 +117,7 @@ Each teammate is a focused implementer. It:
 
 When the `TaskCompleted` hook runs, it will verify tests pass. If the hook rejects (exit code 2), the teammate receives feedback and must fix the issues before re-completing.
 
-When the `TeammateIdle` hook runs after task completion, the teammate may receive a new task assignment automatically.
+When the `TeammateIdle` hook runs after task completion, the teammate may be prompted to pick up a new task.
 
 ## Native Messaging Protocol
 
@@ -150,25 +152,38 @@ All team communication uses `SendMessage`. These are the message patterns for ha
 
 ## Task Dependencies
 
-Use `TaskCreate` with dependency chains so sequenced work auto-unblocks. Map directly from the `depends_on` field in features.json:
+Set up dependency chains so sequenced work auto-unblocks. Map directly from the `depends_on` field in features.json. TaskCreate only accepts `subject`, `description`, `activeForm`, and `metadata` — dependencies must be set after creation via TaskUpdate.
 
 ```
-# Independent tasks: start as pending, claimable immediately
-TaskCreate({ subject: "F001: Build API endpoint", description: "...", status: "pending" })
+# Step 1: Create all tasks (they start as pending by default)
+TaskCreate({ subject: "F001: Build API endpoint", description: "..." })
 # → task id "1"
 
-# Dependent tasks: start as blocked, auto-unblock when dependency completes
-TaskCreate({ subject: "F002: Build UI consuming API", description: "...", status: "blocked", blocked_by: ["1"] })
-# → auto-transitions to "pending" when task 1 is completed
+TaskCreate({ subject: "F002: Build UI consuming API", description: "..." })
+# → task id "2"
 
-# Multiple dependencies
-TaskCreate({ subject: "F003: Integration tests", description: "...", status: "blocked", blocked_by: ["1", "2"] })
-# → unblocks only when BOTH task 1 and task 2 complete
+TaskCreate({ subject: "F003: Integration tests", description: "..." })
+# → task id "3"
+
+# Step 2: Set dependencies via TaskUpdate
+TaskUpdate({ taskId: "2", addBlockedBy: ["1"] })
+# → task 2 blocks until task 1 completes
+
+TaskUpdate({ taskId: "3", addBlockedBy: ["1", "2"] })
+# → task 3 blocks until BOTH task 1 and task 2 complete
 ```
 
 Teammates poll `TaskList` and only see claimable (pending) tasks. They don't need to understand the dependency graph; the system handles it.
 
-When the lead plans the team (Phase 1 of harness-continue), it reads `depends_on` from features.json and translates them to `blocked_by` in `TaskCreate` calls.
+When the lead plans the team (Phase 1 of harness-continue), it reads `depends_on` from features.json and translates them to `addBlockedBy` in `TaskUpdate` calls after creating tasks.
+
+Dependencies can also be added after initial setup. If a teammate discovers an unexpected dependency mid-work:
+```
+TaskUpdate({ taskId: "3", addBlockedBy: ["4"] })
+```
+This dynamically blocks task 3 until task 4 completes.
+
+Tasks support a `metadata` field for storing arbitrary key-value pairs (e.g., feature ID, scope, model). This is optional — `features.json` already tracks this information for the harness.
 
 ## Plan Approval
 
@@ -212,10 +227,16 @@ The harness installs two hooks that enforce quality mechanically:
 - If work remains: sends the next feature assignment (exit code 2), keeps teammate working
 - If no work remains: allows idle (exit code 0)
 
+**PostCompact hook**:
+- Fires after `/compact` or automatic compaction
+- Reminds the agent to re-read `context_summary.md` and the task list
+- Prevents post-compaction drift where the agent loses track of current state
+
 These hooks mean:
 - Teammates can't mark tasks done with failing tests (mechanical TDD enforcement)
-- Idle teammates automatically pick up the next available feature (no wasted capacity)
+- Idle teammates are prompted to pick up the next available feature (no wasted capacity)
 - The lead doesn't need to micromanage task assignment after initial setup
+- Post-compaction context recovery is prompted automatically
 
 ### Hook Verification
 
@@ -243,6 +264,21 @@ If two features share a module, either: assign both to one teammate, or have one
 
 Scopes are stored in `features.json` under the `scope` field for each feature. The lead includes them in spawn prompts and uses them to detect overlaps before spawning.
 
+### Mechanical Scope Enforcement
+
+The harness installs a PreToolUse hook (`enforce-scope.sh`) that blocks edits to files outside the teammate's assigned scope. The hook reads scope patterns from `.claude/teammate-scope.txt`. This file is created by the lead when spawning teammates — it is NOT a harness-init artifact.
+
+The lead writes this file before spawning each teammate:
+```bash
+# .claude/teammate-scope.txt (created per-teammate, not committed)
+src/auth/
+tests/auth/
+```
+
+When the teammate tries to edit a file outside these paths, the hook blocks the edit (exit code 2) and suggests messaging the lead for scope expansion.
+
+This promotes scope enforcement from instructional to mechanical. Teammates in worktree isolation don't need this hook (they have physical isolation instead).
+
 ## Conflict Resolution
 
 If two teammates need the same file:
@@ -257,8 +293,8 @@ When the lead's synthesis step (Phase 4) reveals integration issues between team
 
 1. Run `git diff` to identify the conflicting changes
 2. Run the full test suite to pinpoint which tests fail and which teammate's changes are involved
-3. If one teammate's work is clearly wrong: revert those files with `git checkout -- <files>`, update the feature status to `failed` in features.json, and either re-scope for a replacement teammate or take over directly (exit delegate mode)
-4. If both sides are partially right: the lead exits delegate mode and merges manually, keeping the passing tests from both sides
+3. If one teammate's work is clearly wrong: revert those files with `git checkout -- <files>`, update the feature status to `failed` in features.json, and either re-scope for a replacement teammate or take over directly (exit plan mode)
+4. If both sides are partially right: the lead exits plan mode and merges manually, keeping the passing tests from both sides
 5. If the conflict is architectural (shared interface mismatch): revert both, document the conflict in `context_summary.md`, and re-plan with a single teammate owning the shared interface
 6. Update features.json with accurate statuses after resolution
 7. Record the conflict and resolution in `context_summary.md` so future sessions know about it
@@ -276,6 +312,48 @@ Each teammate works on the same branch unless the lead explicitly creates per-te
 5. Lead opens the PR
 
 If teammates are working on truly independent features, the lead can create separate branches and separate PRs.
+
+## Worktree Isolation
+
+Teammates can be spawned with `isolation: "worktree"` in the `Task()` call, which creates a temporary git worktree — a physically separate copy of the repo. This promotes scope enforcement from instructional to mechanical: the teammate literally cannot affect the main working tree.
+
+**When to use worktree isolation:**
+- Features with truly independent scopes (no shared files)
+- When scope violations have caused problems before
+- Security-sensitive features where contamination risk is high
+
+**When NOT to use worktree isolation:**
+- Features that share interfaces requiring real-time coordination (worktrees don't see each other's changes until merge)
+- Quick tasks where merge overhead exceeds the benefit
+- Layer-based work where teammates must negotiate a shared interface file
+
+**How it works:**
+
+1. Lead spawns teammate with `isolation: "worktree"`:
+   ```
+   Task({
+     description: "Implement F001",
+     name: "api",
+     team_name: "PROJECT-sprint-N",
+     model: "sonnet",
+     isolation: "worktree",
+     prompt: "[filled template]"
+   })
+   ```
+2. Teammate works in its own worktree branch, commits normally
+3. When teammate completes, the worktree path and branch are returned to the lead
+4. Lead merges worktree branches during Phase 4 (synthesis)
+5. If teammate makes no changes, the worktree is auto-cleaned
+
+**Synthesis with worktrees:**
+
+During Phase 4, the lead merges each worktree branch:
+```bash
+git merge teammate-branch-name --no-ff
+```
+If conflicts arise, follow the Integration Failure Recovery protocol. The advantage of worktrees is that each teammate's work is on a clean branch, making selective reverts trivial.
+
+**Trade-off**: Adds git merge complexity during synthesis, but eliminates scope violation risk entirely. For independent features, this is almost always worth it.
 
 ## Cost Considerations
 
@@ -311,7 +389,7 @@ In a harness-managed project, the lead agent:
 1. Reads `.harness/features.json` to select features (using `scope` and `depends_on` to plan team structure)
 2. Maps features to teammate scopes and task dependencies
 3. Sets `assigned_to` in features.json when spawning teammates
-4. Creates tasks via `TaskCreate` (with `blocked_by` derived from `depends_on`)
+4. Creates tasks via `TaskCreate`, then sets dependencies via `TaskUpdate` with `addBlockedBy` (derived from `depends_on`)
 5. Updates `features.json` as teammates complete work (sets status, test_file, coverage, clears assigned_to)
 6. Appends to `.harness/context_summary.md` any architectural decisions made during the team session
 7. Writes the session handoff to `claude-progress.txt` with a summary of all teammate work

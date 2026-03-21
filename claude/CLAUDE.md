@@ -1,10 +1,10 @@
 ---
 scope: global
 location: ~/.claude/CLAUDE.md
-version: 3.2.1
-last_updated: 2026-02-18
+version: 3.2.2
+last_updated: 2026-03-21
 author: Ovidiu
-description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.2.1.
+description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.2.2.
 supplements: Project-level CLAUDE.md files in individual repositories
 ---
 
@@ -93,7 +93,12 @@ Context persistence in harness projects uses these files:
 
 ### Non-Harness Projects
 
-When no `.harness/` directory exists, the structured planning workflow from `~/.claude/rules/non-harness-workflow.md` applies. That file covers the planning approach, templates for `task_plan.md`, `notes.md`, and the core loop for non-trivial tasks.
+When no `.harness/` directory exists, follow this loop for non-trivial tasks:
+
+1. **Read** — re-read task list and context_summary.md before each major action
+2. **Research** — gather information, save findings to files (not conversation)
+3. **Execute** — implement, writing output to files before reporting
+4. **Validate** — verify output matches the goal, update context_summary.md
 
 The core standards in this file (testing, debugging, git, security, naming, etc.) apply to all projects regardless of mode.
 
@@ -113,9 +118,9 @@ Implement directly when:
 
 ### Compaction Survival
 
-TodoWrite is the primary tool for surviving compaction. Todos persist; conversation prose does not.
+TaskCreate/TaskUpdate is the primary tool for surviving compaction. Tasks persist; conversation prose does not.
 
-**Update TodoWrite after every meaningful step:** test written, implementation started, test passing, refactor complete, feature done. Treat todos as your crash-recovery journal, not just a pre-compaction checkpoint.
+**Update tasks after every meaningful step** — but only for tasks spanning 3+ steps or with real compaction risk. Treat the task list as your crash-recovery journal, not a progress log. Single-file edits and short sequential tasks don't need task tracking.
 
 Before compacting, also ensure:
 1. `context_summary.md` has any decisions or patterns that must survive
@@ -125,6 +130,16 @@ Use `/compact` with a focus instruction:
 ```
 /compact Focus on: current feature F003 state, TDD progress, decisions made about auth architecture
 ```
+
+### Auto-Memory vs context_summary.md
+
+Claude Code has a persistent auto-memory system at `~/.claude/projects/<project>/memory/`. It stores learnings automatically across sessions.
+
+**Auto-memory** is per-user, implicit, and not version-controlled. Use it for personal workflow preferences and patterns you discover while working.
+
+**`context_summary.md`** is per-project, explicit, and version-controlled. Use it for architectural decisions, team-relevant patterns, and gotchas that must be shared across sessions and team members.
+
+These are complementary. Do not migrate `context_summary.md` content to auto-memory — they serve different audiences.
 
 ---
 
@@ -202,6 +217,9 @@ This does not apply to code implementation where Ovidiu has already approved the
 These apply to both Agent Teams teammates (in harness projects) and general sub-agents (in non-harness projects).
 
 ### Agent Autonomy
+
+> **Overrides the Critical Invariant:** The "present a plan and wait for Go ahead" rule applies only when interacting directly with Ovidiu. When spawned as a sub-agent or teammate, the rules below apply instead.
+
 1. Execute immediately. Do not wait for "Go ahead" confirmations when spawned as a sub-agent or teammate.
 2. Do not poll TaskList more than 5 times. If a blocking task hasn't completed, proceed independently or report the blocker.
 3. Write output to a file before finishing so results are preserved even if the agent terminates unexpectedly.
@@ -232,7 +250,7 @@ Do not let a failing sub-agent block other parallel work.
 
 ### Agent Teams (Harness Projects Only)
 
-When `.harness/` exists and multiple features need parallel work, the Agent Teams protocol from `~/.claude/rules/agent-teams-protocol.md` governs all team coordination. That protocol covers: model selection, delegate mode, native messaging (SendMessage), task dependencies (TaskCreate with blocked_by), quality gates (TaskCompleted and TeammateIdle hooks), plan approval, scope assignment, conflict resolution, integration failure recovery, and git strategy.
+When `.harness/` exists and multiple features need parallel work, the Agent Teams protocol from `~/.claude/rules/agent-teams-protocol.md` governs all team coordination. That protocol covers: model selection, plan mode, native messaging (SendMessage), task dependencies (TaskCreate + TaskUpdate with addBlockedBy), quality gates (TaskCompleted and TeammateIdle hooks), plan approval, scope assignment, conflict resolution, integration failure recovery, and git strategy.
 
 Don't re-implement those rules here. Follow the protocol.
 
@@ -279,7 +297,7 @@ Report format: what was attempted, what failed and why, options (retry different
 
 Always check for branch protection rules before pushing. Default to a PR-based workflow: create a feature branch, push there, open a PR. Never push directly to main unless Ovidiu explicitly says otherwise.
 
-Before any git push, pull, or clone: verify the active SSH identity by running `ssh -T git@github.com` and checking `git config user.name` and `git config user.email`. Never assume which SSH key is active. In multi-account setups, confirm the identity matches the target repo's org before proceeding.
+Before any git push, pull, or clone: verify the active SSH identity by running `ssh -T git@github.com` and checking `git config user.name` and `git config user.email`. Never assume which SSH key is active. In multi-account setups, confirm the identity matches the target repo's org before proceeding. If the identity doesn't match, fix `git config user.name`, `git config user.email`, and the remote URL to use the correct SSH host alias before proceeding — do not push with the wrong identity.
 
 In harness projects, the confirmed identity is stored in `.harness/harness.json` under `git_identity`. Compare against it at session start.
 
@@ -397,6 +415,8 @@ Create once, update continuously.
 
 **Update when:** a decision is made, a pattern is discovered, a gotcha is encountered, a work stream completes, or active context shifts.
 
+**Do NOT add:** progress updates ("completed task X"), completed todos, conversation summaries, or anything already tracked in `claude-progress.txt`. This file is for decisions, patterns, and gotchas — not a journal.
+
 **Size discipline:** if a domain section exceeds ~300 tokens, summarize or split.
 
 **Keep Active Context fresh:** this section should reflect right now, not last week.
@@ -416,9 +436,5 @@ Before declaring ANY task complete:
 Additional for harness projects:
 - [ ] `features.json` updated (status, test_file, coverage)
 - [ ] `claude-progress.txt` has session handoff
-
-Additional for non-harness structured tasks:
-- [ ] `task_plan.md` shows all phases complete
-- [ ] `notes.md` captures learnings and failed approaches
 
 Do NOT skip this checklist.

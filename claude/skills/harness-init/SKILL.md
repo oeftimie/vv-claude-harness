@@ -1,9 +1,9 @@
 ---
 name: harness-init
-description: Initialize a new project with the Long-Running Agent Harness v3.2.1. Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and optional Agent Teams structure. Use when starting a new multi-session project.
+description: Initialize a new project with the Long-Running Agent Harness v3.2.2. Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and optional Agent Teams structure. Use when starting a new multi-session project.
 ---
 
-# Harness Initializer v3.2.1
+# Harness Initializer v3.2.2
 
 Follow these steps in order. Do not skip steps. Ask the user when indicated.
 
@@ -48,7 +48,7 @@ Create `.harness/` with these files:
   "project": "PROJECT_NAME",
   "stack": "DETECTED_OR_SPECIFIED_STACK",
   "created": "ISO_DATE",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "git_identity": {
     "user_name": "DETECTED_NAME",
     "user_email": "DETECTED_EMAIL",
@@ -142,7 +142,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 
 ## Step 3.5: Configure Build Hooks
 
-Based on the detected stack, offer to add a PostToolUse hook to the project's `.claude/settings.json`. This catches type errors immediately after edits.
+Based on the detected stack, offer to add a PostToolUse hook to the project's `.claude/settings.json`. This catches type errors after edits without blocking the agent (hooks run async).
 
 Create `.claude/settings.json` (or merge into existing) with the appropriate hook:
 
@@ -156,7 +156,8 @@ Create `.claude/settings.json` (or merge into existing) with the appropriate hoo
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"ts\" ] || [ \"$ext\" = \"tsx\" ]; then npx tsc --noEmit 2>&1 | head -20; fi; fi"
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"ts\" ] || [ \"$ext\" = \"tsx\" ]; then npx tsc --noEmit 2>&1 | head -20; fi; fi",
+            "async": true
           }
         ]
       }
@@ -175,7 +176,8 @@ Create `.claude/settings.json` (or merge into existing) with the appropriate hoo
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"swift\" ]; then swift build 2>&1 | tail -10; fi; fi"
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"swift\" ]; then swift build 2>&1 | tail -10; fi; fi",
+            "async": true
           }
         ]
       }
@@ -194,7 +196,8 @@ Create `.claude/settings.json` (or merge into existing) with the appropriate hoo
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"py\" ]; then python -m py_compile \"$FILE\" 2>&1; fi; fi"
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"py\" ]; then python -m py_compile \"$FILE\" 2>&1; fi; fi",
+            "async": true
           }
         ]
       }
@@ -213,7 +216,8 @@ Create `.claude/settings.json` (or merge into existing) with the appropriate hoo
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"go\" ]; then go build ./... 2>&1 | tail -10; fi; fi"
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"go\" ]; then go build ./... 2>&1 | tail -10; fi; fi",
+            "async": true
           }
         ]
       }
@@ -232,7 +236,8 @@ Create `.claude/settings.json` (or merge into existing) with the appropriate hoo
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"rs\" ]; then cargo check 2>&1 | tail -10; fi; fi"
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"rs\" ]; then cargo check 2>&1 | tail -10; fi; fi",
+            "async": true
           }
         ]
       }
@@ -250,12 +255,34 @@ Set up Agent Teams quality enforcement hooks. Read the two `.sh.template` files 
 1. Create `.claude/hooks/` directory: `mkdir -p .claude/hooks`
 2. Copy `verify-task-quality.sh.template` to `.claude/hooks/verify-task-quality.sh`
 3. Copy `check-remaining-tasks.sh.template` to `.claude/hooks/check-remaining-tasks.sh`
-4. Make both executable: `chmod +x .claude/hooks/*.sh`
-5. Add to `.claude/settings.json` (merge with the PostToolUse hooks from Step 3.5):
+4. Copy `enforce-scope.sh.template` to `.claude/hooks/enforce-scope.sh`
+5. Copy `verify-git-identity.sh.template` to `.claude/hooks/verify-git-identity.sh`
+6. Make all executable: `chmod +x .claude/hooks/*.sh`
+7. Add to `.claude/settings.json` (merge with the PostToolUse hooks from Step 3.5):
 
 ```json
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/enforce-scope.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/verify-git-identity.sh"
+          }
+        ]
+      }
+    ],
     "TaskCompleted": [
       {
         "hooks": [
@@ -272,6 +299,16 @@ Set up Agent Teams quality enforcement hooks. Read the two `.sh.template` files 
           {
             "type": "command",
             "command": "bash .claude/hooks/check-remaining-tasks.sh"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Context was just compacted. Immediately re-read .harness/context_summary.md and run TaskList to recover your current state before continuing work."
           }
         ]
       }
@@ -301,13 +338,16 @@ If either script fails to execute (permission denied, syntax error, missing depe
 Tell the user:
 
 ```
-I've set up two quality gate hooks:
+I've set up five hooks:
+- PreToolUse (scope): blocks edits to files outside the teammate's assigned scope. Only active when .claude/teammate-scope.txt exists.
+- PreToolUse (git identity): blocks git push/pull/clone if identity doesn't match .harness/harness.json.
 - TaskCompleted: runs tests when a teammate marks work done. Rejects if tests fail.
-- TeammateIdle: checks for remaining features when a teammate finishes. Auto-assigns next task.
+- TeammateIdle: checks for remaining features when a teammate finishes. Prompts teammate to pick up next task.
+- PostCompact: reminds the agent to re-read context_summary.md and task list after compaction.
 
-Both hooks verified: [pass/fail status for each].
+Quality gate hooks verified: [pass/fail status for each].
 
-These enforce TDD mechanically instead of relying on instructions alone.
+These enforce TDD and context recovery mechanically instead of relying on instructions alone.
 ```
 
 ## Step 4: Update Project CLAUDE.md
@@ -331,7 +371,7 @@ This project uses the Long-Running Agent Harness v3.2.
 - Context and decisions: `.harness/context_summary.md` (READ THIS at session start)
 - Progress handoff: `.harness/claude-progress.txt`
 - Build/test: `.harness/init.sh`
-- Quality gates: `.claude/hooks/` (TaskCompleted, TeammateIdle)
+- Quality gates: `.claude/hooks/` (TaskCompleted, TeammateIdle, PostCompact)
 
 ## Git Identity
 
@@ -404,13 +444,13 @@ The team_structure is a starting suggestion. The lead may restructure during /ha
 
 ```bash
 git add .harness/ .claude/ CLAUDE.md
-git commit -m "chore: initialize harness v3.2.1 scaffolding"
+git commit -m "chore: initialize harness v3.2.2 scaffolding"
 ```
 
 Report:
 
 ```
-Harness v3.2.1 initialized:
+Harness v3.2.2 initialized:
 - .harness/ created with [N] features (scope and dependencies defined)
 - Git identity captured: [user] <[email]>
 - Build hook: [installed | skipped] for [STACK]

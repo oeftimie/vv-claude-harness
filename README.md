@@ -1,8 +1,8 @@
 # Ovidiu's Claude Code Harness
 
-A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system that uses 100% of Claude Code's native Agent Teams primitives.
+A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
-**Current version: v3.2.1**
+**Current version: v3.2.2**
 
 ---
 
@@ -67,9 +67,9 @@ It worked, but the coordination was custom. The orchestrator rules were prose-ba
 
 Claude Code shipped Agent Teams as an experimental feature: native primitives for creating teams, assigning tasks, messaging between agents, and managing shared task lists. This was the coordination layer I'd been building by hand, but implemented at the platform level.
 
-v3.0 threw away the custom module locking, the orchestrator rules, the `.context/` directory, and the slash commands. Everything was replaced with native primitives: `TeamCreate`, `TaskCreate`, `SendMessage`, `TaskList`, `TeamDelete`. The 4-file pattern was replaced with compaction-aware context management using `TodoWrite`.
+v3.0 threw away the custom module locking, the orchestrator rules, the `.context/` directory, and the slash commands. Everything was replaced with native primitives: `TeamCreate`, `TaskCreate`, `SendMessage`, `TaskList`, `TeamDelete`. The 4-file pattern was replaced with compaction-aware context management using task persistence (originally `TodoWrite`, now `TaskCreate`/`TaskUpdate`).
 
-The lead agent operates in delegate mode (Shift+Tab), restricting itself to coordination tools. No code editing. It spawns teammates, assigns scoped tasks, monitors progress, and synthesizes results. Teammates work independently, each in their own context window, communicating through `SendMessage`.
+The lead agent operates in plan mode (Shift+Tab), restricting itself to coordination tools. No code editing. It spawns teammates, assigns scoped tasks, monitors progress, and synthesizes results. Teammates work independently, each in their own context window, communicating through `SendMessage`.
 
 ### v3.1: Mechanical enforcement (February 2026)
 
@@ -78,8 +78,8 @@ The realization that made v3.1 necessary: prose-based instructions are medium-re
 v3.1 added shell hooks that make quality gates mechanical:
 
 * **TaskCompleted hook**: when a teammate marks work done, a shell script runs the test suite. If tests fail, the completion is rejected with feedback. The teammate can't finish until tests pass. No exceptions. No "I'll fix it later."
-* **TeammateIdle hook**: when a teammate finishes and goes idle, a shell script checks `features.json` for remaining work. If pending features exist, the teammate gets auto-assigned. No wasted capacity.
-* **PostToolUse hook**: after every file edit, a stack-specific type/build check runs. TypeScript gets `tsc --noEmit`. Swift gets `swift build`. Python gets `py_compile`. Errors caught at the keystroke, not at the commit.
+* **TeammateIdle hook**: when a teammate finishes and goes idle, a shell script checks `features.json` for remaining work. If pending features exist, the teammate is prompted to pick up next work. No wasted capacity.
+* **PostToolUse hook**: after every file edit, a stack-specific type/build check runs. TypeScript gets `tsc --noEmit`. Swift gets `swift build`. Python gets `py_compile`. Errors surfaced shortly after edits (async since v3.2.2), not at the commit.
 
 v3.1 also added plan-first workflows (the lead presents a decomposition plan before spending tokens on teammates), model mixing (Opus for leads and reviewers, Sonnet for implementers), and task dependency chains via `TaskCreate` with `blocked_by`.
 
@@ -115,15 +115,15 @@ Two bugs discovered in real Agent Teams sessions:
 ~/.claude/
 ├── CLAUDE.md                                         # Core engineering standards (all projects)
 ├── rules/
-│   ├── engineering-standards.md                       # Global rules (always loaded)
-│   ├── agent-teams-protocol.md                        # Agent Teams rules (harness projects only)
-│   └── non-harness-workflow.md                        # Planning workflow (non-harness projects only)
+│   └── agent-teams-protocol.md                        # Agent Teams rules (harness projects only)
 └── skills/
     ├── harness-init/
     │   ├── SKILL.md                                   # /harness-init skill
     │   ├── init.sh.template                           # Build/test script template
     │   ├── verify-task-quality.sh.template             # TaskCompleted hook
-    │   └── check-remaining-tasks.sh.template           # TeammateIdle hook
+    │   ├── check-remaining-tasks.sh.template           # TeammateIdle hook
+    │   ├── enforce-scope.sh.template                   # PreToolUse scope enforcement hook
+    │   └── verify-git-identity.sh.template             # PreToolUse git identity hook
     └── harness-continue/
         ├── SKILL.md                                   # /harness-continue skill
         └── team-spawn-prompts.md                      # Spawn templates with model + plan approval
@@ -138,7 +138,9 @@ project-root/
 │   ├── settings.json                                  # Build hooks + quality gate hooks
 │   └── hooks/
 │       ├── verify-task-quality.sh                     # TaskCompleted enforcement
-│       └── check-remaining-tasks.sh                   # TeammateIdle auto-reassignment
+│       ├── check-remaining-tasks.sh                   # TeammateIdle prompted reassignment
+│       ├── enforce-scope.sh                           # PreToolUse scope enforcement
+│       └── verify-git-identity.sh                     # PreToolUse git identity verification
 └── .harness/
     ├── harness.json                                   # Config + git identity + team structure
     ├── features.json                                  # Feature tracking (with scope, dependencies)
@@ -151,13 +153,26 @@ project-root/
 
 The real insight from iterating through these versions: there are three reliability tiers for agent coordination, and you need to know which tier each rule lives in.
 
-**Mechanical (shell hooks, exit codes)**: very high reliability. The `TaskCompleted` hook runs the test suite. If tests fail, the completion is rejected. The agent can't bypass this. It's not an instruction; it's physics.
+**Mechanical (shell hooks, exit codes)**: very high reliability. The hook blocks the action; the agent cannot proceed without satisfying the constraint.
+
+| Hook | Event | What it enforces |
+|------|-------|-----------------|
+| `verify-task-quality.sh` | TaskCompleted | Tests must pass before task completion is accepted |
+| `enforce-scope.sh` | PreToolUse (Edit/Write) | Edits blocked outside teammate's assigned scope |
+| `verify-git-identity.sh` | PreToolUse (Bash) | Git push/pull blocked if identity doesn't match harness.json |
+
+**Prompted (shell hooks with feedback)**: high reliability. The hook delivers a message to the agent, but the agent decides whether to follow it.
+
+| Hook | Event | What it does |
+|------|-------|-------------|
+| `check-remaining-tasks.sh` | TeammateIdle | Prompts teammate to pick up next pending feature |
+| PostCompact prompt | PostCompact | Injects "re-read context_summary.md and TaskList" into model context |
 
 **Structural (file existence, JSON schema)**: high reliability. `features.json` requiring `test_file` and `coverage` fields. The `.harness/` directory gating mode selection. Agents respect structure more than prose.
 
 **Instructional (prose in CLAUDE.md, rules, skills)**: medium reliability. "Use TDD." "Don't modify files outside scope." "Verify git identity before push." These work most of the time. Over long contexts, compliance drifts.
 
-The progression from v2.0 to v3.2 is the story of promoting critical rules from instructional to mechanical enforcement. TDD went from "please use TDD" to a shell hook that rejects non-passing code. Idle reassignment went from "check for remaining work" to an automatic hook. The rules that matter most should be the ones agents can't skip.
+The progression from v2.0 to v3.2 is the story of promoting critical rules from instructional to mechanical enforcement. TDD went from "please use TDD" to a shell hook that rejects non-passing code. Scope enforcement went from "don't touch files outside your scope" to a PreToolUse hook that blocks the edit. Git identity verification went from "check before pushing" to a PreToolUse hook that blocks the push. The rules that matter most should be the ones agents can't skip.
 
 ## Core principles
 
@@ -173,13 +188,53 @@ These have held steady across all versions:
 
 * **Filesystem as connective tissue**: Not because files are the optimal data structure for agent memory (they're not), but because they're the optimal trade-off between simplicity, transparency, and effectiveness.
 
-## What remains unsolved
+## Usage recommendations
 
-* **Scope enforcement**: Teammates told "don't touch files outside your scope" will sometimes violate. No mechanical enforcement of scope boundaries today. This is the next rule to promote from instructional to mechanical.
+### Solo work (most common)
+
+Install the harness globally, then run `/harness-init` on any project that will span multiple sessions. At the start of every session, run `/harness-continue` — it reads your progress files, verifies git identity, and picks up where you left off.
+
+Use **single-session mode** for features touching fewer than 5 files. The harness tracks progress via `TaskCreate`/`TaskUpdate` (which survive compaction), runs async build checks after edits, and mechanically blocks git pushes with wrong identity.
+
+The PostCompact prompt hook recovers your context automatically after compaction — it injects a reminder to re-read `context_summary.md` and the task list.
+
+### Parallel work (Agent Teams)
+
+Use Agent Teams when two or more independent features are ready. The lead operates in plan mode (Shift+Tab), spawns Sonnet teammates for implementation, and reserves Opus for itself and reviewers.
+
+**For features with independent scopes**: spawn teammates with `isolation: "worktree"`. Each gets a physically separate copy of the repo. Cleanest separation, no scope violations possible. The lead merges worktree branches during synthesis.
+
+**For shared-branch work**: the `enforce-scope.sh` PreToolUse hook blocks edits outside the teammate's assigned scope file (`.claude/teammate-scope.txt`). The lead creates this file before spawning each teammate.
+
+The `TaskCompleted` hook mechanically enforces passing tests before any task can be marked complete. The `TeammateIdle` hook prompts (but doesn't force) idle teammates to pick up the next pending feature.
+
+### When NOT to use
+
+* **Don't use Agent Teams** for features touching fewer than 3 files each — sequential single-session mode is cheaper. The Opus lead runs for the entire session regardless of teammate count; coordination overhead adds up.
+* **Don't use worktree isolation** when teammates share interfaces — they need to see each other's changes in real time. Use the scope enforcement hook instead.
+* **Don't treat TeammateIdle as automatic** — it prompts the teammate to pick up work, but the model decides whether to follow through. Monitor via `TaskList`.
+
+### Token budget
+
+The harness adds ~8.7K tokens to your context when active:
+* `CLAUDE.md`: ~4.2K (always loaded)
+* `agent-teams-protocol.md`: ~4.5K (loaded only when `.harness/` files are read)
+
+This is down from ~14.7K in v3.2.1 (before eliminating redundant `engineering-standards.md` and `non-harness-workflow.md` rule files). A 41% reduction.
+
+In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol rule is not triggered because no `.harness/` files are read.
+
+## Known challenges
+
+**Solved in v3.2.2:**
+
+* **Scope enforcement**: Worktree isolation (`isolation: "worktree"`) provides physical separation for independent features. A PreToolUse hook (`enforce-scope.sh`) blocks edits outside the teammate's scope file for shared-branch work. Both are mechanical enforcement.
+
+* **Git identity verification**: A PreToolUse hook (`verify-git-identity.sh`) checks git identity against `.harness/harness.json` before every push/pull/clone. Blocks the operation if identity doesn't match.
+
+**Still open:**
 
 * **Session resumption**: If the lead session dies, in-process teammates are lost. `features.json` helps reconstruct state, but the work in flight is gone. tmux mode helps, but it's a mitigation, not a solution.
-
-* **Git identity verification**: The harness captures git identity at init and stores it in `harness.json`. But verifying it before every push is still instructional. A PreToolUse hook on git commands could make this mechanical.
 
 * **Cost modeling**: Agent Teams cost is hard to predict. Lead overhead, SendMessage round-trips, TeammateIdle re-assignment, and Phase 1 planning all vary by project. Better cost instrumentation (logging tokens per role) would help.
 
@@ -189,21 +244,21 @@ These have held steady across all versions:
 
 Everything you need is in this repo:
 
-1. Download [harness-v3.2.1.zip](https://github.com/oeftimie/vv-claude-harness/releases)
+1. Download [harness-v3.2.2.zip](https://github.com/oeftimie/vv-claude-harness/releases)
 2. Follow the [INSTALL.md](./INSTALL.md) instructions
 3. Review the [CLAUDE.md](./claude/CLAUDE.md) for core engineering standards
 
 ### Quick install
 
 ```bash
-unzip harness-v3.2.1.zip
+unzip harness-v3.2.2.zip
 cp claude/CLAUDE.md ~/.claude/CLAUDE.md
 cp -r claude/rules/*.md ~/.claude/rules/
 cp -r claude/skills/harness-init ~/.claude/skills/
 cp -r claude/skills/harness-continue ~/.claude/skills/
 
 # Enable Agent Teams
-echo 'export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1' >> ~/.zshrc
+grep -q 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' ~/.zshrc || echo 'export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1' >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -226,9 +281,7 @@ claude
 | Component | Purpose |
 |-----------|---------|
 | `CLAUDE.md` | Core engineering standards (all projects) |
-| `rules/engineering-standards.md` | Global rules (always loaded) |
 | `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |
-| `rules/non-harness-workflow.md` | Planning workflow (non-harness projects only) |
 | `skills/harness-init/` | Project initialization with hooks and scaffolding |
 | `skills/harness-continue/` | Session continuation with team spawn templates |
 
@@ -244,6 +297,27 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
 ---
 
 ## Changelog
+
+### v3.2.2 (2026-03-21)
+- Replaced TodoWrite with TaskCreate/TaskUpdate (TodoWrite no longer exists in Claude Code)
+- Renamed "delegate mode" to "plan mode" to match current Claude Code terminology
+- Added worktree isolation for teammate scope enforcement (`isolation: "worktree"` in Task() calls)
+- Added PostCompact hook for automatic context re-injection after compaction
+- Made PostToolUse build-check hooks async (non-blocking)
+- Added Auto-Memory vs context_summary.md guidance
+- Synced CLAUDE.md template with installed global copy (Agent Autonomy override callout, git identity mismatch fix, context_summary.md anti-patterns)
+- Added path-scoped frontmatter to agent-teams-protocol.md (already had `globs: [.harness/**]`)
+- Removed `non-harness-workflow.md` rule; core loop folded into CLAUDE.md (saves ~3K tokens per session)
+- Removed `engineering-standards.md` rule; 100% redundant with CLAUDE.md (saves ~3K tokens per session)
+- Fixed TaskCreate API shape: dependencies set via TaskUpdate addBlockedBy, not TaskCreate blocked_by
+- Fixed TeammateIdle documentation: hook prompts reassignment, doesn't auto-assign
+- Fixed PostCompact hook: uses `type: "prompt"` for mechanical context injection
+- Added PreToolUse scope enforcement hook (`enforce-scope.sh`) — blocks edits outside assigned scope
+- Added PreToolUse git identity hook (`verify-git-identity.sh`) — blocks push/pull with wrong identity
+- Added native `owner` field on TaskUpdate for task assignment alongside features.json `assigned_to`
+- Added `activeForm` to TaskCreate examples for better spinner UX
+- Added usage recommendations section to README
+- Updated enforcement tier documentation with honest hook classification (mechanical vs prompted)
 
 ### v3.2.1 (2026-02-18)
 - Fixed PostToolUse hook schema: PascalCase event name, proper nested `hooks` array
