@@ -1,6 +1,6 @@
-# Ovidiu's Claude Code Harness — Distribution Repository
+# VV Claude Code Harness — Distribution Repository
 
-This repo distributes Ovidiu's Claude Code Harness — it is NOT an application codebase.
+This repo distributes VV Claude Code Harness — it is NOT an application codebase.
 
 ## What This Repo Contains
 

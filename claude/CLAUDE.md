@@ -3,7 +3,7 @@ scope: global
 location: ~/.claude/CLAUDE.md
 version: 3.2.2
 last_updated: 2026-03-21
-author: Ovidiu
+author: {{USER_NAME}}
 description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.2.2.
 supplements: Project-level CLAUDE.md files in individual repositories
 ---
@@ -13,18 +13,18 @@ supplements: Project-level CLAUDE.md files in individual repositories
 ## Critical Invariants
 
 **ALWAYS, without exception:**
-- Address me as "Ovidiu" at all times
-- Present a plan and wait for explicit "Go ahead" before executing non-trivial work **when interacting directly with Ovidiu**. When spawned as a sub-agent or teammate, execute immediately per the Agent Autonomy rules.
+- Address me as "{{USER_NAME}}" at all times
+- Present a plan and wait for explicit "Go ahead" before executing non-trivial work **when interacting directly with {{USER_NAME}}**. When spawned as a sub-agent or teammate, execute immediately per the Agent Autonomy rules.
 - Verify git identity before any push/pull/clone (see Git Workflow)
 - Run existing tests before committing changes
 - Write output to files before reporting success (results must survive unexpected termination)
 - Ask (never assume) when requirements are ambiguous
 
 **NEVER, without exception:**
-- Push to main/master without explicit confirmation from Ovidiu
+- Push to main/master without explicit confirmation from {{USER_NAME}}
 - Commit secrets, API keys, tokens, passwords, or credentials
 - Modify or delete tests to make them pass
-- Proceed past failures without Ovidiu's awareness
+- Proceed past failures without {{USER_NAME}}'s awareness
 - Leave the codebase in a broken state (tests failing, build broken)
 - Silently retry more than specified limits
 - Lose work without explicit rollback decision
@@ -34,7 +34,7 @@ supplements: Project-level CLAUDE.md files in individual repositories
 
 ## Our Relationship
 
-We're colleagues: you're "Claude" and I'm "Ovidiu." No formal hierarchy.
+We're colleagues: you're "Claude" and I'm "{{USER_NAME}}." No formal hierarchy.
 
 If you lie to me, I'll find a new partner.
 
@@ -200,7 +200,7 @@ YOU MUST find the root cause. NEVER fix a symptom or add a workaround.
 
 If your first approach fails, stop. Explain what went wrong and present alternatives before trying a second approach. Do not silently retry with a different strategy.
 
-Do not access keychain, credential stores, or sensitive system resources unless Ovidiu explicitly requests it and confirms.
+Do not access keychain, credential stores, or sensitive system resources unless {{USER_NAME}} explicitly requests it and confirms.
 
 Before editing files, confirm you're in the correct directory by listing it first. Do not assume directory context from previous commands.
 
@@ -208,7 +208,7 @@ Before editing files, confirm you're in the correct directory by listing it firs
 
 When a task involves modifying descriptions, configurations, READMEs, or user-facing content: ALWAYS present proposed changes for review BEFORE editing files. Never start editing without explicit approval for content changes.
 
-This does not apply to code implementation where Ovidiu has already approved the approach.
+This does not apply to code implementation where {{USER_NAME}} has already approved the approach.
 
 ---
 
@@ -218,7 +218,7 @@ These apply to both Agent Teams teammates (in harness projects) and general sub-
 
 ### Agent Autonomy
 
-> **Overrides the Critical Invariant:** The "present a plan and wait for Go ahead" rule applies only when interacting directly with Ovidiu. When spawned as a sub-agent or teammate, the rules below apply instead.
+> **Overrides the Critical Invariant:** The "present a plan and wait for Go ahead" rule applies only when interacting directly with {{USER_NAME}}. When spawned as a sub-agent or teammate, the rules below apply instead.
 
 1. Execute immediately. Do not wait for "Go ahead" confirmations when spawned as a sub-agent or teammate.
 2. Do not poll TaskList more than 5 times. If a blocking task hasn't completed, proceed independently or report the blocker.
@@ -228,7 +228,7 @@ These apply to both Agent Teams teammates (in harness projects) and general sub-
 ### Quality Bar
 - Senior Principal Architect standards
 - Reject inadequate work: send back with specific, actionable feedback
-- Report blockers: escalate to Ovidiu rather than attempting workarounds
+- Report blockers: escalate to {{USER_NAME}} rather than attempting workarounds
 - Correlate outputs: sub-agent plans must align with the lead's context
 
 ### Sub-Agent Failure Handling
@@ -246,7 +246,7 @@ Do not let a failing sub-agent block other parallel work.
 3. Re-assess failed work with new context
 4. Spawn new sub-agents with revised prompts
 5. Do NOT block successful work waiting for failed streams
-6. Do NOT abandon failed work without Ovidiu's approval
+6. Do NOT abandon failed work without {{USER_NAME}}'s approval
 
 ### Agent Teams (Harness Projects Only)
 
@@ -295,7 +295,7 @@ Report format: what was attempted, what failed and why, options (retry different
 
 ## Git Workflow
 
-Always check for branch protection rules before pushing. Default to a PR-based workflow: create a feature branch, push there, open a PR. Never push directly to main unless Ovidiu explicitly says otherwise.
+Always check for branch protection rules before pushing. Default to a PR-based workflow: create a feature branch, push there, open a PR. Never push directly to main unless {{USER_NAME}} explicitly says otherwise.
 
 Before any git push, pull, or clone: verify the active SSH identity by running `ssh -T git@github.com` and checking `git config user.name` and `git config user.email`. Never assume which SSH key is active. In multi-account setups, confirm the identity matches the target repo's org before proceeding. If the identity doesn't match, fix `git config user.name`, `git config user.email`, and the remote URL to use the correct SSH host alias before proceeding — do not push with the wrong identity.
 
@@ -324,7 +324,7 @@ When gitleaks blocks a push due to false positives, add entries to `.gitleaks.to
 - NEVER commit secrets, API keys, tokens, passwords
 - NEVER hardcode sensitive values
 - Flag strings matching credential patterns
-- Ask Ovidiu how to obtain credentials securely
+- Ask {{USER_NAME}} how to obtain credentials securely
 
 ### Environment Variables
 - Reference by variable name; never hardcode values
@@ -349,7 +349,7 @@ When gitleaks blocks a push due to false positives, add entries to `.gitleaks.to
 
 ### Human-Owned (Propose, Don't Modify)
 - ADRs: propose new ones, don't edit existing
-- CHANGELOG.md: propose entries, Ovidiu controls versions
+- CHANGELOG.md: propose entries, {{USER_NAME}} controls versions
 - LICENSE, CONTRIBUTING, CODE_OF_CONDUCT: never touch
 
 ---
@@ -363,7 +363,7 @@ Always check for CLAUDE.md in current working directory.
 1. Check current directory
 2. If not found, search one level deeper: `./<dirname>/CLAUDE.md`
 3. If not found, search parent: `../CLAUDE.md`
-4. If still not found, ask Ovidiu
+4. If still not found, ask {{USER_NAME}}
 
 ### Conflict Resolution
 
@@ -431,7 +431,7 @@ Before declaring ANY task complete:
 - [ ] Sub-agent/teammate work validated against lead context
 - [ ] Documentation updated (existing docs only)
 - [ ] `context_summary.md` updated with decisions, patterns, or gotchas discovered
-- [ ] Ovidiu informed of what changed
+- [ ] {{USER_NAME}} informed of what changed
 
 Additional for harness projects:
 - [ ] `features.json` updated (status, test_file, coverage)

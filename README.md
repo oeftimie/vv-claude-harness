@@ -1,4 +1,4 @@
-# Ovidiu's Claude Code Harness
+# VV Claude Code Harness
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
@@ -252,15 +252,11 @@ Everything you need is in this repo:
 
 ```bash
 unzip harness-v3.2.2.zip
-cp claude/CLAUDE.md ~/.claude/CLAUDE.md
-cp -r claude/rules/*.md ~/.claude/rules/
-cp -r claude/skills/harness-init ~/.claude/skills/
-cp -r claude/skills/harness-continue ~/.claude/skills/
-
-# Enable Agent Teams
-grep -q 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' ~/.zshrc || echo 'export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1' >> ~/.zshrc
-source ~/.zshrc
+cd vv-claude-harness
+./install
 ```
+
+The installer backs up existing files, personalizes CLAUDE.md with your name, and handles upgrades from older versions. See [INSTALL.md](./INSTALL.md) for options (`--dry-run`, `--name`, `--upgrade-only`).
 
 ### Usage
 

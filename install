@@ -1,0 +1,569 @@
+#!/usr/bin/env python3
+"""
+VV Claude Code Harness — Installer v3.2.2
+
+Usage:
+  ./install                  Interactive install (prompts for name)
+  ./install --name "Jane"    Non-interactive install
+  ./install --dry-run        Show what would be done without doing it
+  ./install --no-backup      Skip backup of existing files
+  ./install --upgrade-only   Only upgrade per-project harness files (no global install)
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+HARNESS_VERSION = "3.2.2"
+CLAUDE_DIR = Path.home() / ".claude"
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+# Files to install (source relative to SCRIPT_DIR → destination relative to ~/.claude/)
+GLOBAL_FILES = {
+    "claude/CLAUDE.md": "CLAUDE.md",
+    "claude/rules/agent-teams-protocol.md": "rules/agent-teams-protocol.md",
+}
+
+GLOBAL_DIRS = {
+    "claude/skills/harness-init": "skills/harness-init",
+    "claude/skills/harness-continue": "skills/harness-continue",
+}
+
+# Files that older versions installed but are no longer needed
+DEPRECATED_FILES = [
+    "rules/non-harness-workflow.md",
+    "rules/engineering-standards.md",
+]
+
+DEPRECATED_DIRS = [
+    "harness/",
+    "skills/context-graph/",
+    "templates/",
+]
+
+# Only remove commands/ if it contains harness-specific files
+DEPRECATED_COMMAND_FILES = [
+    "commands/project-harness-init.md",
+    "commands/project-harness-continue.md",
+]
+
+AGENT_TEAMS_ENV_VAR = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
+
+
+def color(text, code):
+    """ANSI color wrapper. No-op if not a terminal."""
+    if not sys.stdout.isatty():
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def green(text):
+    return color(text, "32")
+
+
+def yellow(text):
+    return color(text, "33")
+
+
+def red(text):
+    return color(text, "31")
+
+
+def dim(text):
+    return color(text, "2")
+
+
+def bold(text):
+    return color(text, "1")
+
+
+def detect_git_name():
+    """Get user's name from git config."""
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True, text=True, timeout=5
+        )
+        name = result.stdout.strip()
+        if name:
+            return name
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return None
+
+
+def detect_installed_version():
+    """Read the harness version from the installed CLAUDE.md frontmatter."""
+    claude_md = CLAUDE_DIR / "CLAUDE.md"
+    if not claude_md.exists():
+        return None
+    try:
+        content = claude_md.read_text()
+        match = re.search(r'^version:\s*(.+)$', content, re.MULTILINE)
+        if match:
+            return match.group(1).strip()
+    except OSError:
+        pass
+    return None
+
+
+def detect_shell_profile():
+    """Find the user's shell profile file."""
+    shell = os.environ.get("SHELL", "/bin/zsh")
+    if "zsh" in shell:
+        for profile in [Path.home() / ".zshrc", Path.home() / ".zprofile"]:
+            if profile.exists():
+                return profile
+        return Path.home() / ".zshrc"
+    elif "bash" in shell:
+        for profile in [Path.home() / ".bashrc", Path.home() / ".bash_profile"]:
+            if profile.exists():
+                return profile
+        return Path.home() / ".bashrc"
+    return Path.home() / ".profile"
+
+
+def backup_existing(dry_run=False):
+    """Backup existing harness files. Returns backup dir path or None."""
+    existing = []
+
+    # Check global files
+    for dest in GLOBAL_FILES.values():
+        path = CLAUDE_DIR / dest
+        if path.exists():
+            existing.append(path)
+
+    # Check global dirs
+    for dest in GLOBAL_DIRS.values():
+        path = CLAUDE_DIR / dest
+        if path.exists():
+            existing.append(path)
+
+    if not existing:
+        return None
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup_dir = CLAUDE_DIR / f"backup-{timestamp}"
+
+    if dry_run:
+        print(f"  {dim('Would backup to:')} {backup_dir}")
+        for p in existing:
+            rel = p.relative_to(CLAUDE_DIR)
+            print(f"    {dim(str(rel))}")
+        return backup_dir
+
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    for path in existing:
+        rel = path.relative_to(CLAUDE_DIR)
+        dest = backup_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_dir():
+            shutil.copytree(path, dest, dirs_exist_ok=True)
+        else:
+            shutil.copy2(path, dest)
+
+    print(f"  Backed up to: {yellow(str(backup_dir))}")
+    return backup_dir
+
+
+def install_global_files(user_name, dry_run=False):
+    """Copy global files, substituting {{USER_NAME}}."""
+    for src_rel, dest_rel in GLOBAL_FILES.items():
+        src = SCRIPT_DIR / src_rel
+        dest = CLAUDE_DIR / dest_rel
+
+        if not src.exists():
+            print(f"  {red('Missing source:')} {src_rel}")
+            return False
+
+        if dry_run:
+            print(f"  {dim(src_rel)} -> {dim(f'~/.claude/{dest_rel}')}")
+            continue
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        content = src.read_text()
+        content = content.replace("{{USER_NAME}}", user_name)
+        dest.write_text(content)
+
+    for src_rel, dest_rel in GLOBAL_DIRS.items():
+        src = SCRIPT_DIR / src_rel
+        dest = CLAUDE_DIR / dest_rel
+
+        if not src.exists():
+            print(f"  {red('Missing source:')} {src_rel}")
+            return False
+
+        if dry_run:
+            print(f"  {dim(src_rel + '/')} -> {dim(f'~/.claude/{dest_rel}/')}")
+            continue
+
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest)
+
+    return True
+
+
+def remove_deprecated(dry_run=False):
+    """Remove files/dirs from older versions that are no longer needed."""
+    removed = []
+    for rel in DEPRECATED_FILES:
+        path = CLAUDE_DIR / rel
+        if path.exists():
+            if dry_run:
+                print(f"  {dim(f'Would remove: ~/.claude/{rel}')}")
+            else:
+                path.unlink()
+            removed.append(rel)
+
+    for rel in DEPRECATED_DIRS:
+        path = CLAUDE_DIR / rel
+        if path.exists():
+            if dry_run:
+                print(f"  {dim(f'Would remove: ~/.claude/{rel}')}")
+            else:
+                shutil.rmtree(path)
+            removed.append(rel)
+
+    for rel in DEPRECATED_COMMAND_FILES:
+        path = CLAUDE_DIR / rel
+        if path.exists():
+            if dry_run:
+                print(f"  {dim(f'Would remove: ~/.claude/{rel}')}")
+            else:
+                path.unlink()
+            removed.append(rel)
+
+    return removed
+
+
+def setup_agent_teams_env(dry_run=False):
+    """Ensure CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 is in the shell profile."""
+    profile = detect_shell_profile()
+
+    # Check if already set
+    if profile.exists():
+        content = profile.read_text()
+        if AGENT_TEAMS_ENV_VAR in content:
+            print(f"  Agent Teams env var already in {profile.name}")
+            return True
+
+    line = f'\nexport {AGENT_TEAMS_ENV_VAR}=1\n'
+
+    if dry_run:
+        print(f"  {dim(f'Would add to {profile.name}:')} export {AGENT_TEAMS_ENV_VAR}=1")
+        return True
+
+    with open(profile, "a") as f:
+        f.write(line)
+    print(f"  Added {AGENT_TEAMS_ENV_VAR}=1 to {profile.name}")
+    return True
+
+
+def upgrade_project(project_dir, from_version, dry_run=False):
+    """Upgrade a per-project harness installation."""
+    project = Path(project_dir)
+    harness_dir = project / ".harness"
+    claude_dir = project / ".claude"
+
+    if not harness_dir.exists():
+        print(f"  {red('No .harness/ directory found in')} {project_dir}")
+        return False
+
+    print(f"\n  Upgrading project: {bold(str(project))}")
+
+    # v3.1 -> v3.2+: migrate decisions.md to context_summary.md
+    if from_version and from_version.startswith("3.1"):
+        decisions = harness_dir / "decisions.md"
+        context_summary = harness_dir / "context_summary.md"
+        if decisions.exists() and not context_summary.exists():
+            if dry_run:
+                print(f"    {dim('Would migrate decisions.md -> context_summary.md')}")
+            else:
+                header = (
+                    "# Context Summary\n\n"
+                    "## Active Context\n"
+                    "- Currently working on: (migrated from v3.1, update at next session start)\n"
+                    "- Next up: (check features.json)\n\n"
+                    "## Cross-Cutting Concerns\n"
+                    "- (review decisions.md below and extract cross-cutting items here)\n\n"
+                    "## Migrated Decisions\n\n"
+                )
+                content = header + decisions.read_text()
+                content += "\n\n---\n(Clean up this file at next session start: move items to proper sections)\n"
+                context_summary.write_text(content)
+                decisions.unlink()
+                print(f"    Migrated decisions.md -> context_summary.md")
+
+        # Add new fields to features.json
+        features_file = harness_dir / "features.json"
+        if features_file.exists():
+            if dry_run:
+                print(f"    {dim('Would add scope/depends_on/assigned_to to features.json')}")
+            else:
+                data = json.loads(features_file.read_text())
+                for feat in data.get("features", []):
+                    feat.setdefault("scope", [])
+                    feat.setdefault("depends_on", [])
+                    feat.setdefault("assigned_to", None)
+                features_file.write_text(json.dumps(data, indent=2) + "\n")
+                print(f"    Added scope/depends_on/assigned_to to features.json")
+
+    # Update harness.json version
+    harness_json = harness_dir / "harness.json"
+    if harness_json.exists():
+        if dry_run:
+            print(f"    {dim(f'Would update harness.json version to {HARNESS_VERSION}')}")
+        else:
+            data = json.loads(harness_json.read_text())
+            data["version"] = HARNESS_VERSION
+            harness_json.write_text(json.dumps(data, indent=2) + "\n")
+            print(f"    Updated harness.json version to {HARNESS_VERSION}")
+
+    # Update quality gate hook scripts
+    hooks_dir = claude_dir / "hooks"
+    if hooks_dir.exists():
+        hook_templates = {
+            "verify-task-quality.sh": CLAUDE_DIR / "skills/harness-init/verify-task-quality.sh.template",
+            "check-remaining-tasks.sh": CLAUDE_DIR / "skills/harness-init/check-remaining-tasks.sh.template",
+        }
+        for hook_name, template in hook_templates.items():
+            hook_file = hooks_dir / hook_name
+            if template.exists():
+                if dry_run:
+                    print(f"    {dim(f'Would update {hook_name}')}")
+                else:
+                    shutil.copy2(template, hook_file)
+                    hook_file.chmod(0o755)
+                    print(f"    Updated {hook_name}")
+
+    # Add PostCompact hook to .claude/settings.json if missing
+    settings_file = claude_dir / "settings.json"
+    if settings_file.exists():
+        data = json.loads(settings_file.read_text())
+        hooks = data.setdefault("hooks", {})
+        if "PostCompact" not in hooks:
+            hooks["PostCompact"] = [{
+                "hooks": [{
+                    "type": "prompt",
+                    "prompt": "Context was just compacted. Immediately re-read .harness/context_summary.md and run TaskList to recover your current state before continuing work."
+                }]
+            }]
+            if dry_run:
+                print(f"    {dim('Would add PostCompact hook to settings.json')}")
+            else:
+                settings_file.write_text(json.dumps(data, indent=2) + "\n")
+                print(f"    Added PostCompact hook to settings.json")
+
+    return True
+
+
+def verify_installation():
+    """Check that all expected files exist."""
+    errors = []
+
+    for dest_rel in GLOBAL_FILES.values():
+        path = CLAUDE_DIR / dest_rel
+        if not path.exists():
+            errors.append(f"Missing: ~/.claude/{dest_rel}")
+
+    for dest_rel in GLOBAL_DIRS.values():
+        skill_md = CLAUDE_DIR / dest_rel / "SKILL.md"
+        if not skill_md.exists():
+            errors.append(f"Missing: ~/.claude/{dest_rel}/SKILL.md")
+
+    return errors
+
+
+def check_prerequisites():
+    """Check that required tools are available."""
+    issues = []
+
+    # Check python3 (we're running, so this is fine)
+
+    # Check jq
+    try:
+        subprocess.run(["jq", "--version"], capture_output=True, timeout=5)
+    except (subprocess.SubprocessError, FileNotFoundError):
+        issues.append("jq not found (install with: brew install jq)")
+
+    # Check git
+    try:
+        subprocess.run(["git", "--version"], capture_output=True, timeout=5)
+    except (subprocess.SubprocessError, FileNotFoundError):
+        issues.append("git not found")
+
+    # Check claude
+    try:
+        subprocess.run(["claude", "--version"], capture_output=True, timeout=5)
+    except (subprocess.SubprocessError, FileNotFoundError):
+        issues.append("Claude Code CLI not found (install from: https://docs.anthropic.com/en/docs/claude-code)")
+
+    return issues
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Install or upgrade VV Claude Code Harness",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Examples:\n"
+               "  ./install                    Interactive install\n"
+               "  ./install --name 'Jane'      Non-interactive install\n"
+               "  ./install --dry-run           Preview without changes\n"
+               "  ./install --upgrade-only .    Upgrade project in current dir\n"
+    )
+    parser.add_argument("--name", help="Your name (used in CLAUDE.md). Default: git config user.name")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be done without doing it")
+    parser.add_argument("--no-backup", action="store_true", help="Skip backup of existing files")
+    parser.add_argument("--upgrade-only", metavar="PROJECT_DIR", nargs="?", const=".",
+                        help="Only upgrade per-project harness files (default: current dir)")
+
+    args = parser.parse_args()
+
+    print(f"\n{bold('Claude Code Harness Installer')} {dim(f'v{HARNESS_VERSION}')}\n")
+
+    # --- Per-project upgrade only ---
+    if args.upgrade_only:
+        installed = detect_installed_version()
+        if not installed:
+            print(f"{red('No global harness installation found.')} Run ./install first.\n")
+            sys.exit(1)
+
+        project_dir = os.path.abspath(args.upgrade_only)
+        success = upgrade_project(project_dir, installed, dry_run=args.dry_run)
+        if success:
+            print(f"\n{green('Project upgrade complete.')}\n")
+        else:
+            print(f"\n{red('Project upgrade failed.')}\n")
+            sys.exit(1)
+        return
+
+    # --- Prerequisites ---
+    print(f"{bold('Checking prerequisites...')}")
+    issues = check_prerequisites()
+    if issues:
+        for issue in issues:
+            print(f"  {red('!')} {issue}")
+        print(f"\n{red('Fix the issues above before installing.')}\n")
+        sys.exit(1)
+    print(f"  {green('All prerequisites met.')}\n")
+
+    # --- Detect mode ---
+    installed_version = detect_installed_version()
+    if installed_version:
+        if installed_version == HARNESS_VERSION:
+            print(f"{bold('Mode:')} Reinstall (v{HARNESS_VERSION} already installed)")
+        else:
+            print(f"{bold('Mode:')} Upgrade (v{installed_version} -> v{HARNESS_VERSION})")
+    else:
+        print(f"{bold('Mode:')} Fresh install")
+    print()
+
+    # --- Personalization ---
+    user_name = args.name
+    if not user_name:
+        detected = detect_git_name()
+        if detected:
+            # Extract first name as default
+            first_name = detected.split()[0]
+            prompt = f"Your name for Claude to use [{first_name}]: "
+        else:
+            first_name = None
+            prompt = "Your name for Claude to use: "
+
+        try:
+            user_input = input(prompt).strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.")
+            sys.exit(1)
+
+        user_name = user_input if user_input else first_name
+
+        if not user_name:
+            print(f"{red('Name is required.')} Use --name or set git config user.name\n")
+            sys.exit(1)
+
+    print(f"  Using name: {bold(user_name)}\n")
+
+    # --- Backup ---
+    if not args.no_backup:
+        print(f"{bold('Backing up existing files...')}")
+        backup = backup_existing(dry_run=args.dry_run)
+        if not backup:
+            print(f"  No existing harness files to backup.")
+        print()
+
+    # --- Install global files ---
+    print(f"{bold('Installing global files...')}")
+    success = install_global_files(user_name, dry_run=args.dry_run)
+    if not success:
+        print(f"\n{red('Installation failed.')}\n")
+        sys.exit(1)
+    print(f"  {green('Done.')}\n")
+
+    # --- Remove deprecated files ---
+    print(f"{bold('Cleaning up deprecated files...')}")
+    removed = remove_deprecated(dry_run=args.dry_run)
+    if removed:
+        for r in removed:
+            if not args.dry_run:
+                print(f"  Removed: {dim(r)}")
+    else:
+        print(f"  No deprecated files found.")
+    print()
+
+    # --- Agent Teams env var ---
+    print(f"{bold('Configuring Agent Teams...')}")
+    setup_agent_teams_env(dry_run=args.dry_run)
+    print()
+
+    # --- Verify ---
+    if not args.dry_run:
+        print(f"{bold('Verifying installation...')}")
+        errors = verify_installation()
+        if errors:
+            for e in errors:
+                print(f"  {red('!')} {e}")
+            print(f"\n{red('Verification failed.')}\n")
+            sys.exit(1)
+        print(f"  {green('All files installed correctly.')}\n")
+
+    # --- Summary ---
+    print(f"{bold('='*50)}")
+    if args.dry_run:
+        print(f"{yellow('DRY RUN — no changes were made.')}")
+    else:
+        print(f"{green('Installation complete!')}")
+    print()
+    print(f"  Installed to: ~/.claude/")
+    print(f"  Version:      {HARNESS_VERSION}")
+    print(f"  Name:         {user_name}")
+    print()
+    print(f"{bold('Next steps:')}")
+    print(f"  1. Start a new terminal (or run: source {detect_shell_profile()})")
+    print(f"  2. Initialize a project:")
+    print(f"       cd ~/Projects/MyApp")
+    print(f"       claude")
+    print(f"       /harness-init")
+    print()
+    print(f"  3. Continue work on harness projects:")
+    print(f"       claude")
+    print(f"       /harness-continue")
+    print()
+
+    if installed_version and installed_version != HARNESS_VERSION:
+        print(f"{bold('Upgrade note:')}")
+        print(f"  To upgrade existing harness projects, run in each project dir:")
+        print(f"    ./install --upgrade-only /path/to/project")
+        print()
+
+
+if __name__ == "__main__":
+    main()
