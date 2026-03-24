@@ -40,7 +40,12 @@ Every feature in `.harness/features.json` uses this shape:
   "assigned_to": null,
   "test_file": null,
   "coverage": null,
-  "notes": null
+  "notes": null,
+  "correction_cycles": 0,
+  "scope_expansions": [],
+  "approaches_tried": [],
+  "failure_reason": null,
+  "discovered_via": null
 }
 ```
 
@@ -57,6 +62,13 @@ Every feature in `.harness/features.json` uses this shape:
 
 **`assigned_to`**: teammate name when Agent Teams is active, `null` otherwise. Helps the lead reconstruct state if the session dies and restarts.
 
+**Operational metrics** (who updates what):
+- `correction_cycles` — incremented automatically by `verify-task-quality.sh` on each TaskCompleted rejection. **Never manually set.**
+- `scope_expansions` — array of files/dirs added to scope after initial assignment. Lead appends here when approving a scope expansion request.
+- `approaches_tried` — brief notes on approaches attempted before the passing implementation. Teammate includes this in the task-complete SendMessage; lead populates the field.
+- `failure_reason` — lead sets this when moving a feature to `status: "failed"`. Must explain why, not just that it failed.
+- `discovered_via` — lead sets this when adding a feature that emerged from another feature's implementation. Value is the source feature's ID (e.g., `"F002"`). Different from `depends_on` (technical dependency) — this is discovery lineage.
+
 Feature is not done until: `status` is `"passing"`, `test_file` points to a test, and `coverage` >= 95% on touched code.
 
 ## Model Selection
@@ -71,7 +83,18 @@ Choose models based on the cognitive demand of each role:
 | Researcher | Sonnet | Web search and doc reading are retrieval-heavy, not reasoning-heavy |
 | Reviewer | Opus | Deep code review catches subtle bugs; worth the cost |
 
-**Override**: if an implementer's scope is architecturally complex (10+ files, cross-cutting concerns, security-sensitive), upgrade to Opus.
+**Static overrides**: if an implementer's scope is architecturally complex (10+ files, cross-cutting concerns, security-sensitive), upgrade to Opus regardless of history.
+
+**Dynamic overrides** (based on operational metrics from past sessions): Before assigning models, the lead reviews `features.json` for historical patterns in the same scope directories:
+
+| Historical signal | Action |
+|-------------------|--------|
+| `correction_cycles >= 3` on a past feature in the same scope | Upgrade this feature's implementer to Opus |
+| `scope_expansions >= 3` on a past feature | Assign a broader initial scope; note it as expansion-prone in the spawn prompt |
+| `failure_reason` mentions "approach mismatch" or "misunderstood interface" | Set `require_plan_approval: true` |
+| `discovered_via` depth > 1 (discovered features spawning discovered features) | Fold into parent scope rather than spawning a separate teammate |
+
+These are judgment calls for the lead, not mechanical rules. If no historical data exists (first session, new scope), default to Sonnet.
 
 The lead specifies model in the `Task()` call via `model: "sonnet"` or `model: "opus"`. Default to Sonnet for implementers; use Opus only when justified.
 
@@ -91,12 +114,13 @@ The lead:
 8. Resolves conflicts if two teammates need overlapping files
 9. Reviews completed work (exit plan mode if needed for code review)
 10. Synthesizes results after all teammates complete
-11. Updates `.harness/features.json` (status, assigned_to, test_file, coverage)
-12. Updates `.harness/context_summary.md` with decisions and patterns from the session
-13. Writes session handoff to `claude-progress.txt`
-14. Sends `shutdown_request` to all teammates, waits for `shutdown_response`
-15. Calls `TeamDelete` to clean up
-16. Commits
+11. Updates `.harness/features.json` (status, assigned_to, test_file, coverage, approaches_tried, scope_expansions, failure_reason as appropriate)
+12. Runs retrospective (Phase 5.5 in harness-continue): analyzes correction_cycles, scope_expansions, model fit, discovery lineage across the session's features
+13. Updates `.harness/context_summary.md` with decisions, patterns, and retrospective findings (Meta-Session + Meta-Patterns sections)
+14. Writes session handoff to `claude-progress.txt`
+15. Sends `shutdown_request` to all teammates, waits for `shutdown_response`
+16. Calls `TeamDelete` to clean up
+17. Commits
 
 If the lead catches itself starting to implement code instead of delegating, it should stop and spawn a teammate for that work.
 
@@ -386,12 +410,12 @@ Don't optimize for cost at the expense of quality. The point of model mixing is 
 
 In a harness-managed project, the lead agent:
 
-1. Reads `.harness/features.json` to select features (using `scope` and `depends_on` to plan team structure)
+1. Reads `.harness/features.json` to select features (using `scope`, `depends_on`, and operational metrics to plan team structure and model selection)
 2. Maps features to teammate scopes and task dependencies
 3. Sets `assigned_to` in features.json when spawning teammates
 4. Creates tasks via `TaskCreate`, then sets dependencies via `TaskUpdate` with `addBlockedBy` (derived from `depends_on`)
-5. Updates `features.json` as teammates complete work (sets status, test_file, coverage, clears assigned_to)
-6. Appends to `.harness/context_summary.md` any architectural decisions made during the team session
+5. Updates `features.json` as teammates complete work (sets status, test_file, coverage, approaches_tried, clears assigned_to; appends to scope_expansions on approvals; sets failure_reason on failure)
+6. Runs the retrospective (Phase 5.5) after all features pass: analyzes operational metrics, writes Meta-Session entry and updates Meta-Patterns in `context_summary.md`
 7. Writes the session handoff to `claude-progress.txt` with a summary of all teammate work
 
-Teammates do NOT write to `features.json`, `context_summary.md`, or `claude-progress.txt`. That's the lead's job. Teammates write code, tests, and communicate via `SendMessage`.
+Teammates do NOT write to `features.json`, `context_summary.md`, or `claude-progress.txt`. That's the lead's job. Teammates write code, tests, and communicate via `SendMessage`. The one exception: teammates include `approaches_tried` notes in their task-complete SendMessage so the lead can populate the field.

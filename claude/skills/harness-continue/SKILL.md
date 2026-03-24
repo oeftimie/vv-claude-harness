@@ -111,8 +111,9 @@ No exceptions unless tooling is broken.
 
 ### When Feature Passes
 
-1. Update `.harness/features.json`: set status to `"passing"`, add `test_file` and `coverage`, clear `assigned_to`
+1. Update `.harness/features.json`: set status to `"passing"`, add `test_file` and `coverage`, clear `assigned_to`. Also populate `approaches_tried` with a brief note on what worked (even for single-session work — this feeds the retrospective).
 2. Append architectural decisions and discovered patterns to `.harness/context_summary.md`
+3. If you discovered a need for a new feature while implementing this one, add it to `features.json` with `discovered_via` pointing to this feature's ID.
 
 ### Compaction Strategy
 
@@ -134,7 +135,8 @@ After compaction, the **PostCompact hook** fires automatically and reminds you t
 ### Session End
 
 1. Run full test suite one final time
-2. Write handoff to `claude-progress.txt`:
+2. If all features are now passing, run the retrospective (see Phase 5.5 above — same process applies to single-session work). Skip if this is the project's first completed session.
+3. Write handoff to `claude-progress.txt`:
    ```
    ## Session [N] - [DATE]
    - Feature: F00X - [description]
@@ -159,11 +161,16 @@ Before spending tokens on teammates, produce a decomposition plan:
 
 1. Analyze the pending features in `.harness/features.json`
 2. Use `scope` and `depends_on` from each feature to identify parallelism opportunities and dependency chains
-3. Design the team:
-   - Which teammates, what scope (from features.json `scope` field), what model (Sonnet for implementers, Opus for reviewers)
+3. **Review historical operational metrics** from past features to calibrate the team:
+   - Features with `correction_cycles >= 3` in the same scope directories → upgrade implementer to Opus
+   - Features with `scope_expansions >= 3` → assign a broader initial scope to reduce mid-work expansion overhead
+   - Features with `discovered_via` depth > 1 → consider folding them into the parent feature's scope
+   - Scopes that needed frequent expansion in past sessions → note them as "expansion-prone" when scoping this team
+4. Design the team:
+   - Which teammates, what scope (from features.json `scope` field), what model (Sonnet default; Opus if historical metrics suggest high difficulty)
    - Which tasks depend on which (from features.json `depends_on` field, mapped to `TaskUpdate` `addBlockedBy` calls after task creation)
    - Whether any teammate needs `require_plan_approval: true`
-4. Present the plan to the user:
+5. Present the plan to the user:
 
 ```
 I propose this team structure:
@@ -250,6 +257,40 @@ When all teammates complete:
    - Record conflict resolution in `context_summary.md`
 4. Update `.harness/features.json` for each completed feature (status, test_file, coverage, clear assigned_to)
 5. Append decisions and patterns to `.harness/context_summary.md`
+
+### Phase 5.5: Retrospective (run before teardown when all features complete)
+
+When all features reach `status: "passing"`, run a metacognitive retrospective before teardown. This is the mechanism by which the harness improves its own coordination — not just the domain code.
+
+Review the operational metrics across all features completed this session:
+
+1. **Scope accuracy**: Which features had `scope_expansions > 0`? What does that reveal about how to scope similar work next time? (e.g., "auth/ and user/ are coupled — scope them together")
+2. **Model calibration**: Which features had `correction_cycles >= 3`? Were they on Sonnet? If yes, note that similar-scope features should use Opus.
+3. **Discovery lineage**: Which features have `discovered_via` set? Does the discovery pattern suggest the initial feature decomposition missed something systematic?
+4. **Approach patterns**: What patterns in `approaches_tried` worked repeatedly? What failed repeatedly?
+5. **Plan approval value**: Did `require_plan_approval` prevent rework, or was it overhead? Note which feature types benefited.
+
+Write findings to `.harness/context_summary.md` under a new `## Meta-Session [DATE]` section:
+
+```markdown
+## Meta-Session 2026-03-23
+- Scope accuracy: [findings — which scopes needed expansion and what that means]
+- Model calibration: [which features burned correction cycles on Sonnet; upgrade recommendation]
+- Discovery lineage: [which features were discovered mid-work; what to probe for at init time]
+- Approach patterns: [what worked, what failed]
+- Plan approval: [was it worth the overhead for which feature types]
+```
+
+**When to skip**: If this is the first session (no historical data in features.json operational metrics), skip the retrospective — there's nothing to analyze yet. Write a note: `## Meta-Session [DATE] — first session, no retrospective data yet`.
+
+Write findings to `## Meta-Patterns` for insights that generalize beyond this session:
+
+```markdown
+## Meta-Patterns
+- [Insight that applies to future sessions, not just this domain]
+```
+
+Do NOT write domain-specific decisions here — those go in the Domain sections. Meta-Patterns are coordination insights: when to use Opus, how to scope, when to require plan approval.
 
 ### Phase 5: Teardown
 

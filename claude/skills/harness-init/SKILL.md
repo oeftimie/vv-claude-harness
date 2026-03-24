@@ -84,11 +84,23 @@ Each feature has this shape:
   "assigned_to": null,
   "test_file": null,
   "coverage": null,
-  "notes": null
+  "notes": null,
+  "correction_cycles": 0,
+  "scope_expansions": [],
+  "approaches_tried": [],
+  "failure_reason": null,
+  "discovered_via": null
 }
 ```
 
 **Status values** (exhaustive enum): `pending`, `in-progress`, `blocked`, `passing`, `failed`.
+
+**Operational metrics** (updated automatically or by the lead — used in retrospectives and for dynamic model selection):
+- `correction_cycles`: incremented by the `verify-task-quality.sh` hook each time a TaskCompleted is rejected. High values signal the feature was harder than expected.
+- `scope_expansions`: array of file/directory strings added to scope after initial assignment. Frequent expansions mean the initial scope was too narrow.
+- `approaches_tried`: brief notes on approaches attempted before the passing implementation. Populated by the teammate in the task-complete message to lead.
+- `failure_reason`: why the feature reached `status: "failed"`. Essential for understanding root cause without re-reading conversation history.
+- `discovered_via`: ID of the feature whose implementation revealed the need for this feature (discovery lineage). Different from `depends_on`, which is a technical dependency.
 
 Feature is not done until:
 - `status` is `"passing"`
@@ -122,6 +134,12 @@ This file is referenced in CLAUDE.md and loaded every session.
 
 ### Gotchas
 - (none yet)
+
+## Meta-Patterns
+<!-- Coordination insights that apply across features — NOT domain-specific.
+     Populated by the retrospective step at session end.
+     These transfer to new projects: harness-init can import them as starting context. -->
+- (none yet — first retrospective will populate this)
 ```
 
 **`.harness/claude-progress.txt`**:
@@ -139,6 +157,12 @@ This file is referenced in CLAUDE.md and loaded every session.
 ```
 
 **`.harness/init.sh`**: Read the `init.sh.template` file in this skill's directory. Copy it into `.harness/init.sh`, configure for the detected stack, and make executable with `chmod +x`.
+
+The script accepts one optional argument: `smoke_test` or `full_test` (default: `full_test`).
+- `smoke_test` — compile/syntax check only, completes in <15s. Used by the `TaskCompleted` hook as a fast first-pass gate.
+- `full_test` — complete test suite with coverage. Used by the lead at session end and synthesis phase.
+
+When configuring for the project's stack, ensure both targets work correctly.
 
 ## Step 3.5: Configure Build Hooks
 
