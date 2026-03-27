@@ -1,8 +1,8 @@
 ---
 scope: global
 location: ~/.claude/CLAUDE.md
-version: 3.2.2
-last_updated: 2026-03-21
+version: 3.3.0-hyperagents.1
+last_updated: 2026-03-26
 author: {{USER_NAME}}
 description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.2.2.
 supplements: Project-level CLAUDE.md files in individual repositories

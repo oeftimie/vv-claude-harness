@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
-**Current version: v3.2.2**
+**Current version: v3.3.0-hyperagents.1 (Pre-release)**
 
 ---
 
@@ -293,6 +293,50 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
 ---
 
 ## Changelog
+
+### v3.3.0-hyperagents.1 (2026-03-26) — Pre-release
+
+**Metacognitive self-improvement**: The harness now learns from its own coordination patterns, not just from domain work. Inspired by [Facebook Research's HyperAgents framework](https://arxiv.org/abs/2603.19461), which demonstrated that systems whose improvement mechanisms are themselves improvable outperform fixed-meta alternatives.
+
+**Five coordinated changes:**
+
+1. **Operational metrics in features.json** — Five new fields track coordination quality:
+   - `correction_cycles`: auto-incremented by TaskCompleted hook on rejection. Signals features harder than expected.
+   - `scope_expansions`: files/dirs added to scope after initial assignment. Reveals initial scoping accuracy.
+   - `approaches_tried`: brief notes on what worked/failed before the passing implementation.
+   - `failure_reason`: why a feature reached `status: "failed"`. Root cause without re-reading history.
+   - `discovered_via`: discovery lineage — which feature's implementation revealed the need for this one (distinct from `depends_on` technical dependencies).
+
+2. **Structured retrospective (Phase 5.5)** — Runs after all features pass, before teardown. Analyzes `correction_cycles`, `scope_expansions`, `discovered_via`, and `approaches_tried` across the session. Writes findings to `context_summary.md` under:
+   - `## Meta-Session [DATE]`: session-specific insights (scope accuracy, model calibration, discovery patterns, approach successes/failures, plan approval value)
+   - `## Meta-Patterns`: generalizable coordination insights that transfer to new projects (when to use Opus, how to scope, when plan approval pays off)
+   - Applies to both single-session and Agent Teams workflows. Skipped on first session (no data yet).
+
+3. **Tiered test evaluation in init.sh** — Split test runs into two stages (inspired by HyperAgents' staged evaluation):
+   - `smoke_test`: compile/syntax check only, completes in <15s
+   - `full_test`: complete suite with coverage (existing behavior)
+   - TaskCompleted hook now runs smoke first; only runs full if smoke passes. Reduces cost of early rejection for compile errors.
+
+4. **Meta-Patterns section in context_summary.md** — Dedicated section for coordination insights, distinct from domain-specific patterns. Populated by retrospective step. Intended to transfer to new projects as starting context.
+
+5. **Dynamic model selection heuristics** — Phase 1 planning now reviews historical operational metrics before assigning Sonnet vs Opus:
+   - `correction_cycles >= 3` in same scope → upgrade implementer to Opus
+   - `scope_expansions >= 3` → assign broader initial scope, note as "expansion-prone"
+   - `failure_reason` mentions interface misunderstandings → set `require_plan_approval: true`
+   - `discovered_via` depth > 1 → consider folding into parent scope
+   - All judgment calls for the lead, not mechanical rules.
+
+**What this enables:** The harness accumulates coordination wisdom across sessions. After 3-4 Agent Teams sessions, it knows which scopes are tricky, which features need Opus, where to probe for hidden features at init. This is the practical version of HyperAgents' "metacognitive self-modification" — improving how the system improves, not just what it produces.
+
+**Installation:**
+```bash
+git clone https://github.com/oeftimie/vv-claude-harness.git
+cd vv-claude-harness
+git checkout hyperagents
+./install
+```
+
+**Status:** Pre-release for dogfooding and validation. Use the stable `v3.2.2` release (on `main` branch) for production work until this branch is proven.
 
 ### v3.2.2 (2026-03-21)
 - Replaced TodoWrite with TaskCreate/TaskUpdate (TodoWrite no longer exists in Claude Code)
