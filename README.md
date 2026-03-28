@@ -115,7 +115,8 @@ Two bugs discovered in real Agent Teams sessions:
 ~/.claude/
 ├── CLAUDE.md                                         # Core engineering standards (all projects)
 ├── rules/
-│   └── agent-teams-protocol.md                        # Agent Teams rules (harness projects only)
+│   ├── agent-teams-protocol.md                        # Agent Teams rules (harness projects only)
+│   └── code-quality.md                                # Mechanical code quality limits (all projects)
 └── skills/
     ├── harness-init/
     │   ├── SKILL.md                                   # /harness-init skill
