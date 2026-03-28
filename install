@@ -28,6 +28,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 GLOBAL_FILES = {
     "claude/CLAUDE.md": "CLAUDE.md",
     "claude/rules/agent-teams-protocol.md": "rules/agent-teams-protocol.md",
+    "claude/rules/code-quality.md": "rules/code-quality.md",
 }
 
 GLOBAL_DIRS = {
