@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VV Claude Code Harness — Installer v3.3.0-hyperagents.1
+VV Claude Code Harness — Installer v3.3.0
 
 Usage:
   ./install                  Interactive install (prompts for name)
@@ -20,7 +20,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-HARNESS_VERSION = "3.3.0-hyperagents.1"
+HARNESS_VERSION = "3.3.0"
 CLAUDE_DIR = Path.home() / ".claude"
 SCRIPT_DIR = Path(__file__).resolve().parent
 

@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
-**Current version: v3.3.0-hyperagents.1 (Pre-release)**
+**Current version: v3.3.0**
 
 ---
 
@@ -295,7 +295,7 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
 
 ## Changelog
 
-### v3.3.0-hyperagents.1 (2026-03-26) — Pre-release
+### v3.3.0 (2026-03-28)
 
 **Metacognitive self-improvement**: The harness now learns from its own coordination patterns, not just from domain work. Inspired by [Facebook Research's HyperAgents framework](https://arxiv.org/abs/2603.19461), which demonstrated that systems whose improvement mechanisms are themselves improvable outperform fixed-meta alternatives.
 
@@ -328,16 +328,6 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
    - All judgment calls for the lead, not mechanical rules.
 
 **What this enables:** The harness accumulates coordination wisdom across sessions. After 3-4 Agent Teams sessions, it knows which scopes are tricky, which features need Opus, where to probe for hidden features at init. This is the practical version of HyperAgents' "metacognitive self-modification" — improving how the system improves, not just what it produces.
-
-**Installation:**
-```bash
-git clone https://github.com/oeftimie/vv-claude-harness.git
-cd vv-claude-harness
-git checkout hyperagents
-./install
-```
-
-**Status:** Pre-release for dogfooding and validation. Use the stable `v3.2.2` release (on `main` branch) for production work until this branch is proven.
 
 ### v3.2.2 (2026-03-21)
 - Replaced TodoWrite with TaskCreate/TaskUpdate (TodoWrite no longer exists in Claude Code)
