@@ -1,8 +1,14 @@
 #!/bin/bash
-# Harness v3.2.2 - TaskCompleted quality gate hook
+# Harness - TaskCompleted quality gate hook
 # Runs when a teammate marks a task as complete.
 # Exit code 0 = accept completion
 # Exit code 2 = reject completion, send feedback to teammate
+#
+# Staged evaluation (inspired by HyperAgents):
+#   Stage 1: smoke_test — fast compile/syntax check
+#   Stage 2: full_test  — complete suite with coverage
+# Failing at Stage 1 avoids the cost of a full test run.
+# correction_cycles is incremented in features.json on any rejection.
 
 set -euo pipefail
 
@@ -12,27 +18,64 @@ cd "$PROJECT_ROOT"
 # Read hook input from stdin
 INPUT=$(cat)
 
-# Run the project's test suite
-echo "Running test suite..." >&2
 if [ ! -f ".harness/init.sh" ]; then
     echo "Task rejected: .harness/init.sh not found. Cannot verify tests pass."
     echo "Run /harness-init to create the test script, or create it manually."
     exit 2
 fi
 
-TEST_OUTPUT=$(bash .harness/init.sh 2>&1) || {
-    echo "Task rejected: tests are failing. Fix the failures before marking complete."
+# Increment correction_cycles for all in-progress features.
+# This tracks how many times the quality gate rejected completion —
+# useful for retrospectives and dynamic model selection.
+increment_correction_cycles() {
+    if [ -f ".harness/features.json" ]; then
+        python3 - <<'PYEOF'
+import json
+try:
+    with open('.harness/features.json', 'r') as f:
+        data = json.load(f)
+    changed = False
+    for feature in data.get('features', []):
+        if feature.get('status') == 'in-progress':
+            feature['correction_cycles'] = feature.get('correction_cycles', 0) + 1
+            changed = True
+    if changed:
+        with open('.harness/features.json', 'w') as f:
+            json.dump(data, f, indent=2)
+except Exception as e:
+    pass  # Don't fail the hook on JSON errors
+PYEOF
+    fi
+}
+
+# Stage 1: Smoke test (fast compile/syntax check)
+echo "Stage 1: Smoke test..." >&2
+SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
+    echo "Task rejected: smoke test failed. Fix compilation errors before marking complete."
     echo ""
-    echo "Test output (last 20 lines):"
-    echo "$TEST_OUTPUT" | tail -20
+    echo "Smoke test output:"
+    echo "$SMOKE_OUTPUT" | tail -20
+    increment_correction_cycles
     exit 2
 }
 
-# Check that features.json hasn't been left stale
+# Stage 2: Full test suite
+echo "Stage 2: Full test suite..." >&2
+FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
+    echo "Task rejected: tests are failing. Fix the failures before marking complete."
+    echo ""
+    echo "Test output (last 20 lines):"
+    echo "$FULL_OUTPUT" | tail -20
+    increment_correction_cycles
+    exit 2
+}
+
+# Remind about stale in-progress features
 if [ -f ".harness/features.json" ]; then
-    IN_PROGRESS=$(cat .harness/features.json | python3 -c "
+    IN_PROGRESS=$(python3 -c "
 import json, sys
-data = json.load(sys.stdin)
+with open('.harness/features.json') as f:
+    data = json.load(f)
 in_progress = [f for f in data.get('features', []) if f['status'] == 'in-progress']
 print(len(in_progress))
 " 2>/dev/null || echo "0")

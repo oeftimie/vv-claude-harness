@@ -1,8 +1,8 @@
 ---
 scope: global
 location: ~/.claude/CLAUDE.md
-version: 3.2.2
-last_updated: 2026-03-21
+version: 3.3.0-hyperagents.1
+last_updated: 2026-03-26
 author: {{USER_NAME}}
 description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.2.2.
 supplements: Project-level CLAUDE.md files in individual repositories
@@ -87,8 +87,8 @@ Context persistence in harness projects uses these files:
 
 | File | Purpose | Who Updates |
 |------|---------|-------------|
-| `.harness/features.json` | Feature tracking, status, scope, dependencies, coverage | Lead agent (never teammates) |
-| `.harness/context_summary.md` | Architectural decisions, patterns, gotchas, active context | Lead agent (never teammates) |
+| `.harness/features.json` | Feature tracking, status, scope, dependencies, coverage, operational metrics (correction_cycles, scope_expansions, approaches_tried, failure_reason, discovered_via) | Lead agent (never teammates) |
+| `.harness/context_summary.md` | Architectural decisions, patterns, gotchas, active context, Meta-Patterns, Meta-Session retrospectives | Lead agent (never teammates) |
 | `.harness/claude-progress.txt` | Session-boundary handoff notes | Lead agent at session end |
 
 ### Non-Harness Projects
@@ -408,16 +408,33 @@ Create once, update continuously.
 ### Gotchas
 - [Gotcha]: [how to avoid]
 
+## Meta-Patterns
+<!-- Coordination insights that apply across features — NOT domain-specific.
+     Written by the retrospective step at session end. These transfer to new
+     projects: harness-init can import them as starting context.
+     Examples: when to use Opus, how to scope work, when plan_approval pays off. -->
+- (none yet)
+
+## Meta-Session [DATE]
+<!-- One section per completed session's retrospective. Written at session end.
+     Analyzes correction_cycles, scope_expansions, model fit, discovery lineage.
+     Feeds the Meta-Patterns section with generalizable coordination insights. -->
+- Scope accuracy: [findings]
+- Model calibration: [findings]
+- Discovery lineage: [findings]
+- Approach patterns: [what worked, what failed]
+- Plan approval: [was it worth the overhead for which feature types]
+
 ## Closed Work Streams
 <!-- Completed features. Reference only if dependency exists. -->
 - [Feature]: completed [date], see [PR/commit]
 ```
 
-**Update when:** a decision is made, a pattern is discovered, a gotcha is encountered, a work stream completes, or active context shifts.
+**Update when:** a decision is made, a pattern is discovered, a gotcha is encountered, a work stream completes, active context shifts, or a session retrospective completes.
 
-**Do NOT add:** progress updates ("completed task X"), completed todos, conversation summaries, or anything already tracked in `claude-progress.txt`. This file is for decisions, patterns, and gotchas — not a journal.
+**Do NOT add:** progress updates ("completed task X"), completed todos, conversation summaries, or anything already tracked in `claude-progress.txt`. This file is for decisions, patterns, gotchas, and coordination retrospectives — not a journal.
 
-**Size discipline:** if a domain section exceeds ~300 tokens, summarize or split.
+**Size discipline:** if a domain section exceeds ~300 tokens, summarize or split. Meta-Session entries older than 3 sessions can be summarized into Meta-Patterns and removed.
 
 **Keep Active Context fresh:** this section should reflect right now, not last week.
 
