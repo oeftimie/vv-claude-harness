@@ -245,14 +245,14 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol 
 
 Everything you need is in this repo:
 
-1. Download [harness-v3.2.2.zip](https://github.com/oeftimie/vv-claude-harness/releases)
+1. Download [harness-v3.3.0.zip](https://github.com/oeftimie/vv-claude-harness/releases)
 2. Follow the [INSTALL.md](./INSTALL.md) instructions
 3. Review the [CLAUDE.md](./claude/CLAUDE.md) for core engineering standards
 
 ### Quick install
 
 ```bash
-unzip harness-v3.2.2.zip
+unzip vv-claude-harness-v3.3.0.zip
 cd vv-claude-harness
 ./install
 ```

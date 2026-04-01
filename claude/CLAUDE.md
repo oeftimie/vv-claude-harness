@@ -4,7 +4,7 @@ location: ~/.claude/CLAUDE.md
 version: 3.3.0
 last_updated: 2026-03-26
 author: {{USER_NAME}}
-description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.2.2.
+description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.3.0.
 supplements: Project-level CLAUDE.md files in individual repositories
 ---
 
