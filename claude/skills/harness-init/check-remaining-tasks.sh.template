@@ -1,5 +1,5 @@
 #!/bin/bash
-# Harness v3.2.2 - TeammateIdle hook
+# Harness v3.4.0 - TeammateIdle hook
 # Runs when a teammate is about to go idle.
 # Exit code 0 = allow idle (no more work)
 # Exit code 2 = send feedback, keep teammate working
@@ -19,16 +19,28 @@ if [ -f ".harness/features.json" ]; then
     CLAIMABLE=$(cat .harness/features.json | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-claimable = [f for f in data.get('features', []) if f['status'] in ('pending', 'failed')]
+features = data.get('features', [])
+passing_ids = {f['id'] for f in features if f['status'] == 'passing'}
+claimable = [
+    f for f in features
+    if f['status'] in ('pending', 'failed')
+    and all(dep in passing_ids for dep in f.get('depends_on', []))
+]
 print(len(claimable))
 " 2>/dev/null || echo "0")
 
     if [ "$CLAIMABLE" -gt 0 ]; then
-        # Find the highest priority claimable feature
+        # Find the highest priority claimable feature whose dependencies are met
         NEXT=$(cat .harness/features.json | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-claimable = [f for f in data.get('features', []) if f['status'] in ('pending', 'failed')]
+features = data.get('features', [])
+passing_ids = {f['id'] for f in features if f['status'] == 'passing'}
+claimable = [
+    f for f in features
+    if f['status'] in ('pending', 'failed')
+    and all(dep in passing_ids for dep in f.get('depends_on', []))
+]
 if claimable:
     claimable.sort(key=lambda f: f.get('priority', 999))
     f = claimable[0]

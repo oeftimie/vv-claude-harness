@@ -1,9 +1,9 @@
 ---
 name: harness-continue
-description: Continue working on a harness-managed project (v3.2.2). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
+description: Continue working on a harness-managed project (v3.4.0). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
 ---
 
-# Harness Continue v3.2.2
+# Harness Continue v3.4.0
 
 ## Step 1: Orient Yourself
 
@@ -81,13 +81,13 @@ Which do you prefer?
 3. Create a structured task list using TaskCreate (these survive compaction):
 
 ```
-TaskCreate({ subject: "Read existing code in [scope directories]", description: "Understand patterns before implementing", activeForm: "Reading existing code" })
-TaskCreate({ subject: "Write failing test for [feature]", description: "[feature description] — TDD red phase", activeForm: "Writing failing test" })
-TaskCreate({ subject: "Implement minimum code to pass", description: "TDD green phase", activeForm: "Implementing feature" })
-TaskCreate({ subject: "Run full test suite", description: "Verify no regressions" })
-TaskCreate({ subject: "Verify coverage >= 95% on touched code", description: "Coverage gate" })
-TaskCreate({ subject: "Update features.json", description: "Set status to passing, populate test_file and coverage" })
-TaskCreate({ subject: "Update context_summary.md with learnings", description: "Persist decisions and patterns" })
+TaskCreate({ subject: "F001: Read existing code in [scope directories]", description: "Understand patterns before implementing", activeForm: "Reading existing code", metadata: { feature_id: "F001" } })
+TaskCreate({ subject: "F001: Write failing test for [feature]", description: "[feature description] — TDD red phase", activeForm: "Writing failing test", metadata: { feature_id: "F001" } })
+TaskCreate({ subject: "F001: Implement minimum code to pass", description: "TDD green phase", activeForm: "Implementing feature", metadata: { feature_id: "F001" } })
+TaskCreate({ subject: "F001: Run full test suite", description: "Verify no regressions", metadata: { feature_id: "F001" } })
+TaskCreate({ subject: "F001: Verify coverage >= 95% on touched code", description: "Coverage gate", metadata: { feature_id: "F001" } })
+TaskCreate({ subject: "F001: Update features.json", description: "Set status to passing, populate test_file and coverage", metadata: { feature_id: "F001" } })
+TaskCreate({ subject: "F001: Update context_summary.md with learnings", description: "Persist decisions and patterns", metadata: { feature_id: "F001" } })
 ```
 
 Use `TaskUpdate` to mark each task `in_progress` when starting and `completed` when done. Tasks are your crash-recovery journal: if compaction hits unexpectedly, stale tasks are worse than no tasks.
@@ -205,14 +205,15 @@ Wait for user approval before proceeding to Phase 2.
    TeamCreate({ team_name: "PROJECT-sprint-N", description: "Parallel implementation of F001 and F002" })
    ```
 
-4. Create tasks, then set dependency chains (derived from features.json `depends_on`):
+4. Create tasks with feature metadata, then set dependency chains (derived from features.json `depends_on`):
    ```
    # Create all tasks first (they start as pending by default)
-   TaskCreate({ subject: "F001: Build API endpoint", description: "[detailed spec]", activeForm: "Building API endpoint" })
+   # Always include metadata.feature_id — hooks and TaskList use it for correlation
+   TaskCreate({ subject: "F001: Build API endpoint", description: "[detailed spec]", activeForm: "Building API endpoint", metadata: { feature_id: "F001", scope: "src/api/", model: "sonnet" } })
    # → task id "1"
-   TaskCreate({ subject: "F002: Build UI consuming API", description: "[detailed spec]", activeForm: "Building UI layer" })
+   TaskCreate({ subject: "F002: Build UI consuming API", description: "[detailed spec]", activeForm: "Building UI layer", metadata: { feature_id: "F002", scope: "src/ui/", model: "sonnet" } })
    # → task id "2"
-   TaskCreate({ subject: "Review F001 + F002", description: "[review criteria]", activeForm: "Reviewing implementation" })
+   TaskCreate({ subject: "Review F001 + F002", description: "[review criteria]", activeForm: "Reviewing implementation", metadata: { feature_id: "F001,F002", scope: "*", model: "opus" } })
    # → task id "3"
 
    # Then set dependencies via TaskUpdate

@@ -37,7 +37,12 @@ detect_stack() {
 }
 
 if [ -f ".harness/harness.json" ]; then
-    STACK=$(cat .harness/harness.json | grep -o '"stack"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"stack"[[:space:]]*:[[:space:]]*"\([^"]*\)"/\1/')
+    STACK=$(python3 -c "
+import json
+with open('.harness/harness.json') as f:
+    data = json.load(f)
+print(data.get('stack', ''))
+" 2>/dev/null)
 fi
 
 if [ -z "$STACK" ] || [ "$STACK" = "null" ]; then

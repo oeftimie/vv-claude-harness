@@ -40,6 +40,15 @@ Implement [FEATURE_DESCRIPTION] with:
 2. Read existing code in your scope to understand patterns
 3. Claim your task: TaskUpdate({ taskId: "[TASK_ID]", status: "in_progress", owner: "[YOUR_NAME]" })
 
+## Context Management
+If you completed a previous feature and were assigned a new one by the TeammateIdle hook,
+compact BEFORE starting the new feature:
+  /compact Focus on: [NEW_FEATURE_ID], scope [NEW_SCOPE_DIRS], TDD state clean
+This prevents mid-implementation compaction from losing TDD state.
+
+If at any point your conversation feels long (multiple research passes, prior debugging),
+compact proactively rather than waiting for automatic compaction.
+
 ## TDD Rules
 1. Write failing test that defines "done"
 2. Confirm it fails
@@ -101,6 +110,15 @@ Do not start coding until the interface is confirmed via a reply.
 - Git identity: [USER_NAME] <[USER_EMAIL]> with SSH key [SSH_KEY]
 - Test command: ./.harness/init.sh
 - Current branch: [BRANCH]
+
+## Context Management
+If you completed a previous feature and were assigned a new one by the TeammateIdle hook,
+compact BEFORE starting the new feature:
+  /compact Focus on: [NEW_FEATURE_ID], scope [NEW_SCOPE_DIRS], TDD state clean
+This prevents mid-implementation compaction from losing TDD state.
+
+If at any point your conversation feels long (multiple research passes, prior debugging),
+compact proactively rather than waiting for automatic compaction.
 
 ## TDD Rules
 Same as Feature Implementer: failing test first, implement, verify, refactor.
@@ -202,6 +220,9 @@ When target isn't ready:
 **Plan approval**: true
 
 Same as Feature Implementer above, with this addition after "Session Start":
+
+(The "Context Management" section from the base template applies here too.
+Compact before plan submission if you've done extensive research.)
 
 ```
 ## Plan Before Implementing

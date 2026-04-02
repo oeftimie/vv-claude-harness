@@ -156,6 +156,13 @@ All team communication uses `SendMessage`. These are the message patterns for ha
 | Scope expansion needed | `SendMessage({ type: "message", recipient: "team-lead", content: "Need access to [files] because [reason]. Currently outside my scope.", summary: "Scope expand: [files]" })` |
 | Plan for approval | `SendMessage({ type: "plan_approval_request", recipient: "team-lead", content: "# Implementation Plan\n\n1. [step]\n2. [step]\n...", summary: "Plan for task #N" })` |
 
+**Completion deduplication**: Send the "Task #N complete" message exactly once per task ID.
+If the TeammateIdle hook immediately prompts you to pick up a new task after completing:
+1. Claim the new task first via TaskUpdate
+2. Then send the completion message for the previous task
+3. Never send two completion messages for the same task ID
+4. If you already sent a completion message and the TaskCompleted hook rejected it (tests failed), fix the issue and re-complete the task — do not send a new "complete" message until the hook accepts
+
 **Lead to Teammate:**
 
 | Situation | SendMessage call |

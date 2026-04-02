@@ -1,5 +1,5 @@
 #!/bin/bash
-# Harness v3.2.2 - PreToolUse git identity verification hook
+# Harness v3.4.0 - PreToolUse git identity verification hook
 # Runs before Bash tool calls that contain git push/pull/clone.
 # Exit code 0 = allow
 # Exit code 2 = block (identity mismatch)
