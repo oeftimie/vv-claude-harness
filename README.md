@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
-**Current version: v3.3.0**
+**Current version: v3.4.0**
 
 ---
 
@@ -245,14 +245,14 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol 
 
 Everything you need is in this repo:
 
-1. Download [harness-v3.3.0.zip](https://github.com/oeftimie/vv-claude-harness/releases)
+1. Download [harness-v3.4.0.zip](https://github.com/oeftimie/vv-claude-harness/releases)
 2. Follow the [INSTALL.md](./INSTALL.md) instructions
 3. Review the [CLAUDE.md](./claude/CLAUDE.md) for core engineering standards
 
 ### Quick install
 
 ```bash
-unzip vv-claude-harness-v3.3.0.zip
+unzip vv-claude-harness-v3.4.0.zip
 cd vv-claude-harness
 ./install
 ```
