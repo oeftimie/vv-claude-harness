@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
-**Current version: v3.4.0**
+**Current version: v3.4.0** — Fixes four bugs where harness hooks silently did nothing on real systems (scope enforcement, dependency filtering, correction_cycles targeting, JSON parsing). Adds proactive context management for teammates, a PostCompact circuit breaker, and TaskCreate metadata conventions for task-to-feature correlation that survives compaction.
 
 ---
 
@@ -20,7 +20,7 @@ Two failure patterns emerge consistently:
 
 Both failures stem from the same root cause: no persistent memory of intent, progress, or remaining work.
 
-v2.1 addressed a third failure: parallel agents stepping on each other. v3.0 replaced the custom coordination layer entirely with Claude Code's native Agent Teams. And v3.2 added the thing that actually makes parallel work reliable: mechanical enforcement. Not instructions that agents drift from over long contexts, but shell hooks that physically prevent completion without passing tests.
+v2.1 addressed a third failure: parallel agents stepping on each other. v3.0 replaced the custom coordination layer entirely with Claude Code's native Agent Teams. And v3.2 added mechanical enforcement (shell hooks that physically prevent completion without passing tests), v3.3 added metacognitive self-improvement (the harness learns from its own coordination patterns), and v3.4 fixed four hooks that were silently broken on real systems.
 
 ## Two solutions, one insight
 
@@ -51,7 +51,7 @@ Three reasons:
 * **Transparency**: When an agent goes off the rails, you can open `task_plan.md` and see exactly what it thinks it's doing. You can't really debug a vector database when an agent starts hallucinating. Files are inspectable, editable, and version-controlled.
 * **Structure**: Anthropic specifically chose JSON for their features file because, [as they noted](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), "the model is less likely to inappropriately change or overwrite JSON files compared to Markdown files." Structured formats create implicit contracts. The agent knows that `passes: false` means work remains. It knows not to delete entries. The file format itself enforces discipline.
 
-## The evolution: v2.0 to v3.2
+## The evolution: v2.0 to v3.4
 
 ### v2.0: The foundation (January 2025)
 
@@ -106,6 +106,28 @@ Two bugs discovered in real Agent Teams sessions:
 **PostToolUse hook schema.** The hooks were generated with `postToolUse` (wrong casing) and a flat structure that Claude Code silently ignores. Fixed to `PostToolUse` with proper nested `matcher` + `hooks` array. The kind of bug you only catch by actually running the system.
 
 **plan_approval_response delivery bug.** `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Discovered when a lead agent kept sending approvals that teammates never received. The workaround (confirmed in production): use `type: "message"` for all plan approvals. The harness now documents this as a known Claude Code bug and routes all approvals through direct messages.
+
+### v3.3: Metacognitive self-improvement (March 2026)
+
+Inspired by [Facebook Research's HyperAgents framework](https://arxiv.org/abs/2603.19461), v3.3 added the ability for the harness to learn from its own coordination patterns. Five operational metrics in `features.json` (`correction_cycles`, `scope_expansions`, `approaches_tried`, `failure_reason`, `discovered_via`) feed a structured retrospective (Phase 5.5) that runs after all features pass. The retrospective writes findings to `context_summary.md` under `Meta-Session` and `Meta-Patterns` sections.
+
+The practical effect: after 3-4 Agent Teams sessions, the harness knows which scopes are tricky (upgrade to Opus), which features need plan approval (past interface misunderstandings), and where to probe for hidden features at init time. Dynamic model selection uses these signals — `correction_cycles >= 3` in the same scope upgrades the next implementer from Sonnet to Opus.
+
+v3.3 also split `init.sh` test runs into two stages: a fast `smoke_test` (compile/syntax only, <15s) and `full_test` (complete suite). The TaskCompleted hook runs smoke first, rejecting compile errors before spending time on the full suite.
+
+### v3.4: Hook reliability fixes (April 2026)
+
+v3.4 came from analyzing Claude Code's internal multi-agent implementation and comparing it against the harness's external hook protocol. Four hooks were silently broken or producing wrong results on real systems:
+
+**Scope enforcement was broken.** Tool input provides absolute paths (`/Users/name/project/src/auth/login.ts`). Scope patterns are relative (`src/auth/`). The prefix match never matched. Every teammate could edit any file. Fixed by stripping the project root before comparison.
+
+**Dependency filtering was missing.** The TeammateIdle hook offered all pending/failed features regardless of `depends_on`. A teammate could be assigned F002 before F001 (its dependency) was done. Fixed by checking all dependencies have `status: "passing"` before offering a feature.
+
+**Correction cycles hit wrong targets.** `verify-task-quality.sh` incremented `correction_cycles` for every in-progress feature on any rejection. In a 3-teammate session, one teammate's test failure corrupted metrics for all teammates. Fixed by extracting the feature ID from task metadata and targeting only that feature.
+
+**JSON parsing was fragile.** `init.sh` used a `grep`/`sed` chain to read `stack` from `harness.json` — the only script in the harness not using `python3` for JSON. Fixed for consistency and robustness.
+
+v3.4 also added context management conventions (proactive compaction between features), a PostCompact circuit breaker (escalate after repeated compaction context collapse), TaskCreate metadata for task-to-feature correlation, and completion message deduplication guidance.
 
 ## Architecture
 
@@ -173,7 +195,7 @@ The real insight from iterating through these versions: there are three reliabil
 
 **Instructional (prose in CLAUDE.md, rules, skills)**: medium reliability. "Use TDD." "Don't modify files outside scope." "Verify git identity before push." These work most of the time. Over long contexts, compliance drifts.
 
-The progression from v2.0 to v3.2 is the story of promoting critical rules from instructional to mechanical enforcement. TDD went from "please use TDD" to a shell hook that rejects non-passing code. Scope enforcement went from "don't touch files outside your scope" to a PreToolUse hook that blocks the edit. Git identity verification went from "check before pushing" to a PreToolUse hook that blocks the push. The rules that matter most should be the ones agents can't skip.
+The progression from v2.0 to v3.4 is the story of promoting critical rules from instructional to mechanical enforcement. TDD went from "please use TDD" to a shell hook that rejects non-passing code. Scope enforcement went from "don't touch files outside your scope" to a PreToolUse hook that blocks the edit. Git identity verification went from "check before pushing" to a PreToolUse hook that blocks the push. The rules that matter most should be the ones agents can't skip.
 
 ## Core principles
 
