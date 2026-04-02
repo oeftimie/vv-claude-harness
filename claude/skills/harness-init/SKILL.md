@@ -1,9 +1,9 @@
 ---
 name: harness-init
-description: Initialize a new project with the Long-Running Agent Harness v3.2.2. Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and optional Agent Teams structure. Use when starting a new multi-session project.
+description: Initialize a new project with the Long-Running Agent Harness v3.4.0. Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and optional Agent Teams structure. Use when starting a new multi-session project.
 ---
 
-# Harness Initializer v3.2.2
+# Harness Initializer v3.4.0
 
 Follow these steps in order. Do not skip steps. Ask the user when indicated.
 
@@ -48,7 +48,7 @@ Create `.harness/` with these files:
   "project": "PROJECT_NAME",
   "stack": "DETECTED_OR_SPECIFIED_STACK",
   "created": "ISO_DATE",
-  "version": "3.2.2",
+  "version": "3.4.0",
   "git_identity": {
     "user_name": "DETECTED_NAME",
     "user_email": "DETECTED_EMAIL",
@@ -332,7 +332,7 @@ Set up Agent Teams quality enforcement hooks. Read the two `.sh.template` files 
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Context was just compacted. Immediately re-read .harness/context_summary.md and run TaskList to recover your current state before continuing work."
+            "prompt": "Context was just compacted. Immediately re-read .harness/context_summary.md and run TaskList to recover your current state before continuing work. If this is the third or more compaction in rapid succession and you are losing context each time, STOP: write your current progress and known state to .harness/context_summary.md, message the lead with SendMessage({ type: 'message', recipient: 'team-lead', content: 'Context collapse: repeated compaction losing state. Current feature [ID] progress saved to context_summary.md. Need intervention.' }), then wait for instructions."
           }
         ]
       }
@@ -389,7 +389,7 @@ If the project already has a CLAUDE.md, append the harness reference. If not, cr
 
 ## Harness
 
-This project uses the Long-Running Agent Harness v3.2.
+This project uses the Long-Running Agent Harness v3.4.
 
 - Feature tracking: `.harness/features.json`
 - Context and decisions: `.harness/context_summary.md` (READ THIS at session start)
@@ -468,13 +468,13 @@ The team_structure is a starting suggestion. The lead may restructure during /ha
 
 ```bash
 git add .harness/ .claude/ CLAUDE.md
-git commit -m "chore: initialize harness v3.2.2 scaffolding"
+git commit -m "chore: initialize harness v3.4.0 scaffolding"
 ```
 
 Report:
 
 ```
-Harness v3.2.2 initialized:
+Harness v3.4.0 initialized:
 - .harness/ created with [N] features (scope and dependencies defined)
 - Git identity captured: [user] <[email]>
 - Build hook: [installed | skipped] for [STACK]
