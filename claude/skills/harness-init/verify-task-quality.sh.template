@@ -18,6 +18,22 @@ cd "$PROJECT_ROOT"
 # Read hook input from stdin
 INPUT=$(cat)
 
+# Try to extract feature ID from task metadata (if TaskCreate used metadata.feature_id)
+FEATURE_ID=$(echo "$INPUT" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+# Check task metadata first, then fall back to parsing task subject for 'FXXX:'
+metadata = data.get('task', {}).get('metadata', {})
+feature_id = metadata.get('feature_id', '')
+if not feature_id:
+    subject = data.get('task', {}).get('subject', '')
+    if ':' in subject:
+        candidate = subject.split(':')[0].strip()
+        if candidate.startswith('F') and candidate[1:].isdigit():
+            feature_id = candidate
+print(feature_id)
+" 2>/dev/null || echo "")
+
 if [ ! -f ".harness/init.sh" ]; then
     echo "Task rejected: .harness/init.sh not found. Cannot verify tests pass."
     echo "Run /harness-init to create the test script, or create it manually."
@@ -29,16 +45,18 @@ fi
 # useful for retrospectives and dynamic model selection.
 increment_correction_cycles() {
     if [ -f ".harness/features.json" ]; then
-        python3 - <<'PYEOF'
-import json
+        python3 - "$FEATURE_ID" <<'PYEOF'
+import json, sys
+target_id = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else None
 try:
     with open('.harness/features.json', 'r') as f:
         data = json.load(f)
     changed = False
     for feature in data.get('features', []):
         if feature.get('status') == 'in-progress':
-            feature['correction_cycles'] = feature.get('correction_cycles', 0) + 1
-            changed = True
+            if target_id is None or feature.get('id') == target_id:
+                feature['correction_cycles'] = feature.get('correction_cycles', 0) + 1
+                changed = True
     if changed:
         with open('.harness/features.json', 'w') as f:
             json.dump(data, f, indent=2)
