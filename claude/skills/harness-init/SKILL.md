@@ -1,9 +1,9 @@
 ---
 name: harness-init
-description: Initialize a new project with the Long-Running Agent Harness v3.4.0. Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and optional Agent Teams structure. Use when starting a new multi-session project.
+description: Initialize a new project with the Long-Running Agent Harness v3.5.0. Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and optional Agent Teams structure. Use when starting a new multi-session project.
 ---
 
-# Harness Initializer v3.4.0
+# Harness Initializer v3.5.0
 
 Follow these steps in order. Do not skip steps. Ask the user when indicated.
 
@@ -48,7 +48,7 @@ Create `.harness/` with these files:
   "project": "PROJECT_NAME",
   "stack": "DETECTED_OR_SPECIFIED_STACK",
   "created": "ISO_DATE",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "git_identity": {
     "user_name": "DETECTED_NAME",
     "user_email": "DETECTED_EMAIL",
@@ -468,13 +468,13 @@ The team_structure is a starting suggestion. The lead may restructure during /ha
 
 ```bash
 git add .harness/ .claude/ CLAUDE.md
-git commit -m "chore: initialize harness v3.4.0 scaffolding"
+git commit -m "chore: initialize harness v3.5.0 scaffolding"
 ```
 
 Report:
 
 ```
-Harness v3.4.0 initialized:
+Harness v3.5.0 initialized:
 - .harness/ created with [N] features (scope and dependencies defined)
 - Git identity captured: [user] <[email]>
 - Build hook: [installed | skipped] for [STACK]
