@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
-**Current version: v3.4.0** — Fixes four bugs where harness hooks silently did nothing on real systems (scope enforcement, dependency filtering, correction_cycles targeting, JSON parsing). Adds proactive context management for teammates, a PostCompact circuit breaker, and TaskCreate metadata conventions for task-to-feature correlation that survives compaction.
+**Current version: v3.5.0** — Session discipline improvements from real-world harness violations. Adds mandatory smoke test gate, pre-commit features.json audit, mandatory retrospective for all session types, inline context updates during bug fixes, commit-at-breakpoints hygiene, stale task prevention, and coverage blocker documentation.
 
 ---
 
@@ -20,7 +20,7 @@ Two failure patterns emerge consistently:
 
 Both failures stem from the same root cause: no persistent memory of intent, progress, or remaining work.
 
-v2.1 addressed a third failure: parallel agents stepping on each other. v3.0 replaced the custom coordination layer entirely with Claude Code's native Agent Teams. And v3.2 added mechanical enforcement (shell hooks that physically prevent completion without passing tests), v3.3 added metacognitive self-improvement (the harness learns from its own coordination patterns), and v3.4 fixed four hooks that were silently broken on real systems.
+v2.1 addressed a third failure: parallel agents stepping on each other. v3.0 replaced the custom coordination layer entirely with Claude Code's native Agent Teams. And v3.2 added mechanical enforcement (shell hooks that physically prevent completion without passing tests), v3.3 added metacognitive self-improvement (the harness learns from its own coordination patterns), v3.4 fixed four hooks that were silently broken on real systems, and v3.5 tightened session discipline based on real-world violation analysis.
 
 ## Two solutions, one insight
 
@@ -316,6 +316,38 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
 ---
 
 ## Changelog
+
+### v3.5.0 (2026-04-06)
+
+**Session discipline improvements** based on root cause analysis of 11 harness violations observed during a real iOS project session (voice fix, test expansion, app icon work).
+
+**Five serious violation remediations:**
+
+1. **Pre-commit features.json audit** — Session end now requires diffing `features.json` against actual work done. Any code change relating to a tracked feature must update that feature's metadata. Work that doesn't map to any feature gets a new entry with `discovered_via`. This is a gate before `git commit`, not an afterthought.
+
+2. **Inline context_summary.md updates** — `context_summary.md` updates are now part of the task, not after the task. After every bug fix revealing a non-obvious root cause, write the gotcha to `context_summary.md` BEFORE moving to the next request.
+
+3. **Mandatory retrospective for all session types** — The retrospective is now explicitly mandatory at session end regardless of whether the session used Agent Teams or single-session mode. Minimum viable: 3-5 bullets covering actual vs planned scope, unanticipated discoveries, and transferable patterns.
+
+4. **Task updates at moment of state change** — Task updates must happen immediately when state changes, not in batch. When you finish something, the NEXT action is `TaskUpdate`. Stale tasks are explicitly called out as worse than no tasks.
+
+5. **Smoke test gate at session start** — `init.sh` is now a dedicated Step 2.5 in the orient flow, run within the first 5 actions of every session. Its purpose is to establish known-good state before changes, not to diagnose problems.
+
+**Four moderate/minor violation remediations:**
+
+6. **Single-session mode declaration** — When choosing single-session over Agent Teams, the lead must explicitly declare it to make the decision conscious and documented.
+
+7. **Bug fix diagnosis before editing** — Debugging Phase 1 now requires stating diagnosis and proposed fix in 2-3 sentences before editing code, even for seemingly obvious fixes.
+
+8. **Commit at natural breakpoints** — Commit hygiene rules now require committing after each feature/fix passes tests, separating harness metadata from code, and checkpointing inherited uncommitted work before making new changes.
+
+9. **Untracked file and task metadata audit at orient** — The orient step now checks for unknown untracked files (surfaced to user) and verifies inherited tasks have required `feature_id` metadata.
+
+**Two standards improvements:**
+
+10. **Coverage blocker documentation** — If coverage measurement isn't available in the project's tooling, document it as a gotcha in `context_summary.md` and create a feature to enable it. Silent coverage gate skipping is no longer acceptable.
+
+11. **Strengthened task completion checklist** — Harness-specific checklist items now explicitly require features.json audit, context_summary.md updates, retrospective, and task list currency check.
 
 ### v3.4.0 (2026-04-02)
 

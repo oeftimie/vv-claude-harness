@@ -1,9 +1,9 @@
 ---
 name: harness-continue
-description: Continue working on a harness-managed project (v3.4.0). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
+description: Continue working on a harness-managed project (v3.5.0). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
 ---
 
-# Harness Continue v3.4.0
+# Harness Continue v3.5.0
 
 ## Step 1: Orient Yourself
 
@@ -15,6 +15,16 @@ cat .harness/features.json
 cat .harness/harness.json
 ```
 
+Check for untracked files and inherited task quality:
+
+```bash
+git status -s          # surface unknown untracked files
+```
+
+If you see untracked files you didn't create (e.g., `notes.md`, scratch files), surface them to the user immediately: "I see `[file]` untracked — should I delete it, gitignore it, or leave it?" This takes 5 seconds and prevents orphaned file accumulation.
+
+If inheriting tasks from a previous session, verify they have required metadata fields (`feature_id` at minimum) via `TaskList`. Tasks without `feature_id` can't be correlated by hooks or retrospectives. Update them with `TaskUpdate` now if they're missing it.
+
 Summarize what you find:
 
 ```
@@ -24,6 +34,7 @@ Project state:
 - Next up: [highest priority incomplete feature]
 - Blockers: [any noted in progress or context_summary]
 - Git identity: [from harness.json]
+- Untracked files: [any unexpected files surfaced to user]
 ```
 
 ## Step 2: Verify Git Identity
@@ -35,6 +46,16 @@ git config user.email
 ```
 
 Compare against `.harness/harness.json` `git_identity`. If mismatch, fix before proceeding. Do not skip this.
+
+## Step 2.5: Smoke Test
+
+Run the project's build/test smoke test:
+
+```bash
+./.harness/init.sh
+```
+
+This is a gate, not a diagnostic. Its purpose is to confirm the environment is in a known-good state BEFORE any changes. If it fails, you know the problem is pre-existing, not something you introduced. Run it within the first 5 actions of every session. No exceptions. The 15-second cost prevents 15-minute debugging sessions later.
 
 ## Step 3: Set Effort Level
 
@@ -53,6 +74,8 @@ Adjust as you transition between phases during the session.
 - The feature is sequential (can't be parallelized)
 - `harness.json` team_structure is null
 - User explicitly asks for focused work
+
+When choosing single-session, explicitly declare it: "Running in single-session mode — I'm both lead and implementer." This makes the decision conscious and documented, preventing ambiguity between "I forgot plan mode" and "plan mode doesn't apply here."
 
 **Choose Agent Teams if:**
 - Multiple independent features are ready
@@ -90,7 +113,7 @@ TaskCreate({ subject: "F001: Update features.json", description: "Set status to 
 TaskCreate({ subject: "F001: Update context_summary.md with learnings", description: "Persist decisions and patterns", metadata: { feature_id: "F001" } })
 ```
 
-Use `TaskUpdate` to mark each task `in_progress` when starting and `completed` when done. Tasks are your crash-recovery journal: if compaction hits unexpectedly, stale tasks are worse than no tasks.
+Use `TaskUpdate` to mark each task `in_progress` when starting and `completed` when done. Task updates must happen at the moment of state change, not in batch. The rule: when you finish something, the NEXT action is `TaskUpdate` — before responding to the user, before starting the next task. If planned tasks no longer match reality (scope changed, new work appeared), update or delete stale tasks immediately. A stale task list is worse than no task list because it creates false confidence about state.
 
 4. Run smoke test: `./.harness/init.sh`
 
@@ -108,6 +131,10 @@ Use `TaskUpdate` to mark each task `in_progress` when starting and `completed` w
 7. Run full suite; coverage >= 95% on touched code
 
 No exceptions unless tooling is broken.
+
+### Context Updates During Work
+
+Treat `context_summary.md` updates as part of the task, not after the task. Specifically: after every bug fix that reveals a non-obvious root cause, write the gotcha to `context_summary.md` BEFORE moving to the next request. The cost is 30 seconds; the value is permanent. A future session will benefit from knowing the root cause without re-discovering it.
 
 ### When Feature Passes
 
@@ -135,8 +162,9 @@ After compaction, the **PostCompact hook** fires automatically and reminds you t
 ### Session End
 
 1. Run full test suite one final time
-2. If all features are now passing, run the retrospective (see Phase 5.5 above — same process applies to single-session work). Skip if this is the project's first completed session.
-3. Write handoff to `claude-progress.txt`:
+2. **Pre-commit features.json audit**: Diff `features.json` against the actual work done this session. If any code was changed that relates to a tracked feature, that feature's metadata must be updated (status, test_file, coverage). If work was done that doesn't map to any existing feature, create a new feature entry with `discovered_via` pointing to the trigger. This check is a gate before `git commit`, not an afterthought.
+3. **Retrospective (mandatory)**: Run the retrospective regardless of session type. For single-session work, it can be shorter (3-5 bullets), but it must exist. Minimum viable retrospective: (1) what was the session's actual scope vs planned scope? (2) what was discovered that wasn't anticipated? (3) what pattern or gotcha should transfer to future sessions? Write to `context_summary.md` under `## Meta-Session [DATE]` before the final commit. Skip only if this is the project's very first session.
+4. Write handoff to `claude-progress.txt`:
    ```
    ## Session [N] - [DATE]
    - Feature: F00X - [description]
@@ -147,7 +175,7 @@ After compaction, the **PostCompact hook** fires automatically and reminds you t
    - Next: [what the next session should do]
    - Blockers: [any blockers]
    ```
-3. Git commit
+5. Git commit (see Commit Hygiene rules — separate harness metadata from code commits)
 
 ---
 

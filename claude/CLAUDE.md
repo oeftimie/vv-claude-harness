@@ -1,10 +1,10 @@
 ---
 scope: global
 location: ~/.claude/CLAUDE.md
-version: 3.4.0
-last_updated: 2026-03-26
+version: 3.5.0
+last_updated: 2026-04-06
 author: {{USER_NAME}}
-description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.4.0.
+description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.5.0.
 supplements: Project-level CLAUDE.md files in individual repositories
 ---
 
@@ -160,7 +160,7 @@ No exceptions unless tooling is broken.
 
 ### Coverage
 
-For harness projects: coverage >= 95% on code touched during the feature. Features aren't done until `features.json` has `status: "passing"`, `test_file` points to a test, and `coverage` meets threshold.
+For harness projects: coverage >= 95% on code touched during the feature. Features aren't done until `features.json` has `status: "passing"`, `test_file` points to a test, and `coverage` meets threshold. If the project's test tooling doesn't support coverage measurement, document this as a blocker in `context_summary.md` under Gotchas and create a feature to enable it. Do not silently skip the coverage gate — either measure it or explicitly note why you can't.
 
 For non-harness projects: match the project's existing test patterns for file naming, assertion style, and organization. Run existing tests before committing.
 
@@ -174,6 +174,7 @@ YOU MUST find the root cause. NEVER fix a symptom or add a workaround.
 - Read error messages carefully; they often contain the exact solution
 - Reproduce consistently before investigating
 - Check recent changes: git diff, recent commits
+- For user-reported bugs: state your diagnosis and proposed fix in 2-3 sentences BEFORE editing code. ("I think the crash is X because Y, I'll fix it by Z.") This gives the user a chance to correct your understanding and costs one message.
 
 ### Phase 2: Pattern Analysis
 - Find working examples in the same codebase
@@ -307,6 +308,7 @@ When gitleaks blocks a push due to false positives, add entries to `.gitleaks.to
 - No auto-generated signatures
 - No "Generated with Claude Code" or "Co-Authored-By: Claude"
 - Write commits as if a human wrote them
+- Commit at natural breakpoints during the session, not at the end. Specifically: (1) commit after each feature/fix passes tests, (2) commit harness metadata separately from code with `docs:` prefix, (3) if you inherit uncommitted work from a previous session, commit it as-is first ("checkpoint: uncommitted work from session N") before making new changes
 - Separate documentation commits from code when practical
 - Prefix: `docs:` for pure documentation changes
 
@@ -451,7 +453,10 @@ Before declaring ANY task complete:
 - [ ] {{USER_NAME}} informed of what changed
 
 Additional for harness projects:
-- [ ] `features.json` updated (status, test_file, coverage)
+- [ ] `features.json` audited against actual work done — every touched feature has updated status, test_file, coverage; unmapped work gets a new feature entry with `discovered_via`
+- [ ] `context_summary.md` has any non-obvious root causes, gotchas, or patterns discovered this session
+- [ ] Retrospective written to `context_summary.md` under `## Meta-Session [DATE]` (mandatory even for single-session work)
 - [ ] `claude-progress.txt` has session handoff
+- [ ] Task list is current — no stale in-progress or pending tasks that no longer reflect reality
 
 Do NOT skip this checklist.
