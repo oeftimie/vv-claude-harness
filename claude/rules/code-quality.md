@@ -1,3 +1,13 @@
+---
+globs:
+  - "**/*.ts"
+  - "**/*.py"
+  - "**/*.go"
+  - "**/*.js"
+  - "**/*.rb"
+  - "**/*.java"
+---
+
 # Code Quality Hard Limits
 
 These are mechanical limits, not guidelines. Violating them is a bug.
@@ -32,3 +42,19 @@ These are mechanical limits, not guidelines. Violating them is a bug.
 - No commented-out code blocks
 - No unused imports, variables, or functions
 - No TODO/FIXME comments older than the current feature scope
+
+## Naming Conventions
+
+Names MUST tell what code does, not how it's implemented or its history:
+- NEVER use implementation details (e.g., "ZodValidator", "MCPWrapper", "JSONParser")
+- NEVER use temporal context (e.g., "NewAPI", "LegacyHandler", "UnifiedTool")
+- NEVER use pattern names unless they add clarity (prefer "Tool" over "ToolFactory")
+
+Good names: `Tool` not `AbstractToolInterface`. `RemoteTool` not `MCPToolWrapper`. `Registry` not `ToolRegistryManager`. `execute()` not `executeToolWithValidation()`.
+
+If you catch yourself writing "new", "old", "legacy", "wrapper", "unified", or implementation details: STOP and find a better name.
+
+## Code Comments
+- Comments MUST describe what the code does NOW
+- NEVER write comments about: what it used to do, how it was refactored, what framework it uses
+- NEVER remove comments unless you can PROVE they are actively false

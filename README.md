@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
-**Current version: v3.5.0** — Session discipline improvements from real-world harness violations. Adds mandatory smoke test gate, pre-commit features.json audit, mandatory retrospective for all session types, inline context updates during bug fixes, commit-at-breakpoints hygiene, stale task prevention, and coverage blocker documentation.
+**Current version: v3.6.0** — CLAUDE.md pruned from 462 to 120 lines into a routing table. Six new contextual rule files added (debugging, git-workflow, security, documentation, context-summary, task-completion), each with `globs:` frontmatter so they load only when relevant. Naming conventions merged into code-quality.md.
 
 ---
 
@@ -316,6 +316,23 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
 ---
 
 ## Changelog
+
+### v3.6.0 (2026-04-17)
+
+**CLAUDE.md pruned to a routing table** — reduced from 462 lines to 120 lines (74% reduction) by extracting all procedural content into contextual rule files.
+
+**Six new rule files added** under `claude/rules/`, each with `globs:` frontmatter so they load only when the relevant file types are in context rather than on every prompt:
+
+1. **`rules/debugging.md`** — Systematic Debugging Process (all 4 phases) + Error Recovery Philosophy. Loads on code files.
+2. **`rules/git-workflow.md`** — Identity verification, commit hygiene, PR workflow. Loads on git-adjacent files.
+3. **`rules/security.md`** — Secrets, environment variables, PII. Loads on code and credential files.
+4. **`rules/documentation.md`** — Auto-update vs human-owned documentation. Loads on Markdown files.
+5. **`rules/context-summary.md`** — `context_summary.md` template + update rules. Loads on `.harness/` and `context_summary.md`.
+6. **`rules/task-completion.md`** — Task completion checklist (base + harness). Loads on `.harness/` and `features.json`.
+
+**`rules/code-quality.md` updated** — Naming Conventions and Code Comments sections migrated from CLAUDE.md. Added `globs:` frontmatter for contextual loading.
+
+**CLAUDE.md** now contains only: Critical Invariants, Our Relationship, Operating Modes, Testing Standards, Approach Discipline, Sub-Agent Standards, Research Tasks, Project-Specific Instructions, and a Rule Index table pointing to all rule files.
 
 ### v3.5.0 (2026-04-06)
 
