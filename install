@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VV Claude Code Harness — Installer v3.5.1
+VV Claude Code Harness — Installer v3.6.0
 
 Usage:
   ./install                  Interactive install (prompts for name)
@@ -8,6 +8,7 @@ Usage:
   ./install --dry-run        Show what would be done without doing it
   ./install --no-backup      Skip backup of existing files
   ./install --upgrade-only   Only upgrade per-project harness files (no global install)
+  ./install --clean-stale    Remove stale files from older harness versions (default: warn only)
 """
 
 import argparse
@@ -20,7 +21,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-HARNESS_VERSION = "3.5.1"
+HARNESS_VERSION = "3.6.0"
 CLAUDE_DIR = Path.home() / ".claude"
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -36,20 +37,31 @@ GLOBAL_DIRS = {
     "claude/skills/harness-continue": "skills/harness-continue",
 }
 
-# Files that older versions installed but are no longer needed
-DEPRECATED_FILES = [
+# Files older harness versions installed that are no longer current.
+# Detected and reported on every install. Removed only when --clean-stale is passed.
+# When adding entries: include the harness version in which the file was retired,
+# so future maintainers can decide when an entry is old enough to drop.
+STALE_FILES = [
+    # Pre-v3.0 module-lock / orchestrator era (retired in v3.0)
+    "rules/orchestrator.md",
+    "rules/scheduling.md",
+    "rules/coding-agent.md",
+    # v3.2.x cleanup (retired in v3.2.2)
     "rules/non-harness-workflow.md",
     "rules/engineering-standards.md",
 ]
 
-DEPRECATED_DIRS = [
-    "harness/",
+STALE_DIRS = [
+    # Pre-v3.0 module-lock skill (retired in v3.0)
     "skills/context-graph/",
+    # Pre-v3.0 layout (retired in v3.0)
+    "harness/",
     "templates/",
 ]
 
 # Only remove commands/ if it contains harness-specific files
-DEPRECATED_COMMAND_FILES = [
+STALE_COMMAND_FILES = [
+    # Pre-v3.0 slash commands (retired in v3.0)
     "commands/project-harness-init.md",
     "commands/project-harness-continue.md",
 ]
@@ -130,8 +142,12 @@ def detect_shell_profile():
     return Path.home() / ".profile"
 
 
-def backup_existing(dry_run=False):
-    """Backup existing harness files. Returns backup dir path or None."""
+def backup_existing(dry_run=False, extra_paths=None):
+    """Backup existing harness files. Returns backup dir path or None.
+
+    extra_paths: optional list of CLAUDE_DIR-relative paths to also back up
+                 (e.g., stale files about to be cleaned).
+    """
     existing = []
 
     # Check global files
@@ -144,6 +160,12 @@ def backup_existing(dry_run=False):
     for dest in GLOBAL_DIRS.values():
         path = CLAUDE_DIR / dest
         if path.exists():
+            existing.append(path)
+
+    # Check extra paths (e.g., stale files for --clean-stale)
+    for rel in extra_paths or []:
+        path = CLAUDE_DIR / rel
+        if path.exists() and path not in existing:
             existing.append(path)
 
     if not existing:
@@ -212,37 +234,32 @@ def install_global_files(user_name, dry_run=False):
     return True
 
 
-def remove_deprecated(dry_run=False):
-    """Remove files/dirs from older versions that are no longer needed."""
-    removed = []
-    for rel in DEPRECATED_FILES:
-        path = CLAUDE_DIR / rel
-        if path.exists():
-            if dry_run:
-                print(f"  {dim(f'Would remove: ~/.claude/{rel}')}")
-            else:
-                path.unlink()
-            removed.append(rel)
+def detect_stale_files():
+    """Return paths (relative to CLAUDE_DIR) of stale files from older harness versions."""
+    found = []
+    for rel in STALE_FILES + STALE_COMMAND_FILES:
+        if (CLAUDE_DIR / rel).exists():
+            found.append(rel)
+    for rel in STALE_DIRS:
+        if (CLAUDE_DIR / rel).exists():
+            found.append(rel)
+    return found
 
-    for rel in DEPRECATED_DIRS:
-        path = CLAUDE_DIR / rel
-        if path.exists():
-            if dry_run:
-                print(f"  {dim(f'Would remove: ~/.claude/{rel}')}")
-            else:
-                shutil.rmtree(path)
-            removed.append(rel)
 
-    for rel in DEPRECATED_COMMAND_FILES:
+def clean_stale_files(stale, dry_run=False):
+    """Remove the given stale files. Caller must have detected them first."""
+    for rel in stale:
         path = CLAUDE_DIR / rel
-        if path.exists():
-            if dry_run:
-                print(f"  {dim(f'Would remove: ~/.claude/{rel}')}")
-            else:
-                path.unlink()
-            removed.append(rel)
-
-    return removed
+        if not path.exists():
+            continue
+        if dry_run:
+            print(f"  {dim(f'Would remove: ~/.claude/{rel}')}")
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        print(f"  Removed: {dim(rel)}")
 
 
 def setup_agent_teams_env(dry_run=False):
@@ -425,6 +442,8 @@ def main():
     parser.add_argument("--no-backup", action="store_true", help="Skip backup of existing files")
     parser.add_argument("--upgrade-only", metavar="PROJECT_DIR", nargs="?", const=".",
                         help="Only upgrade per-project harness files (default: current dir)")
+    parser.add_argument("--clean-stale", action="store_true",
+                        help="Remove stale files from older harness versions (default: warn only)")
 
     args = parser.parse_args()
 
@@ -493,10 +512,14 @@ def main():
 
     print(f"  Using name: {bold(user_name)}\n")
 
+    # --- Detect stale files early so backup can include them if --clean-stale ---
+    stale = detect_stale_files()
+
     # --- Backup ---
     if not args.no_backup:
         print(f"{bold('Backing up existing files...')}")
-        backup = backup_existing(dry_run=args.dry_run)
+        extra = stale if args.clean_stale else None
+        backup = backup_existing(dry_run=args.dry_run, extra_paths=extra)
         if not backup:
             print(f"  No existing harness files to backup.")
         print()
@@ -509,15 +532,21 @@ def main():
         sys.exit(1)
     print(f"  {green('Done.')}\n")
 
-    # --- Remove deprecated files ---
-    print(f"{bold('Cleaning up deprecated files...')}")
-    removed = remove_deprecated(dry_run=args.dry_run)
-    if removed:
-        for r in removed:
-            if not args.dry_run:
-                print(f"  Removed: {dim(r)}")
+    # --- Stale files from older harness versions ---
+    # (already detected above so the backup pass could include them)
+    print(f"{bold('Checking for stale files from older harness versions...')}")
+    if not stale:
+        print(f"  None found.")
+    elif args.clean_stale:
+        clean_stale_files(stale, dry_run=args.dry_run)
     else:
-        print(f"  No deprecated files found.")
+        print(f"  {yellow('Found stale files from older harness versions:')}")
+        for rel in stale:
+            print(f"    ~/.claude/{rel}")
+        print()
+        print(f"  These files were shipped by older harness versions and are no")
+        print(f"  longer current. They may conflict with current rules. To remove")
+        print(f"  them, re-run with {bold('--clean-stale')} (a backup is taken first).")
     print()
 
     # --- Agent Teams env var ---

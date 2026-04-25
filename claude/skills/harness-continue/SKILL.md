@@ -1,9 +1,9 @@
 ---
 name: harness-continue
-description: Continue working on a harness-managed project (v3.5.0). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
+description: Continue working on a harness-managed project (v3.6.0). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
 ---
 
-# Harness Continue v3.5.0
+# Harness Continue v3.6.0
 
 ## Step 1: Orient Yourself
 

@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
-**Current version: v3.5.0** — Session discipline improvements from real-world harness violations. Adds mandatory smoke test gate, pre-commit features.json audit, mandatory retrospective for all session types, inline context updates during bug fixes, commit-at-breakpoints hygiene, stale task prevention, and coverage blocker documentation.
+**Current version: v3.6.0** — Stale-file detection in the installer. Surfaces residue from older harness versions (including the v2.x module-lock era's `orchestrator.md` / `scheduling.md` / `coding-agent.md` / `context-graph` skill) that previously sat silently in `~/.claude/` after upgrades. Default behavior is detect-and-warn; pass `--clean-stale` to remove. Replaces the older silent auto-delete pass, which had an incomplete manifest. Builds on v3.5.0's session discipline improvements: smoke test gate, features.json audit, mandatory retrospectives, inline context updates.
 
 ---
 
@@ -267,14 +267,14 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol 
 
 Everything you need is in this repo:
 
-1. Download [harness-v3.5.1.zip](https://github.com/oeftimie/vv-claude-harness/releases)
+1. Download [harness-v3.6.0.zip](https://github.com/oeftimie/vv-claude-harness/releases)
 2. Follow the [INSTALL.md](./INSTALL.md) instructions
 3. Review the [CLAUDE.md](./claude/CLAUDE.md) for core engineering standards
 
 ### Quick install
 
 ```bash
-unzip vv-claude-harness-v3.5.1.zip
+unzip vv-claude-harness-v3.6.0.zip
 cd vv-claude-harness
 ./install
 ```
@@ -316,6 +316,18 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
 ---
 
 ## Changelog
+
+### v3.6.0 (2026-04-26)
+
+**Stale-file detection in the installer.** Before v3.6.0, the installer silently auto-deleted a small list of deprecated files (`engineering-standards.md`, `non-harness-workflow.md`) and missed the v2.x module-lock residue entirely (`orchestrator.md`, `scheduling.md`, `coding-agent.md`, the `context-graph` skill). Anyone who upgraded from v2.x kept those dead files in `~/.claude/` and could end up with two competing harness models loaded at once — exactly the conflict that surfaced in a real session and prompted this work.
+
+**Behavior change** — the installer no longer auto-deletes. Stale files are now **detected and reported** by default, listing each one with its `~/.claude/` path. Pass `--clean-stale` to remove them; the regular backup pass picks them up first. This is a deliberate trade: silent cleanup hid both the problem and the fix from users. The new default surfaces the decision.
+
+**Updated stale manifest:**
+- v2.x module-lock era (retired in v3.0): `rules/orchestrator.md`, `rules/scheduling.md`, `rules/coding-agent.md`, `skills/context-graph/`, `harness/`, `templates/`, `commands/project-harness-init.md`, `commands/project-harness-continue.md`
+- v3.2.x cleanup (retired in v3.2.2): `rules/engineering-standards.md`, `rules/non-harness-workflow.md`
+
+**Scope:** global files only (`~/.claude/`). Per-project residue (`.context/modules.yaml`, old `.harness/` schemas, project-local `.claude/rules/scheduling.md`) is intentionally left alone — projects contain user data and the upgrade flow needs more thought before it touches them.
 
 ### v3.5.1 (2026-04-25)
 
