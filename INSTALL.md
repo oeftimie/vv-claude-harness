@@ -1,4 +1,4 @@
-# Installation Guide: Harness v3.5.1
+# Installation Guide: Harness v3.6.0
 
 ## Prerequisites
 

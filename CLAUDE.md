@@ -19,6 +19,12 @@ Files under `claude/` are **distribution templates**, not active project configu
 
 - No build system, no tests, no application code
 - Changes are documentation and template edits only
-- Version number lives in: `install` (`HARNESS_VERSION` constant + module docstring banner), `claude/CLAUDE.md` frontmatter + description line, `README.md` "Current version" header, `README.md` download/unzip examples in "Getting started", `README.md` changelog header, and `INSTALL.md` title
-- Keep all version references in sync when bumping. Sanity check: `grep -rn "X\.Y\.Z" --include="*.md" --include="install"` should return only the new version (plus historical changelog entries)
+- Version number lives in:
+  - `install` — `HARNESS_VERSION` constant + module docstring banner
+  - `claude/CLAUDE.md` — frontmatter `version:` + description line
+  - `claude/skills/harness-init/SKILL.md` — frontmatter description, H1 title, `version:` field in the `harness.json` template, the init commit message, and the final report banner
+  - `claude/skills/harness-continue/SKILL.md` — frontmatter description and H1 title
+  - `README.md` — "Current version" header, download/unzip examples in "Getting started", and changelog header for the new entry
+  - `INSTALL.md` — title
+- Keep all version references in sync when bumping. Sanity check: `grep -rn "OLD\.VERSION" --include="*.md" --include="install"` should return only historical changelog entries; `grep -rn "NEW\.VERSION"` should hit every location above
 - The installed global copy at `~/.claude/CLAUDE.md` must match `claude/CLAUDE.md` (minus personal sections like Slack config)
