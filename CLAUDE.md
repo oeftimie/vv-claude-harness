@@ -19,6 +19,6 @@ Files under `claude/` are **distribution templates**, not active project configu
 
 - No build system, no tests, no application code
 - Changes are documentation and template edits only
-- Version number lives in: `claude/CLAUDE.md` frontmatter, `README.md` header, and `README.md` changelog
-- Keep all three version references in sync when bumping
+- Version number lives in: `install` (`HARNESS_VERSION` constant + module docstring banner), `claude/CLAUDE.md` frontmatter + description line, `README.md` "Current version" header, `README.md` download/unzip examples in "Getting started", `README.md` changelog header, and `INSTALL.md` title
+- Keep all version references in sync when bumping. Sanity check: `grep -rn "X\.Y\.Z" --include="*.md" --include="install"` should return only the new version (plus historical changelog entries)
 - The installed global copy at `~/.claude/CLAUDE.md` must match `claude/CLAUDE.md` (minus personal sections like Slack config)
