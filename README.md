@@ -267,14 +267,14 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol 
 
 Everything you need is in this repo:
 
-1. Download [harness-v3.4.0.zip](https://github.com/oeftimie/vv-claude-harness/releases)
+1. Download [harness-v3.5.1.zip](https://github.com/oeftimie/vv-claude-harness/releases)
 2. Follow the [INSTALL.md](./INSTALL.md) instructions
 3. Review the [CLAUDE.md](./claude/CLAUDE.md) for core engineering standards
 
 ### Quick install
 
 ```bash
-unzip vv-claude-harness-v3.4.0.zip
+unzip vv-claude-harness-v3.5.1.zip
 cd vv-claude-harness
 ./install
 ```
@@ -316,6 +316,10 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
 ---
 
 ## Changelog
+
+### v3.5.1 (2026-04-25)
+
+**Hotfix:** v3.5.0 shipped without bumping `install` (`HARNESS_VERSION` constant + banner), `INSTALL.md` title, and the README download/unzip examples. Running `./install` from a v3.5.0 directory reported "Upgrade (v3.5.0 -> v3.4.0)" — a downgrade against the installed copy. No functional changes; version strings only. Repo `CLAUDE.md` updated to add `install` to the version-sync list so this regression can't repeat.
 
 ### v3.5.0 (2026-04-06)
 
