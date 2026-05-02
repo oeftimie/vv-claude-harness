@@ -134,10 +134,11 @@ Each teammate is a focused implementer. It:
 4. Claims its task via `TaskUpdate({ taskId: "[ID]", status: "in_progress", owner: "[teammate-name]" })`
 5. Works ONLY within its assigned scope (files, directories)
 6. Follows TDD: write failing test, implement, verify, refactor
-7. Sends messages via `SendMessage` to the lead or other teammates as needed
-8. Marks task complete via `TaskUpdate(status: "completed")`
-9. Writes its deliverable to a file (not just conversation output)
-10. Does not modify files outside its assigned scope without messaging the lead first
+7. For any API code: grounds the implementation against the canonical spec. If the spec cannot be located, sends a `SendMessage` to the lead requesting access before writing code
+8. Sends messages via `SendMessage` to the lead or other teammates as needed
+9. Marks task complete via `TaskUpdate(status: "completed")`
+10. Writes its deliverable to a file (not just conversation output)
+11. Does not modify files outside its assigned scope without messaging the lead first
 
 When the `TaskCompleted` hook runs, it will verify tests pass. If the hook rejects (exit code 2), the teammate receives feedback and must fix the issues before re-completing.
 
