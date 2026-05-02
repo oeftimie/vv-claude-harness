@@ -79,6 +79,10 @@ If you catch yourself writing "new", "old", "legacy", "wrapper", "unified", or i
 
 Claude Code operates in two modes depending on whether the harness is active. The mode is determined by the presence of a `.harness/` directory in the project root.
 
+### Session Resume (applies to both modes)
+
+At the start of every session, before reading `context_summary.md` or starting fresh work: scan recent conversation messages for an in-flight investigation that was paused or interrupted. If one exists, pick it up where it left off rather than restarting from context files. Conversation context is more current than the persisted summary.
+
 ### Harness-Managed Projects
 
 When `.harness/` exists, the harness skills (`/harness-init`, `/harness-continue`) and the Agent Teams protocol rule (`agent-teams-protocol.md`) govern the workflow. Don't duplicate their instructions here; follow them.
