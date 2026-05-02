@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
 
-**Current version: v3.6.0** — Stale-file detection in the installer. Surfaces residue from older harness versions (including the v2.x module-lock era's `orchestrator.md` / `scheduling.md` / `coding-agent.md` / `context-graph` skill) that previously sat silently in `~/.claude/` after upgrades. Default behavior is detect-and-warn; pass `--clean-stale` to remove. Replaces the older silent auto-delete pass, which had an incomplete manifest. Builds on v3.5.0's session discipline improvements: smoke test gate, features.json audit, mandatory retrospectives, inline context updates.
+**Current version: v3.7.0** — Optional OpenSpec integration for spec traceability across sessions. Adds `spec_path` and `spec_required` fields to features.json, a `.harness/openspec.sh` shim as the OpenSpec integration boundary, and a "Read the spec first" protocol in spawn prompts. Existing harness projects keep working unchanged unless they opt in. v3.5.0's session discipline improvements and v3.6.0's installer stale-file detection remain intact.
 
 ---
 
@@ -20,7 +20,7 @@ Two failure patterns emerge consistently:
 
 Both failures stem from the same root cause: no persistent memory of intent, progress, or remaining work.
 
-v2.1 addressed a third failure: parallel agents stepping on each other. v3.0 replaced the custom coordination layer entirely with Claude Code's native Agent Teams. And v3.2 added mechanical enforcement (shell hooks that physically prevent completion without passing tests), v3.3 added metacognitive self-improvement (the harness learns from its own coordination patterns), v3.4 fixed four hooks that were silently broken on real systems, and v3.5 tightened session discipline based on real-world violation analysis.
+v2.1 addressed a third failure: parallel agents stepping on each other. v3.0 replaced the custom coordination layer entirely with Claude Code's native Agent Teams. v3.2 added mechanical enforcement (shell hooks that physically prevent completion without passing tests), v3.3 added metacognitive self-improvement (the harness learns from its own coordination patterns), v3.4 fixed four hooks that were silently broken on real systems, v3.5 tightened session discipline based on real-world violation analysis, v3.6 added installer stale-file detection so version upgrades don't silently leave broken artifacts behind, and v3.7 closes a fourth failure: agents inventing intent from one-line feature descriptions instead of reaching for the authoritative spec. v3.7 introduces optional OpenSpec linkage so features point at specs that live in git as living documentation.
 
 ## Two solutions, one insight
 
@@ -51,7 +51,7 @@ Three reasons:
 * **Transparency**: When an agent goes off the rails, you can open `task_plan.md` and see exactly what it thinks it's doing. You can't really debug a vector database when an agent starts hallucinating. Files are inspectable, editable, and version-controlled.
 * **Structure**: Anthropic specifically chose JSON for their features file because, [as they noted](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), "the model is less likely to inappropriately change or overwrite JSON files compared to Markdown files." Structured formats create implicit contracts. The agent knows that `passes: false` means work remains. It knows not to delete entries. The file format itself enforces discipline.
 
-## The evolution: v2.0 to v3.4
+## The evolution: v2.0 to v3.7
 
 ### v2.0: The foundation (January 2025)
 
@@ -267,14 +267,14 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol 
 
 Everything you need is in this repo:
 
-1. Download [harness-v3.6.0.zip](https://github.com/oeftimie/vv-claude-harness/releases)
+1. Download [harness-v3.7.0.zip](https://github.com/oeftimie/vv-claude-harness/releases)
 2. Follow the [INSTALL.md](./INSTALL.md) instructions
 3. Review the [CLAUDE.md](./claude/CLAUDE.md) for core engineering standards
 
 ### Quick install
 
 ```bash
-unzip vv-claude-harness-v3.6.0.zip
+unzip vv-claude-harness-v3.7.0.zip
 cd vv-claude-harness
 ./install
 ```
@@ -316,6 +316,43 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
 ---
 
 ## Changelog
+
+### v3.7.0 (2026-05-02)
+
+**Optional OpenSpec integration for spec traceability**, addressing a long-standing failure mode: agents that read a one-line `features.json` description and fill the gap with plausible-sounding LLM intuition, building something subtly off-intent. By the time tests pass, the deviation is baked in. v3.7.0 makes features point at authoritative specs that live in git as living documentation.
+
+**Schema additions:**
+
+1. **`spec_path`** (per feature) — pointer to the spec materials. During implementation: points at OpenSpec's change folder. After PR-merge archive (v3.8.0+): points at the archived capability spec. The path structure follows OpenSpec's conventions; the harness does not define it.
+
+2. **`spec_required`** (per feature, default `true` when OpenSpec enabled) — whether implementation may proceed without a spec. False reserved for trivial work; setting it false must be deliberate.
+
+3. **`openspec` block in `harness.json`** — `enabled`, `cli_required`, plus `specs_dir`, `changes_dir`, and `config_synced_at` populated by the shim's `sync-config` verb. The harness never hand-edits OpenSpec's path conventions.
+
+**Integration boundary:**
+
+4. **`.harness/openspec.sh` shim** — single integration point for all OpenSpec invocations. v3.7.0 ships with the `sync-config` verb (queries OpenSpec for configured paths, writes them into `harness.json`). Future verbs (`archive`, `validate`, `verify`) ship in v3.8.0 and v3.9.0. When OpenSpec changes, only the shim updates — harness logic, prompts, and hooks are unaffected.
+
+**Protocol additions:**
+
+5. **OpenSpec opt-in at init** — `harness-init` Step 1.5 prompts the user. Opting in records the choice in `harness.json` and creates the shim. Opting out (default) leaves v3.6.0 behavior unchanged.
+
+6. **Phase 0 in `harness-continue`** — when `openspec.enabled: true`, verifies the OpenSpec CLI is available (if `cli_required`) and refreshes the mirrored config via `sync-config`. Cheap (one CLI call per session). Keeps `harness.json` in sync with OpenSpec's actual configuration automatically.
+
+7. **Read-before-write protocol in spawn prompts** — when a feature has `spec_path` set, the spawn prompt instructs the teammate to Read the spec materials before writing any code. Prose-enforced in v3.7.0; mechanically enforced in v3.9.0 via PreToolUse hook.
+
+8. **`## Spec Discipline` section in CLAUDE.md** — documents the state machine for `spec_path`, the read-before-write rule, the no-inline-drafting principle (separate agents for spec drafting and implementation, with a human approval gate between), the sync-on-PR-merge timing, and the "delegate to OpenSpec, never duplicate" principle.
+
+**What's NOT in v3.7.0** (deferred to later releases):
+- Spec-drafting protocol with separate drafter agent and human approval gate (v3.8.0)
+- Drift detection and Spec Lineage retrospective (v3.8.0)
+- Git post-merge hook for automatic archive (v3.8.0)
+- Migration script for existing pre-v3.7 (v3.6.0 and earlier) projects (v3.8.0)
+- PreToolUse hook enforcing spec-read-before-write (v3.9.0)
+- Bypass mechanism (`--bypass-spec-check`) and bypass-rate metric (v3.9.0)
+- `validate` and `verify` shim verbs (v3.9.0)
+
+**Backwards compatibility:** v3.6.0 projects keep working unchanged. The new schema fields are nullable; absent `harness.json` openspec block disables all spec logic. v3.7.0 → v3.9.0 are pure additions for non-OpenSpec projects.
 
 ### v3.6.0 (2026-04-26)
 

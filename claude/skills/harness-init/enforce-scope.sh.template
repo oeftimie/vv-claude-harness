@@ -1,5 +1,5 @@
 #!/bin/bash
-# Harness v3.4.0 - PreToolUse scope enforcement hook
+# Harness v3.7.0 - PreToolUse scope enforcement hook
 # Runs before Edit/Write tool calls when a teammate scope file exists.
 # Exit code 0 = allow edit
 # Exit code 2 = block edit (file outside scope)

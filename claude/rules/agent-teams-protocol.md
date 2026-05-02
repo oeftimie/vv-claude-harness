@@ -109,7 +109,7 @@ The lead:
 3. Presents the plan to the user for approval before spawning any teammates
 4. Creates the team via `TeamCreate`
 5. Creates tasks via `TaskCreate`, then sets dependencies via `TaskUpdate` with `addBlockedBy` (derived from features.json `depends_on`)
-6. Spawns teammates via `Task` with team_name, model, and role-specific prompts
+6. Spawns teammates via `Task` with team_name, model, and role-specific prompts. If `harness.json` has `openspec.enabled: true`, the spawn prompt MUST include the feature's `spec_path` and an explicit instruction to read it before writing code (see Spawn Prompt Template below). Refuse to spawn an implementer for a feature with `spec_required: true` and `spec_path: null` — surface the gap to the user instead.
 7. Monitors progress via `TaskList` and incoming `SendMessage` messages
 8. Resolves conflicts if two teammates need overlapping files
 9. Reviews completed work (exit plan mode if needed for code review)
@@ -134,7 +134,7 @@ Each teammate is a focused implementer. It:
 4. Claims its task via `TaskUpdate({ taskId: "[ID]", status: "in_progress", owner: "[teammate-name]" })`
 5. Works ONLY within its assigned scope (files, directories)
 6. Follows TDD: write failing test, implement, verify, refactor
-7. For any API code: grounds the implementation against the canonical spec. If the spec cannot be located, sends a `SendMessage` to the lead requesting access before writing code
+7. **If the spawn prompt includes a `spec_path`** (OpenSpec enabled): Read the spec materials at that path BEFORE writing any code. The folder structure follows OpenSpec's conventions — read whatever files OpenSpec placed there. Do not proceed on intuition. If the spec is missing, ambiguous, or contradicts the feature description, SendMessage to the lead and stop.
 8. Sends messages via `SendMessage` to the lead or other teammates as needed
 9. Marks task complete via `TaskUpdate(status: "completed")`
 10. Writes its deliverable to a file (not just conversation output)
@@ -143,6 +143,32 @@ Each teammate is a focused implementer. It:
 When the `TaskCompleted` hook runs, it will verify tests pass. If the hook rejects (exit code 2), the teammate receives feedback and must fix the issues before re-completing.
 
 When the `TeammateIdle` hook runs after task completion, the teammate may be prompted to pick up a new task.
+
+## Spawn Prompt Template (OpenSpec-aware)
+
+When the lead spawns a teammate on a project with `openspec.enabled: true`, the spawn prompt must include the feature's `spec_path` line and the read-first instruction. Use this template:
+
+```
+Feature: [F00X] — [description]
+Scope: [scope directories from features.json]
+Spec: [spec_path from features.json]  (OpenSpec change folder or archived capability)
+
+BEFORE writing any code:
+1. Read the spec materials at the path above. The folder structure follows
+   OpenSpec's conventions for that change — read whatever files OpenSpec
+   placed there. If the path is in OpenSpec's changes directory, you can
+   also invoke OpenSpec's own commands (e.g., `/opsx:apply <change-name>`)
+   to follow OpenSpec's implementation flow.
+2. If the spec is missing, ambiguous, or contradicts the feature description,
+   SendMessage to the lead and stop.
+3. Do not proceed on intuition. The spec is the source of truth for intent.
+
+[Then: standard TDD instructions, scope constraints, deliverable, git identity, etc.]
+```
+
+The template names the path and the responsibility. It does NOT enumerate which files exist inside the change folder — that's OpenSpec's content model, and the harness must not duplicate it. If OpenSpec adds or renames artifacts, the prompt stays correct.
+
+When `openspec.enabled` is false (or the openspec block is absent), omit the Spec line and the BEFORE-writing block. Standard prompt only.
 
 ## Native Messaging Protocol
 
