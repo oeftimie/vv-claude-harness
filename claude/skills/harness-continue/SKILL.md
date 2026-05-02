@@ -1,9 +1,33 @@
 ---
 name: harness-continue
-description: Continue working on a harness-managed project (v3.6.0). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
+description: Continue working on a harness-managed project (v3.7.0). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, optional OpenSpec spec traceability, and compaction-aware context management. Use at the start of any session on a harness project.
 ---
 
-# Harness Continue v3.6.0
+# Harness Continue v3.7.0
+
+## Step 0: OpenSpec Availability Check (skip if openspec.enabled is false)
+
+Read `.harness/harness.json`'s `openspec` block. Three branches:
+
+1. **No `openspec` block, or `enabled: false`**: skip this step entirely. Proceed to Step 1. All spec-related logic in subsequent steps no-ops.
+
+2. **`enabled: true`, `cli_required: true`**: verify the OpenSpec CLI is on PATH:
+   ```bash
+   command -v openspec || echo "MISSING"
+   ```
+   If missing, fail loudly: stop the session and tell the user OpenSpec is required for this project but not installed. Do not silently degrade.
+
+3. **`enabled: true`, `cli_required: false`**: file-only workflow; CLI may be absent. Skip the `command -v` check.
+
+Then refresh the mirrored config from OpenSpec:
+
+```bash
+.harness/openspec.sh sync-config
+```
+
+This rewrites `harness.json`'s `specs_dir`, `changes_dir`, and `config_synced_at`. Cheap (one CLI call). Keeps the harness in sync with OpenSpec's actual configured paths so subsequent steps don't operate on stale values.
+
+If `sync-config` fails (e.g., the shim itself is broken), fix that first — it's a structural issue, not transient.
 
 ## Step 1: Orient Yourself
 
@@ -32,10 +56,14 @@ Project state:
 - Last session: [date, what was done]
 - Features: [N passing / M total]
 - Next up: [highest priority incomplete feature]
+  - spec_path: [path or "null — needs drafting" if openspec enabled and spec_required]
 - Blockers: [any noted in progress or context_summary]
 - Git identity: [from harness.json]
+- OpenSpec: [enabled (last synced: TIMESTAMP) | disabled]
 - Untracked files: [any unexpected files surfaced to user]
 ```
+
+If `openspec.enabled` is true, surface `spec_path` per pending/in-progress feature. A pending feature with `spec_required: true` and `spec_path: null` is BLOCKED — it cannot be claimed by an implementer until a spec is drafted. v3.7.0 documents this state but does not yet automate spec drafting (that ships in v3.8.0); for now, surface the gap to the user and ask whether to draft the spec before proceeding.
 
 ## Step 2: Verify Git Identity
 

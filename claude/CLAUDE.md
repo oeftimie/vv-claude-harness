@@ -1,10 +1,10 @@
 ---
 scope: global
 location: ~/.claude/CLAUDE.md
-version: 3.6.0
-last_updated: 2026-04-26
+version: 3.7.0
+last_updated: 2026-05-02
 author: {{USER_NAME}}
-description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.6.0.
+description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.7.0.
 supplements: Project-level CLAUDE.md files in individual repositories
 ---
 
@@ -79,6 +79,10 @@ If you catch yourself writing "new", "old", "legacy", "wrapper", "unified", or i
 
 Claude Code operates in two modes depending on whether the harness is active. The mode is determined by the presence of a `.harness/` directory in the project root.
 
+### Session Resume (applies to both modes)
+
+At the start of every session, before reading `context_summary.md` or starting fresh work: scan recent conversation messages for an in-flight investigation that was paused or interrupted. If one exists, pick it up where it left off rather than restarting from context files. Conversation context is more current than the persisted summary.
+
 ### Harness-Managed Projects
 
 When `.harness/` exists, the harness skills (`/harness-init`, `/harness-continue`) and the Agent Teams protocol rule (`agent-teams-protocol.md`) govern the workflow. Don't duplicate their instructions here; follow them.
@@ -140,6 +144,53 @@ Claude Code has a persistent auto-memory system at `~/.claude/projects/<project>
 **`context_summary.md`** is per-project, explicit, and version-controlled. Use it for architectural decisions, team-relevant patterns, and gotchas that must be shared across sessions and team members.
 
 These are complementary. Do not migrate `context_summary.md` content to auto-memory — they serve different audiences.
+
+---
+
+## Spec Discipline
+
+Applies only when `harness.json` contains an `openspec` block with `enabled: true`. Otherwise this section is inert.
+
+OpenSpec is the *intent layer*; the harness is the *execution layer*. The two link via two fields in each feature: `spec_path` (pointer) and `spec_required` (boolean). The harness orchestrates *when* to invoke OpenSpec; OpenSpec owns *what* proposals, specs, deltas, and validation look like.
+
+### State machine for `spec_path`
+
+Every feature with `spec_required: true` is in one of three states:
+
+- **Drafted, in flight**: `spec_path` points inside OpenSpec's `changes_dir` (e.g., `openspec/changes/<change-name>/`). Implementation may proceed.
+- **Archived**: `spec_path` points inside OpenSpec's `specs_dir` (e.g., `openspec/specs/<capability>.md`). Feature is complete and the spec is the long-term traceability anchor.
+- **Blocked**: `spec_path` is `null`. Implementation MUST NOT start. The feature needs a spec drafted via OpenSpec (`/opsx:propose <name>`). v3.7.0 surfaces this gap to the user; v3.8.0 automates the drafting protocol.
+
+The path itself encodes the state — the harness does not maintain a separate `spec_archived` flag.
+
+### Read before write
+
+Before writing any code on a claimed feature: Read the spec materials at `spec_path`. The folder structure follows OpenSpec's conventions — read whatever files OpenSpec placed there. Do not proceed on intuition. If the spec is unclear, ask before coding.
+
+This rule is prose-enforced in v3.7.0 (spawn prompt instructs the agent) and mechanically enforced in v3.9.0 (PreToolUse hook blocks Edit/Write to scope files unless the spec was Read in the current session).
+
+### When the spec doesn't exist yet
+
+If `spec_required: true` and `spec_path: null`:
+- Do NOT let the implementing agent draft the spec inline. Same agent + same context = LLM-invents-intent failure mode.
+- Run a separate spec-drafting pass: invoke OpenSpec's proposal flow (`/opsx:propose <change-name>`), let OpenSpec produce its proposal artifacts, present to the user for approval.
+- Only after approval, set `spec_path` in features.json and unblock the implementer.
+
+In v3.7.0, this protocol is documented but not automated — surface the gap to the user and offer to invoke `/opsx:propose` manually before claiming the feature.
+
+### When implementation passes
+
+`spec_path` remains unchanged (still inside OpenSpec's changes directory). The window between tests-green and PR-merged is the review window — reviewers may demand spec updates alongside code updates. Do not archive on feature pass.
+
+### When the PR merges
+
+Invoke OpenSpec's archive flow (e.g., `/opsx:sync` then `/opsx:archive`, or whatever OpenSpec's current canonical sequence is — defer to OpenSpec's docs and the `.harness/openspec.sh` shim). Update `spec_path` in features.json to the path OpenSpec returned. This is the long-term traceability anchor.
+
+In v3.7.0, this is a manual step performed by the user after merge; v3.8.0 automates it via a git post-merge hook.
+
+### Delegate to OpenSpec, never duplicate
+
+The harness orchestrates *when* to invoke OpenSpec; OpenSpec owns *what* the artifacts look like. If OpenSpec already has a verb for it (`/opsx:propose`, `/opsx:verify`, `/opsx:archive`), invoke the verb — never reimplement. All OpenSpec invocations from harness code go through `.harness/openspec.sh`. When OpenSpec ships a breaking change, only that file changes.
 
 ---
 

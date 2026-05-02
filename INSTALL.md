@@ -1,12 +1,20 @@
-# Installation Guide: Harness v3.6.0
+# Installation Guide: Harness v3.7.0
 
 ## Prerequisites
 
 - Claude Code CLI installed and working
 - Git initialized in your project
-- `jq` installed (used by hook scripts): `brew install jq` on macOS
+- `jq` installed (used by hook scripts and the OpenSpec shim): `brew install jq` on macOS
 - `python3` installed (used by hook scripts and the installer)
 - Agent Teams enabled: `export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (the installer handles this)
+
+### Optional: OpenSpec (for spec traceability)
+
+v3.7.0 introduces optional OpenSpec integration. If you want spec traceability across sessions, install OpenSpec separately and run `openspec init` per project. The harness will not install or manage OpenSpec for you — `harness-init` only asks whether to enable the integration and creates the `.harness/openspec.sh` shim that bridges to OpenSpec.
+
+OpenSpec installs its own artifacts into `.claude/skills/openspec-*/SKILL.md` and `.claude/commands/opsx/` during its own `openspec init`. These sit alongside the harness's `harness-init` and `harness-continue` skills with distinct names — no collision.
+
+If you skip OpenSpec, harness behavior is unchanged from v3.6.0.
 
 ## Quick Install
 
@@ -107,6 +115,17 @@ claude
 ```
 
 This orients to current state, verifies git identity, and picks single-session or Agent Teams mode.
+
+## What Changed in v3.7.0
+
+- Optional OpenSpec integration for spec traceability (opt-in at `harness-init`)
+- New `spec_path` and `spec_required` fields in `features.json` feature schema
+- New `openspec` block in `harness.json` (only when enabled)
+- New `.harness/openspec.sh` shim — single integration boundary with OpenSpec; ships with `sync-config` verb in v3.7.0
+- New Phase 0 in `harness-continue`: verifies OpenSpec CLI presence and refreshes mirrored config when enabled
+- Spawn prompt template in `agent-teams-protocol.md` includes spec_path and read-before-write instruction when OpenSpec is enabled
+- New `## Spec Discipline` section in `~/.claude/CLAUDE.md` documenting the protocol
+- Backwards compatible: v3.6.0 projects without opt-in keep working unchanged
 
 ## What Changed in v3.2.2
 
