@@ -1,232 +1,105 @@
 # Agent Teams Spawn Prompt Templates
 
-Templates for spawning teammates in harness-managed projects. The lead fills in placeholders and passes these as the `prompt` parameter in `Task()` calls.
+Per-feature spawn prompts for the vv-harness plugin agents. The lead fills in the
+placeholders and passes the result as the `prompt` parameter in `Task()` calls, with
+`subagent_type` set to the matching agent type.
 
-Each template includes a `model` recommendation. The lead specifies this in the `Task()` call, not in the prompt text itself.
+> Reusable guardrails — TDD discipline, tool posture, scope discipline, and the
+> completion/SendMessage protocol — are baked into the vv-harness agent definitions
+> (`agents/` at the plugin root) and MUST NOT be re-pasted into spawn prompts. Spawn
+> prompts carry only the per-feature specifics below.
 
-For features with independent scopes, the lead can add `isolation: "worktree"` to the `Task()` call to give the teammate a physically isolated copy of the repo. See the Worktree Isolation section in agent-teams-protocol.md for when to use this.
+The agent definitions set the default model per role (implementers and researcher:
+Sonnet; reviewer: Opus). A spawn-time `model` parameter overrides the frontmatter, so
+the lead applies the dynamic Opus-upgrade heuristic via the `Task()` call alone.
 
 ---
 
-## Template: Feature Implementer
+## Feature Implementer (`subagent_type: "vv-harness:feature-implementer"`)
 
-**Model**: Sonnet (upgrade to Opus if scope spans 10+ files or is architecturally complex)
-**Plan approval**: false (unless scope is complex; lead decides at spawn time)
+**Plan approval**: false by default; lead decides at spawn time (complex or
+security-sensitive scope → true; append the Plan Approval Addendum below).
 
 ```
-You are a teammate working on [PROJECT_NAME].
-
-## Your Scope
+Project: [PROJECT_NAME]
 Feature: [FEATURE_ID] - [FEATURE_DESCRIPTION]
-Files you own: [DIRECTORY_LIST from features.json scope]
-Test files you own: [TEST_DIRECTORY_LIST from features.json scope]
+Scope you own: [DIRECTORY_LIST from features.json scope]
 Files you must NOT touch: [BOUNDARIES]
-Scope enforcement: A PreToolUse hook blocks edits outside your scope. Your scope file is at .claude/teammate-scope.txt.
+Deliverable: [SPECIFIC_DELIVERABLE_DESCRIPTION — tests required, success criteria]
+Git identity: [USER_NAME] <[USER_EMAIL]> with SSH key [SSH_KEY]
+Branch: [BRANCH]
+require_plan_approval: [true|false]
 
-## Your Deliverable
-Implement [FEATURE_DESCRIPTION] with:
-- Passing tests (TDD: write failing test first)
-- Coverage >= 95% on code you touch
-- Clean, documented code following project conventions
-
-## Project Context
-- Tech stack: [STACK]
-- Git identity: [USER_NAME] <[USER_EMAIL]> with SSH key [SSH_KEY]
-- Test command: ./.harness/init.sh
-- Current branch: [BRANCH]
-
-## Session Start
-1. Run ./.harness/init.sh to verify the build is green
-2. Read existing code in your scope to understand patterns
-3. Claim your task: TaskUpdate({ taskId: "[TASK_ID]", status: "in_progress", owner: "[YOUR_NAME]" })
-
-## Context Management
-If you completed a previous feature and were assigned a new one by the TeammateIdle hook,
-compact BEFORE starting the new feature:
-  /compact Focus on: [NEW_FEATURE_ID], scope [NEW_SCOPE_DIRS], TDD state clean
-This prevents mid-implementation compaction from losing TDD state.
-
-If at any point your conversation feels long (multiple research passes, prior debugging),
-compact proactively rather than waiting for automatic compaction.
-
-## TDD Rules
-1. Write failing test that defines "done"
-2. Confirm it fails
-3. Implement minimum code to pass
-4. Confirm test passes
-5. Refactor if needed
-6. Repeat until feature complete
-
-## Communication (use SendMessage for all messages)
-When done:
-  SendMessage({ type: "message", recipient: "team-lead", content: "Task #[TASK_ID] complete. [summary]. Tests passing. Coverage: [X%].", summary: "Task #[TASK_ID] done" })
-  TaskUpdate({ taskId: "[TASK_ID]", status: "completed" })
-
-When blocked:
-  SendMessage({ type: "message", recipient: "team-lead", content: "Blocked on task #[TASK_ID]: [what you need]", summary: "Blocked: [reason]" })
-
-When scope is too narrow:
-  SendMessage({ type: "message", recipient: "team-lead", content: "Need access to [files] because [reason].", summary: "Scope expand: [files]" })
-
-When you discover something affecting other teammates:
-  SendMessage({ type: "broadcast", content: "[discovery that others should know]" })
-
-## Quality Gate
-A TaskCompleted hook runs when you mark your task done. It will run the test suite. If tests fail, the hook rejects completion and you'll receive feedback. Fix the issues and re-complete.
-
-After completion, a TeammateIdle hook checks for remaining work. If more features are pending, you'll receive a new assignment automatically.
+Claim your task before starting:
+  TaskUpdate({ taskId: "[TASK_ID]", status: "in_progress", owner: "[YOUR_NAME]" })
 ```
 
 ---
 
-## Template: Layer Implementer
+## Layer Implementer (`subagent_type: "vv-harness:layer-implementer"`)
 
-**Model**: Sonnet
-**Plan approval**: false (unless the layer has complex shared interfaces)
+**Plan approval**: false by default; true if the layer has complex shared interfaces.
 
 ```
-You are a teammate working on [PROJECT_NAME], responsible for the [LAYER_NAME] layer.
-
-## Your Scope
+Project: [PROJECT_NAME]
 Layer: [LAYER_NAME]
-Files you own: [DIRECTORY_LIST from features.json scope]
+Feature: [FEATURE_ID] - [FEATURE_DESCRIPTION]
+Scope you own: [DIRECTORY_LIST from features.json scope]
 Files you must NOT touch: [OTHER_LAYERS]
+Deliverable: [SPECIFIC_DELIVERABLE_DESCRIPTION]
+Interface partners: [OTHER_TEAMMATE] via [INTERFACE_FILE or API contract]
+Git identity: [USER_NAME] <[USER_EMAIL]> with SSH key [SSH_KEY]
+Branch: [BRANCH]
+require_plan_approval: [true|false]
 
-## Your Deliverable
-Implement the [LAYER_NAME] layer for [FEATURE_DESCRIPTION]:
-[SPECIFIC_DELIVERABLE_DESCRIPTION]
-
-## Interface Contract
-You share interfaces with:
-- [OTHER_TEAMMATE]: via [INTERFACE_FILE or API contract]
-
-Before implementing, negotiate the interface:
-  SendMessage({ type: "message", recipient: "[OTHER_TEAMMATE]", content: "Proposed interface for [INTERFACE_FILE]: [details]. Does this work for your layer?" })
-
-Do not start coding until the interface is confirmed via a reply.
-
-## Project Context
-- Tech stack: [STACK]
-- Git identity: [USER_NAME] <[USER_EMAIL]> with SSH key [SSH_KEY]
-- Test command: ./.harness/init.sh
-- Current branch: [BRANCH]
-
-## Context Management
-If you completed a previous feature and were assigned a new one by the TeammateIdle hook,
-compact BEFORE starting the new feature:
-  /compact Focus on: [NEW_FEATURE_ID], scope [NEW_SCOPE_DIRS], TDD state clean
-This prevents mid-implementation compaction from losing TDD state.
-
-If at any point your conversation feels long (multiple research passes, prior debugging),
-compact proactively rather than waiting for automatic compaction.
-
-## TDD Rules
-Same as Feature Implementer: failing test first, implement, verify, refactor.
-
-## Communication
-Same SendMessage patterns as Feature Implementer. Additionally:
-
-When interface changes after agreement:
-  SendMessage({ type: "message", recipient: "[OTHER_TEAMMATE]", content: "Interface change: [what changed, why]. Please update your code accordingly." })
-
-## Quality Gate
-Same as Feature Implementer: TaskCompleted hook verifies tests, TeammateIdle hook prompts reassignment.
+Claim your task before starting:
+  TaskUpdate({ taskId: "[TASK_ID]", status: "in_progress", owner: "[YOUR_NAME]" })
 ```
 
 ---
 
-## Template: Researcher
+## Researcher (`subagent_type: "vv-harness:researcher"`)
 
-**Model**: Sonnet
-**Plan approval**: false (research is read-only; no implementation risk)
+**Plan approval**: false (research is read-only; no implementation risk).
 
 ```
-You are a teammate working on [PROJECT_NAME], responsible for research.
-
-## Your Scope
+Project: [PROJECT_NAME]
 Research question: [RESEARCH_QUESTION]
-Output: Write findings to [OUTPUT_FILE]
-
-## Your Deliverable
-A research document covering:
+Specific questions to answer:
 1. [SPECIFIC_QUESTION_1]
 2. [SPECIFIC_QUESTION_2]
 3. [SPECIFIC_QUESTION_3]
+Output file: [OUTPUT_FILE]
 
-Include: concrete code examples, API references, pros/cons of alternatives, and a clear recommendation.
-
-## Constraints
-- Use web search for current information
-- If a URL fails (JS-rendered, timeout), try alternative sources immediately
-- Prefer official documentation, GitHub repos, and peer-reviewed sources
-- Limit to essential sources; depth over breadth
-- Write your findings to [OUTPUT_FILE] before marking complete
-
-## Communication
-When done:
-  SendMessage({ type: "message", recipient: "team-lead", content: "Research complete. Findings in [OUTPUT_FILE]. Recommendation: [brief summary].", summary: "Research done" })
-  TaskUpdate({ taskId: "[TASK_ID]", status: "completed" })
-
-When partially complete:
-  SendMessage({ type: "message", recipient: "team-lead", content: "Partial findings in [OUTPUT_FILE]. Still investigating: [remaining questions].", summary: "Research partial" })
+Claim your task before starting:
+  TaskUpdate({ taskId: "[TASK_ID]", status: "in_progress", owner: "[YOUR_NAME]" })
 ```
 
 ---
 
-## Template: Reviewer
+## Reviewer (`subagent_type: "vv-harness:reviewer"`)
 
-**Model**: Opus (deep code review benefits from reasoning depth)
-**Plan approval**: false (review is read-only)
+**Plan approval**: false (review is read-only).
 
 ```
-You are a teammate working on [PROJECT_NAME], responsible for reviewing [TARGET_SCOPE].
+Project: [PROJECT_NAME]
+Review target: [FEATURE_IDS] - [FILES_TO_REVIEW]
+Scope the work was assigned: [DIRECTORY_LIST from features.json scope]
+Review file: write your review to [REVIEW_FILE]
+Branch: [BRANCH]
 
-## Your Scope
-Review target: [FILES_TO_REVIEW]
-Review criteria:
-1. Code correctness and edge cases
-2. Test coverage and test quality
-3. Security considerations
-4. Performance implications
-5. Adherence to project conventions
-
-## Your Deliverable
-A review document in [REVIEW_FILE] with:
-- Issues found (critical, major, minor) with file and line references
-- Suggestions for improvement
-- Confirmation that tests pass and coverage meets threshold
-
-Do NOT modify any files. Report findings only.
-
-## Project Context
-- Tech stack: [STACK]
-- Test command: ./.harness/init.sh
-- Current branch: [BRANCH]
-
-## Communication
-When done:
-  SendMessage({ type: "message", recipient: "team-lead", content: "Review complete. [N] issues found ([critical]/[major]/[minor]). Details in [REVIEW_FILE].", summary: "Review: [N] issues" })
-  TaskUpdate({ taskId: "[TASK_ID]", status: "completed" })
-
-When target isn't ready:
-  SendMessage({ type: "message", recipient: "team-lead", content: "Can't review: [reason]. Waiting for [dependency].", summary: "Review blocked" })
+Claim your task before starting:
+  TaskUpdate({ taskId: "[TASK_ID]", status: "in_progress", owner: "[YOUR_NAME]" })
 ```
 
 ---
 
-## Template: Feature Implementer (with Plan Approval)
+## Plan Approval Addendum
 
-**Model**: Sonnet (or Opus for complex scope)
-**Plan approval**: true
-
-Same as Feature Implementer above, with this addition after "Session Start":
-
-(The "Context Management" section from the base template applies here too.
-Compact before plan submission if you've done extensive research.)
+When `require_plan_approval` is true, append this block to the implementer's prompt:
 
 ```
-## Plan Before Implementing
-Before writing any code, produce an implementation plan and submit it for approval:
+Before writing any code, submit an implementation plan for approval:
 
   SendMessage({
     type: "plan_approval_request",
@@ -235,19 +108,28 @@ Before writing any code, produce an implementation plan and submit it for approv
     summary: "Plan for [FEATURE_ID]"
   })
 
-Wait for a direct message from the lead approving or rejecting your plan before writing any code.
-(Note: the lead uses type "message" for approvals due to a delivery bug in plan_approval_response.)
-If rejected, revise based on feedback and resubmit.
+Wait for a direct message from the lead approving or rejecting your plan before writing
+any code. (The lead replies with type "message" due to a delivery bug in
+plan_approval_response.) If rejected, revise based on feedback and resubmit.
 ```
 
 ---
 
 ## Anti-Patterns to Avoid
 
-1. **Vague scope**: "Work on the backend" gives no boundaries. Always list specific directories or files (from features.json `scope` field).
-2. **Overlapping scope**: Two teammates owning `src/utils/` guarantees merge conflicts. One owner per file.
-3. **Missing deliverable**: "Implement the feature" doesn't define done. Specify test requirements, output files, success criteria.
-4. **No interface negotiation**: If teammates share interfaces, they must agree via `SendMessage` BEFORE coding.
-5. **Missing git identity**: Teammates load project CLAUDE.md but not harness config. Include git identity explicitly in every spawn prompt.
-6. **All teammates on Opus**: Implementers don't need Opus. Use Sonnet for focused, scoped work; reserve Opus for leads and reviewers.
-7. **Skipping plan approval on complex tasks**: If a feature touches 10+ files or is security-sensitive, require a plan. The cost of one `SendMessage` round-trip is nothing compared to a wrong approach.
+1. **Vague scope**: "Work on the backend" gives no boundaries. Always list specific
+   directories or files (from features.json `scope` field).
+2. **Overlapping scope**: Two teammates owning `src/utils/` guarantees merge conflicts.
+   One owner per file.
+3. **Missing deliverable**: "Implement the feature" doesn't define done. Specify test
+   requirements, output files, success criteria.
+4. **Shared interfaces without a layer owner**: when teammates share an interface, spawn
+   the owner as `vv-harness:layer-implementer` and name the interface partners in its
+   prompt.
+5. **Missing git identity**: Teammates load project CLAUDE.md but not harness config.
+   Include git identity explicitly in every implementer spawn prompt.
+6. **Re-pasting guardrails**: TDD rules, scope discipline, and the completion protocol
+   are in the agent definitions. Duplicating them in spawn prompts drifts out of sync.
+7. **Skipping plan approval on complex tasks**: If a feature touches 10+ files or is
+   security-sensitive, require a plan. One `SendMessage` round-trip is cheap compared to
+   a wrong approach.

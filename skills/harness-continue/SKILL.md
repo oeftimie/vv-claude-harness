@@ -192,7 +192,7 @@ Before spending tokens on teammates, produce a decomposition plan:
    - Features with `discovered_via` depth > 1 → consider folding them into the parent feature's scope
    - Scopes that needed frequent expansion in past sessions → note them as "expansion-prone" when scoping this team
 4. Design the team:
-   - Which teammates, what scope (from features.json `scope` field), what model (Sonnet default; Opus if historical metrics suggest high difficulty)
+   - Which teammates, what scope (from features.json `scope` field), what model (Sonnet default; Opus if historical metrics suggest high difficulty). The plugin agent definitions already default the model per role (implementers and researcher: Sonnet; reviewer: Opus); a spawn-time `model` parameter overrides the definition's frontmatter, so an Opus upgrade needs only the `Task()` call's model param.
    - Which tasks depend on which (from features.json `depends_on` field, mapped to `TaskUpdate` `addBlockedBy` calls after task creation)
    - Whether any teammate needs `require_plan_approval: true`
 5. Present the plan to the user:
@@ -246,18 +246,25 @@ Wait for user approval before proceeding to Phase 2.
    TaskUpdate({ taskId: "3", addBlockedBy: ["1", "2"] })
    ```
 
-5. Spawn teammates using templates from `team-spawn-prompts.md` in this skill's directory:
+5. Spawn teammates as the vv-harness plugin agent types. Each definition bakes in the
+   role's reusable guardrails (TDD discipline, tool allowlist, scope rules, completion
+   protocol), so the spawn prompt carries only per-feature specifics — use the templates
+   from `team-spawn-prompts.md` in this skill's directory:
    ```
    Task({
      description: "Implement F001",
-     subagent_type: "general-purpose",
+     subagent_type: "vv-harness:feature-implementer",
      name: "api",
      team_name: "PROJECT-sprint-N",
      model: "sonnet",
-     prompt: "[filled template with scope from features.json, deliverable, git identity, rules]"
+     prompt: "[per-feature specifics: feature ID, scope from features.json, deliverable, git identity, plan-approval flag, task ID]"
    })
    ```
-   Include git identity from `harness.json` in each spawn prompt.
+   Agent types: `vv-harness:feature-implementer`, `vv-harness:layer-implementer`,
+   `vv-harness:researcher`, `vv-harness:reviewer`. The spawn-time `model` parameter
+   overrides the definition's frontmatter model, so the Phase 1 Opus-upgrade heuristic
+   applies unchanged. Include git identity from `harness.json` in each spawn prompt.
+   Do not re-paste guardrail prose into spawn prompts — it lives in the agent definitions.
 
 ### Phase 3: Monitor
 
