@@ -281,11 +281,35 @@ Set up Agent Teams quality enforcement hooks. Read the two `.sh.template` files 
 3. Copy `check-remaining-tasks.sh.template` to `.claude/hooks/check-remaining-tasks.sh`
 4. Copy `enforce-scope.sh.template` to `.claude/hooks/enforce-scope.sh`
 5. Copy `verify-git-identity.sh.template` to `.claude/hooks/verify-git-identity.sh`
-6. Make all executable: `chmod +x .claude/hooks/*.sh`
-7. Add to `.claude/settings.json` (merge with the PostToolUse hooks from Step 3.5):
+6. Copy the plugin's status line script into the project:
+   `cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.sh" .claude/hooks/statusline.sh`
+   — the plugin cache path changes on every plugin update, so the project keeps its own copy.
+7. Make all executable: `chmod +x .claude/hooks/*.sh`
+8. Append `.harness/SESSION_INCOMPLETE` to the project's `.gitignore` (create it if missing).
+   It is transient session state written by the plugin's SessionEnd hook.
+9. Add to `.claude/settings.json` (merge with the PostToolUse hooks from Step 3.5):
 
 ```json
 {
+  "statusLine": {
+    "type": "command",
+    "command": "bash .claude/hooks/statusline.sh"
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bash .harness/init.sh*)",
+      "Bash(bash .claude/hooks/*.sh)",
+      "Bash(git config user.name)",
+      "Bash(git config user.email)",
+      "Bash(git rev-parse*)",
+      "Bash(git log*)",
+      "Bash(git status*)",
+      "Read(./.harness/**)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -326,20 +350,14 @@ Set up Agent Teams quality enforcement hooks. Read the two `.sh.template` files 
           }
         ]
       }
-    ],
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Context was just compacted. Immediately re-read .harness/context_summary.md and run TaskList to recover your current state before continuing work. If this is the third or more compaction in rapid succession and you are losing context each time, STOP: write your current progress and known state to .harness/context_summary.md, message the lead with SendMessage({ type: 'message', recipient: 'team-lead', content: 'Context collapse: repeated compaction losing state. Current feature [ID] progress saved to context_summary.md. Need intervention.' }), then wait for instructions."
-          }
-        ]
-      }
     ]
   }
 }
 ```
+
+Do NOT wire a per-project PostCompact hook. The plugin's SessionStart hook (matcher
+`compact`) injects post-compaction recovery directly into context; PostCompact output
+never reached the model.
 
 ### Step 3.7: Verify Hooks
 
@@ -362,12 +380,15 @@ If either script fails to execute (permission denied, syntax error, missing depe
 Tell the user:
 
 ```
-I've set up five hooks:
+I've set up four hooks plus a status line:
 - PreToolUse (scope): blocks edits to files outside the teammate's assigned scope. Only active when .claude/teammate-scope.txt exists.
 - PreToolUse (git identity): blocks git push/pull/clone if identity doesn't match .harness/harness.json.
 - TaskCompleted: runs tests when a teammate marks work done. Rejects if tests fail.
 - TeammateIdle: checks for remaining features when a teammate finishes. Prompts teammate to pick up next task.
-- PostCompact: reminds the agent to re-read context_summary.md and task list after compaction.
+- Status line: live feature progress (N/M passing, in-progress IDs, incomplete-session flag).
+
+Session orientation and post-compaction recovery are injected by the vv-harness
+plugin's SessionStart hook; no per-project PostCompact hook is needed.
 
 Quality gate hooks verified: [pass/fail status for each].
 
@@ -395,7 +416,7 @@ This project uses the Long-Running Agent Harness v4.0.0.
 - Context and decisions: `.harness/context_summary.md` (READ THIS at session start)
 - Progress handoff: `.harness/claude-progress.txt`
 - Build/test: `.harness/init.sh`
-- Quality gates: `.claude/hooks/` (TaskCompleted, TeammateIdle, PostCompact)
+- Quality gates: `.claude/hooks/` (TaskCompleted, TeammateIdle, scope, git identity)
 
 ## Git Identity
 
@@ -467,7 +488,7 @@ The team_structure is a starting suggestion. The lead may restructure during /ha
 ## Step 7: Commit and Report
 
 ```bash
-git add .harness/ .claude/ CLAUDE.md
+git add .harness/ .claude/ CLAUDE.md .gitignore
 git commit -m "chore: initialize harness v4.0.0 scaffolding"
 ```
 

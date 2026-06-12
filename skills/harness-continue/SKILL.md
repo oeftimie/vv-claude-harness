@@ -7,13 +7,14 @@ description: Continue working on a harness-managed project (v4.0.0). Orients to 
 
 ## Step 1: Orient Yourself
 
-```bash
-cat .harness/claude-progress.txt | tail -50
-cat .harness/context_summary.md
-git log --oneline -10
-cat .harness/features.json
-cat .harness/harness.json
-```
+The vv-harness plugin's SessionStart hook auto-injects orientation at session start:
+feature summary, next claimable feature, last handoff, Active Context, a git identity
+warning on mismatch, and any SESSION_INCOMPLETE gaps from the previous session. Use
+that injected "## Harness orientation" block instead of re-reading the harness files.
+Resolve any SESSION_INCOMPLETE gaps it surfaces before starting new work.
+
+This skill covers what the hook does not: mode choice, the smoke test, and team
+planning.
 
 Check for untracked files and inherited task quality:
 
@@ -25,27 +26,18 @@ If you see untracked files you didn't create (e.g., `notes.md`, scratch files), 
 
 If inheriting tasks from a previous session, verify they have required metadata fields (`feature_id` at minimum) via `TaskList`. Tasks without `feature_id` can't be correlated by hooks or retrospectives. Update them with `TaskUpdate` now if they're missing it.
 
-Summarize what you find:
-
-```
-Project state:
-- Last session: [date, what was done]
-- Features: [N passing / M total]
-- Next up: [highest priority incomplete feature]
-- Blockers: [any noted in progress or context_summary]
-- Git identity: [from harness.json]
-- Untracked files: [any unexpected files surfaced to user]
-```
-
 ## Step 2: Verify Git Identity
+
+The SessionStart hook already compared `git config user.email` against
+`.harness/harness.json` and warned on mismatch (non-blocking). If the orientation
+block shows an identity warning, fix it before proceeding. Also verify the SSH
+identity, which the hook does not check:
 
 ```bash
 ssh -T git@github.com 2>&1 || true
-git config user.name
-git config user.email
 ```
 
-Compare against `.harness/harness.json` `git_identity`. If mismatch, fix before proceeding. Do not skip this.
+Do not skip this.
 
 ## Step 2.5: Smoke Test
 
@@ -157,7 +149,9 @@ Use `/compact` with a focus instruction, e.g.:
 /compact Focus on: current feature F003 state, TDD progress, decisions made about auth architecture
 ```
 
-After compaction, the **PostCompact hook** fires automatically and reminds you to re-read `.harness/context_summary.md` and the task list. Follow that reminder — it's your recovery path.
+After compaction, the plugin's SessionStart hook (matcher `compact`) automatically
+injects a recovery block plus fresh orientation: re-read `.harness/context_summary.md`
+Active Context and the task list. Follow it — it's your recovery path.
 
 ### Session End
 
@@ -181,7 +175,10 @@ After compaction, the **PostCompact hook** fires automatically and reminds you t
 
 ## Step 5b: Agent Teams Workflow
 
-The Agent Teams protocol is loaded automatically from your global rules. This workflow uses Claude Code's native team primitives: `TeamCreate`, `TaskCreate`, `TaskUpdate`, `TaskList`, `Task`, `SendMessage`, `TeamDelete`.
+Before any team coordination, Read the Agent Teams protocol at
+`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. This workflow uses Claude Code's
+native team primitives: `TeamCreate`, `TaskCreate`, `TaskUpdate`, `TaskList`, `Task`,
+`SendMessage`, `TeamDelete`.
 
 ### Phase 1: Plan (cheap, read-only)
 
