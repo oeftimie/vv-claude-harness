@@ -195,10 +195,12 @@ The initializer will:
 3. Create `.harness/` scaffolding (features.json, context_summary.md, init.sh, progress log)
 4. Install async PostToolUse build hooks in `.claude/settings.json`
 5. Install PreToolUse hooks (`enforce-scope.sh`, `verify-git-identity.sh`)
-6. Install quality gate hooks (`TaskCompleted`, `TeammateIdle`, `PostCompact`)
-7. Verify hooks execute correctly
-8. Propose initial features with scope and dependencies
-9. Commit
+6. Install quality gate hooks (`TaskCompleted`, `TeammateIdle`)
+7. Wire the status line, Agent Teams env flag, and permissions allowlist into
+   `.claude/settings.json`; gitignore `.harness/SESSION_INCOMPLETE`
+8. Verify hooks execute correctly
+9. Propose initial features with scope and dependencies
+10. Commit
 
 After initialization, verify per-project hooks:
 

@@ -1,10 +1,9 @@
 ---
 scope: global
 location: ~/.claude/CLAUDE.md
-version: 3.6.0
-last_updated: 2026-04-26
+last_updated: 2026-06-12
 author: {{USER_NAME}}
-description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.6.0.
+description: Core engineering standards for all Claude Code sessions. Works with the vv-harness plugin.
 supplements: Project-level CLAUDE.md files in individual repositories
 ---
 

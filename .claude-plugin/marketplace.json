@@ -1,5 +1,6 @@
 {
   "name": "vv-harness-marketplace",
+  "description": "VV Claude Code Harness plugin marketplace",
   "owner": {
     "name": "oeftimie"
   },

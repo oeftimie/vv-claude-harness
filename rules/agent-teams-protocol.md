@@ -265,16 +265,15 @@ The harness installs two hooks that enforce quality mechanically:
 - If work remains: sends the next feature assignment (exit code 2), keeps teammate working
 - If no work remains: allows idle (exit code 0)
 
-**PostCompact hook**:
-- Fires after `/compact` or automatic compaction
-- Reminds the agent to re-read `context_summary.md` and the task list
-- Prevents post-compaction drift where the agent loses track of current state
+Post-compaction recovery is handled by the plugin's SessionStart hook (matcher
+`compact`), which re-injects orientation directly into model context after `/compact`
+or automatic compaction. There is no per-project PostCompact hook.
 
 These hooks mean:
 - Teammates can't mark tasks done with failing tests (mechanical TDD enforcement)
 - Idle teammates are prompted to pick up the next available feature (no wasted capacity)
 - The lead doesn't need to micromanage task assignment after initial setup
-- Post-compaction context recovery is prompted automatically
+- Post-compaction context recovery is injected automatically by the plugin
 
 ### Hook Verification
 
