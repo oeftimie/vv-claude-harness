@@ -1,0 +1,13 @@
+{
+  "name": "vv-harness",
+  "displayName": "VV Claude Code Harness",
+  "version": "4.0.0",
+  "description": "Multi-session continuity, parallel Agent Teams coordination, and mechanical quality enforcement for Claude Code.",
+  "author": {
+    "name": "oeftimie",
+    "url": "https://github.com/oeftimie"
+  },
+  "homepage": "https://github.com/oeftimie/vv-claude-harness",
+  "repository": "https://github.com/oeftimie/vv-claude-harness",
+  "keywords": ["harness", "agent-teams", "tdd", "continuity"]
+}
