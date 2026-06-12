@@ -79,13 +79,14 @@ Claim your task before starting:
 
 ## Reviewer (`subagent_type: "vv-harness:reviewer"`)
 
-**Plan approval**: false (review is read-only).
+**Plan approval**: false (review cannot edit files).
 
 ```
 Project: [PROJECT_NAME]
 Review target: [FEATURE_IDS] - [FILES_TO_REVIEW]
 Scope the work was assigned: [DIRECTORY_LIST from features.json scope]
-Review file: write your review to [REVIEW_FILE]
+Deliverable: report findings to the lead via SendMessage (teammate mode) or in your
+final message (fallback mode). The lead persists them to a file if a record is needed.
 Branch: [BRANCH]
 
 Claim your task before starting:

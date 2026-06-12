@@ -1,9 +1,6 @@
----
-globs:
-  - .harness/**
----
-
-<!-- This rule loads when Claude reads .harness/ files. The /harness-continue workflow reads these files in Step 1, ensuring the protocol is active before team operations begin. -->
+<!-- Shipped with the vv-harness plugin. There is no auto-loading: the SessionStart
+orientation injects this file's absolute path, and /harness-continue instructs the lead
+to read it before any team coordination begins. -->
 
 # Agent Teams Protocol
 
@@ -398,6 +395,8 @@ working tree, which promotes scope enforcement from instructional to mechanical.
      prompt: "[filled template]"
    })
    ```
+   Parameter names like `subagent_type` and `team_name` are as exposed by the current
+   CLI and may drift between versions; adapt to what the spawn tool actually exposes.
 2. The subagent works in its own worktree branch, commits normally
 3. On completion, the worktree path and branch are returned to the lead
 4. Lead merges worktree branches during Phase 4 (synthesis)
@@ -428,12 +427,17 @@ Model mixing reduces per-implementer token cost by roughly 5x (Sonnet vs Opus). 
 **Measure the break-even, don't estimate it:**
 - With telemetry enabled (see INSTALL.md, "Optional: Cost Telemetry"), derive the
   break-even from `claude_code.token.usage` and `claude_code.cost.usage` grouped by
-  `agent.name` and `model`: compare a team session's measured cost against single-session
-  work on a comparable scope, and let that calibrate when teams pay off in this project.
+  `model` and `query_source` (main vs subagent): compare a team session's measured cost
+  against single-session work on a comparable scope, and let that calibrate when teams
+  pay off in this project. `agent.name` only distinguishes official-marketplace agents —
+  personal-marketplace agent names (including vv-harness roles) are redacted to
+  `"custom"`, so it cannot separate the harness roles.
 - Without a collector, use the in-session `/usage` breakdown, which attributes recent
-  usage to skills, subagents, plugins, and MCP servers as percentages.
-- The Phase 5.5 retrospective should cite measured token counts per role in the
-  Meta-Session entry instead of estimates.
+  usage to skills, subagents, plugins, and MCP servers as percentages (the plan-usage
+  breakdown view requires a subscription plan — Pro/Max/Team/Enterprise; the session
+  token/cost stats are universal).
+- The Phase 5.5 retrospective should cite measured token counts per model and per query
+  source in the Meta-Session entry instead of estimates.
 - With no telemetry at all, fall back to judgment: parallelize only when the planned team
   work clearly exceeds what one focused session would finish.
 

@@ -1,9 +1,9 @@
 ---
 name: harness-init
-description: Initialize a new project with the Long-Running Agent Harness v4.0.0. Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and optional Agent Teams structure. Use when starting a new multi-session project.
+description: Initialize a new project with the Long-Running Agent Harness (vv-harness plugin). Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and optional Agent Teams structure. Use when starting a new multi-session project.
 ---
 
-# Harness Initializer v4.0.0
+# Harness Initializer
 
 Follow these steps in order. Do not skip steps. Ask the user when indicated.
 
@@ -48,7 +48,7 @@ Create `.harness/` with these files:
   "project": "PROJECT_NAME",
   "stack": "DETECTED_OR_SPECIFIED_STACK",
   "created": "ISO_DATE",
-  "version": "4.0.0",
+  "harness": "vv-harness",
   "git_identity": {
     "user_name": "DETECTED_NAME",
     "user_email": "DETECTED_EMAIL",
@@ -274,7 +274,7 @@ Present the hook to the user and wait for confirmation before creating or modify
 
 ## Step 3.6: Configure Quality Gate Hooks
 
-Set up Agent Teams quality enforcement hooks. Read the two `.sh.template` files in this skill's directory and install them:
+Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in this skill's directory and install them:
 
 1. Create `.claude/hooks/` directory: `mkdir -p .claude/hooks`
 2. Copy `verify-task-quality.sh.template` to `.claude/hooks/verify-task-quality.sh`
@@ -410,7 +410,7 @@ If the project already has a CLAUDE.md, append the harness reference. If not, cr
 
 ## Harness
 
-This project uses the Long-Running Agent Harness v4.0.0.
+This project uses the Long-Running Agent Harness (vv-harness plugin).
 
 - Feature tracking: `.harness/features.json`
 - Context and decisions: `.harness/context_summary.md` (READ THIS at session start)
@@ -489,13 +489,13 @@ The team_structure is a starting suggestion. The lead may restructure during /ha
 
 ```bash
 git add .harness/ .claude/ CLAUDE.md .gitignore
-git commit -m "chore: initialize harness v4.0.0 scaffolding"
+git commit -m "chore: initialize vv-harness scaffolding"
 ```
 
 Report:
 
 ```
-Harness v4.0.0 initialized:
+Harness (vv-harness plugin) initialized:
 - .harness/ created with [N] features (scope and dependencies defined)
 - Git identity captured: [user] <[email]>
 - Build hook: [installed | skipped] for [STACK]

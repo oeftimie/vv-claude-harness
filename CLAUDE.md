@@ -5,13 +5,17 @@ This repo distributes VV Claude Code Harness — it is NOT an application codeba
 ## What This Repo Contains
 
 - `.claude-plugin/` — Plugin manifest (`plugin.json`) and marketplace manifest (`marketplace.json`)
-- `templates/CLAUDE.md` — Template for a user's personal `~/.claude/CLAUDE.md` (do not treat as project instructions; users copy and personalize it manually)
+- `agents/` — Declarative teammate definitions shipped with the plugin (spawned as `vv-harness:*`)
+- `hooks/` — Plugin continuity hooks: session-start, session-end, statusline, `hooks.json`
 - `rules/` — Rule files shipped with the plugin
 - `skills/` — Skill definitions shipped with the plugin (auto-discovered at plugin root)
+- `templates/CLAUDE.md` — Template for a user's personal `~/.claude/CLAUDE.md` (do not treat as project instructions; users copy and personalize it manually)
+- `test/` — Fixture-based test suite for the hook scripts (`test/run-tests.sh`)
+- `CHANGELOG.md` — Version history
+- `INSTALL.md` — Installation and migration guide
+- `README.md` — Project documentation
 - `install` — Deprecation shim; prints the `/plugin` install instructions and exits
 - `clips/` — Screenshots and videos for README
-- `INSTALL.md` — Installation and migration guide
-- `README.md` — Project documentation and changelog
 
 ## Key Distinction
 

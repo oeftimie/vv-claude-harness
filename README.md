@@ -144,7 +144,7 @@ vv-harness/                                            # Plugin root
 │   ├── feature-implementer.md                         # Sonnet, scoped TDD on one feature
 │   ├── layer-implementer.md                           # Sonnet, owns one architectural layer
 │   ├── researcher.md                                  # Sonnet, retrieval-only (Write for findings file)
-│   └── reviewer.md                                    # Opus, high effort, read-only by construction
+│   └── reviewer.md                                    # Opus, high effort, no Edit/Write tools
 ├── hooks/
 │   ├── session-start.sh                               # Orientation + post-compaction recovery
 │   ├── session-end.sh                                 # Session discipline audit
@@ -205,7 +205,7 @@ The real insight from iterating through these versions: there are three reliabil
 
 The progression from v2.0 to v3.4 is the story of promoting critical rules from instructional to mechanical enforcement. TDD went from "please use TDD" to a shell hook that rejects non-passing code. Scope enforcement went from "don't touch files outside your scope" to a PreToolUse hook that blocks the edit. Git identity verification went from "check before pushing" to a PreToolUse hook that blocks the push. The rules that matter most should be the ones agents can't skip.
 
-v4.0 extends the same promotion to the harness itself: session orientation, post-compaction recovery, session-end discipline auditing, progress visibility (the statusLine), and reviewer/researcher tool posture all moved from prose instructions to plugin hooks and declarative agent definitions. The reviewer no longer has to be told it is read-only; its agent definition makes it read-only by construction.
+v4.0 extends the same promotion to the harness itself: session orientation, post-compaction recovery, session-end discipline auditing, progress visibility (the statusLine), and reviewer/researcher tool posture all moved from prose instructions to plugin hooks and declarative agent definitions. The reviewer cannot edit files by construction (its definition grants no Edit/Write tools); its Bash use is restricted to test runs and git diff by instruction.
 
 ## Core principles
 
@@ -249,13 +249,13 @@ The `TaskCompleted` hook mechanically enforces passing tests before any task can
 
 ### Token budget
 
-The harness adds ~8.7K tokens to your context when active:
-* `CLAUDE.md`: ~4.2K (if you copied the template to `~/.claude/CLAUDE.md`)
-* `agent-teams-protocol.md`: ~4.5K (loaded only when `.harness/` files are read)
+The harness's always-on overhead is `CLAUDE.md`: ~4.2K tokens (if you copied the template to `~/.claude/CLAUDE.md`). In v4 the rule files are NOT auto-loaded by globs — they cost tokens only when the model reads them, following the pointers in the SessionStart orientation:
+* `agent-teams-protocol.md`: ~4.5K, read before team coordination in harness projects
+* `code-quality.md`: ~0.3K, read before writing code in harness projects
 
-This is down from ~14.7K in v3.2.1 (before eliminating redundant `engineering-standards.md` and `non-harness-workflow.md` rule files). A 41% reduction.
+This is down from ~14.7K always-on in v3.2.1 (before eliminating redundant `engineering-standards.md` and `non-harness-workflow.md` rule files).
 
-In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol rule is not triggered because no `.harness/` files are read.
+In non-harness projects, only CLAUDE.md loads (~4.2K). The orientation hook stays silent (no `.harness/` directory), so neither rule file is pointed to or read.
 
 ## Known challenges
 
@@ -267,7 +267,7 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol 
 
 **Addressed in v4.0:**
 
-* **Cost modeling**: Per-role cost in a team session is now measured, not estimated. Opt-in OTel telemetry exports `claude_code.token.usage` and `claude_code.cost.usage` attributed by model, query source, and agent name; the in-session `/usage` breakdown works with zero infrastructure. See [INSTALL.md](./INSTALL.md), "Optional: Cost Telemetry".
+* **Cost modeling**: Per-model and main-vs-subagent cost in a team session is now measured, not estimated (per-agent names are redacted to "custom" for personal marketplaces). Opt-in OTel telemetry exports `claude_code.token.usage` and `claude_code.cost.usage` attributed by model and query source; the in-session `/usage` breakdown works with zero infrastructure. See [INSTALL.md](./INSTALL.md), "Optional: Cost Telemetry".
 
 * **Agent Teams fragility**: When Agent Teams is unavailable (flag off, team tools missing on a CLI version), `/harness-continue` falls back to worktree-isolated subagents using the same `vv-harness:*` agent types — a non-experimental, platform-documented path.
 

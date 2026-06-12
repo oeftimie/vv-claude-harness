@@ -28,7 +28,7 @@ echo "## Harness orientation (auto-injected)"
 if [ -f "$H/SESSION_INCOMPLETE" ]; then
   echo ""
   echo "WARNING: the previous session ended with unresolved discipline gaps:"
-  sed 's/^/    /' "$H/SESSION_INCOMPLETE" 2>/dev/null || true
+  head -15 "$H/SESSION_INCOMPLETE" 2>/dev/null | sed 's/^/    /' || true
   echo "Resolve these before starting new work."
 fi
 
@@ -39,7 +39,9 @@ try:
     feats = json.load(open(sys.argv[1])).get("features", [])
     passing = sum(1 for f in feats if f.get("status") == "passing")
     print(f"Features: {passing}/{len(feats)} passing")
-    claimable = [f for f in feats if f.get("status") in ("pending", "failed")]
+    status = {f.get("id"): f.get("status") for f in feats}
+    claimable = [f for f in feats if f.get("status") in ("pending", "failed")
+                 and all(status.get(d) == "passing" for d in (f.get("depends_on") or []))]
     claimable.sort(key=lambda f: f.get("priority", 999))
     if claimable:
         f = claimable[0]
@@ -62,7 +64,7 @@ if [ -f "$H/context_summary.md" ]; then
   echo ""
   echo "Active Context (context_summary.md):"
   awk '/## Active Context/{p=1;next} /^## /{p=0} p' "$H/context_summary.md" 2>/dev/null \
-    | sed 's/^/    /' || true
+    | head -20 | sed 's/^/    /' || true
 fi
 
 EXPECTED=$(python3 -c '
@@ -84,5 +86,6 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-<vv-harness plugin root>}"
 echo ""
 echo "Agent Teams protocol: read $PLUGIN_ROOT/rules/agent-teams-protocol.md" \
   "before spawning teammates."
+echo "Code-quality limits: $PLUGIN_ROOT/rules/code-quality.md (read before writing code)."
 echo "Run /harness-continue for the full interactive flow (mode choice, smoke test, team plan)."
 exit 0

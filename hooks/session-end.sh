@@ -12,8 +12,9 @@ GAPS=""
 add_gap() { GAPS="${GAPS}${1}
 "; }
 
-if ! git -C "$ROOT" diff --quiet -- .harness/features.json 2>/dev/null \
-  && git -C "$ROOT" diff --quiet -- .harness/claude-progress.txt 2>/dev/null; then
+FEAT_DIRTY=$(git -C "$ROOT" status --porcelain -- .harness/features.json 2>/dev/null)
+PROG_DIRTY=$(git -C "$ROOT" status --porcelain -- .harness/claude-progress.txt 2>/dev/null)
+if [ -n "$FEAT_DIRTY" ] && [ -z "$PROG_DIRTY" ]; then
   add_gap "features.json changed but claude-progress.txt has no new handoff."
 fi
 
@@ -33,11 +34,16 @@ PYEOF
 [ -n "$WIP_GAPS" ] && add_gap "$WIP_GAPS"
 
 TODAY=$(date -u +%Y-%m-%d)
-if ! grep -q "## Meta-Session $TODAY" "$H/context_summary.md" 2>/dev/null; then
+TODAY_LOCAL=$(date +%Y-%m-%d)
+MS_PATTERNS=(-e "## Meta-Session $TODAY")
+[ "$TODAY_LOCAL" != "$TODAY" ] && MS_PATTERNS+=(-e "## Meta-Session $TODAY_LOCAL")
+if ! grep -q "${MS_PATTERNS[@]}" "$H/context_summary.md" 2>/dev/null; then
   add_gap "Missing '## Meta-Session $TODAY' retrospective in context_summary.md."
 fi
 
-if [ -n "$(git -C "$ROOT" status -s -- .harness/ 2>/dev/null)" ]; then
+DIRTY_META=$(git -C "$ROOT" status -s -- .harness/ 2>/dev/null \
+  | grep -v '\.harness/SESSION_INCOMPLETE' || true)
+if [ -n "$DIRTY_META" ]; then
   add_gap "Uncommitted .harness/ metadata - commit with a docs: prefix."
 fi
 

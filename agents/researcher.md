@@ -23,3 +23,9 @@ the output file, and the task ID.
 - When done: write the findings file first, then message the lead with the file path and
   a one-line recommendation, then mark your task complete. If only partially done, say
   exactly which questions remain open.
+
+Modes: as an Agent Teams teammate, SendMessage and the task-management tools are available
+to you even though they are not in the tools list above (platform behavior). When spawned
+as a plain subagent (fallback mode), SendMessage and TaskUpdate do not exist — report the
+same content in your final message instead, and treat spawn-prompt instructions that
+reference them accordingly.

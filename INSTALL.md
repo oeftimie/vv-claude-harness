@@ -14,7 +14,9 @@ worktree-isolated subagents when team tools are unavailable.
 
 - Claude Code CLI installed and working
 - Git initialized in your project
-- `jq` installed (used by hook scripts): `brew install jq` on macOS
+- `python3` installed (used by all three plugin hooks and the per-project hook scripts)
+- `jq` installed (used only by the per-project PostToolUse build hooks that
+  `/harness-init` writes into `.claude/settings.json`): `brew install jq` on macOS
 
 ## Install
 
@@ -25,8 +27,10 @@ From inside any Claude Code session:
 /plugin install vv-harness
 ```
 
-That's it. The plugin ships the `/harness-init` and `/harness-continue` skills and the
-rule files; Claude Code discovers them automatically.
+That's it. Claude Code auto-discovers the plugin's skills (`/harness-init`,
+`/harness-continue`), agents, and hooks. The two rule files ship as plugin content that
+the SessionStart orientation points to by absolute path — no plugin "rules" mechanism
+exists.
 
 ## Update
 
@@ -62,8 +66,18 @@ them by hand — **nothing is deleted silently; you run these commands yourself*
 rm -rf ~/.claude/skills/harness-init
 rm -rf ~/.claude/skills/harness-continue
 
-# Rules installed by the v3 installer (now shipped by the plugin)
+# Rule replaced by the plugin copy (the SessionStart orientation pointer and the
+# harness-continue instruction cover it)
 rm -f ~/.claude/rules/agent-teams-protocol.md
+```
+
+**Keep `~/.claude/rules/code-quality.md`** — that is the default. There is no plugin
+mechanism for always-on rules, so removing it loses code-quality enforcement outside
+harness sessions. Inside harness projects the SessionStart orientation points to the
+plugin copy at `rules/code-quality.md`. Remove it only if you accept that loss:
+
+```bash
+# Optional — removing this drops code-quality enforcement outside harness sessions
 rm -f ~/.claude/rules/code-quality.md
 ```
 
@@ -103,6 +117,19 @@ Then enable the plugin:
 /plugin marketplace add oeftimie/vv-claude-harness
 /plugin install vv-harness
 ```
+
+## Upgrading an existing harness project
+
+`/harness-init` has no upgrade mode — for projects initialized under v3, these four
+manual steps, run in a Claude Code session inside the project, are the upgrade:
+
+1. Remove the PostCompact block from `.claude/settings.json` (its output never reached
+   the model; the plugin's SessionStart hook now covers post-compaction recovery).
+2. Copy the plugin statusline: `cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.sh"
+   .claude/hooks/` (ask Claude to run it — the plugin root path is visible in-session).
+3. Add the `statusLine`, `env`, and `permissions` wiring to `.claude/settings.json` per
+   harness-init Step 3.6.
+4. Append `.harness/SESSION_INCOMPLETE` to `.gitignore`.
 
 ## Personalize your CLAUDE.md
 
@@ -167,8 +194,9 @@ docker run --rm -p 4317:4317 otel/opentelemetry-collector
 
 **Why this matters for the harness:** the exported `claude_code.token.usage` and
 `claude_code.cost.usage` (USD) metrics break down by `model`, `query_source`
-(`main`|`subagent`|`auxiliary`), and `agent.name` — so per-role cost in a team session
-is measured, not estimated. Two caveats:
+(`main`|`subagent`|`auxiliary`), and `agent.name` — so per-model and main-vs-subagent
+cost in a team session is measured, not estimated (per-agent names are redacted to
+`"custom"` for personal marketplaces). Two caveats:
 
 - **agent.name redaction**: user-defined agent names are reported as `"custom"`;
   agents from official-marketplace plugins appear verbatim. Per-model and
@@ -179,7 +207,8 @@ is measured, not estimated. Two caveats:
 **Zero-infrastructure alternative:** the in-session `/usage` command shows session
 token/cost stats plus a usage breakdown attributing recent usage to skills, subagents,
 plugins, and MCP servers as percentages (24h/7d views, from local history). No
-collector required.
+collector required. The session token/cost stats are universal; the plan-usage
+breakdown view is available on subscription plans (Pro/Max/Team/Enterprise).
 
 ## Per-Project Setup
 
@@ -202,12 +231,17 @@ The initializer will:
 9. Propose initial features with scope and dependencies
 10. Commit
 
-After initialization, verify per-project hooks:
+After initialization, verify per-project hooks by checking their exit codes:
 
 ```bash
-echo '{}' | bash .claude/hooks/verify-task-quality.sh && echo "TaskCompleted hook: OK"
-echo '{}' | bash .claude/hooks/check-remaining-tasks.sh && echo "TeammateIdle hook: OK"
+echo '{}' | bash .claude/hooks/verify-task-quality.sh; echo "verify-task-quality exit: $?"
+echo '{}' | bash .claude/hooks/check-remaining-tasks.sh; echo "check-remaining-tasks exit: $?"
 ```
+
+Expected exit codes:
+- `verify-task-quality.sh`: 0 when tests pass; 2 when tests fail
+- `check-remaining-tasks.sh`: 2 with pending features is healthy (it sends the next
+  assignment by design); 0 when no features remain
 
 ## Continuing Work
 

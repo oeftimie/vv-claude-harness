@@ -117,6 +117,16 @@ assert_rc0 "$RC" "e: malformed features.json exits 0"
 assert_not_contains "$OUT" "Traceback" "e: no python traceback leaks into output"
 assert_contains "$OUT" "## Harness orientation" "e: still prints the orientation header"
 
+OUT=$(run_session_start "$DIR_A" '{"source":"startup"}')
+LEN=${#OUT}
+if [ "$LEN" -lt 4000 ]; then
+  pass "o: startup orientation stays under 4000 chars ($LEN)"
+else
+  fail "o: startup orientation is $LEN chars, expected under 4000"
+fi
+assert_contains "$OUT" "rules/code-quality.md (read before writing code)" \
+  "o: orientation includes the code-quality pointer"
+
 echo ""
 echo "== session-end.sh =="
 
@@ -139,6 +149,26 @@ assert_contains "$SI_TEXT" \
 assert_contains "$SI_TEXT" "F002 is in-progress but missing test_file or coverage." \
   "f: records the F002 test_file/coverage gap"
 assert_contains "$SI_TEXT" "Missing '## Meta-Session" "f: records the Meta-Session gap"
+
+DIR_P="$WORK/p"
+make_fixture "$DIR_P"
+printf '\n' >> "$DIR_P/.harness/features.json"
+git -C "$DIR_P" add .harness/features.json
+OUT=$(run_session_end "$DIR_P")
+SI_TEXT=$(cat "$DIR_P/.harness/SESSION_INCOMPLETE" 2>/dev/null || true)
+assert_contains "$SI_TEXT" \
+  "features.json changed but claude-progress.txt has no new handoff." \
+  "p: staged features.json edit still records the handoff gap"
+
+DIR_Q="$WORK/q"
+make_fixture "$DIR_Q"
+git -C "$DIR_Q" rm -q --cached .harness/claude-progress.txt
+git -C "$DIR_Q" commit -q -m "untrack progress log"
+printf '\n' >> "$DIR_Q/.harness/features.json"
+OUT=$(run_session_end "$DIR_Q")
+SI_TEXT=$(cat "$DIR_Q/.harness/SESSION_INCOMPLETE" 2>/dev/null || true)
+assert_not_contains "$SI_TEXT" "no new handoff" \
+  "q: new untracked claude-progress.txt counts as a fresh handoff"
 
 DIR_G="$WORK/g"
 make_fixture "$DIR_G"
@@ -171,6 +201,17 @@ else
   pass "g: SESSION_INCOMPLETE absent after a clean session"
 fi
 assert_empty "$OUT" "g: clean session-end prints nothing"
+
+printf 'stale gap from previous run\n' > "$DIR_G/.harness/SESSION_INCOMPLETE"
+OUT=$(run_session_end "$DIR_G")
+RC=$?
+assert_rc0 "$RC" "r: re-run with leftover SESSION_INCOMPLETE exits 0"
+assert_empty "$OUT" "r: leftover SESSION_INCOMPLETE does not re-trigger the metadata gap"
+if [ -f "$DIR_G/.harness/SESSION_INCOMPLETE" ]; then
+  fail "r: SESSION_INCOMPLETE should be cleared when no gaps remain"
+else
+  pass "r: SESSION_INCOMPLETE cleared when no gaps remain"
+fi
 
 OUT=$(run_session_start "$DIR_F" '{"source":"startup"}')
 RC=$?

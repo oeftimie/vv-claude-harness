@@ -1,9 +1,9 @@
 ---
 name: harness-continue
-description: Continue working on a harness-managed project (v4.0.0). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
+description: Continue working on a harness-managed project (vv-harness plugin). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
 ---
 
-# Harness Continue v4.0.0
+# Harness Continue
 
 ## Step 1: Orient Yourself
 
@@ -281,6 +281,9 @@ Wait for user approval before proceeding to Phase 2.
    overrides the definition's frontmatter model, so the Phase 1 Opus-upgrade heuristic
    applies unchanged. Include git identity from `harness.json` in each spawn prompt.
    Do not re-paste guardrail prose into spawn prompts — it lives in the agent definitions.
+   Parameter names like `subagent_type` and `team_name` are as exposed by the current
+   CLI and may drift between versions (the spawn tool has been renamed before); adapt
+   to what the CLI actually exposes.
 
 6. At team start, confirm plan-approval messaging uses type `"message"` (the
    `plan_approval_response` delivery-bug workaround) — one SendMessage round-trip with a

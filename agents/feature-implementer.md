@@ -27,3 +27,9 @@ Completion protocol:
   rejects failing work — fix the issues and re-complete; never bypass it.
 - Send the lead exactly one completion message per task with a summary, test and coverage
   status, and your approaches_tried notes so the lead can populate features.json.
+
+Modes: as an Agent Teams teammate, SendMessage and the task-management tools are available
+to you even though they are not in the tools list above (platform behavior). When spawned
+as a plain subagent (fallback mode), SendMessage and TaskUpdate do not exist — report the
+same content in your final message instead, and treat spawn-prompt instructions that
+reference them accordingly.

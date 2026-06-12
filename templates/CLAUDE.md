@@ -250,7 +250,7 @@ Do not let a failing sub-agent block other parallel work.
 
 ### Agent Teams (Harness Projects Only)
 
-When `.harness/` exists and multiple features need parallel work, the Agent Teams protocol from `~/.claude/rules/agent-teams-protocol.md` governs all team coordination. That protocol covers: model selection, plan mode, native messaging (SendMessage), task dependencies (TaskCreate + TaskUpdate with addBlockedBy), quality gates (TaskCompleted and TeammateIdle hooks), plan approval, scope assignment, conflict resolution, integration failure recovery, and git strategy.
+When `.harness/` exists and multiple features need parallel work, the Agent Teams protocol shipped with the vv-harness plugin (the SessionStart orientation block names its absolute path) governs all team coordination. That protocol covers: model selection, plan mode, native messaging (SendMessage), task dependencies (TaskCreate + TaskUpdate with addBlockedBy), quality gates (TaskCompleted and TeammateIdle hooks), plan approval, scope assignment, conflict resolution, integration failure recovery, and git strategy.
 
 Don't re-implement those rules here. Follow the protocol.
 
