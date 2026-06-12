@@ -4,6 +4,12 @@ The VV Claude Code Harness is distributed as a native Claude Code plugin. The ol
 Python installer is retired as of v4.0.0 (the `install` script now only prints these
 instructions).
 
+**Compatibility:** developed and tested against Claude Code v2.1.175. Agent Teams is an
+experimental feature and may change between CLI versions; `plugin.json` has no
+version-pin field — the platform's model is graceful degradation (older CLIs ignore
+unknown manifest fields), and `/harness-continue` falls back to non-experimental
+worktree-isolated subagents when team tools are unavailable.
+
 ## Prerequisites
 
 - Claude Code CLI installed and working
@@ -112,8 +118,9 @@ cp templates/CLAUDE.md ~/.claude/CLAUDE.md
 ## What the plugin cannot do (configure these yourself)
 
 Plugins cannot set environment variables or permission allowlists. Two pieces of
-setup the v3 installer used to handle now live in your own settings (a later phase
-will document per-project automation for these):
+setup the v3 installer used to handle now live in your own settings. In harness
+projects, `/harness-init` writes both into the project's `.claude/settings.json`
+for you; set them globally only if you want them outside harness projects:
 
 1. **Agent Teams env var** — add to `~/.claude/settings.json` (or a project's
    `.claude/settings.json`):
@@ -128,6 +135,51 @@ will document per-project automation for these):
 
 2. **Permission allowlists** — configure under `permissions` in the same
    user/project `settings.json` files.
+
+## Optional: Cost Telemetry
+
+Claude Code can export token and cost metrics over OpenTelemetry. Telemetry is opt-in
+and OFF by default. Enable it in `~/.claude/settings.json` (user scope) or a project's
+`.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"
+  }
+}
+```
+
+The HTTP protocols (`http/json`, `http/protobuf`) use port 4318 instead of 4317.
+Metrics export every 60000 ms by default (`OTEL_METRIC_EXPORT_INTERVAL`). Optionally
+add `"OTEL_LOGS_EXPORTER": "otlp"` to export logs too.
+
+For a minimal local collector that just prints what it receives, one `docker run` is
+enough — the image's default config receives OTLP on 4317 and dumps metrics with the
+debug exporter:
+
+```bash
+docker run --rm -p 4317:4317 otel/opentelemetry-collector
+```
+
+**Why this matters for the harness:** the exported `claude_code.token.usage` and
+`claude_code.cost.usage` (USD) metrics break down by `model`, `query_source`
+(`main`|`subagent`|`auxiliary`), and `agent.name` — so per-role cost in a team session
+is measured, not estimated. Two caveats:
+
+- **agent.name redaction**: user-defined agent names are reported as `"custom"`;
+  agents from official-marketplace plugins appear verbatim. Per-model and
+  per-query-source breakdowns are unaffected.
+- **Subprocesses**: Claude Code does not pass `OTEL_*` variables to subprocesses it
+  spawns — hook scripts and build commands won't inherit them.
+
+**Zero-infrastructure alternative:** the in-session `/usage` command shows session
+token/cost stats plus a usage breakdown attributing recent usage to skills, subagents,
+plugins, and MCP servers as percentages (24h/7d views, from local history). No
+collector required.
 
 ## Per-Project Setup
 

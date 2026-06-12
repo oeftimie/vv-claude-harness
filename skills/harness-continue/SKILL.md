@@ -75,6 +75,22 @@ When choosing single-session, explicitly declare it: "Running in single-session 
 - `harness.json` has a team_structure defined
 - User explicitly asks for parallel work
 
+**Graceful degradation — Agent Teams unavailable:**
+
+Agent Teams is gated by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; the team tools
+(`TeamCreate`, `TeamDelete`, `SendMessage`) exist only when it is set. If the variable
+is unset or the team tools are unavailable, do NOT abort parallel work. Fall back to
+direct subagents spawned via the Agent/Task tool using the same vv-harness agent types
+(`vv-harness:feature-implementer`, `vv-harness:layer-implementer`,
+`vv-harness:researcher`, `vv-harness:reviewer`), passing `isolation: "worktree"` at
+spawn time for independent feature scopes — worktree isolation is documented platform
+behavior for subagents. The lead merges the worktree branches at synthesis (Phase 4).
+
+This is the supported, non-experimental path. Team-only machinery does not apply in
+this mode: no SendMessage interface negotiation, no TeammateIdle reassignment —
+sequencing falls back to the lead, which spawns dependent work only after its
+prerequisites are merged.
+
 Ask the user if it's ambiguous:
 
 ```
@@ -265,6 +281,11 @@ Wait for user approval before proceeding to Phase 2.
    overrides the definition's frontmatter model, so the Phase 1 Opus-upgrade heuristic
    applies unchanged. Include git identity from `harness.json` in each spawn prompt.
    Do not re-paste guardrail prose into spawn prompts — it lives in the agent definitions.
+
+6. At team start, confirm plan-approval messaging uses type `"message"` (the
+   `plan_approval_response` delivery-bug workaround) — one SendMessage round-trip with a
+   teammate is the check; if it fails on a newer CLI, fall back to the worktree-subagent
+   mode (Step 4, graceful degradation).
 
 ### Phase 3: Monitor
 

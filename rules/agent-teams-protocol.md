@@ -83,6 +83,13 @@ Choose models based on the cognitive demand of each role:
 | Researcher | Sonnet | Web search and doc reading are retrieval-heavy, not reasoning-heavy |
 | Reviewer | Opus | Deep code review catches subtle bugs; worth the cost |
 
+The four vv-harness agent definitions (`vv-harness:feature-implementer`,
+`vv-harness:layer-implementer`, `vv-harness:researcher`, `vv-harness:reviewer`) carry
+these per-role model, effort, and tool defaults in their frontmatter (reviewer: Opus with
+high effort; implementers and researcher: Sonnet). The dynamic Opus-upgrade heuristics
+below still apply: the spawn-time `model` parameter overrides the definition's
+frontmatter.
+
 **Static overrides**: if an implementer's scope is architecturally complex (10+ files, cross-cutting concerns, security-sensitive), upgrade to Opus regardless of history.
 
 **Dynamic overrides** (based on operational metrics from past sessions): Before assigning models, the lead reviews `features.json` for historical patterns in the same scope directories:
@@ -308,7 +315,9 @@ tests/auth/
 
 When the teammate tries to edit a file outside these paths, the hook blocks the edit (exit code 2) and suggests messaging the lead for scope expansion.
 
-This promotes scope enforcement from instructional to mechanical. Teammates in worktree isolation don't need this hook (they have physical isolation instead).
+This promotes scope enforcement from instructional to mechanical. This hook is the
+doc-grounded way to keep teammates inside their scope; subagents spawned with worktree
+isolation in the fallback mode don't need it (they have physical isolation instead).
 
 ## Conflict Resolution
 
@@ -346,45 +355,67 @@ If teammates are working on truly independent features, the lead can create sepa
 
 ## Worktree Isolation
 
-Teammates can be spawned with `isolation: "worktree"` in the `Task()` call, which creates a temporary git worktree — a physically separate copy of the repo. This promotes scope enforcement from instructional to mechanical: the teammate literally cannot affect the main working tree.
+`isolation: "worktree"` in an Agent/Task spawn creates a temporary git worktree — a
+physically separate copy of the repo. The spawned agent literally cannot affect the main
+working tree, which promotes scope enforcement from instructional to mechanical.
 
-**When to use worktree isolation:**
+**Platform status — know what is documented before relying on it:**
+- Worktree isolation is platform-documented for SUBAGENTS spawned via the Agent/Task
+  tool. That includes the non-experimental fallback mode (harness-continue, Step 4
+  graceful degradation), where the lead spawns vv-harness agent types directly as
+  worktree-isolated subagents.
+- It is NOT documented for Agent Teams teammates. The platform docs advise avoiding
+  teammate file conflicts through disjoint file ownership instead. If teammate worktrees
+  appear to work on your CLI version, treat that as unverified experimental behavior
+  that may break across versions — do not build a workflow on it.
+
+**Doc-grounded patterns** (pick one):
+1. Agent Teams with disjoint scope ownership plus the `enforce-scope.sh` hook (see
+   Mechanical Scope Enforcement).
+2. Worktree-isolated subagents spawned directly via the Agent/Task tool — the
+   non-experimental fallback mode.
+
+**When worktree-isolated subagents fit:**
 - Features with truly independent scopes (no shared files)
 - When scope violations have caused problems before
 - Security-sensitive features where contamination risk is high
 
 **When NOT to use worktree isolation:**
-- Features that share interfaces requiring real-time coordination (worktrees don't see each other's changes until merge)
+- Work that shares interfaces requiring real-time coordination (worktrees don't see each
+  other's changes until merge)
 - Quick tasks where merge overhead exceeds the benefit
-- Layer-based work where teammates must negotiate a shared interface file
+- Layer-based work negotiating a shared interface file
 
 **How it works:**
 
-1. Lead spawns teammate with `isolation: "worktree"`:
+1. Lead spawns a subagent with `isolation: "worktree"`:
    ```
    Task({
      description: "Implement F001",
+     subagent_type: "vv-harness:feature-implementer",
      name: "api",
-     team_name: "PROJECT-sprint-N",
      model: "sonnet",
      isolation: "worktree",
      prompt: "[filled template]"
    })
    ```
-2. Teammate works in its own worktree branch, commits normally
-3. When teammate completes, the worktree path and branch are returned to the lead
+2. The subagent works in its own worktree branch, commits normally
+3. On completion, the worktree path and branch are returned to the lead
 4. Lead merges worktree branches during Phase 4 (synthesis)
-5. If teammate makes no changes, the worktree is auto-cleaned
+5. If the subagent makes no changes, the worktree is auto-cleaned
 
 **Synthesis with worktrees:**
 
 During Phase 4, the lead merges each worktree branch:
 ```bash
-git merge teammate-branch-name --no-ff
+git merge worktree-branch-name --no-ff
 ```
-If conflicts arise, follow the Integration Failure Recovery protocol. The advantage of worktrees is that each teammate's work is on a clean branch, making selective reverts trivial.
+If conflicts arise, follow the Integration Failure Recovery protocol. The advantage of
+worktrees is that each agent's work is on a clean branch, making selective reverts
+trivial.
 
-**Trade-off**: Adds git merge complexity during synthesis, but eliminates scope violation risk entirely. For independent features, this is almost always worth it.
+**Trade-off**: Adds git merge complexity during synthesis, but eliminates scope violation
+risk entirely. For independent feature scopes, this is almost always worth it.
 
 ## Cost Considerations
 
@@ -395,8 +426,19 @@ Model mixing reduces per-implementer token cost by roughly 5x (Sonnet vs Opus). 
 - **TeammateIdle re-assignment**: teammates that finish early and pick up new work run longer, consuming more Sonnet tokens.
 - **Phase 1 planning**: reading all harness files, analyzing features, designing team structure, presenting the plan: this happens before any implementation tokens are spent.
 
+**Measure the break-even, don't estimate it:**
+- With telemetry enabled (see INSTALL.md, "Optional: Cost Telemetry"), derive the
+  break-even from `claude_code.token.usage` and `claude_code.cost.usage` grouped by
+  `agent.name` and `model`: compare a team session's measured cost against single-session
+  work on a comparable scope, and let that calibrate when teams pay off in this project.
+- Without a collector, use the in-session `/usage` breakdown, which attributes recent
+  usage to skills, subagents, plugins, and MCP servers as percentages.
+- The Phase 5.5 retrospective should cite measured token counts per role in the
+  Meta-Session entry instead of estimates.
+- With no telemetry at all, fall back to judgment: parallelize only when the planned team
+  work clearly exceeds what one focused session would finish.
+
 **Rules of thumb:**
-- Agent Teams becomes cost-effective when total implementation work exceeds ~30 minutes of single-session effort
 - For two features that each touch fewer than 3 files, sequential single-session is cheaper
 - The more independent the features, the better the parallelism payoff (less SendMessage overhead)
 - Reviewer teammates on Opus are worth the cost for features touching 10+ files; skip them for smaller scopes
@@ -412,6 +454,11 @@ Don't optimize for cost at the expense of quality. The point of model mixing is 
 - **Permission inheritance**: teammates inherit the lead's permission mode by default.
 - **Heartbeat timeout**: if a teammate crashes, it triggers a 5-minute heartbeat timeout before the lead is notified.
 - **Split-pane limitations**: tmux split-screen doesn't work with VS Code integrated terminal, Windows Terminal, or Ghostty.
+- **No CLI version pin**: `plugin.json` has no version-pin field; the platform's model is
+  graceful degradation (older CLIs ignore unknown manifest fields). The harness is
+  developed and tested against Claude Code v2.1.175. Agent Teams is experimental (gated
+  by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and may break across CLI versions; the
+  worktree-subagent fallback mode (harness-continue, Step 4) covers that case.
 
 ## Integration with Harness
 
