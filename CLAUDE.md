@@ -19,7 +19,11 @@ Files under `templates/`, `rules/`, and `skills/` are **distribution content**, 
 
 ## Working on This Repo
 
-- No build system, no tests, no application code
-- Changes are documentation and template edits only
+- No build system, no application code
+- Tests live at `test/run-tests.sh` (dependency-free shell runner covering the hook
+  scripts, plugin manifests, and agent frontmatter). Run `bash test/run-tests.sh` and
+  make sure it passes before committing changes to `hooks/` or the `.claude-plugin/`
+  manifests
+- Other changes are documentation and template edits
 - The version number lives ONLY in `.claude-plugin/plugin.json` (`version`). It is the canonical plugin version and the update cache key: users only receive updates when it is bumped. Do not introduce other version locations that need syncing.
 - `templates/CLAUDE.md` keeps its `{{USER_NAME}}` placeholders; personalization is a documented manual step in INSTALL.md, not installer templating
