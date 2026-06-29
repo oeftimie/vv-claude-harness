@@ -13,7 +13,7 @@ Version history for the VV Claude Code Harness. The current version lives in `.c
 **Continuity hooks** — plugin-level, firing in any project with a `.harness/` directory:
 - `hooks/session-start.sh` injects orientation at session start: features passing count, next claimable feature, last handoff, Active Context, and a git identity warning on mismatch. Its `compact` matcher also handles post-compaction recovery.
 - `hooks/session-end.sh` audits session discipline (handoff written, retrospective present, metadata committed) into `.harness/SESSION_INCOMPLETE`, which the next session start surfaces loudly. Self-healing by design: SessionEnd cannot block.
-- `hooks/statusline.sh` renders live "⬡ N/M passing" feature progress. Wired per-project by `/harness-init` because plugins cannot set `statusLine`; `/harness-init` also writes the Agent Teams env flag and a permissions allowlist into project settings and gitignores `SESSION_INCOMPLETE`. The per-project PostCompact hook is gone — its output never reached the model.
+- `hooks/statusline.sh` renders live "⬡ N/M passing" feature progress. Wired per-project by `/harness-init` because plugins cannot set `statusLine`; `/harness-init` also writes the Agent Teams env flag and a permissions allowlist into project settings and gitignores `SESSION_INCOMPLETE`. The per-project PostCompact hook is gone — the SessionStart `compact` source covers post-compaction recovery, making it redundant.
 
 **Declarative agents** — `agents/feature-implementer.md`, `layer-implementer.md`, `researcher.md`, and `reviewer.md` carry model, effort, and tool posture in frontmatter. The reviewer runs Opus at high effort and cannot edit files by construction (no Edit/Write tools; Bash restricted to test runs by instruction); the researcher is retrieval-only, with Write allowed only for its findings file. Teammates spawn by `vv-harness:*` agent type, and `team-spawn-prompts.md` shrank from 253 to 135 lines (per-feature specifics only). A spawn-time `model` parameter overrides frontmatter, so the Opus-upgrade heuristic survives.
 
@@ -23,7 +23,7 @@ Version history for the VV Claude Code Harness. The current version lives in `.c
 
 **Deviations from the original modernization plan**, each forced by a platform constraint verified June 2026:
 - Plugin manifest keys for a global CLAUDE.md, rules, or settings (env, permissions, statusLine) don't exist — the core-standards file ships as `templates/CLAUDE.md` (documented manual copy) and `/harness-init` writes env, permissions, and statusLine per-project.
-- PreCompact prompt injection is impossible (PreCompact stdout never reaches the model) — replaced by SessionStart `compact`-matcher recovery.
+- The plan's PreCompact-based context injection was dropped — a pre-compaction hook runs before the context is rebuilt, so SessionStart's `compact` source re-injects recovery into the fresh post-compaction context instead.
 - No CLI version-pin manifest key exists — the tested CLI version (v2.1.175) is documented instead.
 - The plan's optional TaskCreated metadata-enforcement hook was dropped — the TaskCreated payload carries no metadata field to check.
 

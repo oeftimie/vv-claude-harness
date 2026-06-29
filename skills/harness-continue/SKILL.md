@@ -77,10 +77,11 @@ When choosing single-session, explicitly declare it: "Running in single-session 
 
 **Graceful degradation — Agent Teams unavailable:**
 
-Agent Teams is gated by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; the team tools
-(`TeamCreate`, `TeamDelete`, `SendMessage`) exist only when it is set. If the variable
-is unset or the team tools are unavailable, do NOT abort parallel work. Fall back to
-direct subagents spawned via the Agent/Task tool using the same vv-harness agent types
+Agent Teams is gated by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; the implicit team,
+`SendMessage`, and the `TaskCompleted`/`TeammateIdle` coordination hooks are active only
+when it is set. If the variable is unset or team coordination is unavailable, do NOT
+abort parallel work. Fall back to direct subagents spawned via the Agent tool using the
+same vv-harness agent types
 (`vv-harness:feature-implementer`, `vv-harness:layer-implementer`,
 `vv-harness:researcher`, `vv-harness:reviewer`), passing `isolation: "worktree"` at
 spawn time for independent feature scopes — worktree isolation is documented platform
@@ -192,9 +193,11 @@ Active Context and the task list. Follow it — it's your recovery path.
 ## Step 5b: Agent Teams Workflow
 
 Before any team coordination, Read the Agent Teams protocol at
-`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. This workflow uses Claude Code's
-native team primitives: `TeamCreate`, `TaskCreate`, `TaskUpdate`, `TaskList`, `Task`,
-`SendMessage`, `TeamDelete`.
+`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. Agent Teams is experimental and
+gated by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; the team forms implicitly when the
+first teammate is spawned (no setup step) and is cleaned up automatically when the
+session ends. This workflow uses Claude Code's native primitives: the Agent tool for
+spawning, `TaskCreate`, `TaskUpdate`, `TaskList`, and `SendMessage`.
 
 ### Phase 1: Plan (cheap, read-only)
 
@@ -241,10 +244,9 @@ Wait for user approval before proceeding to Phase 2.
 
 2. Update `features.json`: set `assigned_to` for each feature being worked on.
 
-3. Create the team:
-   ```
-   TeamCreate({ team_name: "PROJECT-sprint-N", description: "Parallel implementation of F001 and F002" })
-   ```
+3. Confirm `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set. There is no team-creation
+   step: the implicit team forms when the first teammate is spawned (Step 5) and is
+   cleaned up automatically when the session ends.
 
 4. Create tasks with feature metadata, then set dependency chains (derived from features.json `depends_on`):
    ```
@@ -267,23 +269,23 @@ Wait for user approval before proceeding to Phase 2.
    protocol), so the spawn prompt carries only per-feature specifics — use the templates
    from `team-spawn-prompts.md` in this skill's directory:
    ```
-   Task({
+   Agent({
      description: "Implement F001",
      subagent_type: "vv-harness:feature-implementer",
      name: "api",
-     team_name: "PROJECT-sprint-N",
      model: "sonnet",
      prompt: "[per-feature specifics: feature ID, scope from features.json, deliverable, git identity, plan-approval flag, task ID]"
    })
    ```
+   The `name` makes the teammate addressable via `SendMessage`; the team it joins is
+   implicit, so there is no `team_name` to pass (the parameter is accepted but ignored).
    Agent types: `vv-harness:feature-implementer`, `vv-harness:layer-implementer`,
    `vv-harness:researcher`, `vv-harness:reviewer`. The spawn-time `model` parameter
    overrides the definition's frontmatter model, so the Phase 1 Opus-upgrade heuristic
    applies unchanged. Include git identity from `harness.json` in each spawn prompt.
    Do not re-paste guardrail prose into spawn prompts — it lives in the agent definitions.
-   Parameter names like `subagent_type` and `team_name` are as exposed by the current
-   CLI and may drift between versions (the spawn tool has been renamed before); adapt
-   to what the CLI actually exposes.
+   The spawn tool is exposed as `Agent` (older CLIs called it `Task`); adapt to what your
+   CLI exposes.
 
 6. At team start, confirm plan-approval messaging uses type `"message"` (the
    `plan_approval_response` delivery-bug workaround) — one SendMessage round-trip with a
@@ -353,11 +355,9 @@ Do NOT write domain-specific decisions here — those go in the Domain sections.
 
 1. Send `shutdown_request` to all teammates via `SendMessage`
 2. Wait for `shutdown_response` from each
-3. Call `TeamDelete` to clean up team files
-4. Write handoff to `claude-progress.txt`:
+3. Write handoff to `claude-progress.txt`:
    ```
    ## Session [N] - [DATE] (Agent Teams: [N] teammates)
-   - Team: [name]
    - Teammates: [name (model): scope] for each
    - Tasks: [N completed, M blocked, P pending]
    - Features completed: [list]
@@ -368,7 +368,7 @@ Do NOT write domain-specific decisions here — those go in the Domain sections.
    - Cost note: [models used, if relevant]
    - Next: [what the next session should do]
    ```
-5. Git commit
+4. Git commit
 
 ---
 
@@ -390,7 +390,7 @@ Compact at the next clean breakpoint. Task list should already be current (you'r
 The 5-minute heartbeat timeout will notify the lead. Spawn a replacement teammate for the stalled scope, or take over the scope directly (exit plan mode). Update `assigned_to` in features.json.
 
 **Lead session interrupted:**
-In-process teammates are lost if the lead dies. Use tmux display mode for long-running team sessions. On restart, read `claude-progress.txt`, `features.json` (check `assigned_to` fields), and `context_summary.md` to reconstruct state. Features with `assigned_to` set but status still `in-progress` were likely interrupted mid-work.
+In-process teammates are lost if the lead dies. `teammateMode` defaults to `"in-process"`, so set it explicitly (`tmux` or `auto`) for long-running team sessions that might be interrupted. On restart, read `claude-progress.txt`, `features.json` (check `assigned_to` fields), and `context_summary.md` to reconstruct state. Features with `assigned_to` set but status still `in-progress` were likely interrupted mid-work.
 
 **Integration failure between teammates:**
 Follow the Integration Failure Recovery protocol in agent-teams-protocol.md. Prioritize getting back to green tests over preserving partial work.

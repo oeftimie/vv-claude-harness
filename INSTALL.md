@@ -4,11 +4,13 @@ The VV Claude Code Harness is distributed as a native Claude Code plugin. The ol
 Python installer is retired as of v4.0.0 (the `install` script now only prints these
 instructions).
 
-**Compatibility:** developed and tested against Claude Code v2.1.175. Agent Teams is an
-experimental feature and may change between CLI versions; `plugin.json` has no
+**Compatibility:** developed against Claude Code v2.1.175; the Agent Teams
+documentation reflects the implicit-team model introduced in v2.1.178+ (teams form on
+the first teammate spawn — the `TeamCreate`/`TeamDelete` tools were removed). Agent
+Teams is experimental and may change between CLI versions; `plugin.json` has no
 version-pin field — the platform's model is graceful degradation (older CLIs ignore
 unknown manifest fields), and `/harness-continue` falls back to non-experimental
-worktree-isolated subagents when team tools are unavailable.
+worktree-isolated subagents when Agent Teams coordination is unavailable.
 
 ## Prerequisites
 
@@ -123,8 +125,8 @@ Then enable the plugin:
 `/harness-init` has no upgrade mode — for projects initialized under v3, these four
 manual steps, run in a Claude Code session inside the project, are the upgrade:
 
-1. Remove the PostCompact block from `.claude/settings.json` (its output never reached
-   the model; the plugin's SessionStart hook now covers post-compaction recovery).
+1. Remove the PostCompact block from `.claude/settings.json` (the plugin's SessionStart
+   hook now covers post-compaction recovery, so it is redundant).
 2. Copy the plugin statusline: `cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.sh"
    .claude/hooks/` (ask Claude to run it — the plugin root path is visible in-session).
 3. Add the `statusLine`, `env`, and `permissions` wiring to `.claude/settings.json` per

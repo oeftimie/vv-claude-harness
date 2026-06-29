@@ -67,7 +67,7 @@ It worked, but the coordination was custom. The orchestrator rules were prose-ba
 
 Claude Code shipped Agent Teams as an experimental feature: native primitives for creating teams, assigning tasks, messaging between agents, and managing shared task lists. This was the coordination layer I'd been building by hand, but implemented at the platform level.
 
-v3.0 threw away the custom module locking, the orchestrator rules, the `.context/` directory, and the slash commands. Everything was replaced with native primitives: `TeamCreate`, `TaskCreate`, `SendMessage`, `TaskList`, `TeamDelete`. The 4-file pattern was replaced with compaction-aware context management using task persistence (originally `TodoWrite`, now `TaskCreate`/`TaskUpdate`).
+v3.0 threw away the custom module locking, the orchestrator rules, the `.context/` directory, and the slash commands. Everything was replaced with native primitives for spawning teammates, assigning tasks, messaging between agents, and managing shared task lists. (Claude Code later removed the explicit `TeamCreate`/`TeamDelete` lifecycle tools in v2.1.178 — teams are now implicit, one per session; see v4.0 below.) The 4-file pattern was replaced with compaction-aware context management using task persistence (originally `TodoWrite`, now `TaskCreate`/`TaskUpdate`).
 
 The lead agent operates in plan mode (Shift+Tab), restricting itself to coordination tools. No code editing. It spawns teammates, assigns scoped tasks, monitors progress, and synthesizes results. Teammates work independently, each in their own context window, communicating through `SendMessage`.
 
@@ -128,6 +128,18 @@ v3.4 came from analyzing Claude Code's internal multi-agent implementation and c
 **JSON parsing was fragile.** `init.sh` used a `grep`/`sed` chain to read `stack` from `harness.json` — the only script in the harness not using `python3` for JSON. Fixed for consistency and robustness.
 
 v3.4 also added context management conventions (proactive compaction between features), a PostCompact circuit breaker (escalate after repeated compaction context collapse), TaskCreate metadata for task-to-feature correlation, and completion message deduplication guidance.
+
+### v4.0: Native plugin (June 2026)
+
+v4.0 makes the harness itself a Claude Code plugin (`/plugin install vv-harness`), handing the platform what prose and a custom installer used to carry. The same instructional-to-mechanical promotion that shaped v3.1–v3.4 now applies to the harness's own machinery:
+
+* **Distribution and updates** move to the `/plugin` flow — atomic, each version in its own cache directory. The v3 installer is retired to a shim that only prints instructions.
+* **Session orientation and post-compaction recovery** become a `SessionStart` hook; its `compact` source re-injects feature status, Active Context, and the last handoff after compaction.
+* **Session-end discipline auditing** becomes a `SessionEnd` hook that records gaps to `SESSION_INCOMPLETE`, surfaced loudly at the next session start.
+* **Progress visibility** becomes a statusLine (wired per-project, since plugins cannot set `statusLine` globally).
+* **Teammate tool posture** becomes declarative `agents/*.md` definitions: the reviewer cannot edit files by construction (no Edit/Write tools), and the researcher is retrieval-only.
+
+Agent Teams also tracked a platform change: Claude Code removed the explicit `TeamCreate`/`TeamDelete` lifecycle tools in v2.1.178, so teams are now implicit — one per session, formed on the first teammate spawn and cleaned up on session exit. The `team_name` argument is accepted but ignored, and `teammateMode` now defaults to `"in-process"` (set it to `tmux` or `auto` for split panes). The protocol and skills document this model.
 
 ## Architecture
 
@@ -269,11 +281,11 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The orientation hook stay
 
 * **Cost modeling**: Per-model and main-vs-subagent cost in a team session is now measured, not estimated (per-agent names are redacted to "custom" for personal marketplaces). Opt-in OTel telemetry exports `claude_code.token.usage` and `claude_code.cost.usage` attributed by model and query source; the in-session `/usage` breakdown works with zero infrastructure. See [INSTALL.md](./INSTALL.md), "Optional: Cost Telemetry".
 
-* **Agent Teams fragility**: When Agent Teams is unavailable (flag off, team tools missing on a CLI version), `/harness-continue` falls back to worktree-isolated subagents using the same `vv-harness:*` agent types — a non-experimental, platform-documented path.
+* **Agent Teams fragility**: When Agent Teams is unavailable (flag off, or team coordination unavailable on a CLI version), `/harness-continue` falls back to worktree-isolated subagents using the same `vv-harness:*` agent types — a non-experimental, platform-documented path.
 
 **Still open:**
 
-* **Session resumption**: If the lead session dies, in-process teammates are lost. `features.json` helps reconstruct state, but the work in flight is gone. tmux mode helps, but it's a mitigation, not a solution.
+* **Session resumption**: If the lead session dies, in-process teammates are lost. `features.json` helps reconstruct state, but the work in flight is gone. Since `teammateMode` defaults to `"in-process"`, setting it to `tmux` (or `auto`) helps — but it's a mitigation, not a solution.
 
 * **SendMessage reliability**: The `plan_approval_response` delivery bug suggests other message types might have similar issues. The harness works around the known bug, but systematic message delivery testing would build more confidence.
 
@@ -281,7 +293,7 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The orientation hook stay
 
 * **Teammate worktrees unverified**: Worktree isolation is platform-documented for subagents only. Whether it works for Agent Teams teammates is unverified; the harness doesn't build on it.
 
-* **Agent Teams is still experimental**: Gated behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and subject to change between CLI versions. The tested CLI version (v2.1.175) is documented in [INSTALL.md](./INSTALL.md).
+* **Agent Teams is still experimental**: Gated behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and subject to change between CLI versions. The protocol reflects the implicit-team model from Claude Code v2.1.178+; the development baseline (v2.1.175) is documented in [INSTALL.md](./INSTALL.md).
 
 ## Getting started
 

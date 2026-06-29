@@ -355,9 +355,9 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
 }
 ```
 
-Do NOT wire a per-project PostCompact hook. The plugin's SessionStart hook (matcher
-`compact`) injects post-compaction recovery directly into context; PostCompact output
-never reached the model.
+Do NOT wire a per-project PostCompact hook. The plugin's SessionStart hook (which fires
+with a `compact` source after compaction) already injects post-compaction recovery
+directly into the model's context, so a separate PostCompact hook would be redundant.
 
 ### Step 3.7: Verify Hooks
 
