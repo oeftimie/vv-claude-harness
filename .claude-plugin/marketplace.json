@@ -1,0 +1,14 @@
+{
+  "name": "vv-harness-marketplace",
+  "description": "VV Claude Code Harness plugin marketplace",
+  "owner": {
+    "name": "oeftimie"
+  },
+  "plugins": [
+    {
+      "name": "vv-harness",
+      "source": "./",
+      "description": "VV Claude Code Harness — multi-session continuity, Agent Teams coordination, mechanical quality enforcement."
+    }
+  ]
+}

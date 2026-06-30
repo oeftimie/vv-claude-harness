@@ -4,27 +4,30 @@ This repo distributes VV Claude Code Harness — it is NOT an application codeba
 
 ## What This Repo Contains
 
-- `claude/CLAUDE.md` — Template for `~/.claude/CLAUDE.md` (do not treat as project instructions)
-- `claude/rules/` — Rule files copied to `~/.claude/rules/`
-- `claude/skills/` — Skill definitions copied to `~/.claude/skills/`
+- `.claude-plugin/` — Plugin manifest (`plugin.json`) and marketplace manifest (`marketplace.json`)
+- `agents/` — Declarative teammate definitions shipped with the plugin (spawned as `vv-harness:*`)
+- `hooks/` — Plugin continuity hooks: session-start, session-end, statusline, `hooks.json`
+- `rules/` — Rule files shipped with the plugin
+- `skills/` — Skill definitions shipped with the plugin (auto-discovered at plugin root)
+- `templates/CLAUDE.md` — Template for a user's personal `~/.claude/CLAUDE.md` (do not treat as project instructions; users copy and personalize it manually)
+- `test/` — Fixture-based test suite for the hook scripts (`test/run-tests.sh`)
+- `CHANGELOG.md` — Version history
+- `INSTALL.md` — Installation and migration guide
+- `README.md` — Project documentation
+- `install` — Deprecation shim; prints the `/plugin` install instructions and exits
 - `clips/` — Screenshots and videos for README
-- `INSTALL.md` — Installation guide
-- `README.md` — Project documentation and changelog
 
 ## Key Distinction
 
-Files under `claude/` are **distribution templates**, not active project configuration. They describe how Claude should behave in *other* projects after installation. Do not follow their instructions when working on this repo.
+Files under `templates/`, `rules/`, and `skills/` are **distribution content**, not active project configuration. They describe how Claude should behave in *other* projects after the plugin is installed. Do not follow their instructions when working on this repo.
 
 ## Working on This Repo
 
-- No build system, no tests, no application code
-- Changes are documentation and template edits only
-- Version number lives in:
-  - `install` — `HARNESS_VERSION` constant + module docstring banner
-  - `claude/CLAUDE.md` — frontmatter `version:` + description line
-  - `claude/skills/harness-init/SKILL.md` — frontmatter description, H1 title, `version:` field in the `harness.json` template, the init commit message, and the final report banner
-  - `claude/skills/harness-continue/SKILL.md` — frontmatter description and H1 title
-  - `README.md` — "Current version" header, download/unzip examples in "Getting started", and changelog header for the new entry
-  - `INSTALL.md` — title
-- Keep all version references in sync when bumping. Sanity check: `grep -rn "OLD\.VERSION" --include="*.md" --include="install"` should return only historical changelog entries; `grep -rn "NEW\.VERSION"` should hit every location above
-- The installed global copy at `~/.claude/CLAUDE.md` must match `claude/CLAUDE.md` (minus personal sections like Slack config)
+- No build system, no application code
+- Tests live at `test/run-tests.sh` (dependency-free shell runner covering the hook
+  scripts, plugin manifests, and agent frontmatter). Run `bash test/run-tests.sh` and
+  make sure it passes before committing changes to `hooks/` or the `.claude-plugin/`
+  manifests
+- Other changes are documentation and template edits
+- The version number lives ONLY in `.claude-plugin/plugin.json` (`version`). It is the canonical plugin version and the update cache key: users only receive updates when it is bumped. Do not introduce other version locations that need syncing.
+- `templates/CLAUDE.md` keeps its `{{USER_NAME}}` placeholders; personalization is a documented manual step in INSTALL.md, not installer templating

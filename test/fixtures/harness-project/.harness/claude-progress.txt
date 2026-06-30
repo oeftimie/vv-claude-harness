@@ -1,0 +1,4 @@
+Session 3 handoff (2026-01-15)
+- F001 passing at 97% coverage, committed.
+- F002 in progress: hook coverage reporting, tests scaffolded.
+- Next: finish F002, then claim F003 (status badges).

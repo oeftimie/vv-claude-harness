@@ -1,0 +1,40 @@
+{
+  "features": [
+    {
+      "id": "F001",
+      "description": "Parse pipeline definitions",
+      "priority": 1,
+      "status": "passing",
+      "scope": ["src/parser/", "tests/parser/"],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "tests/parser/test_parser.py",
+      "coverage": 97,
+      "notes": null
+    },
+    {
+      "id": "F002",
+      "description": "Hook coverage reporting",
+      "priority": 2,
+      "status": "in-progress",
+      "scope": ["src/hooks/", "tests/hooks/"],
+      "depends_on": ["F001"],
+      "assigned_to": null,
+      "test_file": "tests/hooks/test_hooks.py",
+      "coverage": null,
+      "notes": null
+    },
+    {
+      "id": "F003",
+      "description": "Render status badges",
+      "priority": 1,
+      "status": "pending",
+      "scope": ["src/badges/", "tests/badges/"],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": null
+    }
+  ]
+}

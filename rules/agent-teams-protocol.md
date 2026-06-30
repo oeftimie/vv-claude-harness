@@ -1,13 +1,38 @@
----
-globs:
-  - .harness/**
----
-
-<!-- This rule loads when Claude reads .harness/ files. The /harness-continue workflow reads these files in Step 1, ensuring the protocol is active before team operations begin. -->
+<!-- Shipped with the vv-harness plugin. There is no auto-loading: the SessionStart
+orientation injects this file's absolute path, and /harness-continue instructs the lead
+to read it before any team coordination begins. -->
 
 # Agent Teams Protocol
 
 Rules for coordinating work through Claude Code's native Agent Teams. These activate when a `.harness/` directory exists and apply when a lead agent spawns teammates for parallel work.
+
+## Enabling Agent Teams
+
+Agent Teams is **experimental and disabled by default**. Enable it by setting
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in the environment or in `settings.json`:
+
+```json
+{ "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
+```
+
+Without that variable no team forms at session start and the lead cannot spawn
+teammates. Confirm it is set before relying on any team workflow below.
+
+Once enabled, each session has exactly **one implicit team** (the lead plus the
+teammates it spawns). There is no create step and no teardown step: the team forms
+when the first teammate is spawned and its shared state is cleaned up automatically
+when the session ends. `TeamCreate`, `TeamDelete`, and `TeamList` do not exist —
+teammates are spawned directly via the Agent tool with a `name`. The `team_name`
+argument is accepted but ignored.
+
+### Display Mode
+
+`teammateMode` controls whether teammates run in the main terminal or in split panes.
+Its default is `"in-process"`. Allowed values: `"in-process"` (all teammates in the
+main terminal, works anywhere), `"auto"` (split panes when already inside tmux or
+iTerm2, else in-process), `"tmux"` (split-pane mode), and `"iterm2"` (iTerm2 native
+panes, requires the `it2` CLI). The default no longer opens panes — set it explicitly
+(`"teammateMode": "auto"` in `settings.json`, or `--teammate-mode auto`) to get them.
 
 ## When to Use Agent Teams
 
@@ -83,6 +108,13 @@ Choose models based on the cognitive demand of each role:
 | Researcher | Sonnet | Web search and doc reading are retrieval-heavy, not reasoning-heavy |
 | Reviewer | Opus | Deep code review catches subtle bugs; worth the cost |
 
+The four vv-harness agent definitions (`vv-harness:feature-implementer`,
+`vv-harness:layer-implementer`, `vv-harness:researcher`, `vv-harness:reviewer`) carry
+these per-role model, effort, and tool defaults in their frontmatter (reviewer: Opus with
+high effort; implementers and researcher: Sonnet). The dynamic Opus-upgrade heuristics
+below still apply: the spawn-time `model` parameter overrides the definition's
+frontmatter.
+
 **Static overrides**: if an implementer's scope is architecturally complex (10+ files, cross-cutting concerns, security-sensitive), upgrade to Opus regardless of history.
 
 **Dynamic overrides** (based on operational metrics from past sessions): Before assigning models, the lead reviews `features.json` for historical patterns in the same scope directories:
@@ -107,9 +139,9 @@ The lead:
 1. Reads project state (`.harness/features.json`, `claude-progress.txt`, `context_summary.md`, git log)
 2. Produces a decomposition plan (Phase 1 of the workflow in harness-continue)
 3. Presents the plan to the user for approval before spawning any teammates
-4. Creates the team via `TeamCreate`
+4. Confirms `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set (the team forms implicitly when the first teammate is spawned — there is no create step)
 5. Creates tasks via `TaskCreate`, then sets dependencies via `TaskUpdate` with `addBlockedBy` (derived from features.json `depends_on`)
-6. Spawns teammates via `Task` with team_name, model, and role-specific prompts
+6. Spawns teammates via the Agent tool with a `name`, model, and role-specific prompt (any `team_name` argument is ignored)
 7. Monitors progress via `TaskList` and incoming `SendMessage` messages
 8. Resolves conflicts if two teammates need overlapping files
 9. Reviews completed work (exit plan mode if needed for code review)
@@ -119,8 +151,7 @@ The lead:
 13. Updates `.harness/context_summary.md` with decisions, patterns, and retrospective findings (Meta-Session + Meta-Patterns sections)
 14. Writes session handoff to `claude-progress.txt`
 15. Sends `shutdown_request` to all teammates, waits for `shutdown_response`
-16. Calls `TeamDelete` to clean up
-17. Commits
+16. Commits (the team's shared state is cleaned up automatically when the session ends)
 
 If the lead catches itself starting to implement code instead of delegating, it should stop and spawn a teammate for that work.
 
@@ -258,16 +289,15 @@ The harness installs two hooks that enforce quality mechanically:
 - If work remains: sends the next feature assignment (exit code 2), keeps teammate working
 - If no work remains: allows idle (exit code 0)
 
-**PostCompact hook**:
-- Fires after `/compact` or automatic compaction
-- Reminds the agent to re-read `context_summary.md` and the task list
-- Prevents post-compaction drift where the agent loses track of current state
+Post-compaction recovery is handled by the plugin's SessionStart hook (matcher
+`compact`), which re-injects orientation directly into model context after `/compact`
+or automatic compaction. There is no per-project PostCompact hook.
 
 These hooks mean:
 - Teammates can't mark tasks done with failing tests (mechanical TDD enforcement)
 - Idle teammates are prompted to pick up the next available feature (no wasted capacity)
 - The lead doesn't need to micromanage task assignment after initial setup
-- Post-compaction context recovery is prompted automatically
+- Post-compaction context recovery is injected automatically by the plugin
 
 ### Hook Verification
 
@@ -308,7 +338,9 @@ tests/auth/
 
 When the teammate tries to edit a file outside these paths, the hook blocks the edit (exit code 2) and suggests messaging the lead for scope expansion.
 
-This promotes scope enforcement from instructional to mechanical. Teammates in worktree isolation don't need this hook (they have physical isolation instead).
+This promotes scope enforcement from instructional to mechanical. This hook is the
+doc-grounded way to keep teammates inside their scope; subagents spawned with worktree
+isolation in the fallback mode don't need it (they have physical isolation instead).
 
 ## Conflict Resolution
 
@@ -346,45 +378,69 @@ If teammates are working on truly independent features, the lead can create sepa
 
 ## Worktree Isolation
 
-Teammates can be spawned with `isolation: "worktree"` in the `Task()` call, which creates a temporary git worktree — a physically separate copy of the repo. This promotes scope enforcement from instructional to mechanical: the teammate literally cannot affect the main working tree.
+`isolation: "worktree"` in an Agent/Task spawn creates a temporary git worktree — a
+physically separate copy of the repo. The spawned agent literally cannot affect the main
+working tree, which promotes scope enforcement from instructional to mechanical.
 
-**When to use worktree isolation:**
+**Platform status — know what is documented before relying on it:**
+- Worktree isolation is platform-documented for SUBAGENTS spawned via the Agent/Task
+  tool. That includes the non-experimental fallback mode (harness-continue, Step 4
+  graceful degradation), where the lead spawns vv-harness agent types directly as
+  worktree-isolated subagents.
+- It is NOT documented for Agent Teams teammates. The platform docs advise avoiding
+  teammate file conflicts through disjoint file ownership instead. If teammate worktrees
+  appear to work on your CLI version, treat that as unverified experimental behavior
+  that may break across versions — do not build a workflow on it.
+
+**Doc-grounded patterns** (pick one):
+1. Agent Teams with disjoint scope ownership plus the `enforce-scope.sh` hook (see
+   Mechanical Scope Enforcement).
+2. Worktree-isolated subagents spawned directly via the Agent/Task tool — the
+   non-experimental fallback mode.
+
+**When worktree-isolated subagents fit:**
 - Features with truly independent scopes (no shared files)
 - When scope violations have caused problems before
 - Security-sensitive features where contamination risk is high
 
 **When NOT to use worktree isolation:**
-- Features that share interfaces requiring real-time coordination (worktrees don't see each other's changes until merge)
+- Work that shares interfaces requiring real-time coordination (worktrees don't see each
+  other's changes until merge)
 - Quick tasks where merge overhead exceeds the benefit
-- Layer-based work where teammates must negotiate a shared interface file
+- Layer-based work negotiating a shared interface file
 
 **How it works:**
 
-1. Lead spawns teammate with `isolation: "worktree"`:
+1. Lead spawns a subagent with `isolation: "worktree"`:
    ```
-   Task({
+   Agent({
      description: "Implement F001",
+     subagent_type: "vv-harness:feature-implementer",
      name: "api",
-     team_name: "PROJECT-sprint-N",
      model: "sonnet",
      isolation: "worktree",
      prompt: "[filled template]"
    })
    ```
-2. Teammate works in its own worktree branch, commits normally
-3. When teammate completes, the worktree path and branch are returned to the lead
+   `subagent_type` selects the agent definition and `name` labels the subagent; adapt
+   to whatever the spawn tool exposes on your CLI version.
+2. The subagent works in its own worktree branch, commits normally
+3. On completion, the worktree path and branch are returned to the lead
 4. Lead merges worktree branches during Phase 4 (synthesis)
-5. If teammate makes no changes, the worktree is auto-cleaned
+5. If the subagent makes no changes, the worktree is auto-cleaned
 
 **Synthesis with worktrees:**
 
 During Phase 4, the lead merges each worktree branch:
 ```bash
-git merge teammate-branch-name --no-ff
+git merge worktree-branch-name --no-ff
 ```
-If conflicts arise, follow the Integration Failure Recovery protocol. The advantage of worktrees is that each teammate's work is on a clean branch, making selective reverts trivial.
+If conflicts arise, follow the Integration Failure Recovery protocol. The advantage of
+worktrees is that each agent's work is on a clean branch, making selective reverts
+trivial.
 
-**Trade-off**: Adds git merge complexity during synthesis, but eliminates scope violation risk entirely. For independent features, this is almost always worth it.
+**Trade-off**: Adds git merge complexity during synthesis, but eliminates scope violation
+risk entirely. For independent feature scopes, this is almost always worth it.
 
 ## Cost Considerations
 
@@ -395,8 +451,24 @@ Model mixing reduces per-implementer token cost by roughly 5x (Sonnet vs Opus). 
 - **TeammateIdle re-assignment**: teammates that finish early and pick up new work run longer, consuming more Sonnet tokens.
 - **Phase 1 planning**: reading all harness files, analyzing features, designing team structure, presenting the plan: this happens before any implementation tokens are spent.
 
+**Measure the break-even, don't estimate it:**
+- With telemetry enabled (see INSTALL.md, "Optional: Cost Telemetry"), derive the
+  break-even from `claude_code.token.usage` and `claude_code.cost.usage` grouped by
+  `model` and `query_source` (main vs subagent): compare a team session's measured cost
+  against single-session work on a comparable scope, and let that calibrate when teams
+  pay off in this project. `agent.name` only distinguishes official-marketplace agents —
+  personal-marketplace agent names (including vv-harness roles) are redacted to
+  `"custom"`, so it cannot separate the harness roles.
+- Without a collector, use the in-session `/usage` breakdown, which attributes recent
+  usage to skills, subagents, plugins, and MCP servers as percentages (the plan-usage
+  breakdown view requires a subscription plan — Pro/Max/Team/Enterprise; the session
+  token/cost stats are universal).
+- The Phase 5.5 retrospective should cite measured token counts per model and per query
+  source in the Meta-Session entry instead of estimates.
+- With no telemetry at all, fall back to judgment: parallelize only when the planned team
+  work clearly exceeds what one focused session would finish.
+
 **Rules of thumb:**
-- Agent Teams becomes cost-effective when total implementation work exceeds ~30 minutes of single-session effort
 - For two features that each touch fewer than 3 files, sequential single-session is cheaper
 - The more independent the features, the better the parallelism payoff (less SendMessage overhead)
 - Reviewer teammates on Opus are worth the cost for features touching 10+ files; skip them for smaller scopes
@@ -406,12 +478,17 @@ Don't optimize for cost at the expense of quality. The point of model mixing is 
 ## Known Limitations
 
 - **plan_approval_response delivery bug**: `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Use `type: "message"` for all plan approvals. The `plan_approval_request` type (teammate to lead) works fine; only the response direction is broken.
-- **No session resumption**: if the lead session dies, in-process teammates are lost. Use tmux mode for sessions that might be interrupted. On restart, `features.json` `assigned_to` fields help reconstruct what was in progress.
+- **No session resumption**: if the lead session dies, in-process teammates are lost. Since `teammateMode` defaults to `"in-process"`, set it explicitly to `tmux` (or `auto`) for sessions that might be interrupted. On restart, `features.json` `assigned_to` fields help reconstruct what was in progress.
 - **One team per session**: a lead can only manage one team at a time.
 - **No nested teams**: teammates can't create their own sub-teams.
 - **Permission inheritance**: teammates inherit the lead's permission mode by default.
 - **Heartbeat timeout**: if a teammate crashes, it triggers a 5-minute heartbeat timeout before the lead is notified.
 - **Split-pane limitations**: tmux split-screen doesn't work with VS Code integrated terminal, Windows Terminal, or Ghostty.
+- **No CLI version pin**: `plugin.json` has no version-pin field; the platform's model is
+  graceful degradation (older CLIs ignore unknown manifest fields). The harness targets
+  the implicit-team model introduced in Claude Code v2.1.178+. Agent Teams is experimental (gated
+  by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and may break across CLI versions; the
+  worktree-subagent fallback mode (harness-continue, Step 4) covers that case.
 
 ## Integration with Harness
 

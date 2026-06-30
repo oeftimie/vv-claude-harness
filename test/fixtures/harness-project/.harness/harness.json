@@ -1,0 +1,7 @@
+{
+  "version": "4.0.0",
+  "git_identity": {
+    "user_name": "Fixture User",
+    "user_email": "fixture@example.com"
+  }
+}

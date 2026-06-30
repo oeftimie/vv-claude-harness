@@ -1,8 +1,8 @@
 # VV Claude Code Harness
 
-A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through three major versions into a system built on Claude Code's native Agent Teams primitives.
+A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through four major versions into a native Claude Code plugin built on the platform's Agent Teams primitives.
 
-**Current version: v3.6.0** — Stale-file detection in the installer. Surfaces residue from older harness versions (including the v2.x module-lock era's `orchestrator.md` / `scheduling.md` / `coding-agent.md` / `context-graph` skill) that previously sat silently in `~/.claude/` after upgrades. Default behavior is detect-and-warn; pass `--clean-stale` to remove. Replaces the older silent auto-delete pass, which had an incomplete manifest. Builds on v3.5.0's session discipline improvements: smoke test gate, features.json audit, mandatory retrospectives, inline context updates.
+**Current version: v4.0.0** — The harness is now a native Claude Code plugin (`/plugin install vv-harness`). The platform owns what prose and a custom installer used to carry: distribution and atomic updates, session orientation and post-compaction recovery (a SessionStart hook), session-end discipline auditing (a SessionEnd hook), live feature progress (a statusLine), and teammate tool posture (declarative `vv-harness:*` agents). The v3 installer is retired; migration steps are in [INSTALL.md](./INSTALL.md). Full history in [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 
@@ -20,7 +20,7 @@ Two failure patterns emerge consistently:
 
 Both failures stem from the same root cause: no persistent memory of intent, progress, or remaining work.
 
-v2.1 addressed a third failure: parallel agents stepping on each other. v3.0 replaced the custom coordination layer entirely with Claude Code's native Agent Teams. And v3.2 added mechanical enforcement (shell hooks that physically prevent completion without passing tests), v3.3 added metacognitive self-improvement (the harness learns from its own coordination patterns), v3.4 fixed four hooks that were silently broken on real systems, and v3.5 tightened session discipline based on real-world violation analysis.
+v2.1 addressed a third failure: parallel agents stepping on each other. v3.0 replaced the custom coordination layer entirely with Claude Code's native Agent Teams. And v3.2 added mechanical enforcement (shell hooks that physically prevent completion without passing tests), v3.3 added metacognitive self-improvement (the harness learns from its own coordination patterns), v3.4 fixed four hooks that were silently broken on real systems, v3.5 tightened session discipline based on real-world violation analysis, and v4.0 packaged the whole harness as a Claude Code plugin — moving session orientation, post-compaction recovery, and discipline auditing from prose into platform hooks.
 
 ## Two solutions, one insight
 
@@ -67,7 +67,7 @@ It worked, but the coordination was custom. The orchestrator rules were prose-ba
 
 Claude Code shipped Agent Teams as an experimental feature: native primitives for creating teams, assigning tasks, messaging between agents, and managing shared task lists. This was the coordination layer I'd been building by hand, but implemented at the platform level.
 
-v3.0 threw away the custom module locking, the orchestrator rules, the `.context/` directory, and the slash commands. Everything was replaced with native primitives: `TeamCreate`, `TaskCreate`, `SendMessage`, `TaskList`, `TeamDelete`. The 4-file pattern was replaced with compaction-aware context management using task persistence (originally `TodoWrite`, now `TaskCreate`/`TaskUpdate`).
+v3.0 threw away the custom module locking, the orchestrator rules, the `.context/` directory, and the slash commands. Everything was replaced with native primitives for spawning teammates, assigning tasks, messaging between agents, and managing shared task lists. (Claude Code later removed the explicit `TeamCreate`/`TeamDelete` lifecycle tools in v2.1.178 — teams are now implicit, one per session; see v4.0 below.) The 4-file pattern was replaced with compaction-aware context management using task persistence (originally `TodoWrite`, now `TaskCreate`/`TaskUpdate`).
 
 The lead agent operates in plan mode (Shift+Tab), restricting itself to coordination tools. No code editing. It spawns teammates, assigns scoped tasks, monitors progress, and synthesizes results. Teammates work independently, each in their own context window, communicating through `SendMessage`.
 
@@ -129,27 +129,43 @@ v3.4 came from analyzing Claude Code's internal multi-agent implementation and c
 
 v3.4 also added context management conventions (proactive compaction between features), a PostCompact circuit breaker (escalate after repeated compaction context collapse), TaskCreate metadata for task-to-feature correlation, and completion message deduplication guidance.
 
+### v4.0: Native plugin (June 2026)
+
+v4.0 makes the harness itself a Claude Code plugin (`/plugin install vv-harness`), handing the platform what prose and a custom installer used to carry. The same instructional-to-mechanical promotion that shaped v3.1–v3.4 now applies to the harness's own machinery:
+
+* **Distribution and updates** move to the `/plugin` flow — atomic, each version in its own cache directory. The v3 installer is retired to a shim that only prints instructions.
+* **Session orientation and post-compaction recovery** become a `SessionStart` hook; its `compact` source re-injects feature status, Active Context, and the last handoff after compaction.
+* **Session-end discipline auditing** becomes a `SessionEnd` hook that records gaps to `SESSION_INCOMPLETE`, surfaced loudly at the next session start.
+* **Progress visibility** becomes a statusLine (wired per-project, since plugins cannot set `statusLine` globally).
+* **Teammate tool posture** becomes declarative `agents/*.md` definitions: the reviewer cannot edit files by construction (no Edit/Write tools), and the researcher is retrieval-only.
+
+Agent Teams also tracked a platform change: Claude Code removed the explicit `TeamCreate`/`TeamDelete` lifecycle tools in v2.1.178, so teams are now implicit — one per session, formed on the first teammate spawn and cleaned up on session exit. The `team_name` argument is accepted but ignored, and `teammateMode` now defaults to `"in-process"` (set it to `tmux` or `auto` for split panes). The protocol and skills document this model.
+
 ## Architecture
 
 ### Global (travels with you)
 
+Installed via `/plugin`, updated atomically (each version gets its own cache directory):
+
 ```
-~/.claude/
-├── CLAUDE.md                                         # Core engineering standards (all projects)
+vv-harness/                                            # Plugin root
+├── skills/
+│   ├── harness-init/                                  # /harness-init skill + hook templates
+│   └── harness-continue/                              # /harness-continue skill + team-spawn-prompts.md
+├── agents/                                            # Declarative teammates (spawned as vv-harness:*)
+│   ├── feature-implementer.md                         # Sonnet, scoped TDD on one feature
+│   ├── layer-implementer.md                           # Sonnet, owns one architectural layer
+│   ├── researcher.md                                  # Sonnet, retrieval-only (Write for findings file)
+│   └── reviewer.md                                    # Opus, high effort, no Edit/Write tools
+├── hooks/
+│   ├── session-start.sh                               # Orientation + post-compaction recovery
+│   ├── session-end.sh                                 # Session discipline audit
+│   └── statusline.sh                                  # Live feature progress (wired by /harness-init)
 ├── rules/
 │   ├── agent-teams-protocol.md                        # Agent Teams rules (harness projects only)
-│   └── code-quality.md                                # Mechanical code quality limits (all projects)
-└── skills/
-    ├── harness-init/
-    │   ├── SKILL.md                                   # /harness-init skill
-    │   ├── init.sh.template                           # Build/test script template
-    │   ├── verify-task-quality.sh.template             # TaskCompleted hook
-    │   ├── check-remaining-tasks.sh.template           # TeammateIdle hook
-    │   ├── enforce-scope.sh.template                   # PreToolUse scope enforcement hook
-    │   └── verify-git-identity.sh.template             # PreToolUse git identity hook
-    └── harness-continue/
-        ├── SKILL.md                                   # /harness-continue skill
-        └── team-spawn-prompts.md                      # Spawn templates with model + plan approval
+│   └── code-quality.md                                # Mechanical code quality limits
+└── templates/
+    └── CLAUDE.md                                      # Core standards template (manual copy to ~/.claude/)
 ```
 
 ### Per-project (created by initializer)
@@ -158,17 +174,20 @@ v3.4 also added context management conventions (proactive compaction between fea
 project-root/
 ├── CLAUDE.md
 ├── .claude/
-│   ├── settings.json                                  # Build hooks + quality gate hooks
+│   ├── settings.json                                  # Build + quality gate hooks, statusLine,
+│   │                                                  #   Agent Teams env flag, permissions allowlist
 │   └── hooks/
 │       ├── verify-task-quality.sh                     # TaskCompleted enforcement
 │       ├── check-remaining-tasks.sh                   # TeammateIdle prompted reassignment
 │       ├── enforce-scope.sh                           # PreToolUse scope enforcement
-│       └── verify-git-identity.sh                     # PreToolUse git identity verification
+│       ├── verify-git-identity.sh                     # PreToolUse git identity verification
+│       └── statusline.sh                              # Project copy of the plugin status line
 └── .harness/
     ├── harness.json                                   # Config + git identity + team structure
     ├── features.json                                  # Feature tracking (with scope, dependencies)
     ├── context_summary.md                             # Decisions, patterns, gotchas, active context
     ├── claude-progress.txt                            # Session-boundary handoff
+    ├── SESSION_INCOMPLETE                             # Discipline gaps from last session (gitignored)
     └── init.sh                                        # Build/test script
 ```
 
@@ -189,13 +208,16 @@ The real insight from iterating through these versions: there are three reliabil
 | Hook | Event | What it does |
 |------|-------|-------------|
 | `check-remaining-tasks.sh` | TeammateIdle | Prompts teammate to pick up next pending feature |
-| PostCompact prompt | PostCompact | Injects "re-read context_summary.md and TaskList" into model context |
+| `session-start.sh` (plugin) | SessionStart | Injects orientation at start; its `compact` matcher re-injects context after compaction |
+| `session-end.sh` (plugin) | SessionEnd | Audits discipline into `SESSION_INCOMPLETE`, surfaced at next session start |
 
 **Structural (file existence, JSON schema)**: high reliability. `features.json` requiring `test_file` and `coverage` fields. The `.harness/` directory gating mode selection. Agents respect structure more than prose.
 
 **Instructional (prose in CLAUDE.md, rules, skills)**: medium reliability. "Use TDD." "Don't modify files outside scope." "Verify git identity before push." These work most of the time. Over long contexts, compliance drifts.
 
 The progression from v2.0 to v3.4 is the story of promoting critical rules from instructional to mechanical enforcement. TDD went from "please use TDD" to a shell hook that rejects non-passing code. Scope enforcement went from "don't touch files outside your scope" to a PreToolUse hook that blocks the edit. Git identity verification went from "check before pushing" to a PreToolUse hook that blocks the push. The rules that matter most should be the ones agents can't skip.
+
+v4.0 extends the same promotion to the harness itself: session orientation, post-compaction recovery, session-end discipline auditing, progress visibility (the statusLine), and reviewer/researcher tool posture all moved from prose instructions to plugin hooks and declarative agent definitions. The reviewer cannot edit files by construction (its definition grants no Edit/Write tools); its Bash use is restricted to test runs and git diff by instruction.
 
 ## Core principles
 
@@ -215,17 +237,17 @@ These have held steady across all versions:
 
 ### Solo work (most common)
 
-Install the harness globally, then run `/harness-init` on any project that will span multiple sessions. At the start of every session, run `/harness-continue` — it reads your progress files, verifies git identity, and picks up where you left off.
+Install the plugin (`/plugin install vv-harness`), then run `/harness-init` on any project that will span multiple sessions. At the start of every session, run `/harness-continue` — it reads your progress files, verifies git identity, and picks up where you left off.
 
 Use **single-session mode** for features touching fewer than 5 files. The harness tracks progress via `TaskCreate`/`TaskUpdate` (which survive compaction), runs async build checks after edits, and mechanically blocks git pushes with wrong identity.
 
-The PostCompact prompt hook recovers your context automatically after compaction — it injects a reminder to re-read `context_summary.md` and the task list.
+The plugin's SessionStart hook recovers your context automatically after compaction — its `compact` matcher re-injects feature status, Active Context, and the last handoff directly into model context.
 
 ### Parallel work (Agent Teams)
 
 Use Agent Teams when two or more independent features are ready. The lead operates in plan mode (Shift+Tab), spawns Sonnet teammates for implementation, and reserves Opus for itself and reviewers.
 
-**For features with independent scopes**: spawn teammates with `isolation: "worktree"`. Each gets a physically separate copy of the repo. Cleanest separation, no scope violations possible. The lead merges worktree branches during synthesis.
+**For features with independent scopes**: spawn worktree-isolated subagents (`isolation: "worktree"`) — the same pattern the non-experimental fallback mode uses. Each gets a physically separate copy of the repo. Cleanest separation, no scope violations possible. The lead merges worktree branches during synthesis. Worktree isolation is platform-documented for subagents, not for Agent Teams teammates; keep teammates on disjoint scopes instead.
 
 **For shared-branch work**: the `enforce-scope.sh` PreToolUse hook blocks edits outside the teammate's assigned scope file (`.claude/teammate-scope.txt`). The lead creates this file before spawning each teammate.
 
@@ -234,18 +256,18 @@ The `TaskCompleted` hook mechanically enforces passing tests before any task can
 ### When NOT to use
 
 * **Don't use Agent Teams** for features touching fewer than 3 files each — sequential single-session mode is cheaper. The Opus lead runs for the entire session regardless of teammate count; coordination overhead adds up.
-* **Don't use worktree isolation** when teammates share interfaces — they need to see each other's changes in real time. Use the scope enforcement hook instead.
+* **Don't use worktree isolation** when agents share interfaces — they need to see each other's changes in real time. Use the scope enforcement hook instead.
 * **Don't treat TeammateIdle as automatic** — it prompts the teammate to pick up work, but the model decides whether to follow through. Monitor via `TaskList`.
 
 ### Token budget
 
-The harness adds ~8.7K tokens to your context when active:
-* `CLAUDE.md`: ~4.2K (always loaded)
-* `agent-teams-protocol.md`: ~4.5K (loaded only when `.harness/` files are read)
+The harness's always-on overhead is `CLAUDE.md`: ~4.2K tokens (if you copied the template to `~/.claude/CLAUDE.md`). In v4 the rule files are NOT auto-loaded by globs — they cost tokens only when the model reads them, following the pointers in the SessionStart orientation:
+* `agent-teams-protocol.md`: ~4.5K, read before team coordination in harness projects
+* `code-quality.md`: ~0.3K, read before writing code in harness projects
 
-This is down from ~14.7K in v3.2.1 (before eliminating redundant `engineering-standards.md` and `non-harness-workflow.md` rule files). A 41% reduction.
+This is down from ~14.7K always-on in v3.2.1 (before eliminating redundant `engineering-standards.md` and `non-harness-workflow.md` rule files).
 
-In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol rule is not triggered because no `.harness/` files are read.
+In non-harness projects, only CLAUDE.md loads (~4.2K). The orientation hook stays silent (no `.harness/` directory), so neither rule file is pointed to or read.
 
 ## Known challenges
 
@@ -255,31 +277,42 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The agent-teams-protocol 
 
 * **Git identity verification**: A PreToolUse hook (`verify-git-identity.sh`) checks git identity against `.harness/harness.json` before every push/pull/clone. Blocks the operation if identity doesn't match.
 
+**Addressed in v4.0:**
+
+* **Cost modeling**: Per-model and main-vs-subagent cost in a team session is now measured, not estimated (per-agent names are redacted to "custom" for personal marketplaces). Opt-in OTel telemetry exports `claude_code.token.usage` and `claude_code.cost.usage` attributed by model and query source; the in-session `/usage` breakdown works with zero infrastructure. See [INSTALL.md](./INSTALL.md), "Optional: Cost Telemetry".
+
+* **Agent Teams fragility**: When Agent Teams is unavailable (flag off, or team coordination unavailable on a CLI version), `/harness-continue` falls back to worktree-isolated subagents using the same `vv-harness:*` agent types — a non-experimental, platform-documented path.
+
 **Still open:**
 
-* **Session resumption**: If the lead session dies, in-process teammates are lost. `features.json` helps reconstruct state, but the work in flight is gone. tmux mode helps, but it's a mitigation, not a solution.
-
-* **Cost modeling**: Agent Teams cost is hard to predict. Lead overhead, SendMessage round-trips, TeammateIdle re-assignment, and Phase 1 planning all vary by project. Better cost instrumentation (logging tokens per role) would help.
+* **Session resumption**: If the lead session dies, in-process teammates are lost. `features.json` helps reconstruct state, but the work in flight is gone. Since `teammateMode` defaults to `"in-process"`, setting it to `tmux` (or `auto`) helps — but it's a mitigation, not a solution.
 
 * **SendMessage reliability**: The `plan_approval_response` delivery bug suggests other message types might have similar issues. The harness works around the known bug, but systematic message delivery testing would build more confidence.
 
+* **SessionEnd can't block**: The session-end discipline audit records gaps and surfaces them at the next session start, but by platform design it cannot stop a session from ending with those gaps. Self-healing, not preventive.
+
+* **Teammate worktrees unverified**: Worktree isolation is platform-documented for subagents only. Whether it works for Agent Teams teammates is unverified; the harness doesn't build on it.
+
+* **Agent Teams is still experimental**: Gated behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and subject to change between CLI versions. The protocol reflects the implicit-team model from Claude Code v2.1.178+; the development baseline (v2.1.175) is documented in [INSTALL.md](./INSTALL.md).
+
 ## Getting started
 
-Everything you need is in this repo:
+The harness ships as a Claude Code plugin:
 
-1. Download [harness-v3.6.0.zip](https://github.com/oeftimie/vv-claude-harness/releases)
-2. Follow the [INSTALL.md](./INSTALL.md) instructions
-3. Review the [CLAUDE.md](./claude/CLAUDE.md) for core engineering standards
+1. Install via the `/plugin` flow below
+2. Migrating from the v3 installer? Follow the manual cleanup steps in [INSTALL.md](./INSTALL.md)
+3. Review [templates/CLAUDE.md](./templates/CLAUDE.md) for the core engineering standards template
 
 ### Quick install
 
-```bash
-unzip vv-claude-harness-v3.6.0.zip
-cd vv-claude-harness
-./install
+From inside any Claude Code session:
+
+```
+/plugin marketplace add oeftimie/vv-claude-harness
+/plugin install vv-harness
 ```
 
-The installer backs up existing files, personalizes CLAUDE.md with your name, and handles upgrades from older versions. See [INSTALL.md](./INSTALL.md) for options (`--dry-run`, `--name`, `--upgrade-only`).
+Update later with `/plugin update vv-harness` — updates are atomic; each version gets its own cache directory. The v3 installer is retired: `./install` now only prints these instructions. See [INSTALL.md](./INSTALL.md) for migration from v3 and optional setup (cost telemetry, Agent Teams env flag, permissions).
 
 ### Usage
 
@@ -299,10 +332,14 @@ claude
 
 | Component | Purpose |
 |-----------|---------|
-| `CLAUDE.md` | Core engineering standards (all projects) |
-| `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |
 | `skills/harness-init/` | Project initialization with hooks and scaffolding |
-| `skills/harness-continue/` | Session continuation with team spawn templates |
+| `skills/harness-continue/` | Session continuation with team spawn prompts and the subagent fallback |
+| `agents/` | Declarative teammate definitions (feature-implementer, layer-implementer, researcher, reviewer) |
+| `hooks/` | Plugin continuity hooks: session-start, session-end, statusline |
+| `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |
+| `rules/code-quality.md` | Mechanical code quality limits |
+| `templates/CLAUDE.md` | Core engineering standards template (manual copy to `~/.claude/`) |
+| `test/` | Fixture-based hook test suite, run in CI |
 
 ## Some screenshots from my sessions
 
@@ -317,176 +354,4 @@ https://github.com/user-attachments/assets/9684d120-3cbf-438d-a01f-469387f507ff
 
 ## Changelog
 
-### v3.6.0 (2026-04-26)
-
-**Stale-file detection in the installer.** Before v3.6.0, the installer silently auto-deleted a small list of deprecated files (`engineering-standards.md`, `non-harness-workflow.md`) and missed the v2.x module-lock residue entirely (`orchestrator.md`, `scheduling.md`, `coding-agent.md`, the `context-graph` skill). Anyone who upgraded from v2.x kept those dead files in `~/.claude/` and could end up with two competing harness models loaded at once — exactly the conflict that surfaced in a real session and prompted this work.
-
-**Behavior change** — the installer no longer auto-deletes. Stale files are now **detected and reported** by default, listing each one with its `~/.claude/` path. Pass `--clean-stale` to remove them; the regular backup pass picks them up first. This is a deliberate trade: silent cleanup hid both the problem and the fix from users. The new default surfaces the decision.
-
-**Updated stale manifest:**
-- v2.x module-lock era (retired in v3.0): `rules/orchestrator.md`, `rules/scheduling.md`, `rules/coding-agent.md`, `skills/context-graph/`, `harness/`, `templates/`, `commands/project-harness-init.md`, `commands/project-harness-continue.md`
-- v3.2.x cleanup (retired in v3.2.2): `rules/engineering-standards.md`, `rules/non-harness-workflow.md`
-
-**Scope:** global files only (`~/.claude/`). Per-project residue (`.context/modules.yaml`, old `.harness/` schemas, project-local `.claude/rules/scheduling.md`) is intentionally left alone — projects contain user data and the upgrade flow needs more thought before it touches them.
-
-### v3.5.1 (2026-04-25)
-
-**Hotfix:** v3.5.0 shipped without bumping `install` (`HARNESS_VERSION` constant + banner), `INSTALL.md` title, and the README download/unzip examples. Running `./install` from a v3.5.0 directory reported "Upgrade (v3.5.0 -> v3.4.0)" — a downgrade against the installed copy. No functional changes; version strings only. Repo `CLAUDE.md` updated to add `install` to the version-sync list so this regression can't repeat.
-
-### v3.5.0 (2026-04-06)
-
-**Session discipline improvements** based on root cause analysis of 11 harness violations observed during a real iOS project session (voice fix, test expansion, app icon work).
-
-**Five serious violation remediations:**
-
-1. **Pre-commit features.json audit** — Session end now requires diffing `features.json` against actual work done. Any code change relating to a tracked feature must update that feature's metadata. Work that doesn't map to any feature gets a new entry with `discovered_via`. This is a gate before `git commit`, not an afterthought.
-
-2. **Inline context_summary.md updates** — `context_summary.md` updates are now part of the task, not after the task. After every bug fix revealing a non-obvious root cause, write the gotcha to `context_summary.md` BEFORE moving to the next request.
-
-3. **Mandatory retrospective for all session types** — The retrospective is now explicitly mandatory at session end regardless of whether the session used Agent Teams or single-session mode. Minimum viable: 3-5 bullets covering actual vs planned scope, unanticipated discoveries, and transferable patterns.
-
-4. **Task updates at moment of state change** — Task updates must happen immediately when state changes, not in batch. When you finish something, the NEXT action is `TaskUpdate`. Stale tasks are explicitly called out as worse than no tasks.
-
-5. **Smoke test gate at session start** — `init.sh` is now a dedicated Step 2.5 in the orient flow, run within the first 5 actions of every session. Its purpose is to establish known-good state before changes, not to diagnose problems.
-
-**Four moderate/minor violation remediations:**
-
-6. **Single-session mode declaration** — When choosing single-session over Agent Teams, the lead must explicitly declare it to make the decision conscious and documented.
-
-7. **Bug fix diagnosis before editing** — Debugging Phase 1 now requires stating diagnosis and proposed fix in 2-3 sentences before editing code, even for seemingly obvious fixes.
-
-8. **Commit at natural breakpoints** — Commit hygiene rules now require committing after each feature/fix passes tests, separating harness metadata from code, and checkpointing inherited uncommitted work before making new changes.
-
-9. **Untracked file and task metadata audit at orient** — The orient step now checks for unknown untracked files (surfaced to user) and verifies inherited tasks have required `feature_id` metadata.
-
-**Two standards improvements:**
-
-10. **Coverage blocker documentation** — If coverage measurement isn't available in the project's tooling, document it as a gotcha in `context_summary.md` and create a feature to enable it. Silent coverage gate skipping is no longer acceptable.
-
-11. **Strengthened task completion checklist** — Harness-specific checklist items now explicitly require features.json audit, context_summary.md updates, retrospective, and task list currency check.
-
-### v3.4.0 (2026-04-02)
-
-**Bug fixes and convention improvements** based on analysis of Claude Code's internal multi-agent implementation compared against the harness's external hook protocol.
-
-**Four bug fixes:**
-
-1. **Scope enforcement path normalization** — `enforce-scope.sh` now strips the project root from absolute paths before matching. Tool input always provides absolute paths; scope patterns are relative. The prefix match was silently passing everything through.
-
-2. **`depends_on` enforcement in idle hook** — `check-remaining-tasks.sh` now filters claimable features by dependency chains. A feature is only offered if all its `depends_on` entries have `status: "passing"`. Previously, blocked features were assigned as if ready.
-
-3. **Targeted `correction_cycles` increment** — `verify-task-quality.sh` now extracts the feature ID from task metadata or subject prefix and only increments `correction_cycles` for that feature. Previously, all in-progress features were incremented on any teammate's rejection, corrupting metrics in multi-teammate sessions.
-
-4. **Consistent JSON parsing in init.sh** — Replaced the fragile `grep`/`sed` chain for reading `stack` from `harness.json` with `python3 -c "import json; ..."`, matching every other script in the harness.
-
-**Three convention changes:**
-
-5. **Context Management in spawn templates** — Feature Implementer and Layer Implementer templates now instruct teammates to compact proactively before starting a new feature (after TeammateIdle reassignment) to prevent mid-implementation context loss.
-
-6. **PostCompact circuit breaker** — The PostCompact hook prompt now detects repeated compaction context collapse (third+ compaction in rapid succession) and instructs the teammate to save state and escalate to the lead rather than looping.
-
-7. **TaskCreate metadata convention** — All TaskCreate examples now include `metadata: { feature_id: "FXXX" }` for task-to-feature correlation that survives compaction. Enables the targeted `correction_cycles` fix.
-
-**One docs change:**
-
-8. **Completion message deduplication** — Added guidance to the Agent Teams messaging protocol to prevent duplicate completion messages when the TeammateIdle hook fires immediately after task completion.
-
-### v3.3.0 (2026-03-28)
-
-**Metacognitive self-improvement**: The harness now learns from its own coordination patterns, not just from domain work. Inspired by [Facebook Research's HyperAgents framework](https://arxiv.org/abs/2603.19461), which demonstrated that systems whose improvement mechanisms are themselves improvable outperform fixed-meta alternatives.
-
-**Five coordinated changes:**
-
-1. **Operational metrics in features.json** — Five new fields track coordination quality:
-   - `correction_cycles`: auto-incremented by TaskCompleted hook on rejection. Signals features harder than expected.
-   - `scope_expansions`: files/dirs added to scope after initial assignment. Reveals initial scoping accuracy.
-   - `approaches_tried`: brief notes on what worked/failed before the passing implementation.
-   - `failure_reason`: why a feature reached `status: "failed"`. Root cause without re-reading history.
-   - `discovered_via`: discovery lineage — which feature's implementation revealed the need for this one (distinct from `depends_on` technical dependencies).
-
-2. **Structured retrospective (Phase 5.5)** — Runs after all features pass, before teardown. Analyzes `correction_cycles`, `scope_expansions`, `discovered_via`, and `approaches_tried` across the session. Writes findings to `context_summary.md` under:
-   - `## Meta-Session [DATE]`: session-specific insights (scope accuracy, model calibration, discovery patterns, approach successes/failures, plan approval value)
-   - `## Meta-Patterns`: generalizable coordination insights that transfer to new projects (when to use Opus, how to scope, when plan approval pays off)
-   - Applies to both single-session and Agent Teams workflows. Skipped on first session (no data yet).
-
-3. **Tiered test evaluation in init.sh** — Split test runs into two stages (inspired by HyperAgents' staged evaluation):
-   - `smoke_test`: compile/syntax check only, completes in <15s
-   - `full_test`: complete suite with coverage (existing behavior)
-   - TaskCompleted hook now runs smoke first; only runs full if smoke passes. Reduces cost of early rejection for compile errors.
-
-4. **Meta-Patterns section in context_summary.md** — Dedicated section for coordination insights, distinct from domain-specific patterns. Populated by retrospective step. Intended to transfer to new projects as starting context.
-
-5. **Dynamic model selection heuristics** — Phase 1 planning now reviews historical operational metrics before assigning Sonnet vs Opus:
-   - `correction_cycles >= 3` in same scope → upgrade implementer to Opus
-   - `scope_expansions >= 3` → assign broader initial scope, note as "expansion-prone"
-   - `failure_reason` mentions interface misunderstandings → set `require_plan_approval: true`
-   - `discovered_via` depth > 1 → consider folding into parent scope
-   - All judgment calls for the lead, not mechanical rules.
-
-**What this enables:** The harness accumulates coordination wisdom across sessions. After 3-4 Agent Teams sessions, it knows which scopes are tricky, which features need Opus, where to probe for hidden features at init. This is the practical version of HyperAgents' "metacognitive self-modification" — improving how the system improves, not just what it produces.
-
-### v3.2.2 (2026-03-21)
-- Replaced TodoWrite with TaskCreate/TaskUpdate (TodoWrite no longer exists in Claude Code)
-- Renamed "delegate mode" to "plan mode" to match current Claude Code terminology
-- Added worktree isolation for teammate scope enforcement (`isolation: "worktree"` in Task() calls)
-- Added PostCompact hook for automatic context re-injection after compaction
-- Made PostToolUse build-check hooks async (non-blocking)
-- Added Auto-Memory vs context_summary.md guidance
-- Synced CLAUDE.md template with installed global copy (Agent Autonomy override callout, git identity mismatch fix, context_summary.md anti-patterns)
-- Added path-scoped frontmatter to agent-teams-protocol.md (already had `globs: [.harness/**]`)
-- Removed `non-harness-workflow.md` rule; core loop folded into CLAUDE.md (saves ~3K tokens per session)
-- Removed `engineering-standards.md` rule; 100% redundant with CLAUDE.md (saves ~3K tokens per session)
-- Fixed TaskCreate API shape: dependencies set via TaskUpdate addBlockedBy, not TaskCreate blocked_by
-- Fixed TeammateIdle documentation: hook prompts reassignment, doesn't auto-assign
-- Fixed PostCompact hook: uses `type: "prompt"` for mechanical context injection
-- Added PreToolUse scope enforcement hook (`enforce-scope.sh`) — blocks edits outside assigned scope
-- Added PreToolUse git identity hook (`verify-git-identity.sh`) — blocks push/pull with wrong identity
-- Added native `owner` field on TaskUpdate for task assignment alongside features.json `assigned_to`
-- Added `activeForm` to TaskCreate examples for better spinner UX
-- Added usage recommendations section to README
-- Updated enforcement tier documentation with honest hook classification (mechanical vs prompted)
-
-### v3.2.1 (2026-02-18)
-- Fixed PostToolUse hook schema: PascalCase event name, proper nested `hooks` array
-- Fixed hook commands to parse `tool_input.file_path` from stdin JSON via `jq`
-- Documented `plan_approval_response` delivery bug; all plan approvals use direct messages
-
-### v3.2 (2026-02-18)
-- Extended features.json schema: `scope`, `depends_on`, `assigned_to` fields
-- Defined exhaustive status enum: pending, in-progress, blocked, passing, failed
-- Unified on `context_summary.md` across all modes (replaces `decisions.md`)
-- Added hook verification step to harness-init
-- Added Integration Failure Recovery protocol
-- Recalibrated cost framing: "5x per implementer" not "5x overall"
-- Tightened TodoWrite discipline: update after every TDD step
-- Added delegation decision framework
-- Extracted non-harness workflow to separate rules file
-- Fixed plan-and-wait contradiction for teammate spawns
-
-### v3.1 (2026-02-18)
-- Added TaskCompleted and TeammateIdle hooks for mechanical quality enforcement
-- Added plan-first workflow with user approval before spawning teammates
-- Added model mixing guidance (Opus lead/reviewer, Sonnet implementers)
-- Replaced custom messaging with native SendMessage protocol
-- Added delegate mode as default for lead agents
-- Added task dependency chains via TaskCreate blocked_by
-- Added plan approval protocol for complex features
-
-### v3.0 (2026-02-17)
-- Replaced module locking with native Agent Teams integration
-- Replaced 4-file pattern with compaction-aware approach (TodoWrite)
-- Simplified features.json
-- Added global engineering rules
-- Added git identity capture and verification
-
-### v2.1 (2025-02-01)
-- Added module locking for parallel agent coordination
-- Added `.context/modules.yaml` for defining code boundaries
-- Added context-graph skill (claim/release/status/force-release)
-- Restructured to use Claude Code's native memory system (`rules/`, `@imports`)
-
-### v2.0 (2025-01-24)
-- Initial public release
-- Two-phase architecture (initializer + coding agents)
-- 4-file pattern integration
-- Multi-language init.sh support
+Moved to [CHANGELOG.md](./CHANGELOG.md).

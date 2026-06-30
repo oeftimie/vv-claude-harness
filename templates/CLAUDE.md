@@ -1,10 +1,9 @@
 ---
 scope: global
 location: ~/.claude/CLAUDE.md
-version: 3.6.0
-last_updated: 2026-04-26
+last_updated: 2026-06-12
 author: {{USER_NAME}}
-description: Core engineering standards for all Claude Code sessions. Works with Long-Running Agent Harness v3.6.0.
+description: Core engineering standards for all Claude Code sessions. Works with the vv-harness plugin.
 supplements: Project-level CLAUDE.md files in individual repositories
 ---
 
@@ -251,7 +250,7 @@ Do not let a failing sub-agent block other parallel work.
 
 ### Agent Teams (Harness Projects Only)
 
-When `.harness/` exists and multiple features need parallel work, the Agent Teams protocol from `~/.claude/rules/agent-teams-protocol.md` governs all team coordination. That protocol covers: model selection, plan mode, native messaging (SendMessage), task dependencies (TaskCreate + TaskUpdate with addBlockedBy), quality gates (TaskCompleted and TeammateIdle hooks), plan approval, scope assignment, conflict resolution, integration failure recovery, and git strategy.
+When `.harness/` exists and multiple features need parallel work, the Agent Teams protocol shipped with the vv-harness plugin (the SessionStart orientation block names its absolute path) governs all team coordination. That protocol covers: model selection, plan mode, native messaging (SendMessage), task dependencies (TaskCreate + TaskUpdate with addBlockedBy), quality gates (TaskCompleted and TeammateIdle hooks), plan approval, scope assignment, conflict resolution, integration failure recovery, and git strategy.
 
 Don't re-implement those rules here. Follow the protocol.
 
