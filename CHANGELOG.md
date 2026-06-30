@@ -2,7 +2,7 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
-### v4.0.0 (2026-06-12)
+### v4.0.0 (2026-06-30)
 
 **The harness is now a native Claude Code plugin.** The story of every version since v3.1 has been promoting rules from instructional to mechanical enforcement. v4.0 applies that to the harness itself: distribution, session orientation, post-compaction recovery, discipline auditing, progress visibility, and teammate tool posture — all carried by prose and a custom installer until now — are handed to the platform. This release ships what was planned as the v4.0–v4.3 milestone series in one release.
 
@@ -16,6 +16,8 @@ Version history for the VV Claude Code Harness. The current version lives in `.c
 - `hooks/statusline.sh` renders live "⬡ N/M passing" feature progress. Wired per-project by `/harness-init` because plugins cannot set `statusLine`; `/harness-init` also writes the Agent Teams env flag and a permissions allowlist into project settings and gitignores `SESSION_INCOMPLETE`. The per-project PostCompact hook is gone — the SessionStart `compact` source covers post-compaction recovery, making it redundant.
 
 **Declarative agents** — `agents/feature-implementer.md`, `layer-implementer.md`, `researcher.md`, and `reviewer.md` carry model, effort, and tool posture in frontmatter. The reviewer runs Opus at high effort and cannot edit files by construction (no Edit/Write tools; Bash restricted to test runs by instruction); the researcher is retrieval-only, with Write allowed only for its findings file. Teammates spawn by `vv-harness:*` agent type, and `team-spawn-prompts.md` shrank from 253 to 135 lines (per-feature specifics only). A spawn-time `model` parameter overrides frontmatter, so the Opus-upgrade heuristic survives.
+
+**Agent Teams model** — the protocol and skills track Claude Code's v2.1.178+ implicit-team model: a team forms on the first teammate spawn (the `TeamCreate`/`TeamDelete`/`TeamList` lifecycle tools were removed), the `team_name` argument is accepted but ignored, and `teammateMode` defaults to `"in-process"` (set it to `tmux` or `auto` for split panes). The development baseline remains v2.1.175.
 
 **Measured cost and resilience** — INSTALL.md documents opt-in OTel telemetry (`claude_code.token.usage` and `claude_code.cost.usage`): per-model and main-vs-subagent cost is measured (per-agent names are redacted to `"custom"` for personal marketplaces), plus the zero-infrastructure `/usage` alternative. The Agent Teams protocol replaces the ~30-minute cost rule of thumb with a measured break-even, and reframes worktree isolation honestly: platform-documented for subagents, unverified for teammates. `/harness-continue` gains a supported, non-experimental fallback — worktree-isolated subagents using the same agent types — for when Agent Teams is unavailable. Compatibility is documented against Claude Code v2.1.175.
 
