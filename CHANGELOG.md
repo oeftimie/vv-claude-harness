@@ -2,6 +2,20 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v4.1.0 (2026-07-01)
+
+**`templates/CLAUDE.md` trimmed from 461 to 356 lines.** Two reference-heavy blocks that only matter at specific moments — the full `context_summary.md` template and the task completion checklist — moved out of the always-on core into plugin rule files, and verbose always-on sections (systematic debugging, sub-agent failure handling, error recovery) were condensed in place without losing substance.
+
+**Two new plugin rule files** carry the extracted detail, surfaced the same way `code-quality.md` and `agent-teams-protocol.md` already are (no auto-loading — there is no manifest key for it):
+- `rules/context-summary.md` — the full `context_summary.md` template and section-by-section update rules.
+- `rules/task-completion.md` — the base completion checklist plus the harness-specific additions.
+
+**Wiring** — `hooks/session-start.sh` injects pointers to both new rules in the harness orientation block, and `skills/harness-continue/SKILL.md` references them at the context-update and session-end steps. `templates/CLAUDE.md` gains a Rule Index table mapping each rule file to when it should be read.
+
+**Why not a full split** — the core-standards file ships as a manually copied `~/.claude/CLAUDE.md` with no auto-loader, so always-on content (invariants, TDD, debugging, git identity, security) stays in the template; only genuinely on-demand reference material was extracted. This adapts PR #8's routing-table idea to the v4.0 plugin model.
+
+**Tests** — `test/run-tests.sh` gains assertions that the SessionStart orientation includes the two new rule pointers.
+
 ### v4.0.0 (2026-06-30)
 
 **The harness is now a native Claude Code plugin.** The story of every version since v3.1 has been promoting rules from instructional to mechanical enforcement. v4.0 applies that to the harness itself: distribution, session orientation, post-compaction recovery, discipline auditing, progress visibility, and teammate tool posture — all carried by prose and a custom installer until now — are handed to the platform. This release ships what was planned as the v4.0–v4.3 milestone series in one release.

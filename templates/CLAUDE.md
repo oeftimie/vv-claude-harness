@@ -169,30 +169,10 @@ For non-harness projects: match the project's existing test patterns for file na
 
 YOU MUST find the root cause. NEVER fix a symptom or add a workaround.
 
-### Phase 1: Root Cause Investigation (BEFORE attempting fixes)
-- Read error messages carefully; they often contain the exact solution
-- Reproduce consistently before investigating
-- Check recent changes: git diff, recent commits
-- For user-reported bugs: state your diagnosis and proposed fix in 2-3 sentences BEFORE editing code. ("I think the crash is X because Y, I'll fix it by Z.") This gives the user a chance to correct your understanding and costs one message.
-
-### Phase 2: Pattern Analysis
-- Find working examples in the same codebase
-- Compare against references; read implementation completely
-- Identify differences between working and broken code
-- Understand dependencies
-
-### Phase 3: Hypothesis and Testing
-1. Form single hypothesis; state it clearly
-2. Make smallest possible change to test hypothesis
-3. Verify before continuing; if it didn't work, form new hypothesis
-4. Say "I don't understand X" rather than pretending to know
-
-### Phase 4: Implementation Rules
-- ALWAYS have the simplest possible failing test case
-- NEVER add multiple fixes at once
-- NEVER claim to implement a pattern without reading it completely
-- ALWAYS test after each change
-- IF first fix doesn't work, STOP and re-analyze
+1. **Investigate first.** Read the error message (it often names the fix), reproduce consistently, check recent changes (`git diff`, recent commits). For user-reported bugs, state your diagnosis and proposed fix in 2-3 sentences BEFORE editing ("I think the crash is X because Y, I'll fix it by Z") — one message that lets the user correct you.
+2. **Analyze the pattern.** Find a working example in the same codebase, read it completely, and identify what differs from the broken code.
+3. **Test one hypothesis at a time.** State it, make the smallest change that tests it, verify before continuing. Say "I don't understand X" rather than pretending to know.
+4. **Implement disciplined.** Keep the simplest failing test case; one fix at a time; test after each change; if the first fix doesn't work, STOP and re-analyze.
 
 ---
 
@@ -232,21 +212,10 @@ These apply to both Agent Teams teammates (in harness projects) and general sub-
 - Correlate outputs: sub-agent plans must align with the lead's context
 
 ### Sub-Agent Failure Handling
-1. Assess: transient or structural?
-2. If transient: allow one retry
-3. If structural: provide specific feedback and request correction
-4. Maximum 4 correction cycles; after 4 failures, declare failure and terminate
-5. On termination: report what was attempted, why it failed, preserve findings
-
-Do not let a failing sub-agent block other parallel work.
+Assess whether a failure is transient (allow one retry) or structural (give specific feedback and request correction). Maximum 4 correction cycles; after 4 failures, declare failure, report what was attempted and why it failed, and preserve findings. Do not let a failing sub-agent block other parallel work.
 
 ### Partial Success in Parallel Work
-1. Merge successful work into codebase
-2. Verify merged work passes tests independently
-3. Re-assess failed work with new context
-4. Spawn new sub-agents with revised prompts
-5. Do NOT block successful work waiting for failed streams
-6. Do NOT abandon failed work without {{USER_NAME}}'s approval
+Merge successful work and verify it passes tests independently; re-assess failed work with new context and respawn with revised prompts. Do NOT block successful work waiting for failed streams, and do NOT abandon failed work without {{USER_NAME}}'s approval.
 
 ### Agent Teams (Harness Projects Only)
 
@@ -268,28 +237,9 @@ Limit web fetches to essential sources. Quality over quantity.
 
 A broken codebase is worse than a paused task. Fail fast, fail loud, fail safe.
 
-### Retry (Autonomous, Limited)
+**Retry autonomously (limited):** network timeouts (max 2), rate limiting (backoff, max 3), tool crashes with no state change (once). **Never retry:** test failures, build errors, permission denied, or anything that failed the same way twice.
 
-Retry automatically for:
-- Network timeouts (max 2 retries)
-- Rate limiting (backoff, max 3 attempts)
-- Tool crashes with no state change (once)
-
-Do NOT retry:
-- Test failures
-- Build errors
-- Permission denied
-- Anything that failed the same way twice
-
-### Report (Default for Non-Transient)
-
-Immediately report:
-- Sub-agent at 4 correction cycles
-- Missing tools or capabilities
-- Ambiguity revealed by failure
-- Conflicts between sub-agent output and constraints
-
-Report format: what was attempted, what failed and why, options (retry differently, user intervention, abandon), recommended path.
+**Report immediately** for non-transient failures — a sub-agent at 4 correction cycles, missing tools, ambiguity revealed by failure, or conflicts between sub-agent output and constraints. Report format: what was attempted, what failed and why, the options (retry differently / user intervention / abandon), and your recommended path.
 
 ---
 
@@ -378,84 +328,29 @@ If project-level CLAUDE.md conflicts with this core file:
 
 ## context_summary.md
 
-This file is used in ALL projects (harness and non-harness). It's the single persistent knowledge store across sessions.
+The single persistent knowledge store across sessions, used in ALL projects. In harness projects it lives at `.harness/context_summary.md`; in non-harness projects at `./context_summary.md`. Create once, update continuously.
 
-In harness projects, it lives at `.harness/context_summary.md`. In non-harness projects, it lives at `./context_summary.md` in the project root.
+Sections: **Active Context** (current focus, refreshed frequently), **Cross-Cutting Concerns**, per-**Domain** Decisions/Patterns/Gotchas, **Meta-Patterns** and **Meta-Session** retrospectives, **Closed Work Streams**. Record decisions, patterns, gotchas, and retrospectives — not progress updates or completed-todo journals (those live in `claude-progress.txt`).
 
-Create once, update continuously.
-
-```markdown
-# Context Summary
-
-## Active Context
-<!-- Max 500 tokens. Current focus, immediate priorities. Refresh frequently. -->
-- Currently working on: [active task]
-- Blocking issues: [if any]
-- Next up: [queued work]
-
-## Cross-Cutting Concerns
-<!-- Security, performance, compatibility constraints that affect all work -->
-- [Concern]: [how it affects decisions]
-
-## Domain: [Name]
-<!-- One section per major domain/module. Add as needed. -->
-
-### Decisions
-- [Decision]: [rationale] (date)
-
-### Patterns
-- [Pattern name]: [when to use]
-
-### Gotchas
-- [Gotcha]: [how to avoid]
-
-## Meta-Patterns
-<!-- Coordination insights that apply across features — NOT domain-specific.
-     Written by the retrospective step at session end. These transfer to new
-     projects: harness-init can import them as starting context.
-     Examples: when to use Opus, how to scope work, when plan_approval pays off. -->
-- (none yet)
-
-## Meta-Session [DATE]
-<!-- One section per completed session's retrospective. Written at session end.
-     Analyzes correction_cycles, scope_expansions, model fit, discovery lineage.
-     Feeds the Meta-Patterns section with generalizable coordination insights. -->
-- Scope accuracy: [findings]
-- Model calibration: [findings]
-- Discovery lineage: [findings]
-- Approach patterns: [what worked, what failed]
-- Plan approval: [was it worth the overhead for which feature types]
-
-## Closed Work Streams
-<!-- Completed features. Reference only if dependency exists. -->
-- [Feature]: completed [date], see [PR/commit]
-```
-
-**Update when:** a decision is made, a pattern is discovered, a gotcha is encountered, a work stream completes, active context shifts, or a session retrospective completes.
-
-**Do NOT add:** progress updates ("completed task X"), completed todos, conversation summaries, or anything already tracked in `claude-progress.txt`. This file is for decisions, patterns, gotchas, and coordination retrospectives — not a journal.
-
-**Size discipline:** if a domain section exceeds ~300 tokens, summarize or split. Meta-Session entries older than 3 sessions can be summarized into Meta-Patterns and removed.
-
-**Keep Active Context fresh:** this section should reflect right now, not last week.
+For the full template block and section-by-section update rules, see `rules/context-summary.md` (the vv-harness plugin surfaces its absolute path via the SessionStart hook in harness projects).
 
 ---
 
 ## Task Completion Checklist
 
-Before declaring ANY task complete:
-- [ ] All tests pass (including new tests written via TDD)
-- [ ] No uncommitted changes remain
-- [ ] Sub-agent/teammate work validated against lead context
-- [ ] Documentation updated (existing docs only)
-- [ ] `context_summary.md` updated with decisions, patterns, or gotchas discovered
-- [ ] {{USER_NAME}} informed of what changed
+Before declaring ANY task complete: all tests pass, no uncommitted changes remain, sub-agent work validated, existing docs updated, `context_summary.md` updated with decisions/patterns/gotchas, and {{USER_NAME}} informed of what changed.
 
-Additional for harness projects:
-- [ ] `features.json` audited against actual work done — every touched feature has updated status, test_file, coverage; unmapped work gets a new feature entry with `discovered_via`
-- [ ] `context_summary.md` has any non-obvious root causes, gotchas, or patterns discovered this session
-- [ ] Retrospective written to `context_summary.md` under `## Meta-Session [DATE]` (mandatory even for single-session work)
-- [ ] `claude-progress.txt` has session handoff
-- [ ] Task list is current — no stale in-progress or pending tasks that no longer reflect reality
+Harness projects add: `features.json` audited against actual work, retrospective written under `## Meta-Session [DATE]`, `claude-progress.txt` handoff, and a current task list. For the full checklist, see `rules/task-completion.md`. Do NOT skip it.
 
-Do NOT skip this checklist.
+---
+
+## Rule Index
+
+Deeper procedures ship as separate rule files in the vv-harness plugin. There is no auto-loading: in harness projects the SessionStart hook injects their absolute paths, and the harness skills instruct the lead to read them at the relevant step. This file stays self-contained for every session; the rule files carry the reference-heavy detail.
+
+| Rule file | Read when |
+|-----------|-----------|
+| `rules/code-quality.md` | Before writing code (mechanical limits, naming, comments) |
+| `rules/agent-teams-protocol.md` | Before spawning teammates for parallel work |
+| `rules/context-summary.md` | Before editing `context_summary.md` (full template + update rules) |
+| `rules/task-completion.md` | Before declaring work complete (full checklist) |
