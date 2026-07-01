@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through four major versions into a native Claude Code plugin built on the platform's Agent Teams primitives.
 
-**Current version: v4.0.0** — The harness is now a native Claude Code plugin (`/plugin install vv-harness`). The platform owns what prose and a custom installer used to carry: distribution and atomic updates, session orientation and post-compaction recovery (a SessionStart hook), session-end discipline auditing (a SessionEnd hook), live feature progress (a statusLine), and teammate tool posture (declarative `vv-harness:*` agents). The v3 installer is retired; migration steps are in [INSTALL.md](./INSTALL.md). Full history in [CHANGELOG.md](./CHANGELOG.md).
+**Current version: v4.1.0** — `templates/CLAUDE.md` trimmed from 461 to 356 lines: reference-heavy blocks (the full `context_summary.md` template, the task completion checklist) moved into new plugin rule files surfaced by the SessionStart hook, and verbose always-on sections condensed in place. Adapts PR #8's routing-table idea to the v4.0 plugin model, which has no rule auto-loader. Full history in [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 

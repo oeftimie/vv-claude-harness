@@ -87,5 +87,9 @@ echo ""
 echo "Agent Teams protocol: read $PLUGIN_ROOT/rules/agent-teams-protocol.md" \
   "before spawning teammates."
 echo "Code-quality limits: $PLUGIN_ROOT/rules/code-quality.md (read before writing code)."
+echo "Context summary format: $PLUGIN_ROOT/rules/context-summary.md" \
+  "(read before editing context_summary.md)."
+echo "Completion checklist: $PLUGIN_ROOT/rules/task-completion.md" \
+  "(read before declaring work complete)."
 echo "Run /harness-continue for the full interactive flow (mode choice, smoke test, team plan)."
 exit 0

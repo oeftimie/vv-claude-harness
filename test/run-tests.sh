@@ -126,6 +126,10 @@ else
 fi
 assert_contains "$OUT" "rules/code-quality.md (read before writing code)" \
   "o: orientation includes the code-quality pointer"
+assert_contains "$OUT" "rules/context-summary.md" \
+  "o: orientation includes the context-summary pointer"
+assert_contains "$OUT" "rules/task-completion.md" \
+  "o: orientation includes the task-completion pointer"
 
 echo ""
 echo "== session-end.sh =="

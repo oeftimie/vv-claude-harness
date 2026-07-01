@@ -145,6 +145,8 @@ No exceptions unless tooling is broken.
 
 Treat `context_summary.md` updates as part of the task, not after the task. Specifically: after every bug fix that reveals a non-obvious root cause, write the gotcha to `context_summary.md` BEFORE moving to the next request. The cost is 30 seconds; the value is permanent. A future session will benefit from knowing the root cause without re-discovering it.
 
+For the `context_summary.md` structure and section-by-section update rules, read `${CLAUDE_PLUGIN_ROOT}/rules/context-summary.md`.
+
 ### When Feature Passes
 
 1. Update `.harness/features.json`: set status to `"passing"`, add `test_file` and `coverage`, clear `assigned_to`. Also populate `approaches_tried` with a brief note on what worked (even for single-session work — this feeds the retrospective).
@@ -187,6 +189,8 @@ Active Context and the task list. Follow it — it's your recovery path.
    - Blockers: [any blockers]
    ```
 5. Git commit (see Commit Hygiene rules — separate harness metadata from code commits)
+
+Before declaring the session complete, work through the full checklist in `${CLAUDE_PLUGIN_ROOT}/rules/task-completion.md` (base checklist plus the harness-specific additions).
 
 ---
 
