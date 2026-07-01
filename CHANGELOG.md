@@ -2,7 +2,7 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
-### v4.1.0 (2026-07-01)
+### v4.0.1 (2026-07-01)
 
 **`templates/CLAUDE.md` trimmed from 461 to 356 lines.** Two reference-heavy blocks that only matter at specific moments — the full `context_summary.md` template and the task completion checklist — moved out of the always-on core into plugin rule files, and verbose always-on sections (systematic debugging, sub-agent failure handling, error recovery) were condensed in place without losing substance.
 
