@@ -449,7 +449,39 @@ F003: [Supporting feature] - Priority 3
 Should I add these to features.json?
 ```
 
-Wait for confirmation, then populate `.harness/features.json` with full schema (including `scope` and `depends_on`).
+Wait for confirmation of the feature list. Then, BEFORE writing anything to
+`.harness/features.json`, run the spec gate (Step 5.1).
+
+### Step 5.1: Verify the proposal (spec gate)
+
+Spawn the spec-verification agent as a read-only subagent over the ENTIRE confirmed
+proposal in one call:
+
+```
+Agent({
+  description: "Spec-verify proposed features",
+  subagent_type: "vv-harness:spec-verification",
+  model: "opus",
+  prompt: "[the full proposal: every feature's id, description, scope, depends_on,
+            plus the user's project description. Ask for a per-feature verdict line
+            in the report.]"
+})
+```
+
+Route on the report's VERDICT:
+- **PASS**: write `features.json`. For each feature, populate `spec` with
+  `{"hash": sha256(description), "verdict": "PASS", "sv_version": "1.0",
+  "verified_at": ISO8601-UTC, "source": "conversation"}` (canonical hash recipe:
+  `schemas/readiness-stamp.md`).
+- **ASK**: relay the numbered OPEN QUESTIONS to the user verbatim; iterate the feature
+  descriptions with their answers; re-run the gate on the amended proposal. Do not
+  write `features.json` until the gate passes.
+- **BLOCK**: present the grounds; the user amends or drops the contradicted features;
+  re-run.
+
+If the user explicitly waives the gate ("skip verification"), write the features with
+`"spec": null` and note the waiver in `claude-progress.txt`. Never fill `spec` for a
+feature the gate did not pass.
 
 ## Step 6: Assess Team Structure
 
@@ -499,7 +531,7 @@ Report:
 
 ```
 Harness (vv-harness plugin) initialized:
-- .harness/ created with [N] features (scope and dependencies defined)
+- .harness/ created with [N] features (scope, dependencies, spec gate: [passed | waived])
 - Git identity captured: [user] <[email]>
 - Build hook: [installed | skipped] for [STACK]
 - Quality gates: TaskCompleted + TeammateIdle hooks installed and verified
