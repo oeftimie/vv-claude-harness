@@ -1,7 +1,7 @@
 # Agent Teams Spawn Prompt Templates
 
 Per-feature spawn prompts for the vv-harness plugin agents. The lead fills in the
-placeholders and passes the result as the `prompt` parameter in `Task()` calls, with
+placeholders and passes the result as the `prompt` parameter in Agent tool calls, with
 `subagent_type` set to the matching agent type.
 
 > Reusable guardrails — TDD discipline, tool posture, scope discipline, and the
@@ -11,7 +11,7 @@ placeholders and passes the result as the `prompt` parameter in `Task()` calls, 
 
 The agent definitions set the default model per role (implementers and researcher:
 Sonnet; reviewer: Opus). A spawn-time `model` parameter overrides the frontmatter, so
-the lead applies the dynamic Opus-upgrade heuristic via the `Task()` call alone.
+the lead applies the dynamic Opus-upgrade heuristic via the Agent tool call alone.
 
 ---
 

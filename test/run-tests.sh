@@ -132,6 +132,82 @@ assert_contains "$OUT" "rules/task-completion.md" \
   "o: orientation includes the task-completion pointer"
 
 echo ""
+echo "== spec drift =="
+
+DIR_S="$WORK/spec-drift-clean"
+make_fixture "$DIR_S"
+python3 - "$DIR_S/.harness/features.json" <<'PYEOF'
+import hashlib
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        digest = hashlib.sha256(feature["description"].encode("utf-8")).hexdigest()
+        feature["spec"] = {"hash": digest, "verdict": "PASS", "sv_version": "1.0"}
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_S" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "s: matching spec hash exits 0"
+assert_not_contains "$OUT" "spec drift" "s: no drift warning when the hash matches"
+
+DIR_T="$WORK/spec-drift-bogus"
+make_fixture "$DIR_T"
+python3 - "$DIR_T/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["spec"] = {"hash": "0" * 60 + "dead", "verdict": "PASS", "sv_version": "1.0"}
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_T" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "t: mismatched spec hash exits 0"
+assert_contains "$OUT" "spec drift" "t: warns about spec drift"
+assert_contains "$OUT" "F003" "t: names F003 as drifted"
+LEN=${#OUT}
+if [ "$LEN" -lt 4000 ]; then
+  pass "t: drift-warning output stays under 4000 chars ($LEN)"
+else
+  fail "t: drift-warning output is $LEN chars, expected under 4000"
+fi
+
+DIR_U="$WORK/spec-drift-nondict"
+make_fixture "$DIR_U"
+python3 - "$DIR_U/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["spec"] = "bogus"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_U" '{"source":"startup"}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "u: non-dict spec exits 0"
+assert_not_contains "$OUT" "Traceback" "u: no python traceback leaks for a non-dict spec"
+assert_contains "$OUT" "## Harness orientation" "u: orientation header still present"
+
+echo ""
 echo "== session-end.sh =="
 
 DIR_F="$WORK/f"
@@ -305,6 +381,107 @@ if [ -z "$HOOK_REF_ERRORS" ]; then
   pass "l: hooks.json references only existing, executable files in hooks/"
 else
   fail "l: hooks.json reference check -- $HOOK_REF_ERRORS"
+fi
+
+echo ""
+echo "== spec gate artifacts =="
+
+READINESS_STAMP_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import json
+import os
+import re
+import sys
+
+root = sys.argv[1]
+path = os.path.join(root, "schemas", "readiness-stamp.md")
+if not os.path.isfile(path):
+    print(f"missing: {path}")
+    sys.exit()
+text = open(path).read()
+if "stamp_version" not in text:
+    print("schemas/readiness-stamp.md: missing 'stamp_version'")
+match = re.search(r"```json\n(.*?)\n```", text, re.DOTALL)
+if not match:
+    print("schemas/readiness-stamp.md: no fenced json block found")
+else:
+    try:
+        json.loads(match.group(1))
+    except Exception as exc:
+        print(f"schemas/readiness-stamp.md: first json block does not parse -- {exc}")
+PYEOF
+)
+if [ -z "$READINESS_STAMP_ERRORS" ]; then
+  pass "v: schemas/readiness-stamp.md exists, mentions stamp_version, and its first json block parses"
+else
+  fail "v: readiness stamp schema -- $READINESS_STAMP_ERRORS"
+fi
+
+SKILL_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import os
+import sys
+
+root = sys.argv[1]
+for skill_dir in ("issue-prep", "issue-debug"):
+    path = os.path.join(root, "skills", skill_dir, "SKILL.md")
+    if not os.path.isfile(path):
+        print(f"missing: {path}")
+        continue
+    lines = open(path).read().splitlines()
+    if not lines or lines[0] != "---":
+        print(f"{skill_dir}/SKILL.md: does not start with ---")
+        continue
+    try:
+        end = lines[1:].index("---") + 1
+    except ValueError:
+        print(f"{skill_dir}/SKILL.md: frontmatter has no closing ---")
+        continue
+    name = None
+    for line in lines[1:end]:
+        if line.startswith("name:"):
+            name = line.split(":", 1)[1].strip()
+    if name != skill_dir:
+        print(f"{skill_dir}/SKILL.md: name '{name}' does not match directory '{skill_dir}'")
+PYEOF
+)
+if [ -z "$SKILL_ERRORS" ]; then
+  pass "w: issue-prep and issue-debug SKILL.md files have sane frontmatter"
+else
+  fail "w: skill frontmatter -- $SKILL_ERRORS"
+fi
+
+DIR_X="$WORK/x"
+make_fixture "$DIR_X"
+TODAY=$(date -u +%Y-%m-%d)
+printf '\n## Meta-Session %s\n- Scope accuracy: clean run, no expansions\n' "$TODAY" \
+  >> "$DIR_X/.harness/context_summary.md"
+python3 - "$DIR_X/.harness/features.json" <<'PYEOF'
+import hashlib
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F001":
+        digest = hashlib.sha256(feature["description"].encode("utf-8")).hexdigest()
+        feature["spec"] = {"hash": digest, "verdict": "PASS", "sv_version": "1.0"}
+    if feature["id"] == "F002":
+        feature["status"] = "passing"
+        feature["coverage"] = 96
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+git -C "$DIR_X" add -A
+git -C "$DIR_X" commit -q -m "session work committed with a verified spec field"
+OUT=$(run_session_end "$DIR_X")
+RC=$?
+assert_rc0 "$RC" "x: clean session-end with a verified spec field exits 0"
+if [ -f "$DIR_X/.harness/SESSION_INCOMPLETE" ]; then
+  fail "x: SESSION_INCOMPLETE should be absent after a clean session with a spec field"
+else
+  pass "x: SESSION_INCOMPLETE absent after a clean session with a spec field"
 fi
 
 echo ""

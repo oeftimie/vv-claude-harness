@@ -1,7 +1,7 @@
 {
   "name": "vv-harness",
   "displayName": "VV Claude Code Harness",
-  "version": "4.0.2",
+  "version": "4.1.0",
   "description": "Multi-session continuity, parallel Agent Teams coordination, and mechanical quality enforcement for Claude Code.",
   "author": {
     "name": "oeftimie",

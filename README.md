@@ -334,12 +334,27 @@ claude
 |-----------|---------|
 | `skills/harness-init/` | Project initialization with hooks and scaffolding |
 | `skills/harness-continue/` | Session continuation with team spawn prompts and the subagent fallback |
-| `agents/` | Declarative teammate definitions (feature-implementer, layer-implementer, researcher, reviewer) |
+| `skills/issue-prep/` | Verify and normalize a spec (Linear issue, pasted text, or a feature), then mark it ready for implementation |
+| `skills/issue-debug/` | Open a failed feature or a runner-parked Linear issue in a live repair session |
+| `agents/` | Declarative teammate definitions (feature-implementer, layer-implementer, researcher, reviewer, spec-verification, reverification-guard) |
+| `schemas/` | Data contracts published for external consumers (readiness stamp, park/resolution formats) |
 | `hooks/` | Plugin continuity hooks: session-start, session-end, statusline |
 | `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |
 | `rules/code-quality.md` | Mechanical code quality limits |
 | `templates/CLAUDE.md` | Core engineering standards template (manual copy to `~/.claude/`) |
 | `test/` | Fixture-based hook test suite, run in CI |
+
+### The spec gate
+
+`/harness-init` Step 5.1 and the `issue-prep` skill spawn the `spec-verification` and
+`reverification-guard` agents (read-only, spec-in-prompt) to verify a specification is
+testable, unambiguous, and internally consistent before any implementation starts. The
+harness is the **mint**: it verifies specs interactively, where human judgment is cheap,
+and emits proof of verification: a local `spec` field on a feature, or a signed
+readiness stamp posted to a Linear issue. An external issue-to-PR runner (out of scope
+for this repo) is a **consumer**: it validates the stamp's hash and HMAC before trusting
+an issue as ready for unattended work. See [schemas/readiness-stamp.md](./schemas/readiness-stamp.md)
+for the stamp shape, the canonical hashing recipe, and the consumer verification rules.
 
 ## Some screenshots from my sessions
 

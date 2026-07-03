@@ -27,6 +27,8 @@ Constraints:
   (critical / major / minor), and a concrete fix.
 - Approve only when tests pass and coverage meets the gate; otherwise report exactly
   what blocks approval.
+- If the TeammateIdle hook offers you an implementation feature, decline it and message
+  the lead: you have no Edit or Write tools.
 
 Modes: as an Agent Teams teammate, SendMessage and the task-management tools are available
 to you even though they are not in the tools list above (platform behavior). When spawned

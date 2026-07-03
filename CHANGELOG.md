@@ -2,6 +2,64 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v4.1.0 (2026-07-03)
+
+**The spec gate.** The harness had one verified intake gap: `/harness-init` Step 5 wrote
+features into `.harness/features.json` on bare user confirmation, with nothing checking
+that a proposed feature was testable, unambiguous, edge-covered, or internally
+consistent before implementers burned tokens on it. Step 5.1 closes it: the entire
+confirmed feature proposal is spawned as a read-only subagent to the new
+`spec-verification` agent (Opus), which returns `PASS`/`ASK`/`BLOCK` with a numbered,
+groundable report; `features.json` is written only on `PASS`, or after the user resolves
+the `ASK`/`BLOCK` questions and the gate re-runs. A waived gate ("skip verification")
+writes features with `"spec": null` and notes the waiver in `claude-progress.txt`.
+
+**Two new agents.** `agents/spec-verification.md` runs the six checks (testability,
+ambiguity, edge/error coverage, non-functional requirements, dependencies, cross-feature
+consistency) against a spec under test. `agents/reverification-guard.md` is the
+integrity check on the gate's one human touchpoint: every human-amended revision is
+re-verified from scratch, and it explicitly refuses to let a grounded `BLOCK` or `ASK`
+reverse on pressure or reassurance alone, only on new spec content. Both are spawned
+read-only, spec-in-prompt, and never fetch anything themselves.
+
+**Two new skills.** `skills/issue-prep/` interactively drives a spec (a Linear issue via
+the Linear MCP, a pasted spec, or an existing feature) through spec-verification and the
+human loop, normalizes it into a canonical template on `PASS`, and records the result: a
+`spec` field locally, or a signed readiness stamp and label on Linear. `skills/issue-debug/`
+opens a failed feature or a runner-parked Linear issue in a live repair session and
+exits by resuming the runner, routing back through `issue-prep`, or marking the work
+failed.
+
+**New `schemas/` directory and the readiness stamp contract.** `schemas/readiness-stamp.md`
+publishes the data contracts between the spec gate (the mint) and any external consumer,
+primarily an autonomous issue-to-PR runner that imports no code from this repo and only
+validates these formats: the readiness stamp itself, the canonical hashing recipe, the
+HMAC recipe, consumer verification rules, and the park/debug-resolution contracts shared
+with `issue-debug`. **Honesty note:** the stamp's HMAC protects the Linear boundary only
+(anyone with workspace access can edit an issue, so that boundary needs cryptography).
+`features.json`'s local `spec` field carries no signature, by design: you are the only
+writer of your own file, so local trust needs none.
+
+**SessionStart spec-drift warning.** The orientation hook now recomputes the local hash
+for any feature whose `spec.hash` is set and warns when it no longer matches the current
+`description` (an edit after verification invalidates the spec, and that's the feature,
+not a bug). Local-only, network-free, and silent when no feature carries a `spec` field.
+
+**Fix: `TeammateIdle` no longer assigns implementation work to the reviewer.** The
+`check-remaining-tasks.sh` template offered the next pending feature to any idle
+teammate, including a reviewer that just finished a review and has no Edit/Write tools.
+The `TeammateIdle` hook payload carries no teammate identity to gate on mechanically, so
+the fix lives in `agents/reviewer.md` instead: its Constraints section now instructs the
+reviewer to decline an offered implementation feature and message the lead. Because this
+ships in the plugin's own agent definition rather than a per-project hook template, it
+reaches every project on the next `/plugin update vv-harness`; no `/harness-init`
+re-run required.
+
+**Tests**: `test/run-tests.sh` gains a `spec drift` section (hash match, hash mismatch,
+malformed `spec` field, output-length regression) and a `spec gate artifacts` section
+(the readiness-stamp schema parses, both new skills' frontmatter is sane, a clean session
+with a verified feature still produces no `SESSION_INCOMPLETE`).
+
 ### v4.0.2 (2026-07-03)
 
 **Documentation correction — no behavior change.** Corrected the CHANGELOG's account of why post-compaction recovery uses a `SessionStart` `compact` hook rather than a PreCompact or PostCompact hook. Per [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks), a hook's stdout is added to the model's context only for `SessionStart`, `UserPromptSubmit`, and `UserPromptExpansion`; PreCompact and PostCompact stdout never reaches the model, which is why they cannot inject recovery context. The harness already used the correct mechanism — only the stated rationale was imprecise.
@@ -18,7 +76,7 @@ Version history for the VV Claude Code Harness. The current version lives in `.c
 
 **Why not a full split** — the core-standards file ships as a manually copied `~/.claude/CLAUDE.md` with no auto-loader, so always-on content (invariants, TDD, debugging, git identity, security) stays in the template; only genuinely on-demand reference material was extracted. This adapts PR #8's routing-table idea to the v4.0 plugin model.
 
-**Tests** — `test/run-tests.sh` gains assertions that the SessionStart orientation includes the two new rule pointers.
+**Tests**: `test/run-tests.sh` gains assertions that the SessionStart orientation includes the two new rule pointers.
 
 ### v4.0.0 (2026-06-30)
 

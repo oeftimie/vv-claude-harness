@@ -212,6 +212,57 @@ plugins, and MCP servers as percentages (24h/7d views, from local history). No
 collector required. The session token/cost stats are universal; the plan-usage
 breakdown view is available on subscription plans (Pro/Max/Team/Enterprise).
 
+## Optional: spec gate for an external runner
+
+Everything below is optional and macOS-specific (it uses the Keychain and `launchctl`).
+Skip it entirely if you only use the spec gate locally: `/harness-init` Step 5.1 and
+`issue-prep` work with no configuration, writing an unsigned `spec` field to
+`features.json`. Configure this section only if a separate, external issue-to-PR runner
+needs a trustworthy signal that a Linear issue is ready for unattended implementation.
+
+Add a `prep` key to `.harness/harness.json`. Every sub-key is optional; a missing
+`prep` key, or a missing sub-key within it, degrades the relevant capability rather than
+failing:
+
+```json
+{
+  "prep": {
+    "linear": {
+      "ready_label": "agent:ready",
+      "needs_prep_label": "agent:needs-prep"
+    },
+    "stamp": {
+      "keychain_service": "vv-harness-stamp",
+      "stamper": "<your name>"
+    },
+    "runner": {
+      "kickstart_label": "com.you.linear-agent",
+      "enabled": false
+    }
+  }
+}
+```
+
+- `prep.linear`: labels `issue-prep` applies to a Linear issue as it moves through the
+  gate. Omit it and labeling is skipped.
+- `prep.stamp`: enables minting a signed readiness stamp. Requires a one-time Keychain
+  setup, done by hand and never automated:
+
+  ```bash
+  security add-generic-password -a "$USER" -s vv-harness-stamp -w "$(openssl rand -hex 32)"
+  ```
+
+  `keychain_service` must match the service name used above (`vv-harness-stamp` by
+  default). If the key is unreadable at stamp time, `issue-prep` aborts stamping (the
+  spec stays normalized, no label is applied) and prints this same setup command.
+- `prep.runner`: set `enabled: true` and `kickstart_label` to the `Label` in your
+  runner's launchd plist to have `issue-prep` nudge it after a successful stamp
+  (`launchctl kickstart -k "gui/$(id -u)/<kickstart_label>"`). A failed kickstart is a
+  one-line note, never fatal; the runner's own poll cycle is the fallback path.
+
+See [schemas/readiness-stamp.md](./schemas/readiness-stamp.md) for the stamp format, the
+canonical hashing recipe, and the HMAC recipe the Keychain key feeds.
+
 ## Per-Project Setup
 
 ```bash

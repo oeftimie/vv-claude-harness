@@ -8,6 +8,7 @@ This repo distributes VV Claude Code Harness — it is NOT an application codeba
 - `agents/` — Declarative teammate definitions shipped with the plugin (spawned as `vv-harness:*`)
 - `hooks/` — Plugin continuity hooks: session-start, session-end, statusline, `hooks.json`
 - `rules/` — Rule files shipped with the plugin
+- `schemas/` — Data contracts published for external consumers (readiness stamp, park/resolution formats)
 - `skills/` — Skill definitions shipped with the plugin (auto-discovered at plugin root)
 - `templates/CLAUDE.md` — Template for a user's personal `~/.claude/CLAUDE.md` (do not treat as project instructions; users copy and personalize it manually)
 - `test/` — Fixture-based test suite for the hook scripts (`test/run-tests.sh`)
