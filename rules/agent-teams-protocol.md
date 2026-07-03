@@ -98,7 +98,7 @@ Every feature in `.harness/features.json` uses this shape:
 **Spec verification** (optional): when a feature's spec has passed the verification gate
 (`/harness-init` Step 5.1 or the `harness-issue-prep` skill), it carries a `spec` object:
 `{"hash", "verdict", "sv_version", "verified_at", "source"}`. `hash` is sha256 over the
-`description` string exactly as stored (see `schemas/readiness-stamp.md` for the canonical
+`description` string exactly as stored (see `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md` for the canonical
 recipe); editing the description invalidates it, and the SessionStart orientation warns on
 that drift. Absent or `null` means unverified. Hooks and the lead must tolerate all three
 states. A stamp-sourced `risk: "elevated"` maps to `require_plan_approval: true` plus an

@@ -65,7 +65,7 @@ description and comments.
 
 **Step 2: Find the park bundle.** Locate the newest comment whose first line is the
 literal marker `vv-harness-park v1`. Parse its fenced json block per the
-`schemas/readiness-stamp.md` contract: `branch`, `confirmed_findings`, `heal_attempts`,
+`${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md` contract: `branch`, `confirmed_findings`, `heal_attempts`,
 `transcript_hint`.
 
 If no such comment exists, or it exists but the json does not parse: say so plainly, offer
@@ -88,7 +88,7 @@ signal that the earlier findings may need more than a local patch.
 ceremony.
 
 **Step 6: Post the resolution.** When the session concludes, post a comment on the issue
-per the `vv-harness-debug-resolution v1` contract in `schemas/readiness-stamp.md`: line 1
+per the `vv-harness-debug-resolution v1` contract in `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`: line 1
 is the literal marker `vv-harness-debug-resolution v1`, followed by one fenced json block.
 Disposition is exactly one of:
 
@@ -118,7 +118,7 @@ Disposition is exactly one of:
   the comment with no `hmac`.
 
 Runner-side consumption of this comment (deciding to act on a `resume`, reconciling its
-own state) is out of scope for this skill; the contract in `schemas/readiness-stamp.md` is
+own state) is out of scope for this skill; the contract in `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md` is
 the deliverable, not a running consumer.
 
 ## Degradation
