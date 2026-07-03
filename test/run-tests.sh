@@ -421,7 +421,7 @@ import os
 import sys
 
 root = sys.argv[1]
-for skill_dir in ("issue-prep", "issue-debug"):
+for skill_dir in ("harness-issue-prep", "harness-issue-debug"):
     path = os.path.join(root, "skills", skill_dir, "SKILL.md")
     if not os.path.isfile(path):
         print(f"missing: {path}")
@@ -444,7 +444,7 @@ for skill_dir in ("issue-prep", "issue-debug"):
 PYEOF
 )
 if [ -z "$SKILL_ERRORS" ]; then
-  pass "w: issue-prep and issue-debug SKILL.md files have sane frontmatter"
+  pass "w: harness-issue-prep and harness-issue-debug SKILL.md files have sane frontmatter"
 else
   fail "w: skill frontmatter -- $SKILL_ERRORS"
 fi

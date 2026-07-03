@@ -96,7 +96,7 @@ Every feature in `.harness/features.json` uses this shape:
 - `discovered_via` — lead sets this when adding a feature that emerged from another feature's implementation. Value is the source feature's ID (e.g., `"F002"`). Different from `depends_on` (technical dependency) — this is discovery lineage.
 
 **Spec verification** (optional): when a feature's spec has passed the verification gate
-(`/harness-init` Step 5.1 or the `issue-prep` skill), it carries a `spec` object:
+(`/harness-init` Step 5.1 or the `harness-issue-prep` skill), it carries a `spec` object:
 `{"hash", "verdict", "sv_version", "verified_at", "source"}`. `hash` is sha256 over the
 `description` string exactly as stored (see `schemas/readiness-stamp.md` for the canonical
 recipe); editing the description invalidates it, and the SessionStart orientation warns on

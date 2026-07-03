@@ -216,7 +216,7 @@ breakdown view is available on subscription plans (Pro/Max/Team/Enterprise).
 
 Everything below is optional and macOS-specific (it uses the Keychain and `launchctl`).
 Skip it entirely if you only use the spec gate locally: `/harness-init` Step 5.1 and
-`issue-prep` work with no configuration, writing an unsigned `spec` field to
+`harness-issue-prep` work with no configuration, writing an unsigned `spec` field to
 `features.json`. Configure this section only if a separate, external issue-to-PR runner
 needs a trustworthy signal that a Linear issue is ready for unattended implementation.
 
@@ -243,7 +243,7 @@ failing:
 }
 ```
 
-- `prep.linear`: labels `issue-prep` applies to a Linear issue as it moves through the
+- `prep.linear`: labels `harness-issue-prep` applies to a Linear issue as it moves through the
   gate. Omit it and labeling is skipped.
 - `prep.stamp`: enables minting a signed readiness stamp. Requires a one-time Keychain
   setup, done by hand and never automated:
@@ -253,10 +253,10 @@ failing:
   ```
 
   `keychain_service` must match the service name used above (`vv-harness-stamp` by
-  default). If the key is unreadable at stamp time, `issue-prep` aborts stamping (the
+  default). If the key is unreadable at stamp time, `harness-issue-prep` aborts stamping (the
   spec stays normalized, no label is applied) and prints this same setup command.
 - `prep.runner`: set `enabled: true` and `kickstart_label` to the `Label` in your
-  runner's launchd plist to have `issue-prep` nudge it after a successful stamp
+  runner's launchd plist to have `harness-issue-prep` nudge it after a successful stamp
   (`launchctl kickstart -k "gui/$(id -u)/<kickstart_label>"`). A failed kickstart is a
   one-line note, never fatal; the runner's own poll cycle is the fallback path.
 

@@ -1,5 +1,5 @@
 ---
-name: issue-prep
+name: harness-issue-prep
 description: Interactively verify a spec until it is buildable, then mark it ready for implementation. Sources: a Linear issue (via the Linear MCP), a pasted spec, or an existing features.json feature. On PASS it normalizes the spec, records verification (spec field locally; a signed readiness stamp plus label on Linear), and can kick the external runner. Use when an issue or feature needs to be made ready for unattended or team implementation.
 ---
 

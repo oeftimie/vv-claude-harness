@@ -71,7 +71,7 @@ try:
         print("")
         print("WARNING: spec drift: description changed after verification for "
               + ", ".join(drifted[:5]) + ".")
-        print("Re-run the spec gate (issue-prep) before implementing these.")
+        print("Re-run the spec gate (harness-issue-prep) before implementing these.")
 except Exception:
     pass
 PYEOF
