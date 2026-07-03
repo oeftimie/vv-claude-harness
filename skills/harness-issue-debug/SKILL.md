@@ -1,14 +1,14 @@
 ---
-name: issue-debug
-description: Open a failed or parked piece of work in a live repair session. Input is a features.json feature id (harness project) or a Linear issue key parked by the external runner. Loads the failure context, checks out the branch, iterates the fix with the human, and exits by resuming the runner, routing back through issue-prep, or marking the work failed. Use when a feature is status failed or a runner-parked issue needs hands-on debugging.
+name: harness-issue-debug
+description: Open a failed or parked piece of work in a live repair session. Input is a features.json feature id (harness project) or a Linear issue key parked by the external runner. Loads the failure context, checks out the branch, iterates the fix with the human, and exits by resuming the runner, routing back through harness-issue-prep, or marking the work failed. Use when a feature is status failed or a runner-parked issue needs hands-on debugging.
 ---
 
 # Issue Debug
 
 Opens a live, interactive repair session on a piece of work that stopped: a harness
 feature marked `failed`, or a Linear issue the external runner parked after exhausting
-its self-heal attempts. This skill is the hands-on counterpart to `issue-prep`: where
-`issue-prep` fixes a spec before implementation starts, `issue-debug` fixes an
+its self-heal attempts. This skill is the hands-on counterpart to `harness-issue-prep`: where
+`harness-issue-prep` fixes a spec before implementation starts, `harness-issue-debug` fixes an
 implementation (or the spec behind it) after something already went wrong.
 
 Mode is selected by the shape of the argument:
@@ -49,7 +49,7 @@ other feature work is that it starts from a known failure instead of a blank fea
 - **Fixed and the human is satisfied.** Set `status` to `"pending"`, not `"passing"`; the
   quality gate (`verify-task-quality.sh` on `TaskCompleted`) is what earns `"passing"`,
   and this skill does not shortcut it. Clear `failure_reason`.
-- **The spec was the real problem, not the code.** Run `issue-prep F0NN` to fix the
+- **The spec was the real problem, not the code.** Run `harness-issue-prep F0NN` to fix the
   description before any further implementation attempt.
 - **Abandoned this session.** Keep `status: "failed"`. Update `failure_reason` with what
   was learned this round, even if the answer is still "unresolved": a stale
@@ -113,7 +113,7 @@ Disposition is exactly one of:
   Keychain key is unreadable, do not post a `resume` disposition; report the failure and
   offer `reprep` or `abandon` instead.
 - **`reprep`**: the spec, not the code, turned out to be the problem. Post the comment
-  with no `hmac`, then run `issue-prep ISSUE-KEY` to fix the spec and re-stamp it.
+  with no `hmac`, then run `harness-issue-prep ISSUE-KEY` to fix the spec and re-stamp it.
 - **`abandon`**: the runner should stop trying and a human decides the issue's fate. Post
   the comment with no `hmac`.
 

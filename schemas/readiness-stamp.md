@@ -2,7 +2,7 @@
 
 Version-bearing contracts between the vv-harness spec gate (the mint) and any external
 consumer, primarily an autonomous issue-to-PR runner. The runner validates these formats;
-it imports no code from this repository. Producers: the `issue-prep` and `issue-debug`
+it imports no code from this repository. Producers: the `harness-issue-prep` and `harness-issue-debug`
 skills. This document is the single source of truth for field meanings and the canonical
 hash and HMAC recipes.
 
@@ -91,11 +91,11 @@ Posted by the runner when it parks an issue after exhausting self-heal attempts.
 }
 ```
 
-Consumed by the `issue-debug` skill, which opens the branch and works the findings live.
+Consumed by the `harness-issue-debug` skill, which opens the branch and works the findings live.
 
-## Debug resolution v1 (issue-debug -> runner)
+## Debug resolution v1 (harness-issue-debug -> runner)
 
-Posted by `issue-debug` when a repair session concludes. Line 1:
+Posted by `harness-issue-debug` when a repair session concludes. Line 1:
 `vv-harness-debug-resolution v1`, then one fenced json block:
 
 ```json
@@ -111,7 +111,7 @@ Posted by `issue-debug` when a repair session concludes. Line 1:
 ```
 
 Dispositions: `resume` (branch pushed, findings addressed; runner re-verifies and
-re-arms), `reprep` (the spec was the problem; a fresh stamp will follow via issue-prep),
+re-arms), `reprep` (the spec was the problem; a fresh stamp will follow via harness-issue-prep),
 `abandon` (runner closes out; humans decide the issue's fate).
 
 ## Versioning policy

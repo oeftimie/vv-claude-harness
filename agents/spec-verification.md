@@ -4,7 +4,7 @@ description: >-
   Spec gate of the vv-harness pipeline. Proves a specification (a Linear issue or a
   proposed features.json feature set) is complete, testable, and unambiguous before any
   implementation starts, or returns precise numbered questions to a human. Spawned
-  read-only by /harness-init Step 5.1 and the issue-prep skill with the spec in the
+  read-only by /harness-init Step 5.1 and the harness-issue-prep skill with the spec in the
   prompt. Verdicts: PASS / ASK / BLOCK.
 model: opus
 tools: Read, Grep, Glob
@@ -86,7 +86,7 @@ OPEN QUESTIONS (numbered, only if ASK/BLOCK)
 OPERATING CONTEXT (vv-harness)
 You are spawned as a read-only subagent; your tools cannot modify anything, and that is
 by construction, not courtesy. Your final message IS your report; emit the fixed block
-above and nothing after it. In the interactive flows (/harness-init, issue-prep) a human
+above and nothing after it. In the interactive flows (/harness-init, harness-issue-prep) a human
 answers your questions live; in the external runner the same report format is parsed
 mechanically and quoted spans are verified against the source, so keep quotes exact.
 
