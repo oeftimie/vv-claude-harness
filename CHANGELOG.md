@@ -2,6 +2,10 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v4.0.2 (2026-07-03)
+
+**Documentation correction — no behavior change.** Corrected the CHANGELOG's account of why post-compaction recovery uses a `SessionStart` `compact` hook rather than a PreCompact or PostCompact hook. Per [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks), a hook's stdout is added to the model's context only for `SessionStart`, `UserPromptSubmit`, and `UserPromptExpansion`; PreCompact and PostCompact stdout never reaches the model, which is why they cannot inject recovery context. The harness already used the correct mechanism — only the stated rationale was imprecise.
+
 ### v4.0.1 (2026-07-01)
 
 **`templates/CLAUDE.md` trimmed from 461 to 356 lines.** Two reference-heavy blocks that only matter at specific moments — the full `context_summary.md` template and the task completion checklist — moved out of the always-on core into plugin rule files, and verbose always-on sections (systematic debugging, sub-agent failure handling, error recovery) were condensed in place without losing substance.
@@ -39,7 +43,7 @@ Version history for the VV Claude Code Harness. The current version lives in `.c
 
 **Deviations from the original modernization plan**, each forced by a platform constraint verified June 2026:
 - Plugin manifest keys for a global CLAUDE.md, rules, or settings (env, permissions, statusLine) don't exist — the core-standards file ships as `templates/CLAUDE.md` (documented manual copy) and `/harness-init` writes env, permissions, and statusLine per-project.
-- The plan's PreCompact-based context injection was dropped — a pre-compaction hook runs before the context is rebuilt, so SessionStart's `compact` source re-injects recovery into the fresh post-compaction context instead.
+- The plan's PreCompact-based context injection was dropped — a hook's stdout is added to the model's context only for `SessionStart`, `UserPromptSubmit`, and `UserPromptExpansion`, so neither PreCompact nor PostCompact stdout ever reaches the model; the SessionStart `compact` source (whose stdout does reach the model) handles post-compaction recovery instead.
 - No CLI version-pin manifest key exists — the tested CLI version (v2.1.175) is documented instead.
 - The plan's optional TaskCreated metadata-enforcement hook was dropped — the TaskCreated payload carries no metadata field to check.
 
