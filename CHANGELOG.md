@@ -2,6 +2,17 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v4.2.0 (2026-07-03)
+
+**Skill rename for discoverability.** `issue-prep` and `issue-debug` are now
+`harness-issue-prep` and `harness-issue-debug`, so every harness skill shares the
+`harness-` prefix and typing `/h` surfaces the whole toolkit (`harness-init`,
+`harness-continue`, `harness-issue-prep`, `harness-issue-debug`) without memorizing
+names. Behavior is unchanged; all cross-references in the agents, hooks, schema,
+protocol, docs, and tests are updated. If you learned the v4.1.0 names, they are gone:
+there is no alias, per the replace-don't-deprecate rule. The v4.1.0 entry below is left
+as written; it describes that release accurately.
+
 ### v4.1.0 (2026-07-03)
 
 **The spec gate.** The harness had one verified intake gap: `/harness-init` Step 5 wrote
