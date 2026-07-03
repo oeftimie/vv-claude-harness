@@ -215,7 +215,7 @@ Before spending tokens on teammates, produce a decomposition plan:
    - Features with `discovered_via` depth > 1 → consider folding them into the parent feature's scope
    - Scopes that needed frequent expansion in past sessions → note them as "expansion-prone" when scoping this team
 4. Design the team:
-   - Which teammates, what scope (from features.json `scope` field), what model (Sonnet default; Opus if historical metrics suggest high difficulty). The plugin agent definitions already default the model per role (implementers and researcher: Sonnet; reviewer: Opus); a spawn-time `model` parameter overrides the definition's frontmatter, so an Opus upgrade needs only the `Task()` call's model param.
+   - Which teammates, what scope (from features.json `scope` field), what model (Sonnet default; Opus if historical metrics suggest high difficulty). The plugin agent definitions already default the model per role (implementers and researcher: Sonnet; reviewer: Opus); a spawn-time `model` parameter overrides the definition's frontmatter, so an Opus upgrade needs only the Agent tool call's model param.
    - Which tasks depend on which (from features.json `depends_on` field, mapped to `TaskUpdate` `addBlockedBy` calls after task creation)
    - Whether any teammate needs `require_plan_approval: true`
 5. Present the plan to the user:

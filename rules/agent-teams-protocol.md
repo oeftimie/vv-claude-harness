@@ -139,7 +139,7 @@ frontmatter.
 
 These are judgment calls for the lead, not mechanical rules. If no historical data exists (first session, new scope), default to Sonnet.
 
-The lead specifies model in the `Task()` call via `model: "sonnet"` or `model: "opus"`. Default to Sonnet for implementers; use Opus only when justified.
+The lead specifies model in the Agent tool call via `model: "sonnet"` or `model: "opus"`. Default to Sonnet for implementers; use Opus only when justified.
 
 ## Lead Agent Responsibilities
 
