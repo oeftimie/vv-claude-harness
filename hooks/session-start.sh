@@ -54,6 +54,28 @@ except Exception:
     pass
 PYEOF
 
+python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
+import hashlib, json, sys
+try:
+    feats = json.load(open(sys.argv[1])).get("features", [])
+    drifted = []
+    for f in feats:
+        spec = f.get("spec") or {}
+        expected = spec.get("hash")
+        if not expected:
+            continue
+        current = hashlib.sha256((f.get("description") or "").encode("utf-8")).hexdigest()
+        if current != expected:
+            drifted.append(f.get("id", "?"))
+    if drifted:
+        print("")
+        print("WARNING: spec drift: description changed after verification for "
+              + ", ".join(drifted[:5]) + ".")
+        print("Re-run the spec gate (issue-prep) before implementing these.")
+except Exception:
+    pass
+PYEOF
+
 if [ -f "$H/claude-progress.txt" ]; then
   echo ""
   echo "Last handoff (claude-progress.txt, last 12 lines):"
