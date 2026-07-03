@@ -50,7 +50,7 @@ Three sources, selected by the argument passed to this skill:
   naming which capability was missing. If all four resolve, fetch the issue and hold
   `title` and `description` exactly as returned: no trimming, no whitespace
   normalization, ever. The stamp's `spec_hash` depends on the exact bytes (see
-  `schemas/readiness-stamp.md`).
+  `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`).
 - **`F0NN`**: local mode. Load that feature from `.harness/features.json`; the spec under
   test is its `description` field. Its `scope` and `depends_on` travel along as context
   for the verification agent, not as part of the hashed spec.
@@ -172,7 +172,7 @@ git ls-remote <repo_url> HEAD | cut -f1
 ```
 
 If this fails or returns nothing, use the literal string `unknown`; consumers treat drift
-checks as skipped-with-note in that case (`schemas/readiness-stamp.md`).
+checks as skipped-with-note in that case (`${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`).
 
 Compute the HMAC:
 
@@ -194,7 +194,7 @@ below, skip stamping entirely, and finish in a normalized-but-unstamped state:
 security add-generic-password -a "$USER" -s vv-harness-stamp -w "$(openssl rand -hex 32)"
 ```
 
-On success, assemble the stamp JSON (shape in `schemas/readiness-stamp.md`), with `ts` in
+On success, assemble the stamp JSON (shape in `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`), with `ts` in
 ISO8601 UTC:
 
 ```json

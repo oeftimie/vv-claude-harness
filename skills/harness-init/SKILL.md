@@ -472,7 +472,7 @@ Route on the report's VERDICT:
 - **PASS**: write `features.json`. For each feature, populate `spec` with
   `{"hash": sha256(description), "verdict": "PASS", "sv_version": "1.0",
   "verified_at": ISO8601-UTC, "source": "conversation"}` (canonical hash recipe:
-  `schemas/readiness-stamp.md`).
+  `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`).
 - **ASK**: relay the numbered OPEN QUESTIONS to the user verbatim; iterate the feature
   descriptions with their answers; re-run the gate on the amended proposal. Do not
   write `features.json` until the gate passes.

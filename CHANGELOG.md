@@ -2,6 +2,16 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v4.2.1 (2026-07-03)
+
+**Fix: plugin-internal references now resolve for installed users.** The spec-gate
+skills and the Agent Teams protocol referenced `schemas/readiness-stamp.md` as a bare
+relative path. That resolves inside this repo, but in an installed plugin the session
+would look for it in the user's project and fail. All eight references now use
+`${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`, the same convention the other
+skills already use for cross-plugin paths. No behavior change on this repo; a
+works-for-everyone fix for installed users.
+
 ### v4.2.0 (2026-07-03)
 
 **Skill rename for discoverability.** `issue-prep` and `issue-debug` are now
