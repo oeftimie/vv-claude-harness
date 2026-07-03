@@ -70,7 +70,8 @@ Every feature in `.harness/features.json` uses this shape:
   "scope_expansions": [],
   "approaches_tried": [],
   "failure_reason": null,
-  "discovered_via": null
+  "discovered_via": null,
+  "spec": null
 }
 ```
 
@@ -93,6 +94,15 @@ Every feature in `.harness/features.json` uses this shape:
 - `approaches_tried` — brief notes on approaches attempted before the passing implementation. Teammate includes this in the task-complete SendMessage; lead populates the field.
 - `failure_reason` — lead sets this when moving a feature to `status: "failed"`. Must explain why, not just that it failed.
 - `discovered_via` — lead sets this when adding a feature that emerged from another feature's implementation. Value is the source feature's ID (e.g., `"F002"`). Different from `depends_on` (technical dependency) — this is discovery lineage.
+
+**Spec verification** (optional): when a feature's spec has passed the verification gate
+(`/harness-init` Step 5.1 or the `issue-prep` skill), it carries a `spec` object:
+`{"hash", "verdict", "sv_version", "verified_at", "source"}`. `hash` is sha256 over the
+`description` string exactly as stored (see `schemas/readiness-stamp.md` for the canonical
+recipe); editing the description invalidates it, and the SessionStart orientation warns on
+that drift. Absent or `null` means unverified. Hooks and the lead must tolerate all three
+states. A stamp-sourced `risk: "elevated"` maps to `require_plan_approval: true` plus an
+Opus implementer (see the dynamic-override table).
 
 Feature is not done until: `status` is `"passing"`, `test_file` points to a test, and `coverage` >= 95% on touched code.
 
@@ -125,6 +135,7 @@ frontmatter.
 | `scope_expansions >= 3` on a past feature | Assign a broader initial scope; note it as expansion-prone in the spawn prompt |
 | `failure_reason` mentions "approach mismatch" or "misunderstood interface" | Set `require_plan_approval: true` |
 | `discovered_via` depth > 1 (discovered features spawning discovered features) | Fold into parent scope rather than spawning a separate teammate |
+| Stamp or prep marked risk: "elevated" | Set require_plan_approval: true and upgrade the implementer to Opus |
 
 These are judgment calls for the lead, not mechanical rules. If no historical data exists (first session, new scope), default to Sonnet.
 

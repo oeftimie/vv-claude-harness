@@ -89,7 +89,8 @@ Each feature has this shape:
   "scope_expansions": [],
   "approaches_tried": [],
   "failure_reason": null,
-  "discovered_via": null
+  "discovered_via": null,
+  "spec": null
 }
 ```
 
@@ -106,6 +107,8 @@ Feature is not done until:
 - `status` is `"passing"`
 - `test_file` points to a test
 - `coverage` >= 95% on touched code
+
+A feature may also carry a `spec` verification object; see the Feature Schema section of the Agent Teams protocol.
 
 **`.harness/context_summary.md`**:
 
