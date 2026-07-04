@@ -51,7 +51,7 @@ Three reasons:
 * **Transparency**: When an agent goes off the rails, you can open `task_plan.md` and see exactly what it thinks it's doing. You can't really debug a vector database when an agent starts hallucinating. Files are inspectable, editable, and version-controlled.
 * **Structure**: Anthropic specifically chose JSON for their features file because, [as they noted](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), "the model is less likely to inappropriately change or overwrite JSON files compared to Markdown files." Structured formats create implicit contracts. The agent knows that `passes: false` means work remains. It knows not to delete entries. The file format itself enforces discipline.
 
-## The evolution: v2.0 to v3.4
+## The evolution: v2.0 to v4.2
 
 ### v2.0: The foundation (January 2025)
 
@@ -141,6 +141,47 @@ v4.0 makes the harness itself a Claude Code plugin (`/plugin install vv-harness`
 
 Agent Teams also tracked a platform change: Claude Code removed the explicit `TeamCreate`/`TeamDelete` lifecycle tools in v2.1.178, so teams are now implicit — one per session, formed on the first teammate spawn and cleaned up on session exit. The `team_name` argument is accepted but ignored, and `teammateMode` now defaults to `"in-process"` (set it to `tmux` or `auto` for split panes). The protocol and skills document this model.
 
+Two housekeeping patches followed: v4.0.1 trimmed `templates/CLAUDE.md` and extracted the
+`context-summary.md` and `task-completion.md` rule files so the SessionStart orientation can
+point at them directly; v4.0.2 corrected the changelog's rationale for the post-compaction
+recovery mechanism.
+
+### v4.1: The spec gate (July 2026)
+
+The cheapest defect is the one never written. Through v4.0, features entered
+`.harness/features.json` on bare user confirmation: nothing checked that a feature was
+testable, unambiguous, edge-covered, or internally consistent before implementers burned
+tokens on it. v4.1 closes that intake gap. `/harness-init` Step 5.1 spawns the new
+read-only `spec-verification` agent over the entire confirmed proposal; it runs six checks
+(testability, ambiguity, edge and error coverage, non-functional requirements,
+dependencies, cross-feature consistency) and returns `PASS`, `ASK`, or `BLOCK` with
+numbered questions a human can actually answer. Nothing is written until the gate passes
+or the user explicitly waives it. A second agent, `reverification-guard`, re-verifies
+every human-amended revision from scratch and refuses to advance on pressure or
+reassurance alone; only new spec content clears a prior finding.
+
+Two skills operate the gate day to day. `harness-issue-prep` drives a spec (a Linear
+issue via the Linear MCP, a pasted spec, or an existing feature) through verification,
+normalizes it into a canonical template on `PASS`, and records proof: a `spec` field on
+the feature locally, or a signed readiness stamp posted to the Linear issue. `harness-issue-debug`
+opens a failed feature or a runner-parked issue in a live repair session and exits by
+resuming the runner, routing back through prep, or marking the work failed. The new
+`schemas/` directory publishes the data contracts (stamp, canonical hashing, HMAC recipe,
+park and resolution formats) so an external issue-to-PR runner can consume them without
+importing any code. The SessionStart orientation now also warns when a verified feature's
+description drifts after verification, and the read-only reviewer teammate declines
+implementation features that the `TeammateIdle` hook offers it (the hook payload carries
+no teammate identity, so the guard lives in the agent definition).
+
+### v4.2: Harness-prefixed skills (July 2026)
+
+The v4.1 skills were renamed `harness-issue-prep` and `harness-issue-debug` so every
+harness skill shares the `harness-` prefix and typing `/h` surfaces the whole toolkit
+(`harness-init`, `harness-continue`, `harness-issue-prep`, `harness-issue-debug`) without
+memorizing names. No alias for the old names: replace, don't deprecate. v4.2.1 fixed the
+spec-gate content to reference the schema via `${CLAUDE_PLUGIN_ROOT}` so plugin-internal
+paths resolve for installed users, not just inside this repo.
+
 ## Architecture
 
 ### Global (travels with you)
@@ -151,19 +192,27 @@ Installed via `/plugin`, updated atomically (each version gets its own cache dir
 vv-harness/                                            # Plugin root
 ├── skills/
 │   ├── harness-init/                                  # /harness-init skill + hook templates
-│   └── harness-continue/                              # /harness-continue skill + team-spawn-prompts.md
+│   ├── harness-continue/                              # /harness-continue skill + team-spawn-prompts.md
+│   ├── harness-issue-prep/                            # Spec gate: verify, normalize, stamp a spec
+│   └── harness-issue-debug/                           # Repair loop for failed or runner-parked work
 ├── agents/                                            # Declarative teammates (spawned as vv-harness:*)
 │   ├── feature-implementer.md                         # Sonnet, scoped TDD on one feature
 │   ├── layer-implementer.md                           # Sonnet, owns one architectural layer
 │   ├── researcher.md                                  # Sonnet, retrieval-only (Write for findings file)
-│   └── reviewer.md                                    # Opus, high effort, no Edit/Write tools
+│   ├── reviewer.md                                    # Opus, high effort, no Edit/Write tools
+│   ├── spec-verification.md                           # Opus, read-only spec gate (SV-01..SV-06)
+│   └── reverification-guard.md                        # Sonnet, read-only re-verify of human revisions
 ├── hooks/
-│   ├── session-start.sh                               # Orientation + post-compaction recovery
+│   ├── session-start.sh                               # Orientation, spec-drift warning, compaction recovery
 │   ├── session-end.sh                                 # Session discipline audit
 │   └── statusline.sh                                  # Live feature progress (wired by /harness-init)
 ├── rules/
 │   ├── agent-teams-protocol.md                        # Agent Teams rules (harness projects only)
-│   └── code-quality.md                                # Mechanical code quality limits
+│   ├── code-quality.md                                # Mechanical code quality limits
+│   ├── context-summary.md                             # context_summary.md template + update rules
+│   └── task-completion.md                             # Completion checklist
+├── schemas/
+│   └── readiness-stamp.md                             # Stamp, hashing, HMAC, park/resolution contracts
 └── templates/
     └── CLAUDE.md                                      # Core standards template (manual copy to ~/.claude/)
 ```
@@ -341,6 +390,8 @@ claude
 | `hooks/` | Plugin continuity hooks: session-start, session-end, statusline |
 | `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |
 | `rules/code-quality.md` | Mechanical code quality limits |
+| `rules/context-summary.md` | `context_summary.md` template and update rules |
+| `rules/task-completion.md` | Task completion checklist |
 | `templates/CLAUDE.md` | Core engineering standards template (manual copy to `~/.claude/`) |
 | `test/` | Fixture-based hook test suite, run in CI |
 
