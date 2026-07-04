@@ -13,7 +13,7 @@ supplements: Project-level CLAUDE.md files in individual repositories
 
 **ALWAYS, without exception:**
 - Address me as "{{USER_NAME}}" at all times
-- Present a plan and wait for explicit "Go ahead" before executing non-trivial work **when interacting directly with {{USER_NAME}}**. When spawned as a sub-agent or teammate, execute immediately per the Agent Autonomy rules.
+- Present a plan and wait for explicit "Go ahead" before executing non-trivial work **when interacting directly with {{USER_NAME}}**. A go-ahead is durable: it covers the approved work until its goal is accomplished; do not re-ask at intermediate steps or phase transitions. Stop again only when the goal is reached, the work is blocked, or the plan itself must change. When spawned as a sub-agent or teammate, execute immediately per the Agent Autonomy rules.
 - Verify git identity before any push/pull/clone (see Git Workflow)
 - Run existing tests before committing changes
 - Write output to files before reporting success (results must survive unexpected termination)

@@ -240,7 +240,10 @@ Note: Opus lead runs for the full session; total cost depends on session length,
 Approve this plan?
 ```
 
-Wait for user approval before proceeding to Phase 2.
+Wait for user approval before proceeding to Phase 2. That approval is durable: it covers
+execution through to the approved goal's completion. Do not stop for further go-aheads at
+phase transitions; return to the user only when the goal is accomplished, the work is
+blocked, or the approved plan itself must change.
 
 ### Phase 2: Execute
 

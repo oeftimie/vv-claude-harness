@@ -2,6 +2,17 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v4.2.2 (2026-07-04)
+
+**A go-ahead is durable.** In practice, sessions governed by the template's "present a
+plan and wait for Go ahead" invariant were stopping at every phase transition of
+/harness-continue and asking again, because each phase looked like new non-trivial work.
+Both sides now state the principle explicitly: the Phase 1 plan approval covers execution
+through to the approved goal's completion, and the lead returns to the user only when the
+goal is accomplished, the work is blocked, or the approved plan itself must change.
+`templates/CLAUDE.md` gains the same durability clause on the invariant, so the rule and
+the workflow no longer fight each other. Gate the intake, not the execution.
+
 ### v4.2.1 (2026-07-03)
 
 **Fix: plugin-internal references now resolve for installed users.** The spec-gate
