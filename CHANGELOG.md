@@ -299,13 +299,13 @@ with a verified feature still produces no `SESSION_INCOMPLETE`).
 - Added global engineering rules
 - Added git identity capture and verification
 
-### v2.1 (2025-02-01)
+### v2.1 (2026-02-01)
 - Added module locking for parallel agent coordination
 - Added `.context/modules.yaml` for defining code boundaries
 - Added context-graph skill (claim/release/status/force-release)
 - Restructured to use Claude Code's native memory system (`rules/`, `@imports`)
 
-### v2.0 (2025-01-24)
+### v2.0 (2026-01-24)
 - Initial public release
 - Two-phase architecture (initializer + coding agents)
 - 4-file pattern integration

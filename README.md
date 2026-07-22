@@ -2,7 +2,7 @@
 
 A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through four major versions into a native Claude Code plugin built on the platform's Agent Teams primitives.
 
-**Current version: v4.0.1** — `templates/CLAUDE.md` trimmed from 461 to 356 lines: reference-heavy blocks (the full `context_summary.md` template, the task completion checklist) moved into new plugin rule files surfaced by the SessionStart hook, and verbose always-on sections condensed in place. Adapts PR #8's routing-table idea to the v4.0 plugin model, which has no rule auto-loader. Full history in [CHANGELOG.md](./CHANGELOG.md).
+See [CHANGELOG.md](./CHANGELOG.md) for the current version and history.
 
 ---
 
@@ -53,11 +53,11 @@ Three reasons:
 
 ## The evolution: v2.0 to v4.2
 
-### v2.0: The foundation (January 2025)
+### v2.0: The foundation (January 2026)
 
 The first version combined both approaches: Anthropic's two-phase architecture with Manus's planning-with-files pattern. An initializer created the scaffolding. Coding agents followed the structure. Four files bridged sessions. It worked, but only for sequential work: one agent, one feature at a time.
 
-### v2.1: Module locking (February 2025)
+### v2.1: Module locking (February 2026)
 
 The second version added parallel safety. A `.context/modules.yaml` file defined code boundaries. Before an agent touched code, it claimed the modules it needed. If another agent held a lock, the requesting agent waited. One agent per module at a time. Conflicts prevented, not resolved.
 
