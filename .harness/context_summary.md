@@ -35,7 +35,11 @@ This file is referenced in CLAUDE.md and loaded every session.
 <!-- Coordination insights that apply across features — NOT domain-specific.
      Populated by the retrospective step at session end.
      These transfer to new projects: harness-init can import them as starting context. -->
-- (none yet — first retrospective will populate this)
+- Capability-block memories decay: before telling the user something is blocked
+  (permissions, tooling), re-verify against current .claude/settings.json and repo
+  state — a one-line grep beats a wasted round-trip.
+- Small independent-edit batches (docs, hook guards, rule text) fit single-session
+  mode regardless of file count; reserve teams for genuinely parallel feature work.
 
 ## Meta-Session 2026-07-22
 - Scope accuracy: bootstrap session touched only .harness/ and .claude/ as planned; prep
@@ -50,4 +54,14 @@ This file is referenced in CLAUDE.md and loaded every session.
 - Approach patterns: per-issue prep loop (SV → human answers → RV → normalize) closed in
   one revision cycle; presenting SV questions verbatim got decisive one-line answers.
 - Plan approval: PASS verdicts now carry implicit go-ahead for write-back (owner
-  decision 2026-07-22); ASK/BLOCK still stop for Ovidiu.
+  decision 2026-07-22); ASK/BLOCK still stop for Ovidiu. Extended same day: clean
+  orientation + a plan with no open questions = default go-ahead, no wait.
+- Implementation phase (added post-merge): TDD red (9 failing) → green 77/77 in one
+  pass; single-session mode was right for a 10-file batch of small independent edits —
+  team overhead would have exceeded the work.
+- Review value: opus adversarial reviewer approved with 2 nits and caught a genuinely
+  untested boundary (empty-string env var) even on a docs-heavy batch; worth the spawn.
+- Stale-memory cost: a session memory claimed gh pr merge was blocked; the permission
+  had landed in .claude/settings.json (PR #22) before this session, and trusting the
+  memory cost one needless ask. Verify capability-block memories against current
+  settings/repo state before acting on them — they decay fast.
