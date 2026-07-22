@@ -143,6 +143,10 @@ assert_not_contains "$OUT" "rules/code-quality.md" \
 assert_contains "$OUT" "## Harness orientation" \
   "y: orientation still prints when CLAUDE_PLUGIN_ROOT is unset"
 
+OUT=$(run_session_start_with_root "$DIR_A" '{"source":"startup"}' "")
+assert_not_contains "$OUT" "rules/code-quality.md" \
+  "y: empty CLAUDE_PLUGIN_ROOT also suppresses rule-pointer lines"
+
 DIR_Y="$WORK/y-name-mismatch"
 make_fixture "$DIR_Y"
 python3 - "$DIR_Y/.harness/harness.json" <<'PYEOF'
