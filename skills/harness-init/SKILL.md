@@ -296,7 +296,7 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
 {
   "statusLine": {
     "type": "command",
-    "command": "bash .claude/hooks/statusline.sh"
+    "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/statusline.sh"
   },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
@@ -304,7 +304,7 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
   "permissions": {
     "allow": [
       "Bash(bash .harness/init.sh*)",
-      "Bash(bash .claude/hooks/*.sh)",
+      "Bash(\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/*.sh*)",
       "Bash(git config user.name)",
       "Bash(git config user.email)",
       "Bash(git rev-parse*)",
@@ -320,7 +320,7 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/enforce-scope.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/enforce-scope.sh"
           }
         ]
       },
@@ -329,7 +329,7 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/verify-git-identity.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-git-identity.sh"
           }
         ]
       }
@@ -339,7 +339,7 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/verify-task-quality.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-task-quality.sh"
           }
         ]
       }
@@ -349,7 +349,7 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/check-remaining-tasks.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-remaining-tasks.sh"
           }
         ]
       }
@@ -367,10 +367,10 @@ directly into the model's context, so a separate PostCompact hook would be redun
 After installing hooks, verify they execute correctly:
 
 ```bash
-echo '{}' | bash .claude/hooks/verify-task-quality.sh
+echo '{}' | "$CLAUDE_PROJECT_DIR"/.claude/hooks/verify-task-quality.sh
 echo "Exit code: $?"
 
-echo '{}' | bash .claude/hooks/check-remaining-tasks.sh
+echo '{}' | "$CLAUDE_PROJECT_DIR"/.claude/hooks/check-remaining-tasks.sh
 echo "Exit code: $?"
 ```
 
