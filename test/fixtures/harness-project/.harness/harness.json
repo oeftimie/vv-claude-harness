@@ -1,4 +1,5 @@
 {
+  "_note": "Fixture version is intentionally frozen at 4.0.0; it does not track the live plugin version.",
   "version": "4.0.0",
   "git_identity": {
     "user_name": "Fixture User",
