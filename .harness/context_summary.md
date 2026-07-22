@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F001 / OVI-47 prepped (spec verified, normalized, written to features.json 2026-07-22)
-- Next up: F001 implementation via /harness-continue (per-issue loop: TDD → tests green → PR + CI → review → merge)
+- Currently working on: F003 / OVI-48 implemented (hook template robustness, 109/109), PR in flight
+- Next up: /harness-issue-prep OVI-46 → F002 (next P0 by priority, still unprepped), then implement
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -23,13 +23,18 @@ This file is referenced in CLAUDE.md and loaded every session.
 - Features F001–F021 mirror the 21 OVI-44 sub-issues; depends_on mirrors the epic's dependency graph; "independent after P0" encoded as depends_on the three P0 features (2026-07-22)
 - Fixture harness.json version stays frozen at 4.0.0 with a "_note" key — bumping it to the live plugin version would recreate the copied-fact drift OVI-47 removes (2026-07-22)
 - LICENSE: MIT, owner decision recorded in the OVI-47 assumptions ledger (2026-07-22)
+- All four per-project hook templates anchor to `PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"` and cd there — hooks must not depend on the session's cwd; settings.json invokes them as `"$CLAUDE_PROJECT_DIR"/.claude/hooks/<name>.sh` (2026-07-22, OVI-48)
+- verify-task-quality is the only features.json writer besides the lead: targeted feature only, indent=2, trailing newline, atomic .tmp + mv (2026-07-22, OVI-48)
 
 ### Patterns
 - Tests must pin env vars the hooks read: run_session_start forces CLAUDE_PLUGIN_ROOT unset (env -u), run_session_start_with_root sets it — never inherit the test shell's env for hook behavior assertions (2026-07-22)
+- Fixture tests install templates via install_hooks and invoke them exactly the way settings.json does (`CLAUDE_PROJECT_DIR=<fixture> <fixture>/.claude/hooks/<name>.sh`) — testing through the real invocation form caught the cwd bugs the old `bash relative/path` form hid (2026-07-22)
 
 ### Gotchas
 - Baseline before any change: 66/66 assertions passing on main @ d3661ff (2026-07-22)
 - README's v2.x date repeats live under the "## The evolution: v2.0 to v4.2" heading, not a section literally named "Evolution" as OVI-47 claimed (2026-07-22)
+- macOS resolves `/var` → `/private/var`, so `git rev-parse --show-toplevel` returns a different prefix than an unresolved `$TMPDIR`/CLAUDE_PROJECT_DIR path — absolute-path prefix-stripping against the git toplevel silently fails on macOS; prefer CLAUDE_PROJECT_DIR (2026-07-22)
+- This repo's live .claude/hooks/*.sh lag the fixed templates: the old verify-task-quality corrupted correction_cycles (F003 +1, no trailing newline) when the gate rejected a TDD red-phase task completion; reset to 0 as a false positive. Refresh live hooks from templates after OVI-48 merges (2026-07-22)
 
 ## Meta-Patterns
 <!-- Coordination insights that apply across features — NOT domain-specific.
@@ -65,3 +70,18 @@ This file is referenced in CLAUDE.md and loaded every session.
   had landed in .claude/settings.json (PR #22) before this session, and trusting the
   memory cost one needless ask. Verify capability-block memories against current
   settings/repo state before acting on them — they decay fast.
+
+## Meta-Session 2026-07-22 (session 3, F003/OVI-48)
+- Scope accuracy: F003's scope array (5 templates + run-tests.sh + SKILL.md) matched the
+  work exactly — zero expansions. One out-of-scope need surfaced (refreshing this repo's
+  live .claude/hooks copies) and was deferred to the handoff instead of expanded into.
+- Model calibration: single-session on the lead model; 13-red → green in one pass, no
+  correction cycles (the one recorded increment was a gate false positive, see Gotchas).
+- Discovery lineage: red phase organically discovered the macOS /private/var symlink bug —
+  a defect beyond the four the spec named; fixed by the same CLAUDE_PROJECT_DIR anchor.
+- Approach patterns: testing templates through the real settings.json invocation form
+  (not a convenience wrapper) is what surfaced both cwd bugs; keep doing this for hooks.
+- Gate friction: TaskCompleted rejects marking the "write failing tests" task complete
+  during TDD red (suite is intentionally failing) and increments correction_cycles via
+  the live hook. Pattern: complete the red-phase task only after green, or expect a
+  false-positive metric to reset.

@@ -21,3 +21,12 @@
 - Next: fresh session — /harness-issue-prep on the next P0 issue (F002), then /harness-continue; bootstrap-era spec hashes on F002-F021 are cosmetic, prep each before implementing
 - Blockers: none (gh pr merge is permitted via .claude/settings.json; Claude completes the loop through merge)
 - 2026-07-22 /harness-issue-prep OVI-48 -> F003: SV ASK (4 Qs answered), RV PASS (cycle 1); normalized spec + fresh spec.hash written to features.json; local-only (no stamp/label, Linear untouched)
+
+## Session 3 - 2026-07-22 (single-session)
+- Feature: F003 - [OVI-48] P0.3 hook template robustness + fixture test coverage
+- Status: implementation complete; PR #25 open, CI + adversarial review + merge in progress this session
+- Tests: 109/109 passing (77 baseline + 32 new; TDD red phase confirmed 13 failing first)
+- Coverage: n/a (shell suite, no coverage tooling; full_test is the gate)
+- Decisions: CLAUDE_PROJECT_DIR anchor in all 4 gate templates; verify-task-quality is the sole non-lead features.json writer (targeted, atomic, trailing newline) — details in context_summary.md
+- Next: /harness-issue-prep OVI-46 -> F002 (next P0, still unprepped; do NOT trust its bootstrap spec.hash), then implement. Also refresh this repo's live .claude/hooks/*.sh from the fixed templates (out of F003 scope, deferred deliberately)
+- Blockers: none
