@@ -14,9 +14,9 @@
 
 ## Session 2 - 2026-07-22 (single-session)
 - Feature: F001 - [OVI-47] P0.2 single-owner truth fixes
-- Status: complete (pending PR merge)
+- Status: complete (PR #23 merged to main @ d5c0e0f; OVI-47 Done in Linear)
 - Tests: 76/76 passing (66 baseline + 10 new; TDD red phase confirmed 9 failing first)
 - Coverage: n/a (shell suite, no coverage tooling; full_test is the gate)
 - Decisions: fixture frozen at 4.0.0 with _note; MIT license; README v2.x dates live under "The evolution" heading (see context_summary.md)
-- Next: Ovidiu merges the OVI-47 PR, then move OVI-47 to Done in Linear and prep the next issue (F002) via /harness-issue-prep
-- Blockers: none (gh pr merge remains blocked for Claude; merge is Ovidiu's step)
+- Next: fresh session — /harness-issue-prep on the next P0 issue (F002), then /harness-continue; bootstrap-era spec hashes on F002-F021 are cosmetic, prep each before implementing
+- Blockers: none (gh pr merge is permitted via .claude/settings.json; Claude completes the loop through merge)
