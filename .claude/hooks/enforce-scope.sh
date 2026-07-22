@@ -1,0 +1,49 @@
+#!/bin/bash
+# VV Claude Code Harness - PreToolUse scope enforcement hook
+# Runs before Edit/Write tool calls when a teammate scope file exists.
+# Exit code 0 = allow edit
+# Exit code 2 = block edit (file outside scope)
+
+# Read hook input from stdin
+INPUT=$(cat)
+
+# Only enforce if a scope file exists (teammates only, not lead agents)
+SCOPE_FILE=".claude/teammate-scope.txt"
+if [ ! -f "$SCOPE_FILE" ]; then
+    exit 0
+fi
+
+# Extract file path from tool input
+FILE_PATH=$(echo "$INPUT" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(data.get('tool_input', {}).get('file_path', ''))
+" 2>/dev/null)
+
+if [ -z "$FILE_PATH" ]; then
+    exit 0
+fi
+
+# Normalize absolute paths to relative (tool input uses absolute paths,
+# scope patterns use relative paths like "src/auth/")
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+if [[ "$FILE_PATH" == "$PROJECT_ROOT/"* ]]; then
+    FILE_PATH="${FILE_PATH#$PROJECT_ROOT/}"
+fi
+
+# Check if file path matches any scope pattern
+while IFS= read -r pattern || [ -n "$pattern" ]; do
+    # Skip empty lines and comments
+    [[ -z "$pattern" || "$pattern" =~ ^# ]] && continue
+    # Use bash pattern matching
+    if [[ "$FILE_PATH" == $pattern* ]]; then
+        exit 0
+    fi
+done < "$SCOPE_FILE"
+
+echo "Edit blocked: $FILE_PATH is outside your assigned scope."
+echo "Your scope (from $SCOPE_FILE):"
+cat "$SCOPE_FILE" | grep -v '^#' | grep -v '^$'
+echo ""
+echo "If you need access to this file, message the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Need access to $FILE_PATH because [reason].\" })"
+exit 2

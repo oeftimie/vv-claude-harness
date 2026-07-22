@@ -1,0 +1,12 @@
+# Claude Progress Log
+# Project: vv-claude-harness
+# Created: 2026-07-22
+
+## Session 1 - Initialization (OVI-44 step 0, dogfood bootstrap)
+- Verified baseline: test/run-tests.sh 66/66 passing on main @ d3661ff
+- Created harness scaffolding (.harness/: harness.json, features.json, init.sh, context_summary.md, claude-progress.txt)
+- Stack: custom (full_test = bash test/run-tests.sh; smoke_test = bash -n hooks/*.sh + json.tool on .claude-plugin/*.json)
+- Git identity: Ovidiu Eftimie <eovidiu@gmail.com>, gh account eovidiu over HTTPS (SSH unavailable in this environment)
+- Imported OVI-44's 21 sub-issues as features F001-F021 (depends_on mirrors the epic graph)
+- Installed quality-gate hooks (.claude/hooks/) and .claude/settings.json
+- Next: per-issue loop starting with F001 / OVI-47

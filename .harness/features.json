@@ -1,0 +1,688 @@
+{
+  "project": "vv-claude-harness",
+  "created": "2026-07-22",
+  "total_features": 21,
+  "passing": 0,
+  "features": [
+    {
+      "id": "F001",
+      "description": "[OVI-47] P0.2: Single-owner truth fixes (version line, dates, placeholders, identity symmetry, LICENSE) \u2014 A batch of independent truth fixes: remove the drifted README version line, reconcile CHANGELOG/README dates against git history, strip a {{USER_NAME}} placeholder from a shipped rule, guard a broken session-start fallback path, make the identity check symmetric on name and email, de-stale the fixture, and add a LICENSE. Amendment adds transcript-secrets and untrusted-content rules.",
+      "priority": 1,
+      "status": "pending",
+      "scope": [
+        "README.md",
+        "CHANGELOG.md",
+        "rules/task-completion.md",
+        "hooks/session-start.sh",
+        "skills/harness-init/verify-git-identity.sh.template",
+        "test/fixtures/harness-project/.harness/harness.json",
+        "LICENSE",
+        "test/run-tests.sh",
+        "templates/CLAUDE.md",
+        "agents/researcher.md"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-47. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "5f842486384c853b7bc3c21824ac26963806456eab777a0a116077bc3fbb6ed9",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-47"
+      }
+    },
+    {
+      "id": "F002",
+      "description": "[OVI-46] P0.1: Arm scope enforcement in the operational spawn path \u2014 Make mechanical scope enforcement actually fire in the Agent Teams spawn path: write .claude/teammate-scope.txt from each feature's scope array before every teammate spawn, rewrite on reassignment, delete at teardown, and add a session-start warning when scope enforcement is unarmed for in-progress assigned features.",
+      "priority": 2,
+      "status": "pending",
+      "scope": [
+        "skills/harness-continue/SKILL.md",
+        "skills/harness-continue/team-spawn-prompts.md",
+        "hooks/session-start.sh",
+        "rules/agent-teams-protocol.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-46. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "51d8c735b838e909b8b704b7aa960fcc561cfb02f8891429a3899af7ab7f9c80",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-46"
+      }
+    },
+    {
+      "id": "F003",
+      "description": "[OVI-48] P0.3: Hook robustness + test coverage for the 5 per-project hook templates \u2014 Harden the 5 per-project hook templates and give them fixture test coverage: switch check-remaining-tasks to tolerant .get() parsing, fix verify-task-quality's metric corruption and make its features.json write atomic with trailing newline, and extend run-tests.sh with bash -n and exit-code fixtures for all templates. Amendment requires CLAUDE_PROJECT_DIR-absolute hook invocation.",
+      "priority": 3,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/check-remaining-tasks.sh.template",
+        "skills/harness-init/verify-task-quality.sh.template",
+        "skills/harness-init/enforce-scope.sh.template",
+        "skills/harness-init/verify-git-identity.sh.template",
+        "skills/harness-init/init.sh.template",
+        "test/run-tests.sh",
+        "skills/harness-init/SKILL.md"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-48. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "dff38aa4526c4fbc3a985a69d2a60acf4896e45307b97def84a1401445151947",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-48"
+      }
+    },
+    {
+      "id": "F004",
+      "description": "[OVI-49] P1.1: Canonical feature schema (one owner) + stdlib validator \u2014 Create schemas/feature.schema.json as the single authoritative definition of the features.json envelope and 16-field feature object, plus a stdlib-only scripts/validate-features.py validator with location-aware errors. Deduplicate the field-by-field prose from the protocol, harness-init SKILL, and README into schema links, and wire validation into the test suite.",
+      "priority": 4,
+      "status": "pending",
+      "scope": [
+        "schemas/feature.schema.json",
+        "scripts/validate-features.py",
+        "rules/agent-teams-protocol.md",
+        "skills/harness-init/SKILL.md",
+        "README.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-49. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "eca202c2e63ac1c6b45911be12047f6f5c305efb052a0a310645862b575222b6",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-49"
+      }
+    },
+    {
+      "id": "F005",
+      "description": "[OVI-61] S1: Hostile-gate tests + cold-start dogfood release gate \u2014 Add an adversarial section to test/run-tests.sh where real attacks (out-of-scope edits, state-file writes, git push under mismatched identity, failing-smoke commits, secret-shaped staged additions) must be denied with the invariant named, and add docs/release-checklist.md defining a cold-start dogfood gate recorded to MAINTENANCE_LOG.md, run once as run #0. Ownership note: this issue CREATES MAINTENANCE_LOG.md and writes the dogfood-gate series' run #0; per OVI-61 the log is OVI-56's durable state, and dogfood entries are a distinct record series from OVI-56's maintenance-probe runs.",
+      "priority": 5,
+      "status": "pending",
+      "scope": [
+        "test/run-tests.sh",
+        "docs/release-checklist.md",
+        "MAINTENANCE_LOG.md",
+        "CLAUDE.md"
+      ],
+      "depends_on": [
+        "F003"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-61. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "c020766fcf257b100fa06ea45b601d4914a55ebe73a51bdb9b0bde0665e88773",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-61"
+      }
+    },
+    {
+      "id": "F006",
+      "description": "[OVI-62] S2: /harness-doctor: instance health check + the upgrade engine \u2014 Add skills/harness-doctor/SKILL.md, a report-first idempotent instance health check (python3/git presence, hook set and executability, settings.json wiring, gitignore rules, harness/features validation, version drift, mld non-injection) that classifies committed vs local drift and offers a --fix upgrade mode. Replace INSTALL.md's manual upgrade steps and wire into harness-continue Step 2.5.",
+      "priority": 6,
+      "status": "pending",
+      "scope": [
+        "skills/harness-doctor/SKILL.md",
+        "INSTALL.md",
+        "skills/harness-continue/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F004"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-62. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "34890e1939fef0f44d5bd917e2abd9c8cd9a2b2b103e930d30b80096a88de134",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-62"
+      }
+    },
+    {
+      "id": "F007",
+      "description": "[OVI-56] P4.1: Platform-drift maintenance loop (runbook + weekly CI cron + workaround retirement) \u2014 Add docs/maintenance-runbook.md answering HE's five loop questions plus a probe checklist with explicit workaround-retirement conditions, a weekly .github/workflows/maintenance.yml cron that runs the suite and probes the latest CLI, a seeded MAINTENANCE_LOG.md run #0, and a repo rule requiring every workaround to carry a retirement condition. Ownership note: MAINTENANCE_LOG.md already exists when this issue runs (created by OVI-61/F005 with dogfood run #0); this issue formalizes the log format (newest first, one entry per run) and APPENDS the maintenance-probe series' run #0 \u2014 it must not re-create the file.",
+      "priority": 7,
+      "status": "pending",
+      "scope": [
+        "docs/maintenance-runbook.md",
+        ".github/workflows/maintenance.yml",
+        "MAINTENANCE_LOG.md",
+        "CLAUDE.md",
+        "rules/agent-teams-protocol.md",
+        "skills/harness-continue/team-spawn-prompts.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F001",
+        "F002",
+        "F003",
+        "F005"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-56. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "4498887aa93923f6b5031bfe2db8a5bf27d519e39c8ce46173cbb6a627604233",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-56"
+      }
+    },
+    {
+      "id": "F008",
+      "description": "[OVI-50] P1.2: One state boundary: shared harness_state.py for per-project hooks \u2014 Introduce skills/harness-init/harness_state.py.template as the single stdlib state boundary (load, next-claimable, counts, atomic increment-correction-cycles) installed to .claude/hooks/. Refactor check-remaining-tasks and verify-task-quality templates to call it, enforce a single features.json writer, and delegate session-start's next-claimable algorithm to it when present.",
+      "priority": 8,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/harness_state.py.template",
+        "skills/harness-init/check-remaining-tasks.sh.template",
+        "skills/harness-init/verify-task-quality.sh.template",
+        "hooks/session-start.sh",
+        "skills/harness-init/SKILL.md",
+        "INSTALL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F003",
+        "F004"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-50. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "518945e505ecc0dd2168a64814a08e18586fc4d442e4ab9c276b2f0500ce5161",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-50"
+      }
+    },
+    {
+      "id": "F009",
+      "description": "[OVI-51] P2.1: Mechanize lead-only state ownership + best-effort Bash write boundary \u2014 Extend enforce-scope.sh to deny Edit/Write to lead-owned state files (features.json, context_summary.md, claude-progress.txt) and register it on the Bash matcher to best-effort block write commands (redirects, tee, cp, mv, sed -i, rm) outside scope. Amendment adds JSON permissionDecision deny form, compound-command segmentation, and Failure posture header lint.",
+      "priority": 9,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "skills/harness-init/SKILL.md",
+        "agents/reviewer.md",
+        "README.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F002"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-51. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "4596d60e282d0f4322fa9461524a2df7fb3566306f9311bc795641f16ec1b122",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-51"
+      }
+    },
+    {
+      "id": "F010",
+      "description": "[OVI-52] P2.2: Claim-matched proof, per-feature coverage target, delivery closure \u2014 Extend the feature schema with optional proof, coverage_target, and delivered fields; make the protocol the single owner of the passing/done/shipped definition via a completion proof packet; have verify-task-quality honor coverage_target and warn on passing-without-proof; and extend session-end gap detection. Amendment adds QA binding, design_contract, and the conformance evidence_type.",
+      "priority": 10,
+      "status": "pending",
+      "scope": [
+        "schemas/feature.schema.json",
+        "rules/agent-teams-protocol.md",
+        "skills/harness-init/verify-task-quality.sh.template",
+        "hooks/session-end.sh",
+        "skills/harness-issue-prep/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F004"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-52. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "34df31c97207cc6eba72e4f469ed557754be290ef58a2805ca23a5501afb4dae",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-52"
+      }
+    },
+    {
+      "id": "F011",
+      "description": "[OVI-64] S4: Commit-content gate (secret scan + compound stage-and-commit denial) \u2014 Add skills/harness-init/commit-gate.sh.template, a PreToolUse Bash gate firing only on git commit that denies compound stage-and-commit forms, scans staged additions for secret shapes, and offers an opt-in house-style scan, emitting JSON permissionDecision denials with findings and repairs. Extend the fixture harness with six cases and document the tier in README and templates/CLAUDE.md.",
+      "priority": 11,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/commit-gate.sh.template",
+        "test/run-tests.sh",
+        "README.md",
+        "templates/CLAUDE.md"
+      ],
+      "depends_on": [
+        "F009"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-64. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "939030bcda3f62f3de0dd3d18bc2ce99f5b816f480bb24aa104a87a5c4335f7b",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-64"
+      }
+    },
+    {
+      "id": "F012",
+      "description": "[OVI-53] P2.3: Portable readiness-stamp signing (Linux/CI parity for the spec gate) \u2014 Make readiness-stamp HMAC signing portable off macOS: implement a secret resolution chain (Keychain, then a 0600 key file, then env var), compute HMAC via python3 stdlib, generalize the runner kick to a configurable prep.kick_command, enforce key hygiene/redaction, and exercise mint+verify against all 6 consumer rules on ubuntu CI.",
+      "priority": 12,
+      "status": "pending",
+      "scope": [
+        "schemas/readiness-stamp.md",
+        "skills/harness-issue-prep/SKILL.md",
+        "skills/harness-issue-debug/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F001",
+        "F002",
+        "F003"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-53. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "5522141843d428f3446dba06aad18a89b39140d2630a14eb32ce2a6a514ba504",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-53"
+      }
+    },
+    {
+      "id": "F013",
+      "description": "[OVI-63] S3: Mechanical stamp for /harness-init (+ upgrade mode) \u2014 Add scripts/stamp.sh that deterministically emits every framework-fixed file (settings.json from templates, byte-verbatim hooks, harness.json/features.json skeletons, gitignore line) from an answers file with new/upgrade collision handling, moving the 5 inline settings JSON variants into skills/harness-init/templates/ and shrinking harness-init SKILL.md Steps 3/3.5/3.6 to gather-answers-and-stamp.",
+      "priority": 13,
+      "status": "pending",
+      "scope": [
+        "scripts/stamp.sh",
+        "skills/harness-init/SKILL.md",
+        "skills/harness-init/templates/",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F008",
+        "F009"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-63. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "8b7ce73c52e6dae706e5ca0390f6682e3afbcb67bdc4672b58b87097be105747",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-63"
+      }
+    },
+    {
+      "id": "F014",
+      "description": "[OVI-54] P3.1: MLD builder telemetry (.harness/mld/) with a hard non-injection guarantee \u2014 Add lead-only MLD telemetry: at session end append .harness/mld/YYYY-MM-DD-<id>.md with Mistakes/Learnings/Desires sections, with a hard guarantee that session-start never reads mld/ (tested across all SessionStart sources). Add rules/mld-review.md defining the review cadence and disposition, and document committing mld/ by default.",
+      "priority": 14,
+      "status": "pending",
+      "scope": [
+        "rules/task-completion.md",
+        "skills/harness-continue/SKILL.md",
+        "hooks/session-start.sh",
+        "hooks/session-end.sh",
+        "rules/mld-review.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F001",
+        "F002",
+        "F003"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-54. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "f89fce81a27b939cabfaa5817a7fbaa22e494b9fd143b684344ed1e9a37ad9a3",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-54"
+      }
+    },
+    {
+      "id": "F015",
+      "description": "[OVI-55] P3.2: Promotion ladder + ablation pass in the Phase 5.5 retrospective \u2014 Add two mandatory retrospective passes to harness-continue Phase 5.5: a promotion pass classifying each pattern/MLD entry to its smallest durable owner, and an ablation pass retiring controls that no longer earn their cost, with candidates written to a new .harness/HARNESS_BACKLOG.md. Amendment adds candidate lifecycle (score/status/last_seen), 60-day decay, a capped canon, and gap entries.",
+      "priority": 15,
+      "status": "pending",
+      "scope": [
+        "skills/harness-continue/SKILL.md",
+        "rules/context-summary.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F001",
+        "F002",
+        "F003"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-55. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "88f515e7df12ee2b0e74f17003930bbaedc3f2c7054ee3ad4cacb134f47fc14d",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-55"
+      }
+    },
+    {
+      "id": "F016",
+      "description": "[OVI-57] P4.2: Worker epoch record + requalification checklist (with subtraction pass) \u2014 Add an optional harness.json worker block recording CLI version and per-role models, an epoch check in harness-continue (Step 2.6) that prompts requalification on large version deltas, and docs/requalification.md with a subtraction pass listing removal candidates. Amendment adds a single bindings table, verified-live annotations, and the CLAUDE_CODE_SUBAGENT_MODEL warning.",
+      "priority": 16,
+      "status": "pending",
+      "scope": [
+        "schemas/feature.schema.json",
+        "skills/harness-continue/SKILL.md",
+        "docs/requalification.md",
+        "rules/agent-teams-protocol.md",
+        "templates/CLAUDE.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F004"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-57. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "245d02932b5bdca60dd2796f0e23cec1e1d268bb8a8f23c88f5e0f550261dea4",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-57"
+      }
+    },
+    {
+      "id": "F017",
+      "description": "[OVI-65] A1: Author-blind conformance tester (anti-reward-hacking gate) \u2014 Add agents/conformance-tester.md (vv-harness:conformance-tester), an agent that derives behavior tests from the verified feature description alone, forbidden from reading the implementation diff, completion message, or implementer tests, writes conformance tests, and reports PASS/FAIL/NOT-TESTABLE per criterion. Wire an optional harness-continue Phase 4 spawn for elevated-risk features recording evidence_type conformance.",
+      "priority": 17,
+      "status": "pending",
+      "scope": [
+        "agents/conformance-tester.md",
+        "skills/harness-continue/SKILL.md",
+        "schemas/feature.schema.json",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F010"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-65. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "be98562a1518d4602f76dc08d3fa5096d1f3cc91b0a45fec4f1ec304dde7e791",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-65"
+      }
+    },
+    {
+      "id": "F018",
+      "description": "[OVI-66] A2: Optional dual-engine review (Codex second reviewer + synthesizer rules) \u2014 Add an optional harness.json review block enabling a blind second-engine (Codex CLI) review run in parallel with the Claude reviewer, with explicit skip-with-note when the CLI is absent, plus synthesizer rules (dedupe by defect, single-engine CRITICAL survives, cross-engine agreement raises confidence, provenance verified via git show merge-base). Document in the protocol and README.",
+      "priority": 18,
+      "status": "pending",
+      "scope": [
+        "rules/agent-teams-protocol.md",
+        "agents/reviewer.md",
+        "README.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-66. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "d00ea3fcf1bc87eb0cb93a6fa10dc1537927aaa522143e2270c87b301fc903dd",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-66"
+      }
+    },
+    {
+      "id": "F019",
+      "description": "[OVI-58] P5.1: AGENTS.md routing layer for the distribution repo (cross-agent legibility) \u2014 Add a root AGENTS.md agent-agnostic operating guide (repo identity, distribution-vs-config distinction, test command, single-version rule, routing) and rewrite CLAUDE.md to a one-line @AGENTS.md import plus Claude-specific overlay with zero duplicated sentences, optionally adding up to two nested guides. Verify the import works on the current CLI.",
+      "priority": 19,
+      "status": "pending",
+      "scope": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "skills/AGENTS.md",
+        "test/AGENTS.md"
+      ],
+      "depends_on": [
+        "F001",
+        "F002",
+        "F003"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-58. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "8faf04032ef83ec0ff9e83b40c77a21a0ee6609aac71266b39000b1ab5d313ac",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-58"
+      }
+    },
+    {
+      "id": "F020",
+      "description": "[OVI-59] P5.2: New skill harness-improve (HE's improve-one-harnessed-job loop) \u2014 Add skills/harness-improve/SKILL.md implementing an observation-first improvement loop in 7 steps (job contract, baseline from vv evidence, earliest failed handoff classified to a vv-native owner, one hypothesis, smallest change, fresh-session rerun, retain/revise/remove), with an embedded result-record template, guardrail sentences, and grep/frontmatter test coverage.",
+      "priority": 20,
+      "status": "pending",
+      "scope": [
+        "skills/harness-improve/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F001",
+        "F002",
+        "F003"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-59. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "351f88f5510033bfa4208175e23d3de604bb0045e423c39567c8aafaf121f9fc",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-59"
+      }
+    },
+    {
+      "id": "F021",
+      "description": "[OVI-60] P5.3: Eval method doc + first behavioral eval (orientation recovery A/B) \u2014 Add evals/README.md defining vv's proportionate eval contract (decision-first, one intervention, fresh sessions, separate availability/retrieval/relevance facts, invalid-result checklist, fixed-worker recording) and evals/orientation-recovery.md, an executed A/B on whether SessionStart orientation changes next-session behavior, with a committed results table and a stated decision.",
+      "priority": 21,
+      "status": "pending",
+      "scope": [
+        "evals/README.md",
+        "evals/orientation-recovery.md",
+        "README.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F001",
+        "F002",
+        "F003"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Linear: OVI-60. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": {
+        "hash": "3bae3e5248a5fa98c76f04c51e2587826a62dfbcb176483e4532983b50a2ed1c",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-07-22T18:15:31Z",
+        "source": "linear:OVI-60"
+      }
+    }
+  ]
+}

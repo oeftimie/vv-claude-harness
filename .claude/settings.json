@@ -1,0 +1,75 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash .claude/hooks/statusline.sh"
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bash .harness/init.sh*)",
+      "Bash(bash .claude/hooks/*.sh)",
+      "Bash(git config user.name)",
+      "Bash(git config user.email)",
+      "Bash(git rev-parse*)",
+      "Bash(git log*)",
+      "Bash(git status*)",
+      "Read(./.harness/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/enforce-scope.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/verify-git-identity.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then case \"$FILE\" in *.sh) bash -n \"$FILE\" 2>&1 ;; *.json) python3 -m json.tool \"$FILE\" > /dev/null 2>&1 || echo \"JSON syntax error: $FILE\" ;; esac; fi",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/verify-task-quality.sh"
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/check-remaining-tasks.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

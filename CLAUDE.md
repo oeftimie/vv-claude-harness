@@ -32,3 +32,17 @@ Files under `templates/`, `rules/`, and `skills/` are **distribution content**, 
 - Other changes are documentation and template edits
 - The version number lives ONLY in `.claude-plugin/plugin.json` (`version`). It is the canonical plugin version and the update cache key: users only receive updates when it is bumped. Do not introduce other version locations that need syncing.
 - `templates/CLAUDE.md` keeps its `{{USER_NAME}}` placeholders; personalization is a documented manual step in INSTALL.md, not installer templating
+
+## Harness
+
+This project uses the Long-Running Agent Harness (vv-harness plugin) to manage its own v5 upgrade (Linear epic OVI-44). The distribution-content caveat above still applies: `templates/`, `rules/`, and `skills/` remain plugin source, but `.harness/` and `.claude/` are live project state for this repo.
+
+- Feature tracking: `.harness/features.json` (F001–F021 mirror the OVI-44 sub-issues)
+- Context and decisions: `.harness/context_summary.md` (READ THIS at session start)
+- Progress handoff: `.harness/claude-progress.txt`
+- Build/test: `.harness/init.sh` (`smoke_test` = shell syntax + manifest JSON checks; `full_test` = `bash test/run-tests.sh`)
+- Quality gates: `.claude/hooks/` (TaskCompleted, TeammateIdle, scope, git identity)
+
+## Git Identity
+
+This project uses: Ovidiu Eftimie <eovidiu@gmail.com> (GitHub account `eovidiu`) over HTTPS with the gh credential helper; SSH is not available in this environment. Always verify identity before push/pull/clone operations. Never push directly to main — PR-based flow only.
