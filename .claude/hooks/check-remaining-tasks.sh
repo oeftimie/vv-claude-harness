@@ -1,0 +1,61 @@
+#!/bin/bash
+# VV Claude Code Harness - TeammateIdle hook
+# Runs when a teammate is about to go idle.
+# Exit code 0 = allow idle (no more work)
+# Exit code 2 = send feedback, keep teammate working
+
+set -euo pipefail
+
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$PROJECT_ROOT"
+
+# Read hook input from stdin
+INPUT=$(cat)
+
+# Check features.json for remaining work
+# Status enum: pending, in-progress, blocked, passing, failed
+# Claimable statuses: pending (ready for work), failed (needs re-attempt)
+if [ -f ".harness/features.json" ]; then
+    CLAIMABLE=$(cat .harness/features.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+features = data.get('features', [])
+passing_ids = {f['id'] for f in features if f['status'] == 'passing'}
+claimable = [
+    f for f in features
+    if f['status'] in ('pending', 'failed')
+    and all(dep in passing_ids for dep in f.get('depends_on', []))
+]
+print(len(claimable))
+" 2>/dev/null || echo "0")
+
+    if [ "$CLAIMABLE" -gt 0 ]; then
+        # Find the highest priority claimable feature whose dependencies are met
+        NEXT=$(cat .harness/features.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+features = data.get('features', [])
+passing_ids = {f['id'] for f in features if f['status'] == 'passing'}
+claimable = [
+    f for f in features
+    if f['status'] in ('pending', 'failed')
+    and all(dep in passing_ids for dep in f.get('depends_on', []))
+]
+if claimable:
+    claimable.sort(key=lambda f: f.get('priority', 999))
+    f = claimable[0]
+    status_note = ' (retry)' if f['status'] == 'failed' else ''
+    scope = ', '.join(f.get('scope', [])) if f.get('scope') else 'no scope defined'
+    print(f'{f[\"id\"]}: {f[\"description\"]} (priority {f.get(\"priority\", \"unset\")}){status_note} [scope: {scope}]')
+" 2>/dev/null || echo "")
+
+        if [ -n "$NEXT" ]; then
+            echo "There are $CLAIMABLE claimable feature(s). Pick up the next one: $NEXT"
+            echo "Read .harness/features.json for full details, then claim it via TaskUpdate."
+            exit 2
+        fi
+    fi
+fi
+
+# No remaining work
+exit 0

@@ -1,0 +1,13 @@
+{
+  "project": "vv-claude-harness",
+  "stack": "custom",
+  "created": "2026-07-22",
+  "harness": "vv-harness",
+  "git_identity": {
+    "user_name": "Ovidiu Eftimie",
+    "user_email": "eovidiu@gmail.com",
+    "ssh_key": "none (SSH unavailable; HTTPS via gh credential helper, account eovidiu)",
+    "ssh_host": "github.com"
+  },
+  "team_structure": null
+}

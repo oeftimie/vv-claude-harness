@@ -1,5 +1,11 @@
-# Claude Code local config
-.claude/
+# Claude Code local config (shared hooks and settings are committed)
+.claude/*
+!.claude/hooks/
+!.claude/settings.json
+.claude/settings.local.json
+
+# Harness transient session state
+.harness/SESSION_INCOMPLETE
 
 # OS files
 .DS_Store
