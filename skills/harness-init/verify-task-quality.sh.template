@@ -55,6 +55,9 @@ increment_correction_cycles() {
     if [ ! -f ".harness/features.json" ]; then
         return 0
     fi
+    # Clear any tmp orphaned by an earlier killed run: the guarded mv below
+    # must only ever promote a tmp that THIS python invocation wrote.
+    rm -f .harness/features.json.tmp
     python3 - "$FEATURE_ID" <<'PYEOF'
 import json, sys
 target_id = sys.argv[1]

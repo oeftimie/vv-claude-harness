@@ -43,11 +43,15 @@ for entry in features:
               file=sys.stderr)
 
 passing_ids = {f.get('id') for f in valid if f.get('status') == 'passing'}
-claimable = [
-    f for f in valid
-    if f.get('status') in ('pending', 'failed')
-    and all(dep in passing_ids for dep in f.get('depends_on') or [])
-]
+claimable = []
+for f in valid:
+    try:
+        if f.get('status') in ('pending', 'failed') \
+                and all(dep in passing_ids for dep in f.get('depends_on') or []):
+            claimable.append(f)
+    except Exception as exc:
+        print(f"check-remaining-tasks: skipping malformed feature entry "
+              f"{f.get('id')!r}: {exc}", file=sys.stderr)
 if claimable:
     claimable.sort(key=lambda f: f.get('priority') or 999)
     f = claimable[0]

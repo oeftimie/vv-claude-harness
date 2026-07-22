@@ -682,6 +682,30 @@ assert_rc2 "$RC" "ht: a malformed feature entry does not stop idle reassignment"
 assert_contains "$OUT" "F003" "ht: the valid claimable feature is still offered"
 assert_contains "$OUT" "malformed feature entry" "ht: the malformed entry is noted on stderr"
 
+DIR_HF="$WORK/ht-remaining-malformed-field"
+make_fixture "$DIR_HF"
+install_hooks "$DIR_HF"
+python3 - "$DIR_HF/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["status"] = "pending"
+        feature["depends_on"] = 5
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_hook "$DIR_HF" check-remaining-tasks.sh '{}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht: a malformed field inside a feature does not stop idle reassignment"
+assert_contains "$OUT" "F003" "ht: the valid claimable feature is still offered past a bad field"
+assert_contains "$OUT" "malformed feature entry" "ht: the bad-field entry is noted on stderr"
+
 DIR_HQ="$WORK/ht-quality-noinit"
 make_fixture "$DIR_HQ"
 install_hooks "$DIR_HQ"
@@ -746,6 +770,28 @@ else
   fail "ht: features.json changed on an untargeted rejection"
 fi
 assert_contains "$OUT" "no feature_id" "ht: untargeted rejection notes the missing feature_id"
+
+DIR_HQ4="$WORK/ht-quality-stale-tmp"
+make_fixture "$DIR_HQ4"
+install_hooks "$DIR_HQ4"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ4/.harness/init.sh"
+printf 'STALE GARBAGE NOT JSON' > "$DIR_HQ4/.harness/features.json.tmp"
+SUM_BEFORE=$(cksum < "$DIR_HQ4/.harness/features.json")
+OUT=$(run_hook "$DIR_HQ4" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht: rejection with a stale tmp present still exits 2"
+SUM_AFTER=$(cksum < "$DIR_HQ4/.harness/features.json")
+if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
+  pass "ht: a stale features.json.tmp is never promoted over features.json"
+else
+  fail "ht: a stale features.json.tmp clobbered features.json"
+fi
+if [ -f "$DIR_HQ4/.harness/features.json.tmp" ]; then
+  fail "ht: the stale tmp should be cleared, not left to poison a later run"
+else
+  pass "ht: the stale tmp is cleared"
+fi
 
 SETTINGS_BLOCK_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import os
