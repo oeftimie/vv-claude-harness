@@ -24,8 +24,8 @@
 
 ## Session 3 - 2026-07-22 (single-session)
 - Feature: F003 - [OVI-48] P0.3 hook template robustness + fixture test coverage
-- Status: implementation complete; PR #25 open, CI + adversarial review + merge in progress this session
-- Tests: 109/109 passing (77 baseline + 32 new; TDD red phase confirmed 13 failing first)
+- Status: complete; PR #25 reviewed (reviewer2 APPROVE WITH NITS; reviewer REQUEST CHANGES -> blocker + nit fixed in a4a7119 with red-first regression tests, merge per reviewer's own fix-then-merge recommendation after re-verdict window lapsed), merged by Claude
+- Tests: 115/115 passing (77 baseline + 38 new across TDD and review cycles; red phases confirmed 13, then 4 failing first)
 - Coverage: n/a (shell suite, no coverage tooling; full_test is the gate)
 - Decisions: CLAUDE_PROJECT_DIR anchor in all 4 gate templates; verify-task-quality is the sole non-lead features.json writer (targeted, atomic, trailing newline) — details in context_summary.md
 - Next: /harness-issue-prep OVI-46 -> F002 (next P0, still unprepped; do NOT trust its bootstrap spec.hash), then implement. Also refresh this repo's live .claude/hooks/*.sh from the fixed templates (out of F003 scope, deferred deliberately)

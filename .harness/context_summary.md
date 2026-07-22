@@ -85,3 +85,10 @@ This file is referenced in CLAUDE.md and loaded every session.
   during TDD red (suite is intentionally failing) and increments correction_cycles via
   the live hook. Pattern: complete the red-phase task only after green, or expect a
   false-positive metric to reset.
+- Review value: two independent reviewers; the opus reviewer reproduced a real blocker
+  the lead's self-review missed (a stale features.json.tmp orphaned by a killed run is
+  promoted by the guarded mv — guard-on-existence proves the tmp exists, not that this
+  run wrote it). Fixed with rm -f before the write + the repro as a regression test.
+- Reviewer latency: verdicts arrive in delayed bursts (20-45 min), not streamed. Budget
+  for it, ping once, keep doing non-merge work; don't spawn duplicate reviewers (one
+  redundant spawn cost a full second review this session).
