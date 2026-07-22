@@ -15,6 +15,7 @@
       "Bash(git rev-parse*)",
       "Bash(git log*)",
       "Bash(git status*)",
+      "Bash(gh pr merge*)",
       "Read(./.harness/**)"
     ]
   },
