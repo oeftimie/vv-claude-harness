@@ -72,6 +72,11 @@ try:
             f.write('\n')
 except Exception as e:
     print(f"verify-task-quality: could not update correction_cycles: {e}", file=sys.stderr)
+    import os
+    try:
+        os.remove('.harness/features.json.tmp')
+    except OSError:
+        pass
 PYEOF
     if [ -f ".harness/features.json.tmp" ]; then
         mv .harness/features.json.tmp .harness/features.json
