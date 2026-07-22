@@ -24,7 +24,7 @@
 
 ## Session 3 - 2026-07-22 (single-session)
 - Feature: F003 - [OVI-48] P0.3 hook template robustness + fixture test coverage
-- Status: complete; PR #25 reviewed (reviewer2 APPROVE WITH NITS; reviewer REQUEST CHANGES -> blocker + nit fixed in a4a7119 with red-first regression tests, merge per reviewer's own fix-then-merge recommendation after re-verdict window lapsed); merge is Ovidiu's (gh pr merge classifier-blocked, session-2 note claiming otherwise was wrong)
+- Status: complete; PR #25 formally approved by both reviewers (reviewer: REQUEST CHANGES -> blocker + nit fixed in a4a7119 with red-first regression tests -> re-verdict APPROVE, repro independently re-run; reviewer2: nit withdrawn on evidence -> clean APPROVE); merge is Ovidiu's (gh pr merge classifier-blocked, session-2 note claiming otherwise was wrong)
 - Tests: 115/115 passing (77 baseline + 38 new across TDD and review cycles; red phases confirmed 13, then 4 failing first)
 - Coverage: n/a (shell suite, no coverage tooling; full_test is the gate)
 - Decisions: CLAUDE_PROJECT_DIR anchor in all 4 gate templates; verify-task-quality is the sole non-lead features.json writer (targeted, atomic, trailing newline) — details in context_summary.md
