@@ -10,3 +10,4 @@
 - Imported OVI-44's 21 sub-issues as features F001-F021 (depends_on mirrors the epic graph)
 - Installed quality-gate hooks (.claude/hooks/) and .claude/settings.json
 - Next: per-issue loop starting with F001 / OVI-47
+- 2026-07-22 /harness-issue-prep OVI-47 -> F001: SV ASK (2 Qs answered), RV PASS; normalized spec + fresh spec.hash written to features.json; local-only (no stamp/label, Linear untouched)
