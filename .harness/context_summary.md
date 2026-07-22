@@ -21,12 +21,15 @@ This file is referenced in CLAUDE.md and loaded every session.
 ### Decisions
 - Custom stack targets: full_test = `bash test/run-tests.sh`; smoke_test = `bash -n hooks/*.sh` + `python3 -m json.tool` over both .claude-plugin/*.json manifests (2026-07-22, per OVI-44)
 - Features F001–F021 mirror the 21 OVI-44 sub-issues; depends_on mirrors the epic's dependency graph; "independent after P0" encoded as depends_on the three P0 features (2026-07-22)
+- Fixture harness.json version stays frozen at 4.0.0 with a "_note" key — bumping it to the live plugin version would recreate the copied-fact drift OVI-47 removes (2026-07-22)
+- LICENSE: MIT, owner decision recorded in the OVI-47 assumptions ledger (2026-07-22)
 
 ### Patterns
-- (none yet)
+- Tests must pin env vars the hooks read: run_session_start forces CLAUDE_PLUGIN_ROOT unset (env -u), run_session_start_with_root sets it — never inherit the test shell's env for hook behavior assertions (2026-07-22)
 
 ### Gotchas
 - Baseline before any change: 66/66 assertions passing on main @ d3661ff (2026-07-22)
+- README's v2.x date repeats live under the "## The evolution: v2.0 to v4.2" heading, not a section literally named "Evolution" as OVI-47 claimed (2026-07-22)
 
 ## Meta-Patterns
 <!-- Coordination insights that apply across features — NOT domain-specific.
