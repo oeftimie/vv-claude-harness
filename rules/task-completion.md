@@ -10,7 +10,7 @@ Before declaring ANY task complete:
 - [ ] Sub-agent/teammate work validated against lead context
 - [ ] Documentation updated (existing docs only)
 - [ ] `context_summary.md` updated with decisions, patterns, or gotchas discovered
-- [ ] {{USER_NAME}} informed of what changed
+- [ ] The user informed of what changed
 
 Additional for harness projects:
 - [ ] `features.json` audited against actual work done — every touched feature has updated status, test_file, coverage; unmapped work gets a new feature entry with `discovered_via`

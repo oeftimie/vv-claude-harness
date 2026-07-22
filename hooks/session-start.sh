@@ -89,29 +89,42 @@ if [ -f "$H/context_summary.md" ]; then
     | head -20 | sed 's/^/    /' || true
 fi
 
-EXPECTED=$(python3 -c '
+EXPECTED_NAME=$(python3 -c '
+import json, sys
+try:
+    print(json.load(open(sys.argv[1])).get("git_identity", {}).get("user_name", ""))
+except Exception:
+    pass
+' "$H/harness.json" 2>/dev/null || true)
+EXPECTED_EMAIL=$(python3 -c '
 import json, sys
 try:
     print(json.load(open(sys.argv[1])).get("git_identity", {}).get("user_email", ""))
 except Exception:
     pass
 ' "$H/harness.json" 2>/dev/null || true)
-ACTUAL=$(git config user.email 2>/dev/null || true)
-if [ -n "$EXPECTED" ] && [ "$EXPECTED" != "$ACTUAL" ]; then
+ACTUAL_NAME=$(git config user.name 2>/dev/null || true)
+ACTUAL_EMAIL=$(git config user.email 2>/dev/null || true)
+MISMATCH=""
+if [ -n "$EXPECTED_NAME" ] && [ "$EXPECTED_NAME" != "$ACTUAL_NAME" ]; then MISMATCH=1; fi
+if [ -n "$EXPECTED_EMAIL" ] && [ "$EXPECTED_EMAIL" != "$ACTUAL_EMAIL" ]; then MISMATCH=1; fi
+if [ -n "$MISMATCH" ]; then
   echo ""
   echo "WARNING: git identity mismatch."
-  echo "harness.json expects <$EXPECTED> but git config user.email is <${ACTUAL:-unset}>."
+  echo "harness.json expects $EXPECTED_NAME <$EXPECTED_EMAIL> but git config has" \
+    "${ACTUAL_NAME:-unset} <${ACTUAL_EMAIL:-unset}>."
   echo "Fix the identity before any push/pull/clone."
 fi
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-<vv-harness plugin root>}"
 echo ""
-echo "Agent Teams protocol: read $PLUGIN_ROOT/rules/agent-teams-protocol.md" \
-  "before spawning teammates."
-echo "Code-quality limits: $PLUGIN_ROOT/rules/code-quality.md (read before writing code)."
-echo "Context summary format: $PLUGIN_ROOT/rules/context-summary.md" \
-  "(read before editing context_summary.md)."
-echo "Completion checklist: $PLUGIN_ROOT/rules/task-completion.md" \
-  "(read before declaring work complete)."
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  echo "Agent Teams protocol: read $CLAUDE_PLUGIN_ROOT/rules/agent-teams-protocol.md" \
+    "before spawning teammates."
+  echo "Code-quality limits: $CLAUDE_PLUGIN_ROOT/rules/code-quality.md (read before writing code)."
+  echo "Context summary format: $CLAUDE_PLUGIN_ROOT/rules/context-summary.md" \
+    "(read before editing context_summary.md)."
+  echo "Completion checklist: $CLAUDE_PLUGIN_ROOT/rules/task-completion.md" \
+    "(read before declaring work complete)."
+fi
 echo "Run /harness-continue for the full interactive flow (mode choice, smoke test, team plan)."
 exit 0

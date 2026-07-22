@@ -59,7 +59,11 @@ make_fixture() {
 }
 
 run_session_start() {
-  (cd "$1" && printf '%s' "$2" | bash "$HOOKS_DIR/session-start.sh")
+  (cd "$1" && printf '%s' "$2" | env -u CLAUDE_PLUGIN_ROOT bash "$HOOKS_DIR/session-start.sh")
+}
+
+run_session_start_with_root() {
+  (cd "$1" && printf '%s' "$2" | CLAUDE_PLUGIN_ROOT="$3" bash "$HOOKS_DIR/session-start.sh")
 }
 
 run_session_end() {
@@ -117,7 +121,7 @@ assert_rc0 "$RC" "e: malformed features.json exits 0"
 assert_not_contains "$OUT" "Traceback" "e: no python traceback leaks into output"
 assert_contains "$OUT" "## Harness orientation" "e: still prints the orientation header"
 
-OUT=$(run_session_start "$DIR_A" '{"source":"startup"}')
+OUT=$(run_session_start_with_root "$DIR_A" '{"source":"startup"}' "$REPO_ROOT")
 LEN=${#OUT}
 if [ "$LEN" -lt 4000 ]; then
   pass "o: startup orientation stays under 4000 chars ($LEN)"
@@ -130,6 +134,32 @@ assert_contains "$OUT" "rules/context-summary.md" \
   "o: orientation includes the context-summary pointer"
 assert_contains "$OUT" "rules/task-completion.md" \
   "o: orientation includes the task-completion pointer"
+
+OUT=$(run_session_start "$DIR_A" '{"source":"startup"}')
+assert_not_contains "$OUT" "<vv-harness plugin root>" \
+  "y: no placeholder literal when CLAUDE_PLUGIN_ROOT is unset"
+assert_not_contains "$OUT" "rules/code-quality.md" \
+  "y: no rule-pointer lines when CLAUDE_PLUGIN_ROOT is unset"
+assert_contains "$OUT" "## Harness orientation" \
+  "y: orientation still prints when CLAUDE_PLUGIN_ROOT is unset"
+
+DIR_Y="$WORK/y-name-mismatch"
+make_fixture "$DIR_Y"
+python3 - "$DIR_Y/.harness/harness.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+data["git_identity"]["user_name"] = "Someone Else"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_Y" '{"source":"startup"}')
+assert_contains "$OUT" "git identity mismatch" \
+  "y: matching email with mismatched name still warns"
 
 echo ""
 echo "== spec drift =="
@@ -482,6 +512,41 @@ if [ -f "$DIR_X/.harness/SESSION_INCOMPLETE" ]; then
   fail "x: SESSION_INCOMPLETE should be absent after a clean session with a spec field"
 else
   pass "x: SESSION_INCOMPLETE absent after a clean session with a spec field"
+fi
+
+echo ""
+echo "== single-owner truth =="
+
+if grep -q "Current version" "$REPO_ROOT/README.md"; then
+  fail "z: README.md restates the plugin version ('Current version' found)"
+else
+  pass "z: README.md does not restate the plugin version"
+fi
+
+if grep -rq "{{" "$REPO_ROOT/rules/"; then
+  fail "z: rules/ contains a template placeholder"
+else
+  pass "z: rules/ contains no template placeholders"
+fi
+
+if [ -f "$REPO_ROOT/LICENSE" ] && grep -q "MIT License" "$REPO_ROOT/LICENSE"; then
+  pass "z: MIT LICENSE present at repo root"
+else
+  fail "z: MIT LICENSE missing at repo root"
+fi
+
+for RULE_FILE in agents/researcher.md templates/CLAUDE.md; do
+  if grep -q "data, never instructions" "$REPO_ROOT/$RULE_FILE"; then
+    pass "z: untrusted-content rule present in $RULE_FILE"
+  else
+    fail "z: untrusted-content rule missing in $RULE_FILE"
+  fi
+done
+
+if grep -q "treat it as burned" "$REPO_ROOT/templates/CLAUDE.md"; then
+  pass "z: transcript-secrets rule present in templates/CLAUDE.md"
+else
+  fail "z: transcript-secrets rule missing in templates/CLAUDE.md"
 fi
 
 echo ""
