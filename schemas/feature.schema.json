@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oeftimie/vv-claude-harness/schemas/feature.schema.json",
+  "title": "vv-harness features.json",
+  "description": "Canonical definition of the .harness/features.json envelope and the feature object it contains. This is the single authoritative source for the field list; rules/agent-teams-protocol.md and skills/harness-init/SKILL.md link here instead of restating it. scripts/validate-features.py implements these checks by hand (stdlib only, no jsonschema dependency) so this file documents intent for humans and external tools rather than being loaded at validation time.",
+  "type": "object",
+  "required": ["features"],
+  "properties": {
+    "project": {
+      "type": "string",
+      "description": "Project name, set once at /harness-init time."
+    },
+    "created": {
+      "type": "string",
+      "description": "ISO date the harness was initialized for this project."
+    },
+    "total_features": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of entries in features[]. Kept in sync by whoever adds or removes a feature."
+    },
+    "passing": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of features with status \"passing\". Kept in sync alongside total_features."
+    },
+    "features": {
+      "type": "array",
+      "description": "The tracked feature list. Each entry is a feature object (see $defs/feature).",
+      "items": { "$ref": "#/$defs/feature" }
+    }
+  },
+  "$defs": {
+    "feature": {
+      "type": "object",
+      "required": [
+        "id", "description", "priority", "status", "scope",
+        "depends_on", "assigned_to", "test_file", "coverage", "notes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^F[0-9]{3}$",
+          "description": "Unique feature id, e.g. F001. Lead assigns at feature-creation time; never reused."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the feature is. Once a spec object is attached, editing this string invalidates spec.hash."
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Lower numbers claim first. Lead sets at creation time."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "in-progress", "blocked", "passing", "failed"],
+          "description": "Exhaustive enum. See the Feature Schema section of agent-teams-protocol.md for the meaning of each value."
+        },
+        "scope": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Directories and files this feature owns. Used in spawn prompts to define teammate boundaries."
+        },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^F[0-9]{3}$" },
+          "description": "Feature ids that must reach status \"passing\" before this one may start."
+        },
+        "assigned_to": {
+          "type": ["string", "null"],
+          "description": "Teammate name when Agent Teams is active, or \"single-session\"; null otherwise."
+        },
+        "test_file": {
+          "type": ["string", "null"],
+          "description": "Path to the test file proving this feature. Required non-null once status is \"passing\"."
+        },
+        "coverage": {
+          "type": ["number", "null"],
+          "description": "Coverage percentage on touched code. Required non-null once status is \"passing\"."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Free-form context: Linear issue id, decisions, anything not captured by other fields."
+        },
+        "correction_cycles": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Operational metric, optional for backward compatibility with pre-v3.3 features.json files. Incremented automatically by verify-task-quality.sh on each TaskCompleted rejection. Never manually set."
+        },
+        "scope_expansions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Operational metric, optional for backward compatibility. Files/directories added to scope after initial assignment."
+        },
+        "approaches_tried": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Operational metric, optional for backward compatibility. Brief notes on approaches attempted before the passing implementation."
+        },
+        "failure_reason": {
+          "type": ["string", "null"],
+          "description": "Operational metric, optional for backward compatibility. Why the feature reached status \"failed\"."
+        },
+        "discovered_via": {
+          "type": ["string", "null"],
+          "description": "Operational metric, optional for backward compatibility. Id of the feature whose implementation revealed the need for this one."
+        },
+        "spec": {
+          "type": ["object", "null"],
+          "description": "Optional spec-verification record; absent or null means unverified. See schemas/readiness-stamp.md for the canonical hashing recipe.",
+          "properties": {
+            "hash": { "type": "string", "description": "sha256 of the description string exactly as stored." },
+            "verdict": { "type": "string", "enum": ["PASS", "ASK", "BLOCK"] },
+            "sv_version": { "type": "string" },
+            "verified_at": { "type": "string" },
+            "source": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

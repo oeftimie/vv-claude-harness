@@ -71,37 +71,11 @@ Create `.harness/` with these files:
 }
 ```
 
-Each feature has this shape:
-
-```json
-{
-  "id": "F001",
-  "description": "FEATURE_DESCRIPTION",
-  "priority": 1,
-  "status": "pending",
-  "scope": ["src/feature/", "tests/feature/"],
-  "depends_on": [],
-  "assigned_to": null,
-  "test_file": null,
-  "coverage": null,
-  "notes": null,
-  "correction_cycles": 0,
-  "scope_expansions": [],
-  "approaches_tried": [],
-  "failure_reason": null,
-  "discovered_via": null,
-  "spec": null
-}
-```
-
-**Status values** (exhaustive enum): `pending`, `in-progress`, `blocked`, `passing`, `failed`.
-
-**Operational metrics** (updated automatically or by the lead — used in retrospectives and for dynamic model selection):
-- `correction_cycles`: incremented by the `verify-task-quality.sh` hook each time a TaskCompleted is rejected. High values signal the feature was harder than expected.
-- `scope_expansions`: array of file/directory strings added to scope after initial assignment. Frequent expansions mean the initial scope was too narrow.
-- `approaches_tried`: brief notes on approaches attempted before the passing implementation. Populated by the teammate in the task-complete message to lead.
-- `failure_reason`: why the feature reached `status: "failed"`. Essential for understanding root cause without re-reading conversation history.
-- `discovered_via`: ID of the feature whose implementation revealed the need for this feature (discovery lineage). Different from `depends_on`, which is a technical dependency.
+Each feature's shape (the 16 fields, which are required vs. optional, the status enum) is
+defined once in `${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json` and illustrated with the
+one worked example in the Feature Schema section of
+`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. `scripts/validate-features.py`
+enforces it in the test suite.
 
 Feature is not done until:
 - `status` is `"passing"`

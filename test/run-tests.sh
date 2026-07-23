@@ -50,6 +50,10 @@ assert_rc2() {
   if [ "$1" -eq 2 ]; then pass "$2"; else fail "$2 -- exit code $1"; fi
 }
 
+assert_rc_nonzero() {
+  if [ "$1" -ne 0 ]; then pass "$2"; else fail "$2 -- expected a nonzero exit code"; fi
+}
+
 # Copies the fixture into $1 and turns it into a committed git repo with a quiet identity.
 make_fixture() {
   mkdir -p "$1"
@@ -552,6 +556,80 @@ else
 fi
 
 echo ""
+echo "== feature schema validator =="
+
+VALIDATE_SCRIPT="$REPO_ROOT/scripts/validate-features.py"
+FEATURE_SCHEMA="$REPO_ROOT/schemas/feature.schema.json"
+
+if python3 -m json.tool "$FEATURE_SCHEMA" >/dev/null 2>&1; then
+  pass "fsv: schemas/feature.schema.json is valid JSON"
+else
+  fail "fsv: schemas/feature.schema.json is not valid JSON"
+fi
+
+SCHEMA_DIALECT=$(python3 -c \
+  'import json, sys; print(json.load(open(sys.argv[1])).get("$schema", ""))' \
+  "$FEATURE_SCHEMA" 2>/dev/null)
+case "$SCHEMA_DIALECT" in
+  *2020-12*) pass "fsv: feature.schema.json declares draft 2020-12" ;;
+  *) fail "fsv: feature.schema.json \$schema is '$SCHEMA_DIALECT', expected draft 2020-12" ;;
+esac
+
+FSV_DIR="$WORK/fsv"
+mkdir -p "$FSV_DIR"
+
+RC=0
+python3 "$VALIDATE_SCRIPT" "$FIXTURE_SRC/.harness/features.json" >/dev/null 2>&1 || RC=$?
+assert_rc0 "$RC" "fsv: validator passes on the shared test fixture (pre-v3.3 fields absent)"
+
+fsv_mutate() {
+  # $1: output filename under $FSV_DIR, $2: python snippet mutating dict `d` in place
+  python3 - "$FIXTURE_SRC/.harness/features.json" "$FSV_DIR/$1" <<PYEOF
+import json, sys
+d = json.load(open(sys.argv[1]))
+$2
+json.dump(d, open(sys.argv[2], "w"))
+PYEOF
+}
+
+fsv_mutate "bad-status.json" 'd["features"][0]["status"] = "done"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-status.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects invalid status enum value"
+assert_contains "$OUT" "features[0].status" "fsv: bad status error names the location"
+
+fsv_mutate "missing-id.json" 'del d["features"][0]["id"]'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/missing-id.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects a feature missing 'id'"
+assert_contains "$OUT" "features[0]" "fsv: missing id error names the location"
+
+fsv_mutate "bad-type.json" 'd["features"][0]["correction_cycles"] = "three"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-type.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects wrong type for correction_cycles"
+assert_contains "$OUT" "features[0].correction_cycles" \
+  "fsv: bad correction_cycles error names the location"
+
+fsv_mutate "dup-id.json" 'd["features"][1]["id"] = d["features"][0]["id"]'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/dup-id.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects a duplicate feature id"
+assert_contains "$OUT" "features[1].id" "fsv: duplicate id error names the location"
+
+fsv_mutate "dangling-dep.json" 'd["features"][1]["depends_on"] = ["F099"]'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/dangling-dep.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects a dangling depends_on reference"
+assert_contains "$OUT" "features[1].depends_on" "fsv: dangling depends_on error names the location"
+
+fsv_mutate "unknown-field.json" 'd["features"][0]["proof"] = "sha256:abc"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/unknown-field.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: an unknown top-level feature field is a warning, not an error"
+assert_contains "$OUT" "proof" "fsv: unknown field warning names the field"
+
+echo ""
 echo "== spec gate artifacts =="
 
 READINESS_STAMP_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
@@ -686,6 +764,22 @@ if grep -q "treat it as burned" "$REPO_ROOT/templates/CLAUDE.md"; then
 else
   fail "z: transcript-secrets rule missing in templates/CLAUDE.md"
 fi
+
+FULL_EXAMPLE_COUNT=$(grep -r '"correction_cycles": 0' "$REPO_ROOT" --include="*.md" \
+  | wc -l | tr -d ' ')
+if [ "$FULL_EXAMPLE_COUNT" -eq 1 ]; then
+  pass "z: the full 16-field feature JSON example appears exactly once across *.md"
+else
+  fail "z: the full feature JSON example appears $FULL_EXAMPLE_COUNT times across *.md, expected 1"
+fi
+
+for DOC_FILE in rules/agent-teams-protocol.md skills/harness-init/SKILL.md README.md; do
+  if grep -q "schemas/feature.schema.json" "$REPO_ROOT/$DOC_FILE"; then
+    pass "z: $DOC_FILE links to schemas/feature.schema.json"
+  else
+    fail "z: $DOC_FILE does not link to schemas/feature.schema.json"
+  fi
+done
 
 echo ""
 echo "== hook templates =="

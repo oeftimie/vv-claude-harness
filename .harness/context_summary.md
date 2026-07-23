@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F002 / OVI-46 merged (434308b), OVI-46 Done in Linear
-- Next up: /harness-issue-prep the next P0 issue, then implement; also refresh live .claude/hooks/*.sh from F003's fixed templates
+- Currently working on: F004 / OVI-49 implemented this session (schema + validator + doc dedup); PR pending, CI + review in progress
+- Next up: /harness-issue-prep the next P0/P1 issue, then implement; also refresh live .claude/hooks/*.sh from F003's fixed templates; F022 (discovered_via F004) needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -25,6 +25,8 @@ This file is referenced in CLAUDE.md and loaded every session.
 - LICENSE: MIT, owner decision recorded in the OVI-47 assumptions ledger (2026-07-22)
 - All four per-project hook templates anchor to `PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"` and cd there — hooks must not depend on the session's cwd; settings.json invokes them as `"$CLAUDE_PROJECT_DIR"/.claude/hooks/<name>.sh` (2026-07-22, OVI-48)
 - verify-task-quality is the only features.json writer besides the lead: targeted feature only, indent=2, trailing newline, atomic .tmp + mv (2026-07-22, OVI-48)
+- schemas/feature.schema.json (JSON Schema draft 2020-12) is now the single owner of the features.json envelope + 16-field feature object; scripts/validate-features.py hand-implements the same checks in stdlib Python (no jsonschema dependency, per spec) rather than loading the schema at runtime — the schema documents intent for humans/external tools, the script enforces it (2026-07-23, F004/OVI-49)
+- Only the 10 pre-v3.3 core fields are required in the schema/validator; the 5 operational metrics + `spec` are optional and type-checked only when present, so the existing shared test fixture (test/fixtures/harness-project/.harness/features.json, which predates v3.3 and has no envelope fields either) validates unmodified — kept envelope fields (project/created/total_features/passing) optional too for the same backward-compat reason (2026-07-23, F004)
 
 ### Patterns
 - Tests must pin env vars the hooks read: run_session_start forces CLAUDE_PLUGIN_ROOT unset (env -u), run_session_start_with_root sets it — never inherit the test shell's env for hook behavior assertions (2026-07-22)
@@ -36,6 +38,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - macOS resolves `/var` → `/private/var`, so `git rev-parse --show-toplevel` returns a different prefix than an unresolved `$TMPDIR`/CLAUDE_PROJECT_DIR path — absolute-path prefix-stripping against the git toplevel silently fails on macOS; prefer CLAUDE_PROJECT_DIR (2026-07-22)
 - session-start.sh's own warning blocks are the reference pattern for new orientation checks: wrap the whole python heredoc body in try/except pass AND pipe stderr to /dev/null with `|| true` at the shell level — belt-and-suspenders against a malformed features.json ever leaking a traceback into model context (2026-07-23, F002)
 - This repo's live .claude/hooks/*.sh lag the fixed templates: the old verify-task-quality corrupted correction_cycles (F003 +1, no trailing newline) when the gate rejected a TDD red-phase task completion; reset to 0 as a false positive. Refresh live hooks from templates after OVI-48 merges (2026-07-22)
+- Dogfooding scripts/validate-features.py against this repo's own live .harness/features.json (not required by F004's acceptance criteria, just a sanity check) found F001-F004's `coverage` field holds a descriptive string ("n/a (shell suite, no coverage tooling; full_test N/N is the gate)"), not the number|null the OVI-49 spec types verbatim. Did not loosen the schema or rewrite the live data to make this pass — filed as F022 (discovered_via F004) instead, since silently relaxing a just-verified spec to match existing non-conformant data would be gaming the check, not fixing it (2026-07-23, F004)
 
 ## Meta-Patterns
 <!-- Coordination insights that apply across features — NOT domain-specific.
@@ -117,3 +120,30 @@ This file is referenced in CLAUDE.md and loaded every session.
   again this session, exactly as logged in session 3's retrospective. This is now a
   confirmed recurring pattern, not a one-off — the fix is procedural (mark red-phase
   tasks complete only after green), not a hook bug.
+
+## Meta-Session 2026-07-23 (session 5, F004/OVI-49)
+- Scope accuracy: F004's scope array (6 files/dirs) matched the work exactly — 2 new
+  files (schema, validator) plus edits to the 4 listed docs/tests; zero expansions.
+- Model calibration: single-session, one correction_cycles increment on F004 — the same
+  documented TDD-red-phase false-rejection (marked the "write failing tests" task
+  complete while the suite was intentionally red). Third session in a row hitting this;
+  the procedural fix (mark red-phase tasks complete only after green) is confirmed but
+  still occasionally slips — worth tightening the harness-continue skill's task template
+  wording rather than relying on memory alone.
+- Discovery lineage: dogfooding the new validator against this repo's own live
+  .harness/features.json (not part of F004's acceptance criteria) surfaced a real
+  spec-vs-reality gap: `coverage` is typed number|null per the OVI-49 spec, but this
+  project's own F001-F004 store a descriptive string there since it has no coverage
+  tooling. Filed as F022 (discovered_via F004) rather than silently loosening the schema
+  to match — a just-verified spec shouldn't bend to accommodate pre-existing drift
+  without a deliberate decision.
+- Approach patterns: designing the validator as hand-rolled stdlib checks (not a
+  jsonschema-loader reading the schema file) works cleanly once the two are written
+  side by side from the same field list; the schema stays the human/external-tool
+  reference, the script is the enforcement, and the spec explicitly asked for this
+  split (no jsonschema dependency) rather than treating it as duplication to avoid.
+- Approach patterns: keeping the 5 v3.3 operational-metric fields (plus `spec`) optional
+  and type-checked-only-when-present let the existing shared test fixture
+  (test/fixtures/harness-project/.harness/features.json, pre-v3.3 shape, no envelope
+  fields) validate without modification — avoided scope creep onto test/fixtures/, which
+  wasn't in F004's scope list and is used by many unrelated hook tests.
