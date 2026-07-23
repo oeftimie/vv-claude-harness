@@ -7,6 +7,10 @@
 # Read hook input from stdin
 INPUT=$(cat)
 
+# Anchor to the project root so the hook works from any working directory
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+cd "$PROJECT_ROOT" 2>/dev/null || exit 0
+
 # Only enforce if a scope file exists (teammates only, not lead agents)
 SCOPE_FILE=".claude/teammate-scope.txt"
 if [ ! -f "$SCOPE_FILE" ]; then
@@ -26,7 +30,6 @@ fi
 
 # Normalize absolute paths to relative (tool input uses absolute paths,
 # scope patterns use relative paths like "src/auth/")
-PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 if [[ "$FILE_PATH" == "$PROJECT_ROOT/"* ]]; then
     FILE_PATH="${FILE_PATH#$PROJECT_ROOT/}"
 fi
@@ -45,5 +48,5 @@ echo "Edit blocked: $FILE_PATH is outside your assigned scope."
 echo "Your scope (from $SCOPE_FILE):"
 cat "$SCOPE_FILE" | grep -v '^#' | grep -v '^$'
 echo ""
-echo "If you need access to this file, message the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Need access to $FILE_PATH because [reason].\" })"
+echo "Repair: request a scope expansion from the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Requesting scope expansion to $FILE_PATH because [reason].\" })"
 exit 2

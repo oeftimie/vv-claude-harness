@@ -7,6 +7,10 @@
 # Read hook input from stdin
 INPUT=$(cat)
 
+# Anchor to the project root so the hook works from any working directory
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+cd "$PROJECT_ROOT" 2>/dev/null || exit 0
+
 # Extract the command from tool input
 COMMAND=$(echo "$INPUT" | python3 -c "
 import json, sys

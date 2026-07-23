@@ -46,6 +46,10 @@ assert_rc0() {
   if [ "$1" -eq 0 ]; then pass "$2"; else fail "$2 -- exit code $1"; fi
 }
 
+assert_rc2() {
+  if [ "$1" -eq 2 ]; then pass "$2"; else fail "$2 -- exit code $1"; fi
+}
+
 # Copies the fixture into $1 and turns it into a committed git repo with a quiet identity.
 make_fixture() {
   mkdir -p "$1"
@@ -72,6 +76,27 @@ run_session_end() {
 
 run_statusline() {
   printf '%s' "$1" | bash "$HOOKS_DIR/statusline.sh"
+}
+
+TEMPLATES_DIR="$REPO_ROOT/skills/harness-init"
+
+# Installs the hook templates into $1/.claude/hooks/ as executable .sh files.
+install_hooks() {
+  mkdir -p "$1/.claude/hooks"
+  for TPL in "$TEMPLATES_DIR"/*.sh.template; do
+    BASE=$(basename "$TPL" .template)
+    cp "$TPL" "$1/.claude/hooks/$BASE"
+    chmod +x "$1/.claude/hooks/$BASE"
+  done
+}
+
+# Invokes a hook the way settings.json does: "$CLAUDE_PROJECT_DIR"/.claude/hooks/<name>.sh
+run_hook() {
+  (cd "$1" && printf '%s' "$3" | CLAUDE_PROJECT_DIR="$1" "$1/.claude/hooks/$2")
+}
+
+run_hook_from_subdir() {
+  (cd "$1/sub" && printf '%s' "$3" | CLAUDE_PROJECT_DIR="$1" "$1/.claude/hooks/$2")
 }
 
 echo "== session-start.sh =="
@@ -554,6 +579,247 @@ else
 fi
 
 echo ""
+echo "== hook templates =="
+
+if grep -q '^# Degraded behavior:' "$TEMPLATES_DIR/check-remaining-tasks.sh.template"; then
+  pass "ht: check-remaining-tasks documents its degraded behavior"
+else
+  fail "ht: check-remaining-tasks lacks a '# Degraded behavior:' header line"
+fi
+
+if grep -q '^# Formatting:' "$TEMPLATES_DIR/verify-task-quality.sh.template"; then
+  pass "ht: verify-task-quality documents its formatting ownership"
+else
+  fail "ht: verify-task-quality lacks a '# Formatting:' header line"
+fi
+
+if grep -q 'mv ' "$TEMPLATES_DIR/verify-task-quality.sh.template"; then
+  pass "ht: verify-task-quality writes features.json atomically (.tmp + mv)"
+else
+  fail "ht: verify-task-quality has no mv-based atomic write"
+fi
+
+DIR_HS="$WORK/ht-scope"
+make_fixture "$DIR_HS"
+install_hooks "$DIR_HS"
+mkdir -p "$DIR_HS/sub"
+IN_SCOPE_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/src/parser/x.py\"}}"
+OUT_SCOPE_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/src/other/y.py\"}}"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$IN_SCOPE_JSON")
+RC=$?
+assert_rc0 "$RC" "ht: enforce-scope allows edits when no scope file exists"
+printf 'src/parser/\n' > "$DIR_HS/.claude/teammate-scope.txt"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$IN_SCOPE_JSON")
+RC=$?
+assert_rc0 "$RC" "ht: enforce-scope allows an in-scope edit"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON")
+RC=$?
+assert_rc2 "$RC" "ht: enforce-scope blocks an out-of-scope edit"
+assert_contains "$OUT" "src/other/y.py" "ht: block message names the file"
+assert_contains "$OUT" "scope expansion" "ht: block message names the scope-expansion repair"
+OUT=$(run_hook_from_subdir "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON")
+RC=$?
+assert_rc2 "$RC" "ht: enforce-scope still blocks when cwd is a subdirectory"
+
+DIR_HG="$WORK/ht-identity"
+make_fixture "$DIR_HG"
+install_hooks "$DIR_HG"
+PUSH_JSON='{"tool_input":{"command":"git push origin main"}}'
+OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$PUSH_JSON")
+RC=$?
+assert_rc0 "$RC" "ht: verify-git-identity allows git push on identity match"
+OUT=$(run_hook "$DIR_HG" verify-git-identity.sh '{"tool_input":{"command":"ls -la"}}')
+RC=$?
+assert_rc0 "$RC" "ht: verify-git-identity ignores non-git commands"
+git -C "$DIR_HG" config user.name "Impostor"
+OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$PUSH_JSON")
+RC=$?
+assert_rc2 "$RC" "ht: verify-git-identity blocks git push on identity mismatch"
+assert_contains "$OUT" "Fix with: git config user.name" "ht: mismatch message includes the fix command"
+
+DIR_HR="$WORK/ht-remaining"
+make_fixture "$DIR_HR"
+install_hooks "$DIR_HR"
+OUT=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}')
+RC=$?
+assert_rc2 "$RC" "ht: check-remaining-tasks exits 2 when a feature is claimable"
+assert_contains "$OUT" "F003" "ht: offers the claimable feature id"
+python3 - "$DIR_HR/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    feature["status"] = "passing"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}')
+RC=$?
+assert_rc0 "$RC" "ht: check-remaining-tasks exits 0 when nothing is claimable"
+
+DIR_HM="$WORK/ht-remaining-malformed"
+make_fixture "$DIR_HM"
+install_hooks "$DIR_HM"
+python3 - "$DIR_HM/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+data["features"][0] = "not a feature object"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_hook "$DIR_HM" check-remaining-tasks.sh '{}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht: a malformed feature entry does not stop idle reassignment"
+assert_contains "$OUT" "F003" "ht: the valid claimable feature is still offered"
+assert_contains "$OUT" "malformed feature entry" "ht: the malformed entry is noted on stderr"
+
+DIR_HF="$WORK/ht-remaining-malformed-field"
+make_fixture "$DIR_HF"
+install_hooks "$DIR_HF"
+python3 - "$DIR_HF/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["status"] = "pending"
+        feature["depends_on"] = 5
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_hook "$DIR_HF" check-remaining-tasks.sh '{}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht: a malformed field inside a feature does not stop idle reassignment"
+assert_contains "$OUT" "F003" "ht: the valid claimable feature is still offered past a bad field"
+assert_contains "$OUT" "malformed feature entry" "ht: the bad-field entry is noted on stderr"
+
+DIR_HQ="$WORK/ht-quality-noinit"
+make_fixture "$DIR_HQ"
+install_hooks "$DIR_HQ"
+OUT=$(run_hook "$DIR_HQ" verify-task-quality.sh '{}')
+RC=$?
+assert_rc2 "$RC" "ht: verify-task-quality rejects when .harness/init.sh is missing"
+
+DIR_HQ2="$WORK/ht-quality-targeted"
+make_fixture "$DIR_HQ2"
+install_hooks "$DIR_HQ2"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ2/.harness/init.sh"
+python3 - "$DIR_HQ2/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["status"] = "in-progress"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_hook "$DIR_HQ2" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht: smoke failure rejects the targeted completion"
+METRICS=$(python3 - "$DIR_HQ2/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+with open(sys.argv[1]) as fh:
+    data = json.load(fh)
+by_id = {f["id"]: f for f in data["features"]}
+f2 = by_id["F002"].get("correction_cycles", 0)
+f3 = by_id["F003"].get("correction_cycles", 0)
+print(f"F002={f2} F003={f3}")
+PYEOF
+)
+assert_contains "$METRICS" "F002=1 F003=0" \
+  "ht: correction_cycles incremented only for the targeted feature"
+if [ -z "$(tail -c 1 "$DIR_HQ2/.harness/features.json")" ]; then
+  pass "ht: features.json keeps its trailing newline after the metrics write"
+else
+  fail "ht: features.json lost its trailing newline after the metrics write"
+fi
+
+DIR_HQ3="$WORK/ht-quality-untargeted"
+make_fixture "$DIR_HQ3"
+install_hooks "$DIR_HQ3"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ3/.harness/init.sh"
+SUM_BEFORE=$(cksum < "$DIR_HQ3/.harness/features.json")
+OUT=$(run_hook "$DIR_HQ3" verify-task-quality.sh '{}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht: untargeted rejection still exits 2"
+SUM_AFTER=$(cksum < "$DIR_HQ3/.harness/features.json")
+if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
+  pass "ht: features.json is byte-identical after an untargeted rejection"
+else
+  fail "ht: features.json changed on an untargeted rejection"
+fi
+assert_contains "$OUT" "no feature_id" "ht: untargeted rejection notes the missing feature_id"
+
+DIR_HQ4="$WORK/ht-quality-stale-tmp"
+make_fixture "$DIR_HQ4"
+install_hooks "$DIR_HQ4"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ4/.harness/init.sh"
+printf 'STALE GARBAGE NOT JSON' > "$DIR_HQ4/.harness/features.json.tmp"
+SUM_BEFORE=$(cksum < "$DIR_HQ4/.harness/features.json")
+OUT=$(run_hook "$DIR_HQ4" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht: rejection with a stale tmp present still exits 2"
+SUM_AFTER=$(cksum < "$DIR_HQ4/.harness/features.json")
+if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
+  pass "ht: a stale features.json.tmp is never promoted over features.json"
+else
+  fail "ht: a stale features.json.tmp clobbered features.json"
+fi
+if [ -f "$DIR_HQ4/.harness/features.json.tmp" ]; then
+  fail "ht: the stale tmp should be cleared, not left to poison a later run"
+else
+  pass "ht: the stale tmp is cleared"
+fi
+
+SETTINGS_BLOCK_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import os
+import re
+import sys
+
+root = sys.argv[1]
+text = open(os.path.join(root, "skills", "harness-init", "SKILL.md")).read()
+blocks = [b for b in re.findall(r"```json\n(.*?)\n```", text, re.DOTALL) if "statusLine" in b]
+if len(blocks) != 1:
+    print(f"expected exactly one settings block containing statusLine, found {len(blocks)}")
+    sys.exit()
+block = blocks[0]
+if "bash .claude/hooks/" in block:
+    print("settings block still invokes hooks cwd-relative (bash .claude/hooks/...)")
+if block.count('\\"$CLAUDE_PROJECT_DIR\\"/.claude/hooks/') < 5:
+    print("settings block lacks the CLAUDE_PROJECT_DIR-absolute invocation form")
+if '"Bash(bash .claude/hooks/*.sh)"' in block:
+    print("permissions allowlist still lists the cwd-relative hook form")
+PYEOF
+)
+if [ -z "$SETTINGS_BLOCK_ERRORS" ]; then
+  pass "ht: SKILL.md settings block invokes hooks via \$CLAUDE_PROJECT_DIR"
+else
+  fail "ht: SKILL.md settings block -- $SETTINGS_BLOCK_ERRORS"
+fi
+
+echo ""
 echo "== agent frontmatter =="
 
 AGENT_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
@@ -610,6 +876,18 @@ for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh"; do
     pass "n: bash -n $(basename "$SCRIPT")"
   else
     fail "n: bash -n $(basename "$SCRIPT")"
+  fi
+done
+
+SYNTAX_DIR="$WORK/template-syntax"
+mkdir -p "$SYNTAX_DIR"
+for TPL in "$TEMPLATES_DIR"/*.sh.template; do
+  BASE=$(basename "$TPL" .template)
+  cp "$TPL" "$SYNTAX_DIR/$BASE"
+  if bash -n "$SYNTAX_DIR/$BASE"; then
+    pass "n: bash -n $BASE (template)"
+  else
+    fail "n: bash -n $BASE (template)"
   fi
 done
 

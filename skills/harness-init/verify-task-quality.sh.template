@@ -9,10 +9,13 @@
 #   Stage 2: full_test  — complete suite with coverage
 # Failing at Stage 1 avoids the cost of a full test run.
 # correction_cycles is incremented in features.json on any rejection.
+# Formatting: this hook's features.json writes own indent=2, a trailing
+# newline, and atomic replacement (.tmp + mv); only the targeted feature
+# is modified.
 
 set -euo pipefail
 
-PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$PROJECT_ROOT"
 
 # Read hook input from stdin
@@ -40,29 +43,46 @@ if [ ! -f ".harness/init.sh" ]; then
     exit 2
 fi
 
-# Increment correction_cycles for all in-progress features.
+# Increment correction_cycles for the targeted in-progress feature.
 # This tracks how many times the quality gate rejected completion —
 # useful for retrospectives and dynamic model selection.
 increment_correction_cycles() {
-    if [ -f ".harness/features.json" ]; then
-        python3 - "$FEATURE_ID" <<'PYEOF'
+    if [ -z "$FEATURE_ID" ]; then
+        echo "verify-task-quality: no feature_id in task metadata or subject;" \
+             "skipping the correction_cycles update." >&2
+        return 0
+    fi
+    if [ ! -f ".harness/features.json" ]; then
+        return 0
+    fi
+    # Clear any tmp orphaned by an earlier killed run: the guarded mv below
+    # must only ever promote a tmp that THIS python invocation wrote.
+    rm -f .harness/features.json.tmp
+    python3 - "$FEATURE_ID" <<'PYEOF'
 import json, sys
-target_id = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else None
+target_id = sys.argv[1]
 try:
     with open('.harness/features.json', 'r') as f:
         data = json.load(f)
     changed = False
     for feature in data.get('features', []):
-        if feature.get('status') == 'in-progress':
-            if target_id is None or feature.get('id') == target_id:
-                feature['correction_cycles'] = feature.get('correction_cycles', 0) + 1
-                changed = True
+        if feature.get('id') == target_id and feature.get('status') == 'in-progress':
+            feature['correction_cycles'] = feature.get('correction_cycles', 0) + 1
+            changed = True
     if changed:
-        with open('.harness/features.json', 'w') as f:
+        with open('.harness/features.json.tmp', 'w') as f:
             json.dump(data, f, indent=2)
+            f.write('\n')
 except Exception as e:
-    pass  # Don't fail the hook on JSON errors
+    print(f"verify-task-quality: could not update correction_cycles: {e}", file=sys.stderr)
+    import os
+    try:
+        os.remove('.harness/features.json.tmp')
+    except OSError:
+        pass
 PYEOF
+    if [ -f ".harness/features.json.tmp" ]; then
+        mv .harness/features.json.tmp .harness/features.json
     fi
 }
 

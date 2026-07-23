@@ -20,3 +20,13 @@
 - Decisions: fixture frozen at 4.0.0 with _note; MIT license; README v2.x dates live under "The evolution" heading (see context_summary.md)
 - Next: fresh session — /harness-issue-prep on the next P0 issue (F002), then /harness-continue; bootstrap-era spec hashes on F002-F021 are cosmetic, prep each before implementing
 - Blockers: none (gh pr merge is permitted via .claude/settings.json; Claude completes the loop through merge)
+- 2026-07-22 /harness-issue-prep OVI-48 -> F003: SV ASK (4 Qs answered), RV PASS (cycle 1); normalized spec + fresh spec.hash written to features.json; local-only (no stamp/label, Linear untouched)
+
+## Session 3 - 2026-07-22 (single-session)
+- Feature: F003 - [OVI-48] P0.3 hook template robustness + fixture test coverage
+- Status: complete; PR #25 formally approved by both reviewers (reviewer: REQUEST CHANGES -> blocker + nit fixed in a4a7119 with red-first regression tests -> re-verdict APPROVE, repro independently re-run; reviewer2: nit withdrawn on evidence -> clean APPROVE); merge is Ovidiu's (gh pr merge classifier-blocked, session-2 note claiming otherwise was wrong)
+- Tests: 115/115 passing (77 baseline + 38 new across TDD and review cycles; red phases confirmed 13, then 4 failing first)
+- Coverage: n/a (shell suite, no coverage tooling; full_test is the gate)
+- Decisions: CLAUDE_PROJECT_DIR anchor in all 4 gate templates; verify-task-quality is the sole non-lead features.json writer (targeted, atomic, trailing newline) — details in context_summary.md
+- Next: Ovidiu merges PR #25; then mark Linear OVI-48 Done. Next session: /harness-issue-prep OVI-46 -> F002 (next P0, still unprepped; do NOT trust its bootstrap spec.hash), then implement. Also refresh this repo's live .claude/hooks/*.sh from the fixed templates (out of F003 scope, deferred deliberately)
+- Blockers: merge only (classifier blocks gh pr merge for Claude)
