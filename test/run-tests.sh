@@ -351,6 +351,30 @@ assert_rc0 "$RC" "w: hook-absent case exits 0"
 assert_not_contains "$OUT" "scope enforcement unarmed" \
   "w: no warning when enforce-scope.sh itself is not installed"
 
+DIR_W5="$WORK/scope-empty-string-assigned"
+make_fixture "$DIR_W5"
+mkdir -p "$DIR_W5/.claude/hooks"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_W5/.claude/hooks/enforce-scope.sh"
+python3 - "$DIR_W5/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["assigned_to"] = ""
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_W5" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w: empty-string assigned_to case exits 0"
+assert_contains "$OUT" "scope enforcement unarmed" \
+  "w: warns on an empty-string assigned_to too (spec says != null, not just truthy)"
+
 echo ""
 echo "== session-end.sh =="
 

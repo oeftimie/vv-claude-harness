@@ -82,7 +82,7 @@ try:
     root, features_path = sys.argv[1], sys.argv[2]
     feats = json.load(open(features_path)).get("features", [])
     armed_needed = any(
-        f.get("status") == "in-progress" and f.get("assigned_to")
+        f.get("status") == "in-progress" and f.get("assigned_to") is not None
         for f in feats
     )
     if armed_needed:
