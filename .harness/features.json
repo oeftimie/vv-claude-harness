@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 21,
-  "passing": 0,
+  "total_features": 22,
+  "passing": 4,
   "features": [
     {
       "id": "F001",
@@ -116,7 +116,7 @@
       "id": "F004",
       "description": "[OVI-49] P1.1: Canonical feature schema (one owner) + stdlib validator \u2014 Create schemas/feature.schema.json as the single authoritative definition of the features.json envelope and 16-field feature object, plus a stdlib-only scripts/validate-features.py validator with location-aware errors. Deduplicate the field-by-field prose from the protocol, harness-init SKILL, and README into schema links, and wire validation into the test suite.",
       "priority": 4,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "schemas/feature.schema.json",
         "scripts/validate-features.py",
@@ -127,12 +127,15 @@
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh (== feature schema validator == and z: dedup checks)",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 145/145 is the gate)",
       "notes": "Linear: OVI-49. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
-      "correction_cycles": 0,
+      "correction_cycles": 1,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Hand-rolled stdlib validator (no jsonschema dep) mirroring the schema's checks, per spec; schema itself stays the human/external-tool-facing authority.",
+        "Required only the 10 pre-v3.3 core fields; the 5 operational metrics + spec are optional/type-checked-if-present so the existing shared test fixture (pre-v3.3 shape) validates unmodified -- avoided touching test/fixtures/ out of scope."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {
@@ -694,6 +697,29 @@
         "verified_at": "2026-07-22T18:15:31Z",
         "source": "linear:OVI-60"
       }
+    },
+    {
+      "id": "F022",
+      "description": "[discovered via F004] .harness/features.json's own `coverage` field (F001-F003) holds a descriptive string (\"n/a (shell suite, no coverage tooling; full_test N/N is the gate)\") but schemas/feature.schema.json (F004) types `coverage` as number|null per the OVI-49 spec verbatim. Decide and apply one fix: relax the schema to allow a string, or replace the live features.json coverage strings with null and move the explanation into `notes`.",
+      "priority": 4,
+      "status": "pending",
+      "scope": [
+        "schemas/feature.schema.json",
+        ".harness/features.json"
+      ],
+      "depends_on": [
+        "F004"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered while dogfooding scripts/validate-features.py against the live features.json during F004; not fixed there since it's outside F004's scope.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F004",
+      "spec": null
     }
   ]
 }

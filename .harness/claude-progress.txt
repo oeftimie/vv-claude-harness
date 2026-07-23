@@ -41,3 +41,20 @@
 - Next: /harness-issue-prep the next P0 issue, then implement. Also refresh this repo's live .claude/hooks/*.sh from F003's fixed templates (still deferred)
 - Blockers: none
 - 2026-07-23 F002/OVI-46 merged @ 434308b; adversarial reviewer never reported after ~80 min despite a ping, so a lead self-review (with Ovidiu's explicit go-ahead, checked twice via AskUserQuestion) ran instead, found + fixed one real gap (assigned_to truthy check vs. spec's literal "!= null"), then merged on green CI; Linear OVI-46 Done
+
+## Session 5 - 2026-07-23 (single-session)
+- Feature: F004 - [OVI-49] P1.1 canonical feature schema (one owner) + stdlib validator
+- Status: implementation complete; PR pending, CI + adversarial review + merge in progress this session
+- Tests: 145/145 passing (124 baseline + 21 new; TDD red phase confirmed all new fsv/z checks failing first)
+- Coverage: n/a (shell suite, no coverage tooling; full_test 145/145 is the gate)
+- Decisions: schemas/feature.schema.json (draft 2020-12) is the canonical envelope+16-field
+  definition; scripts/validate-features.py hand-implements the same checks in stdlib Python
+  (no jsonschema dep, per spec); only the 10 pre-v3.3 core fields are required, the 5 metric
+  fields + spec are optional/type-checked-if-present for backward compat — details in
+  context_summary.md
+- Discovered: F022 (coverage field type: spec says number|null, this repo's own F001-F004
+  store a descriptive string) — filed, not fixed, deliberately out of F004's scope
+- Next: /harness-issue-prep the next P1 issue (this is P1.1; P1.2 and P2.2 both depend on
+  this schema per the ticket's "Dependencies" note), then implement. Also refresh this
+  repo's live .claude/hooks/*.sh from F003's fixed templates (still deferred); decide F022
+- Blockers: none
