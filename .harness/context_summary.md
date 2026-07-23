@@ -4,7 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F004 / OVI-49 implemented this session (schema + validator + doc dedup); PR pending, CI + review in progress
+- Currently working on: F004 / OVI-49 merged (5b15018), OVI-49 Done in Linear
 - Next up: /harness-issue-prep the next P0/P1 issue, then implement; also refresh live .claude/hooks/*.sh from F003's fixed templates; F022 (discovered_via F004) needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
@@ -147,3 +147,11 @@ This file is referenced in CLAUDE.md and loaded every session.
   (test/fixtures/harness-project/.harness/features.json, pre-v3.3 shape, no envelope
   fields) validate without modification — avoided scope creep onto test/fixtures/, which
   wasn't in F004's scope list and is used by many unrelated hook tests.
+- Review value: adversarial Opus reviewer independently re-ran the full suite, probed
+  every edge case named in the spawn prompt (bool-as-int, missing "features" key,
+  non-dict entries, non-object root), and confirmed all 4 acceptance criteria itself
+  rather than trusting the lead's claim — APPROVE with 3 non-blocking nits, all already
+  captured by F022 or cosmetic (validator's depends_on check relies on the dangling-ref
+  check rather than duplicating the schema's `^F[0-9]{3}$` pattern check — acceptable
+  drift given the no-jsonschema constraint, but noted for anyone touching this again).
+  Merged on green CI (2 checks) + APPROVE @ 5b15018; Linear OVI-49 Done.

@@ -44,7 +44,7 @@
 
 ## Session 5 - 2026-07-23 (single-session)
 - Feature: F004 - [OVI-49] P1.1 canonical feature schema (one owner) + stdlib validator
-- Status: implementation complete; PR pending, CI + adversarial review + merge in progress this session
+- Status: complete; PR #29 merged @ 5b15018; OVI-49 Done in Linear
 - Tests: 145/145 passing (124 baseline + 21 new; TDD red phase confirmed all new fsv/z checks failing first)
 - Coverage: n/a (shell suite, no coverage tooling; full_test 145/145 is the gate)
 - Decisions: schemas/feature.schema.json (draft 2020-12) is the canonical envelope+16-field
@@ -58,3 +58,5 @@
   this schema per the ticket's "Dependencies" note), then implement. Also refresh this
   repo's live .claude/hooks/*.sh from F003's fixed templates (still deferred); decide F022
 - Blockers: none
+- 2026-07-23 adversarial Opus review APPROVE with 3 non-blocking nits (all captured by
+  F022 or cosmetic); CI green (2 checks); merged --merge on approval; Linear OVI-49 Done
