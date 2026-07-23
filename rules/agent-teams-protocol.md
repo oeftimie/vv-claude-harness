@@ -75,6 +75,11 @@ Every feature in `.harness/features.json` uses this shape:
 }
 ```
 
+This is the one worked example; `${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json` is the
+authoritative field-by-field definition (types, patterns, required vs. optional) that this
+example illustrates. The prose below only covers semantics the schema can't express (who
+writes a field, when).
+
 **Status values** (exhaustive enum):
 - `pending`: ready for work, no one has claimed it
 - `in-progress`: a teammate or single-session agent is actively working on it

@@ -212,7 +212,8 @@ vv-harness/                                            # Plugin root
 │   ├── context-summary.md                             # context_summary.md template + update rules
 │   └── task-completion.md                             # Completion checklist
 ├── schemas/
-│   └── readiness-stamp.md                             # Stamp, hashing, HMAC, park/resolution contracts
+│   ├── readiness-stamp.md                             # Stamp, hashing, HMAC, park/resolution contracts
+│   └── feature.schema.json                            # Canonical features.json envelope + feature object
 └── templates/
     └── CLAUDE.md                                      # Core standards template (manual copy to ~/.claude/)
 ```
@@ -406,6 +407,13 @@ readiness stamp posted to a Linear issue. An external issue-to-PR runner (out of
 for this repo) is a **consumer**: it validates the stamp's hash and HMAC before trusting
 an issue as ready for unattended work. See [schemas/readiness-stamp.md](./schemas/readiness-stamp.md)
 for the stamp shape, the canonical hashing recipe, and the consumer verification rules.
+
+The `features.json` envelope and the 16-field feature object have a single owner too:
+[schemas/feature.schema.json](./schemas/feature.schema.json) is the canonical definition;
+`scripts/validate-features.py` enforces it (stdlib only, no `jsonschema` dependency) and is
+wired into `test/run-tests.sh`. The worked example lives in the Feature Schema section of
+`rules/agent-teams-protocol.md` — this README and `skills/harness-init/SKILL.md` link there
+instead of restating the field list.
 
 ## Some screenshots from my sessions
 
