@@ -40,3 +40,4 @@
 - Decisions: warning keyed on (status in-progress AND assigned_to set) AND hook installed AND scope file missing; same try/except-pass + `|| true` guard pattern as the existing spec-drift block — details in context_summary.md
 - Next: /harness-issue-prep the next P0 issue, then implement. Also refresh this repo's live .claude/hooks/*.sh from F003's fixed templates (still deferred)
 - Blockers: none
+- 2026-07-23 F002/OVI-46 merged @ 434308b; adversarial reviewer never reported after ~80 min despite a ping, so a lead self-review (with Ovidiu's explicit go-ahead, checked twice via AskUserQuestion) ran instead, found + fixed one real gap (assigned_to truthy check vs. spec's literal "!= null"), then merged on green CI; Linear OVI-46 Done

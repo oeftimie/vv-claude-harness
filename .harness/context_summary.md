@@ -4,7 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F002 / OVI-46 implemented (scope-enforcement warning, 124/124), PR in flight
+- Currently working on: F002 / OVI-46 merged (434308b), OVI-46 Done in Linear
 - Next up: /harness-issue-prep the next P0 issue, then implement; also refresh live .claude/hooks/*.sh from F003's fixed templates
 
 ## Cross-Cutting Concerns
@@ -93,3 +93,27 @@ This file is referenced in CLAUDE.md and loaded every session.
 - Reviewer latency: verdicts arrive in delayed bursts (20-45 min), not streamed. Budget
   for it, ping once, keep doing non-merge work; don't spawn duplicate reviewers (one
   redundant spawn cost a full second review this session).
+- Reviewer latency (session 4 correction): the 20-45 min pattern is NOT a guarantee.
+  F002's reviewer never reported after ~80 min and a ping. Waited in stages, checked
+  with Ovidiu twice via AskUserQuestion rather than guessing, then did a documented
+  self-review on his direction — found and fixed one real gap (spec said "!= null",
+  code did a truthy check). Self-review under user direction is a legitimate fallback
+  when it's this stalled; the F003 lesson (self-review can miss things a real reviewer
+  catches) still applies, so treat it as lower-confidence than an actual review, not
+  equivalent.
+
+## Meta-Session 2026-07-23 (session 4, F002/OVI-46)
+- Scope accuracy: F002's scope array (5 files) matched the work exactly; the fix moved
+  entirely within it (session-start.sh, SKILL.md, team-spawn-prompts.md,
+  agent-teams-protocol.md, run-tests.sh) — zero expansions.
+- Model calibration: single-session, no correction cycles from the quality gate itself
+  (only the known TDD-red-phase false-rejection on tasks #6/#7, already a documented
+  gotcha, not a real correction).
+- Approach patterns: self-review under explicit user direction, after two AskUserQuestion
+  checkpoints during an ~80-min reviewer stall, surfaced a genuine spec-vs-code gap
+  (truthy check vs. literal "!= null") that a less careful pass would have missed —
+  self-review is not worthless, but it is not a substitute for independent review either.
+- Gate friction (recurrence): TaskCompleted rejected #6/#7 completion during red phase
+  again this session, exactly as logged in session 3's retrospective. This is now a
+  confirmed recurring pattern, not a one-off — the fix is procedural (mark red-phase
+  tasks complete only after green), not a hook bug.
