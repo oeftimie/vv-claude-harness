@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F003 / OVI-48 implemented (hook template robustness, 109/109), PR in flight
-- Next up: /harness-issue-prep OVI-46 → F002 (next P0 by priority, still unprepped), then implement
+- Currently working on: F002 / OVI-46 prepped (SV PASS direct, 0 questions; normalized spec + fresh hash in features.json 2026-07-23)
+- Next up: F002 implementation via /harness-continue (per-issue loop: TDD → tests green → PR + CI → review → merge); also refresh live .claude/hooks/*.sh from the fixed templates
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
