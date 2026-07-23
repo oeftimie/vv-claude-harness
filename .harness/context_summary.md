@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F002 / OVI-46 prepped (SV PASS direct, 0 questions; normalized spec + fresh hash in features.json 2026-07-23)
-- Next up: F002 implementation via /harness-continue (per-issue loop: TDD → tests green → PR + CI → review → merge); also refresh live .claude/hooks/*.sh from the fixed templates
+- Currently working on: F002 / OVI-46 implemented (scope-enforcement warning, 124/124), PR in flight
+- Next up: /harness-issue-prep the next P0 issue, then implement; also refresh live .claude/hooks/*.sh from F003's fixed templates
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -34,6 +34,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - Baseline before any change: 66/66 assertions passing on main @ d3661ff (2026-07-22)
 - README's v2.x date repeats live under the "## The evolution: v2.0 to v4.2" heading, not a section literally named "Evolution" as OVI-47 claimed (2026-07-22)
 - macOS resolves `/var` → `/private/var`, so `git rev-parse --show-toplevel` returns a different prefix than an unresolved `$TMPDIR`/CLAUDE_PROJECT_DIR path — absolute-path prefix-stripping against the git toplevel silently fails on macOS; prefer CLAUDE_PROJECT_DIR (2026-07-22)
+- session-start.sh's own warning blocks are the reference pattern for new orientation checks: wrap the whole python heredoc body in try/except pass AND pipe stderr to /dev/null with `|| true` at the shell level — belt-and-suspenders against a malformed features.json ever leaking a traceback into model context (2026-07-23, F002)
 - This repo's live .claude/hooks/*.sh lag the fixed templates: the old verify-task-quality corrupted correction_cycles (F003 +1, no trailing newline) when the gate rejected a TDD red-phase task completion; reset to 0 as a false positive. Refresh live hooks from templates after OVI-48 merges (2026-07-22)
 
 ## Meta-Patterns

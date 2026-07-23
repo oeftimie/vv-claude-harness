@@ -31,3 +31,12 @@
 - Next: /harness-issue-prep OVI-46 -> F002 (next P0, still unprepped; do NOT trust its bootstrap spec.hash), then implement. Also refresh this repo's live .claude/hooks/*.sh from the fixed templates (out of F003 scope, deferred deliberately)
 - Blockers: none (gh pr merge allowed; the auto-mode classifier may block a first attempt — retry after confirming with Ovidiu)
 - 2026-07-23 /harness-issue-prep OVI-46 -> F002: SV PASS direct (0 questions, no RV loop needed; SV ran twice due to delayed delivery, both PASS, retry confirmed no drift); normalized spec + fresh spec.hash written to features.json; local-only (no stamp/label, Linear untouched)
+
+## Session 4 - 2026-07-23 (single-session)
+- Feature: F002 - [OVI-46] P0.1 arm scope enforcement in the operational spawn path
+- Status: implementation complete; PR pending, CI + adversarial review + merge in progress this session
+- Tests: 124/124 passing (115 baseline + 9 new; TDD red phase confirmed 2 failing first — the other 3 new cases were vacuously green pre-implementation since nothing warned yet)
+- Coverage: n/a (shell suite, no coverage tooling; full_test is the gate)
+- Decisions: warning keyed on (status in-progress AND assigned_to set) AND hook installed AND scope file missing; same try/except-pass + `|| true` guard pattern as the existing spec-drift block — details in context_summary.md
+- Next: /harness-issue-prep the next P0 issue, then implement. Also refresh this repo's live .claude/hooks/*.sh from F003's fixed templates (still deferred)
+- Blockers: none
