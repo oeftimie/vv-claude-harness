@@ -338,7 +338,7 @@ Scopes are stored in `features.json` under the `scope` field for each feature. T
 
 ### Mechanical Scope Enforcement
 
-The harness installs a PreToolUse hook (`enforce-scope.sh`) that blocks edits to files outside the teammate's assigned scope. The hook reads scope patterns from `.claude/teammate-scope.txt`. This file is created by the lead when spawning teammates — it is NOT a harness-init artifact.
+The harness installs a PreToolUse hook (`enforce-scope.sh`) that blocks edits to files outside the teammate's assigned scope. The hook reads scope patterns from `.claude/teammate-scope.txt`. This file is created by the lead when spawning teammates — it is NOT a harness-init artifact. Its lifecycle: created per spawn, rewritten per reassignment (when `TeammateIdle` picks up a new feature), deleted at Phase 5 teardown. Without it the hook fails open — no file, no enforcement.
 
 The lead writes this file before spawning each teammate:
 ```bash
