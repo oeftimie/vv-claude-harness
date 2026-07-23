@@ -13,6 +13,14 @@ The agent definitions set the default model per role (implementers and researche
 Sonnet; reviewer: Opus). A spawn-time `model` parameter overrides the frontmatter, so
 the lead applies the dynamic Opus-upgrade heuristic via the Agent tool call alone.
 
+## Pre-spawn checklist
+
+Before spawning a teammate on the shared-branch path (not worktree isolation), write
+`.claude/teammate-scope.txt` from the feature's `scope` array, one pattern per line.
+This arms the `enforce-scope.sh` PreToolUse hook — without the file, the hook fails
+open and the spawn's scope boundary is prose only. Rewrite it on reassignment; delete
+it at teardown. Worktree-isolated subagents skip this step (physical isolation).
+
 ---
 
 ## Feature Implementer (`subagent_type: "vv-harness:feature-implementer"`)

@@ -271,7 +271,15 @@ blocked, or the approved plan itself must change.
    TaskUpdate({ taskId: "3", addBlockedBy: ["1", "2"] })
    ```
 
-5. Spawn teammates as the vv-harness plugin agent types. Each definition bakes in the
+5. Before each teammate spawn on the shared-branch path, write
+   `.claude/teammate-scope.txt` from that feature's `scope` array in `features.json`,
+   one pattern per line — this arms the `enforce-scope.sh` PreToolUse hook, which
+   otherwise fails open (no file = no enforcement). Rewrite the file whenever
+   `TeammateIdle` reassigns that teammate to a different feature; delete it during
+   Phase 5 teardown. Worktree-isolated fallback subagents do NOT need this file — their
+   isolation is physical, not hook-enforced.
+
+6. Spawn teammates as the vv-harness plugin agent types. Each definition bakes in the
    role's reusable guardrails (TDD discipline, tool allowlist, scope rules, completion
    protocol), so the spawn prompt carries only per-feature specifics — use the templates
    from `team-spawn-prompts.md` in this skill's directory:
@@ -294,7 +302,7 @@ blocked, or the approved plan itself must change.
    The spawn tool is exposed as `Agent` (older CLIs called it `Task`); adapt to what your
    CLI exposes.
 
-6. At team start, confirm plan-approval messaging uses type `"message"` (the
+7. At team start, confirm plan-approval messaging uses type `"message"` (the
    `plan_approval_response` delivery-bug workaround) — one SendMessage round-trip with a
    teammate is the check; if it fails on a newer CLI, fall back to the worktree-subagent
    mode (Step 4, graceful degradation).
@@ -362,7 +370,9 @@ Do NOT write domain-specific decisions here — those go in the Domain sections.
 
 1. Send `shutdown_request` to all teammates via `SendMessage`
 2. Wait for `shutdown_response` from each
-3. Write handoff to `claude-progress.txt`:
+3. Delete `.claude/teammate-scope.txt` if it exists — it is per-teammate transient
+   state, not a harness-init artifact, and must not survive the team it armed.
+4. Write handoff to `claude-progress.txt`:
    ```
    ## Session [N] - [DATE] (Agent Teams: [N] teammates)
    - Teammates: [name (model): scope] for each
@@ -375,7 +385,7 @@ Do NOT write domain-specific decisions here — those go in the Domain sections.
    - Cost note: [models used, if relevant]
    - Next: [what the next session should do]
    ```
-4. Git commit
+5. Git commit
 
 ---
 

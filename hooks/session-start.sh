@@ -76,6 +76,26 @@ except Exception:
     pass
 PYEOF
 
+python3 - "$ROOT" "$H/features.json" <<'PYEOF' 2>/dev/null || true
+import json, os, sys
+try:
+    root, features_path = sys.argv[1], sys.argv[2]
+    feats = json.load(open(features_path)).get("features", [])
+    armed_needed = any(
+        f.get("status") == "in-progress" and f.get("assigned_to")
+        for f in feats
+    )
+    if armed_needed:
+        hook_exists = os.path.isfile(os.path.join(root, ".claude", "hooks", "enforce-scope.sh"))
+        scope_file_exists = os.path.isfile(os.path.join(root, ".claude", "teammate-scope.txt"))
+        if hook_exists and not scope_file_exists:
+            print("")
+            print("WARNING: scope enforcement unarmed: .claude/teammate-scope.txt missing;")
+            print("write it before spawning teammates or use worktree isolation.")
+except Exception:
+    pass
+PYEOF
+
 if [ -f "$H/claude-progress.txt" ]; then
   echo ""
   echo "Last handoff (claude-progress.txt, last 12 lines):"

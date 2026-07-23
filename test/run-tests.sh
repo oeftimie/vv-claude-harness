@@ -267,6 +267,91 @@ assert_not_contains "$OUT" "Traceback" "u: no python traceback leaks for a non-d
 assert_contains "$OUT" "## Harness orientation" "u: orientation header still present"
 
 echo ""
+echo "== scope enforcement warning =="
+
+DIR_W="$WORK/scope-unarmed"
+make_fixture "$DIR_W"
+mkdir -p "$DIR_W/.claude/hooks"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_W/.claude/hooks/enforce-scope.sh"
+python3 - "$DIR_W/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["assigned_to"] = "api"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_W" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w: unarmed-scope case exits 0"
+assert_contains "$OUT" "scope enforcement unarmed" \
+  "w: warns when a teammate is in-progress, the hook exists, and the scope file is missing"
+assert_contains "$OUT" ".claude/teammate-scope.txt" "w: warning names the missing file"
+
+DIR_W2="$WORK/scope-armed"
+make_fixture "$DIR_W2"
+mkdir -p "$DIR_W2/.claude/hooks"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_W2/.claude/hooks/enforce-scope.sh"
+printf 'src/hooks/\n' > "$DIR_W2/.claude/teammate-scope.txt"
+python3 - "$DIR_W2/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["assigned_to"] = "api"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_W2" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w: armed case exits 0"
+assert_not_contains "$OUT" "scope enforcement unarmed" \
+  "w: no warning once the scope file exists"
+
+DIR_W3="$WORK/scope-lead-only"
+make_fixture "$DIR_W3"
+mkdir -p "$DIR_W3/.claude/hooks"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_W3/.claude/hooks/enforce-scope.sh"
+OUT=$(run_session_start "$DIR_W3" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w: lead-only case exits 0"
+assert_not_contains "$OUT" "scope enforcement unarmed" \
+  "w: no warning when no feature has assigned_to set"
+
+DIR_W4="$WORK/scope-no-hook"
+make_fixture "$DIR_W4"
+python3 - "$DIR_W4/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["assigned_to"] = "api"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_W4" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w: hook-absent case exits 0"
+assert_not_contains "$OUT" "scope enforcement unarmed" \
+  "w: no warning when enforce-scope.sh itself is not installed"
+
+echo ""
 echo "== session-end.sh =="
 
 DIR_F="$WORK/f"
