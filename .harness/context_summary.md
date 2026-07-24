@@ -4,7 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F010 / OVI-52 implemented this session (qa_binding/proof/coverage_target/delivered/design_contract); PR pending, CI + review in progress
+- Currently working on: F010 / OVI-52 merged (e5f1fdf), OVI-52 Done in Linear
 - Next up: /harness-issue-prep the next P2/P3 issue (F011-F021 remain, most depend_on the now-passing F001/F002/F003 baseline). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (four things deferred now, same reason); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
@@ -303,3 +303,13 @@ This file is referenced in CLAUDE.md and loaded every session.
   "fully exercised" in this repo, the gate was built to degrade gracefully (skip when
   coverage isn't numeric) so it's correct and testable via fixture for any project,
   including this one whenever F022 is eventually resolved.
+- Review value: adversarial Opus reviewer independently exercised validate-features.py
+  against ~20 crafted inputs directly (not just re-reading test names), traced the WARN
+  block by hand against all 4 AC3 fixture cases, and confirmed session-end.sh's proof
+  note never reaches SESSION_INCOMPLETE by reading the code path — APPROVE with 1 real
+  nit (a line 1 char over the 100-char limit, fixed before merge) and 1 by-design
+  observation (F010 itself ships with no proof of its own, which the spec's
+  prospective-rule circularity explicitly permits). Also independently reconfirmed the
+  pre-existing F022 gap (live features.json's descriptive-string coverage doesn't pass
+  validate-features.py) without being asked — noted as orthogonal, not a defect of this
+  PR. Merged clean @ e5f1fdf; Linear OVI-52 Done.

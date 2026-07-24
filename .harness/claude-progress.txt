@@ -132,3 +132,6 @@
   .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred);
   decide F022
 - Blockers: none
+- 2026-07-24 adversarial Opus review APPROVE with 1 real nit (101-char line, fixed
+  before merge) and 1 by-design observation; independently reconfirmed the F022 gap
+  without being asked; merged @ e5f1fdf; Linear OVI-52 Done
