@@ -4,7 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F008 / OVI-50 implemented this session (shared harness_state.py); PR pending, CI + review in progress
+- Currently working on: F008 / OVI-50 merged (d0af1ac), OVI-50 Done in Linear
 - Next up: /harness-issue-prep the next P2 issue (P2.1/F009 or P2.2/F010, both unblocked by P1.1); also refresh live .claude/hooks/*.sh from F003's fixed templates AND from F008's new harness_state.py (now two things deferred, same reason); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
@@ -185,3 +185,10 @@ This file is referenced in CLAUDE.md and loaded every session.
   delegation-parity test would otherwise pass vacuously until session-start.sh's actual
   delegation logic existed — a good habit for any "output must be identical" acceptance
   criterion, not just a shell-test assertion.
+- Review value: adversarial Opus reviewer independently re-ran the full suite and cited
+  exact file:line for every one of the 9 acceptance criteria rather than taking the PR
+  description's claims at face value — APPROVE with 3 non-blocking nits (split-write
+  footgun in increment-correction-cycles if a future direct caller assumes exit 0 means
+  "persisted"; check-remaining-tasks.sh's silent no-fallback if harness_state.py is ever
+  missing; a cosmetic stderr-merge detail). Merged clean on green CI + APPROVE @
+  d0af1ac (no classifier block this time); Linear OVI-50 Done.

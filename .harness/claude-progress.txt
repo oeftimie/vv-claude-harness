@@ -79,3 +79,6 @@
   by P1.1). Also refresh this repo's live .claude/hooks/*.sh from F003's AND F008's fixed
   templates (still deferred); decide F022
 - Blockers: none
+- 2026-07-24 F008/OVI-50 merged @ d0af1ac; adversarial Opus review APPROVE with 3
+  non-blocking nits (split-write footgun, no-fallback in check-remaining-tasks.sh,
+  cosmetic stderr merge), no classifier block on this merge; Linear OVI-50 Done
