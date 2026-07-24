@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F007/OVI-56 prepped this session (platform-drift maintenance loop: runbook, weekly CI cron, workaround retirement conditions). Normalized, remote write-back done, local F007 mirrored, UNSTAMPED; not yet implemented. Corrected a stale local note that F005 had already created MAINTENANCE_LOG.md -- it does not exist; F005's dogfood-gate scope was dropped entirely this session (2026-07-24).
-- Next up: implement F007/OVI-56. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
+- Currently working on: F007/OVI-56 implemented and passing this session (docs/maintenance-runbook.md, .github/workflows/maintenance.yml, MAINTENANCE_LOG.md run #0, CLAUDE.md repo rule, retirement conditions in agent-teams-protocol.md/README.md). Not yet shipped (PR/CI/review/merge pending).
+- Next up: ship F007/OVI-56, then continue the OVI-44 epic with the next priority feature. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -427,3 +427,41 @@ This file is referenced in CLAUDE.md and loaded every session.
   hand (not just adding assertions to make the number move) is what surfaces bugs
   the original implementation-and-test pass didn't catch, because writing a test to
   match your own mental model of the code doesn't test the model itself.
+
+## Meta-Session 2026-07-24 (session 11, F007/OVI-56)
+- Scope accuracy: the prep's scope array included skills/harness-continue/team-
+  spawn-prompts.md for the "if fixed, remove the workaround" scenario, but RV's
+  prep-time amendment had already deferred actual removal to a separate follow-up
+  -- so that file needed no edit this session (a scope reduction, not an
+  expansion, and correctly anticipated at prep time rather than discovered mid-
+  implementation). README.md was a genuine scope expansion: enforcing the new
+  project-wide "every workaround needs a retirement condition" rule while leaving
+  README's own plan_approval_response mention un-conditioned would have been an
+  inconsistency a reviewer would likely have caught, so it was added proactively.
+- Model calibration: single-session, correction_cycles 3 -- still the same known
+  TDD-red-phase false-rejection pattern (8 sessions running now: F002-F010, F007).
+  This session it also visibly reverted 3 TaskUpdate(completed) calls back to
+  in_progress mid-session before the suite went green, confirming the hook
+  actively re-flips status rather than just logging a correction -- worth
+  remembering when a task list looks "wrong" mid-session; it may just be this.
+- Discovery lineage: no new features filed, but a substantive finding was made
+  and recorded directly in MAINTENANCE_LOG.md / rules/agent-teams-protocol.md
+  rather than as a features.json entry, since it's a maintenance-loop finding,
+  not an implementation task: the live plan_approval_response probe could not be
+  completed at all. SendMessage's own schema has no plan_approval_request
+  outgoing type for a teammate, and a spawned teammate confirmed via two
+  independent ToolSearch lookups that EnterPlanMode/ExitPlanMode aren't exposed
+  to it either, even though both tools exist and other agent definitions
+  reference ExitPlanMode. This also let us correct an actively wrong claim in
+  agent-teams-protocol.md ("plan_approval_request... works fine" for teammates)
+  that would otherwise have sat uncorrected indefinitely -- exactly the kind of
+  platform drift this feature exists to catch, on its very first run.
+- Approach patterns: given a live-testable claim (the delivery-bug retest),
+  actually running it via a spawned teammate rather than reasoning from
+  documentation alone surfaced a real, more significant finding than the
+  original question ("is bug X fixed") asked about. When Ovidiu was consulted
+  mid-probe about whether to dig further or record-and-move-on, he chose the
+  latter ("Record it as found and move on") -- a useful calibration: a
+  maintenance probe's job is to surface drift accurately, not to fully resolve
+  every thread it opens in the same session.
+- Review value: not yet reviewed as of this entry (PR pending).
