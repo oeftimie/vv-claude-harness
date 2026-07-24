@@ -73,10 +73,13 @@ and points to `/harness-init` instead of running any checks.
    `harness_state.py`) are the drift surface for a per-project doctor. The global
    v3.6-era stale-file manifest in `CHANGELOG.md` is explicitly scoped to `~/.claude/`
    only and does not apply here.
-7. **mld non-injection**: if `.harness/mld/` exists, `session-start.sh` must not
-   reference it anywhere — that directory is telemetry, never something read into the
-   model's context. If `.harness/mld/` doesn't exist, there is nothing to guard and no
-   finding is produced.
+7. **mld non-injection**: if `.harness/mld/` exists, the currently running plugin's
+   `hooks/session-start.sh` must not reference it anywhere — that directory is
+   telemetry, never something read into the model's context. This checks the
+   plugin's own copy rather than anything under the project's `.claude/hooks/`,
+   since `session-start.sh` is invoked directly from `CLAUDE_PLUGIN_ROOT` and is
+   never copied per-project. If `.harness/mld/` doesn't exist, or the plugin root
+   can't be determined, there is nothing to guard and no finding is produced.
 
 ## Finding classification
 
@@ -115,4 +118,4 @@ second time.
 - `harness-continue`'s Step 2.5 smoke test fails unexpectedly.
 - After manually editing anything under `.claude/` or `.harness/`.
 - Before or after upgrading a project that was initialized under an older harness
-  version — this replaces the four/five manual steps INSTALL.md used to require.
+  version — this replaces the five manual steps INSTALL.md used to require.

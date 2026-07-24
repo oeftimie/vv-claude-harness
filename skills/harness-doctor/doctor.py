@@ -49,7 +49,8 @@ def classify_drift(project_dir, rel_path):
     if log.returncode != 0 or not log.stdout.strip():
         return "no committed history for this file; treating as local"
     diff = subprocess.run(
-        ["git", "-C", project_dir, "diff", "--quiet", "HEAD", "--", rel_path]
+        ["git", "-C", project_dir, "diff", "--quiet", "HEAD", "--", rel_path],
+        capture_output=True,
     )
     if diff.returncode == 0:
         return "matches the last commit; any problem here is committed, not local"
@@ -291,16 +292,22 @@ def _check_context_summary(harness_dir):
     )]
 
 
-def check_mld_non_injection(project_dir):
+def check_mld_non_injection(project_dir, plugin_root):
     mld_dir = os.path.join(project_dir, ".harness", "mld")
     if not os.path.isdir(mld_dir):
         return []  # not-yet-applicable: nothing to guard if the directory doesn't exist
-    session_start = os.path.join(project_dir, ".claude", "hooks", "session-start.sh")
+    if not plugin_root:
+        return []  # can't check the plugin's own session-start.sh without its root
+    # session-start.sh is never copied into a project's .claude/hooks/ -- it is a
+    # plugin-level file invoked directly from CLAUDE_PLUGIN_ROOT, so the guarantee
+    # to check is the currently running plugin's copy, not anything per-project.
+    session_start = os.path.join(plugin_root, "hooks", "session-start.sh")
     if not os.path.isfile(session_start):
         return []
     if "mld" in open(session_start).read():
         return [Finding(
-            "session-start.sh references .harness/mld/ (non-injection guarantee broken)",
+            "the plugin's session-start.sh references .harness/mld/ "
+            "(non-injection guarantee broken)",
             "remove the reference -- .harness/mld/ must never be read into model context",
         )]
     return []
@@ -313,7 +320,7 @@ def run_checks(project_dir, plugin_root):
     findings.extend(check_settings(project_dir))
     findings.extend(check_gitignore(project_dir))
     findings.extend(check_harness_state_files(project_dir, plugin_root))
-    findings.extend(check_mld_non_injection(project_dir))
+    findings.extend(check_mld_non_injection(project_dir, plugin_root))
     return findings
 
 
