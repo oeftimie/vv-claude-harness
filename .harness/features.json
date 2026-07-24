@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 22,
-  "passing": 7,
+  "passing": 8,
   "features": [
     {
       "id": "F001",
@@ -724,7 +724,7 @@
       "id": "F022",
       "description": "[discovered via F004] .harness/features.json's own `coverage` field (F001-F003) holds a descriptive string (\"n/a (shell suite, no coverage tooling; full_test N/N is the gate)\") but schemas/feature.schema.json (F004) types `coverage` as number|null per the OVI-49 spec verbatim. Decide and apply one fix: relax the schema to allow a string, or replace the live features.json coverage strings with null and move the explanation into `notes`.",
       "priority": 4,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "schemas/feature.schema.json",
         ".harness/features.json"
@@ -733,12 +733,14 @@
         "F004"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh (fsv: coverage-string / coverage-bad-type cases)",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 250/250 is the gate)",
       "notes": "Discovered while dogfooding scripts/validate-features.py against the live features.json during F004; not fixed there since it's outside F004's scope.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Chose 'relax the schema' (per Ovidiu) over rewriting the live data: coverage now types as number|string|null in both schemas/feature.schema.json and scripts/validate-features.py's check_coverage. A descriptive string is accepted for projects without coverage tooling; bool/other types are still rejected. The live .harness/features.json now validates cleanly for the first time (previously 7 errors, F001-F004/F008-F010's string coverage values)."
+      ],
       "failure_reason": null,
       "discovered_via": "F004",
       "spec": null

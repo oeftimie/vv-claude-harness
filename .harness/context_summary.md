@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F010 / OVI-52 merged (e5f1fdf), OVI-52 Done in Linear
-- Next up: /harness-issue-prep the next P2/P3 issue (F011-F021 remain, most depend_on the now-passing F001/F002/F003 baseline). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (four things deferred now, same reason); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
+- Currently working on: F022 implemented this session (coverage: number|string|null); PR pending, CI + review in progress
+- Next up: /harness-issue-prep the next P2/P3 epic issue (F011-F021 remain, most depend_on the now-passing F001/F002/F003 baseline; F005/OVI-61 is next by priority order). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -19,6 +19,12 @@ This file is referenced in CLAUDE.md and loaded every session.
 ## Domain: Harness Plugin Engineering
 
 ### Decisions
+- F022 resolved: `coverage` is typed `number|string|null` in both
+  schemas/feature.schema.json and scripts/validate-features.py — Ovidiu chose
+  "relax the schema" over rewriting the live data, since this repo (and any other
+  shell-suite-only project) legitimately has no numeric coverage tooling. The live
+  .harness/features.json now validates cleanly for the first time (2026-07-24, per
+  Ovidiu)
 - Claim-matched proof (F010/OVI-52): five new optional feature fields (`qa_binding`,
   `proof`, `coverage_target`, `delivered`, `design_contract`), all backward-compatible
   (absent/null forever valid). The done-definition is now three tiers: passing
