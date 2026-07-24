@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F006/OVI-62 prepped this session (SV ASK -> 5 lead-answered questions, all grounded in existing repo files -> RV PASS); normalized, remote write-back done, local spec object mirrored, UNSTAMPED; not yet implemented.
-- Next up: implement F006/OVI-62 (/harness-doctor instance health check + upgrade engine; scope: skills/harness-doctor/SKILL.md, INSTALL.md, skills/harness-continue/SKILL.md, test/run-tests.sh). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
+- Currently working on: F006/OVI-62 implemented and passing this session (skills/harness-doctor/{SKILL.md,doctor.py,fixes.py}; INSTALL.md and harness-continue Step 2.5 wired). Not yet shipped (PR/CI/review/merge pending).
+- Next up: ship F006/OVI-62 (PR + CI + adversarial review + merge + Linear Done), then continue the OVI-44 epic with the next priority feature. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -376,3 +376,37 @@ This file is referenced in CLAUDE.md and loaded every session.
   hook deliberately emits no repair verb on that path — asserting one anyway would
   have been the exact tautology-avoidance failure the review was watching for.
   APPROVE, no code/test change needed. Merged clean @ aa998df; Linear OVI-61 Done.
+
+## Meta-Session 2026-07-24 (session 10, F006/OVI-62)
+- Scope accuracy: the prep's scope (SKILL.md, INSTALL.md, harness-continue SKILL.md,
+  test/run-tests.sh) was missing the two Python files a testable "report-first
+  structural check" actually needs (doctor.py, fixes.py) -- SKILL.md alone is prose an
+  LLM follows, not something bash test/run-tests.sh can assert against. Recorded as a
+  scope_expansion. Lesson: when a spec names only a SKILL.md for a "checkable"
+  feature, ask up front whether the acceptance criteria imply an executable backing
+  it, the same way harness_state.py backs verify-task-quality.sh/check-remaining-
+  tasks.sh -- prose skills can't be asserted against by a shell test runner.
+- Model calibration: single-session, correction_cycles 2 -- both the known TDD-red-
+  phase false-rejection pattern (now 7 sessions running: F002-F005, F008-F010, F006).
+  Still never once a real correction. The procedural fix (mark red-phase tasks
+  complete only after green) is well past the point where "don't do this" should
+  have stuck; worth revisiting whether this needs to become mechanical.
+- Discovery lineage: no new features filed.
+- Approach patterns: manually exercising all 7 acceptance criteria against scratch
+  fixtures BEFORE writing the formal test/run-tests.sh assertions caught two real
+  bugs pre-review: (1) apply_fixes() trusted each fixer's per-call return value, so
+  one add_settings_wiring() call fixing 5 findings at once left the other 4
+  misreported as still-open after --fix -- fixed by re-running checks fresh instead
+  of tracking per-finding fixer success; (2) substring matching in the gitignore
+  check treated '.harness/SESSION_INCOMPLETE_TYPO' as satisfying the
+  '.harness/SESSION_INCOMPLETE' requirement (prefix collision) -- fixed by switching
+  to exact-line matching. Both were found by hand-testing against real scratch
+  fixtures, not by the formal test suite (which was written to match the corrected
+  contract) -- a reminder that manually exercising a new checker's actual behavior
+  before locking in test assertions catches classes of bug that "test what you
+  built" cannot.
+  Also: reused the plugin's own scripts/validate-features.py (via CLAUDE_PLUGIN_ROOT)
+  for the features.json check rather than duplicating validator logic, honoring
+  F004/OVI-49's one-owner design decision -- checked this against the actual
+  installed-plugin path convention (INSTALL.md's ${CLAUDE_PLUGIN_ROOT} references)
+  before assuming it would resolve correctly outside this repo's own dev context.
