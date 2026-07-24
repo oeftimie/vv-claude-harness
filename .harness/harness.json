@@ -9,5 +9,14 @@
     "ssh_key": "none (SSH unavailable; HTTPS via gh credential helper, account eovidiu)",
     "ssh_host": "github.com"
   },
-  "team_structure": null
+  "team_structure": null,
+  "prep": {
+    "linear": {
+      "ready_label": "harness-ready",
+      "needs_prep_label": "harness-needs-prep"
+    },
+    "stamp": {
+      "stamper": "ovidiu"
+    }
+  }
 }
