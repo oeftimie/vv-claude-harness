@@ -1019,6 +1019,10 @@ assert_deny_json "$OUT" "hs2: lead-owned Edit denial uses the JSON deny form"
 assert_contains "$OUT" "permissionDecisionReason" "hs2: lead-owned Edit denial includes a reason"
 assert_contains "$OUT" "verified live" "hs2: denial reason carries a verified-live annotation"
 assert_contains "$OUT" "on Claude Code" "hs2: annotation names the Claude Code version"
+assert_contains "$OUT" "lead-owned" \
+  "hg: lead-owned Edit denial names the violated invariant (F005/OVI-61)"
+assert_contains "$OUT" "SendMessage" \
+  "hg: lead-owned Edit denial names the repair (F005/OVI-61)"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x >> .harness/features.json')")
 RC=$?
@@ -1029,6 +1033,8 @@ OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'tee src/other/es
 RC=$?
 assert_rc0 "$RC" "hs2: Bash tee to an out-of-scope target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: out-of-scope tee denial uses JSON deny form"
+assert_contains "$OUT" "outside your assigned scope" \
+  "hg: out-of-scope tee denial names the invariant (F005/OVI-61)"
 
 HEREDOC_CMD=$'cat <<\'EOF\' > src/other/escaped.txt\ncontent\nEOF'
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$HEREDOC_CMD")")
@@ -1045,6 +1051,25 @@ OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm .harness/feat
 RC=$?
 assert_rc0 "$RC" "hs2: Bash rm on a lead-owned state file exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: lead-owned rm denial uses JSON deny form"
+assert_contains "$OUT" "lead-owned" \
+  "hg: lead-owned rm denial names the violated invariant (F005/OVI-61)"
+assert_contains "$OUT" "SendMessage" \
+  "hg: lead-owned rm denial names the repair (F005/OVI-61)"
+
+# Hostile case (F005/OVI-61): Bash '>>' redirect specifically out of scope, distinct
+# from the lead-owned '>>' case above (which targets .harness/features.json).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x >> src/other/out.txt')")
+RC=$?
+assert_rc0 "$RC" "hg: Bash >> redirect outside scope exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hg: out-of-scope >> redirect denial uses JSON deny form"
+assert_contains "$OUT" "outside your assigned scope" \
+  "hg: out-of-scope >> redirect denial names the invariant"
+
+# F005/OVI-61 scope note: the commit-content gate (compound `git add && git commit`,
+# secret-shaped staged addition) has no hook yet -- F011/OVI-64 is still pending.
+# Those two attack cases are skip-until-S4, not part of this issue's acceptance criteria.
+# check-remaining-tasks needs no new attack case either: it is a prompt-tier hook that
+# never blocks, and its existing rc 0/2 contract (below) already covers it.
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'git status')")
 RC=$?
@@ -1131,6 +1156,17 @@ RC=$?
 assert_rc2 "$RC" "ht: verify-git-identity blocks git push on identity mismatch"
 assert_contains "$OUT" "Fix with: git config user.name" "ht: mismatch message includes the fix command"
 
+# Hostile case (F005/OVI-61): mismatched EMAIL specifically, name restored to match.
+git -C "$DIR_HG" config user.name "Fixture User"
+git -C "$DIR_HG" config user.email "impostor@example.com"
+OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$PUSH_JSON")
+RC=$?
+assert_rc2 "$RC" "hg: verify-git-identity blocks git push on email mismatch alone"
+assert_contains "$OUT" "Fix with: git config user.name" \
+  "hg: email-mismatch message includes the fix command"
+assert_contains "$OUT" "impostor@example.com" \
+  "hg: email-mismatch message names the current (wrong) email"
+
 DIR_HR="$WORK/ht-remaining"
 make_fixture "$DIR_HR"
 install_hooks "$DIR_HR"
@@ -1206,6 +1242,10 @@ install_hooks "$DIR_HQ"
 OUT=$(run_hook "$DIR_HQ" verify-task-quality.sh '{}')
 RC=$?
 assert_rc2 "$RC" "ht: verify-task-quality rejects when .harness/init.sh is missing"
+assert_contains "$OUT" "init.sh not found" \
+  "hg: missing-init.sh message names the violated invariant (F005/OVI-61)"
+assert_contains "$OUT" "Run /harness-init" \
+  "hg: missing-init.sh message names the repair (F005/OVI-61)"
 
 DIR_HQ2="$WORK/ht-quality-targeted"
 make_fixture "$DIR_HQ2"
@@ -1229,6 +1269,10 @@ OUT=$(run_hook "$DIR_HQ2" verify-task-quality.sh \
   '{"task":{"metadata":{"feature_id":"F002"}}}' 2>&1)
 RC=$?
 assert_rc2 "$RC" "ht: smoke failure rejects the targeted completion"
+assert_contains "$OUT" "smoke test failed" \
+  "hg: smoke-failure message names the violated invariant (F005/OVI-61)"
+assert_contains "$OUT" "Fix compilation errors before marking complete" \
+  "hg: smoke-failure message names the repair (F005/OVI-61)"
 METRICS=$(python3 - "$DIR_HQ2/.harness/features.json" <<'PYEOF'
 import json
 import sys
