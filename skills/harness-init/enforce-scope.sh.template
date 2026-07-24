@@ -1,8 +1,20 @@
 #!/bin/bash
 # VV Claude Code Harness - PreToolUse scope enforcement hook
-# Runs before Edit/Write tool calls when a teammate scope file exists.
-# Exit code 0 = allow edit
-# Exit code 2 = block edit (file outside scope)
+# Runs before Edit/Write/MultiEdit tool calls (scope enforcement) and before Bash tool
+# calls (best-effort write-boundary coverage) when a teammate scope file exists.
+# The pre-existing out-of-scope Edit/Write check below is a legacy path: it blocks by
+# exiting 2, unchanged since before state ownership + Bash coverage were added. The two
+# denial paths added for that feature -- lead-owned state files, and Bash write
+# commands -- use the hookSpecificOutput.permissionDecision:"deny" JSON form (exit 0)
+# instead, per cross-harness reconciliation (OVI-51).
+# Failure posture: fail-open. If PROJECT_ROOT can't be resolved, the scope file is
+# unreadable, or the tool-input JSON can't be parsed, the action is ALLOWED, not
+# blocked. Residual: a broken environment silently disables enforcement rather than
+# blocking everything. Bash coverage is pattern-based and evadable by construction
+# (compound commands, quoting, subshells, and a write hidden inside a heredoc body fed
+# to a nested interpreter are known false-negative surfaces) -- the goal is stopping
+# accidental drift, not defeating an adversarial teammate.
+# verified live 2026-07-24 on Claude Code 2.1.218
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -17,36 +29,184 @@ if [ ! -f "$SCOPE_FILE" ]; then
     exit 0
 fi
 
-# Extract file path from tool input
+ANNOTATION="(verified live 2026-07-24 on Claude Code 2.1.218)"
+
+deny_json() {
+    python3 - "$1" <<'PYEOF'
+import json
+import sys
+
+print(json.dumps({
+    "hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": sys.argv[1],
+    }
+}))
+PYEOF
+    exit 0
+}
+
+# Extract file path (Edit/Write/MultiEdit) and command (Bash) from tool input
 FILE_PATH=$(echo "$INPUT" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 print(data.get('tool_input', {}).get('file_path', ''))
 " 2>/dev/null)
 
-if [ -z "$FILE_PATH" ]; then
-    exit 0
-fi
+COMMAND=$(echo "$INPUT" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(data.get('tool_input', {}).get('command', ''))
+" 2>/dev/null)
 
-# Normalize absolute paths to relative (tool input uses absolute paths,
-# scope patterns use relative paths like "src/auth/")
-if [[ "$FILE_PATH" == "$PROJECT_ROOT/"* ]]; then
-    FILE_PATH="${FILE_PATH#$PROJECT_ROOT/}"
-fi
-
-# Check if file path matches any scope pattern
-while IFS= read -r pattern || [ -n "$pattern" ]; do
-    # Skip empty lines and comments
-    [[ -z "$pattern" || "$pattern" =~ ^# ]] && continue
-    # Use bash pattern matching
-    if [[ "$FILE_PATH" == $pattern* ]]; then
-        exit 0
+if [ -n "$FILE_PATH" ]; then
+    # Normalize absolute paths to relative (tool input uses absolute paths,
+    # scope patterns use relative paths like "src/auth/")
+    if [[ "$FILE_PATH" == "$PROJECT_ROOT/"* ]]; then
+        FILE_PATH="${FILE_PATH#$PROJECT_ROOT/}"
     fi
-done < "$SCOPE_FILE"
 
-echo "Edit blocked: $FILE_PATH is outside your assigned scope."
-echo "Your scope (from $SCOPE_FILE):"
-cat "$SCOPE_FILE" | grep -v '^#' | grep -v '^$'
-echo ""
-echo "Repair: request a scope expansion from the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Requesting scope expansion to $FILE_PATH because [reason].\" })"
-exit 2
+    case "$FILE_PATH" in
+        .harness/features.json|.harness/context_summary.md|.harness/claude-progress.txt)
+            deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION"
+            ;;
+    esac
+
+    # Legacy path (unchanged): check if file path matches any scope pattern
+    while IFS= read -r pattern || [ -n "$pattern" ]; do
+        # Skip empty lines and comments
+        [[ -z "$pattern" || "$pattern" =~ ^# ]] && continue
+        # Use bash pattern matching
+        if [[ "$FILE_PATH" == $pattern* ]]; then
+            exit 0
+        fi
+    done < "$SCOPE_FILE"
+
+    echo "Edit blocked: $FILE_PATH is outside your assigned scope."
+    echo "Your scope (from $SCOPE_FILE):"
+    cat "$SCOPE_FILE" | grep -v '^#' | grep -v '^$'
+    echo ""
+    echo "Repair: request a scope expansion from the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Requesting scope expansion to $FILE_PATH because [reason].\" })"
+    exit 2
+fi
+
+if [ -n "$COMMAND" ]; then
+    SCOPE_PATTERNS=()
+    while IFS= read -r pattern || [ -n "$pattern" ]; do
+        [[ -z "$pattern" || "$pattern" =~ ^# ]] && continue
+        SCOPE_PATTERNS+=("$pattern")
+    done < "$SCOPE_FILE"
+
+    DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" "${SCOPE_PATTERNS[@]}" <<'PYEOF'
+import re
+import sys
+
+LEAD_OWNED = {
+    ".harness/features.json",
+    ".harness/context_summary.md",
+    ".harness/claude-progress.txt",
+}
+WRITE_COMMANDS = ("tee", "cp", "mv", "rm")
+ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
+
+
+def strip_heredoc_bodies(command):
+    # Heredoc bodies are excluded from matching entirely (not split, not scanned)
+    # so payload text can never trigger a false denial.
+    lines = command.split("\n")
+    kept = []
+    in_heredoc = False
+    strip_tabs = False
+    marker = None
+    for line in lines:
+        if in_heredoc:
+            check = line.lstrip("\t") if strip_tabs else line
+            if check == marker:
+                in_heredoc = False
+            continue
+        kept.append(line)
+        m = re.search(r"<<(-?)\s*(['\"]?)(\w+)\2", line)
+        if m:
+            strip_tabs = bool(m.group(1))
+            marker = m.group(3)
+            in_heredoc = True
+    return "\n".join(kept)
+
+
+def segments_of(command):
+    sanitized = strip_heredoc_bodies(command)
+    return [s.strip() for s in re.split(r"\|\||&&|[|;]", sanitized) if s.strip()]
+
+
+def last_flagless_token(tokens):
+    for tok in reversed(tokens):
+        if tok and not tok.startswith("-"):
+            return tok
+    return None
+
+
+def redirect_target(segment):
+    # Finds the token after >/>> regardless of other operators (e.g. <<EOF) on the
+    # same line, so a heredoc-into-redirect line is still caught.
+    m = re.search(r">>?\s*([^\s<>|&;]+)", segment)
+    return m.group(1) if m else None
+
+
+def sed_inplace_target(tokens):
+    if not tokens or tokens[0] != "sed":
+        return None
+    if not any(t == "-i" or t.startswith("-i") or t == "--in-place" for t in tokens[1:]):
+        return None
+    return last_flagless_token(tokens[1:])
+
+
+def write_target(segment):
+    tokens = segment.split()
+    if not tokens:
+        return None
+    target = redirect_target(segment)
+    if target:
+        return target
+    if tokens[0] in WRITE_COMMANDS:
+        return last_flagless_token(tokens[1:])
+    return sed_inplace_target(tokens)
+
+
+def normalize(path, project_root):
+    if path.startswith(project_root + "/"):
+        path = path[len(project_root) + 1:]
+    return path
+
+
+def main():
+    command = sys.argv[1]
+    project_root = sys.argv[2]
+    patterns = sys.argv[3:]
+    for segment in segments_of(command):
+        target = write_target(segment)
+        if not target:
+            continue
+        norm = normalize(target, project_root)
+        if norm in LEAD_OWNED:
+            print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
+            return
+        if not any(norm.startswith(p) for p in patterns):
+            print(
+                f"Bash write to '{norm}' is outside your assigned scope "
+                f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
+                f"{ANNOTATION}"
+            )
+            return
+
+
+main()
+PYEOF
+)
+
+    if [ -n "$DENY_REASON" ]; then
+        deny_json "$DENY_REASON"
+    fi
+fi
+
+exit 0

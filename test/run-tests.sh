@@ -827,6 +827,124 @@ OUT=$(run_hook_from_subdir "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON")
 RC=$?
 assert_rc2 "$RC" "ht: enforce-scope still blocks when cwd is a subdirectory"
 
+echo ""
+echo "== state ownership + bash write boundary =="
+
+bash_command_json() {
+  python3 -c "
+import json
+import sys
+print(json.dumps({'tool_input': {'command': sys.argv[1]}}))
+" "$1"
+}
+
+edit_json() {
+  python3 -c "
+import json
+import sys
+print(json.dumps({'tool_input': {'file_path': sys.argv[1]}}))
+" "$1"
+}
+
+assert_deny_json() {
+  assert_contains "$1" '"permissionDecision": "deny"' "$2"
+}
+
+# DIR_HS already has hooks installed and a scope file ("src/parser/") from the block above.
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(edit_json "$DIR_HS/.harness/features.json")")
+RC=$?
+assert_rc0 "$RC" "hs2: Edit to a lead-owned state file exits 0 (JSON deny, not exit 2)"
+assert_deny_json "$OUT" "hs2: lead-owned Edit denial uses the JSON deny form"
+assert_contains "$OUT" "permissionDecisionReason" "hs2: lead-owned Edit denial includes a reason"
+assert_contains "$OUT" "verified live" "hs2: denial reason carries a verified-live annotation"
+assert_contains "$OUT" "on Claude Code" "hs2: annotation names the Claude Code version"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x >> .harness/features.json')")
+RC=$?
+assert_rc0 "$RC" "hs2: Bash write to a lead-owned state file exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: Bash lead-owned write denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'tee src/other/escaped.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: Bash tee to an out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: out-of-scope tee denial uses JSON deny form"
+
+HEREDOC_CMD=$'cat <<\'EOF\' > src/other/escaped.txt\ncontent\nEOF'
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$HEREDOC_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: heredoc-into-redirect to an out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: heredoc-into-redirect denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm src/other/file.py')")
+RC=$?
+assert_rc0 "$RC" "hs2: Bash rm on an out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: out-of-scope rm denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm .harness/features.json')")
+RC=$?
+assert_rc0 "$RC" "hs2: Bash rm on a lead-owned state file exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: lead-owned rm denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'git status')")
+RC=$?
+assert_rc0 "$RC" "hs2: Bash git status passes through, rc 0"
+assert_not_contains "$OUT" "permissionDecision" "hs2: git status has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.py src/parser/b.py')")
+RC=$?
+assert_rc0 "$RC" "hs2: in-scope Bash cp passes through, rc 0"
+assert_not_contains "$OUT" "permissionDecision" "hs2: in-scope cp has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm src/parser/tmp.py')")
+RC=$?
+assert_rc0 "$RC" "hs2: in-scope Bash rm passes through, rc 0"
+assert_not_contains "$OUT" "permissionDecision" "hs2: in-scope rm has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'cd /tmp && tee src/other/out.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a compound command's out-of-scope segment is still denied"
+assert_deny_json "$OUT" "hs2: compound-command denial uses JSON deny form"
+
+DIR_HS_LEAD="$WORK/hs2-lead-context"
+make_fixture "$DIR_HS_LEAD"
+install_hooks "$DIR_HS_LEAD"
+OUT=$(run_hook "$DIR_HS_LEAD" enforce-scope.sh "$(edit_json "$DIR_HS_LEAD/.harness/features.json")")
+RC=$?
+assert_rc0 "$RC" "hs2: lead context (no scope file) allows Edit to a state file"
+assert_not_contains "$OUT" "permissionDecision" "hs2: lead-context Edit has no deny fields"
+OUT=$(run_hook "$DIR_HS_LEAD" enforce-scope.sh "$(bash_command_json 'rm .harness/features.json')")
+RC=$?
+assert_rc0 "$RC" "hs2: lead context (no scope file) allows Bash rm on a state file"
+assert_not_contains "$OUT" "permissionDecision" "hs2: lead-context Bash rm has no deny fields"
+OUT=$(run_hook "$DIR_HS_LEAD" enforce-scope.sh "$(bash_command_json 'tee src/anywhere/out.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: lead context (no scope file) allows an unscoped Bash tee"
+assert_not_contains "$OUT" "permissionDecision" "hs2: lead-context tee has no deny fields"
+
+for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
+  verify-git-identity.sh.template verify-task-quality.sh.template; do
+  if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
+    pass "hs2: $TPL documents its failure posture"
+  else
+    fail "hs2: $TPL lacks a '# Failure posture:' header line"
+  fi
+done
+
+if grep -q "Bash remains open by instruction" "$REPO_ROOT/agents/reviewer.md" \
+  && grep -q "backstop" "$REPO_ROOT/agents/reviewer.md"; then
+  pass "hs2: reviewer.md acknowledges the Bash backstop"
+else
+  fail "hs2: reviewer.md missing the Bash-backstop acknowledgment"
+fi
+
+if grep -qi "best-effort" "$REPO_ROOT/README.md" && grep -q "lead-owned" "$REPO_ROOT/README.md"; then
+  pass "hs2: README's tiers table documents best-effort Bash coverage + lead-owned files"
+else
+  fail "hs2: README's tiers table missing the best-effort/lead-owned relabeling"
+fi
+
 DIR_HG="$WORK/ht-identity"
 make_fixture "$DIR_HG"
 install_hooks "$DIR_HG"
@@ -1042,12 +1160,14 @@ print(data['features'][0]['correction_cycles'])
 "
 }
 
-DUMP_HITS=$(grep -l "json.dump" "$TEMPLATES_DIR"/*.template 2>/dev/null \
+# "json.dump(" (not "json.dump" alone) so json.dumps(...) -- serializing to a string,
+# not writing a file -- doesn't false-positive as a features.json write site.
+DUMP_HITS=$(grep -l "json.dump(" "$TEMPLATES_DIR"/*.template 2>/dev/null \
   | grep -v "harness_state.py.template" || true)
 if [ -z "$DUMP_HITS" ]; then
-  pass "hs: zero json.dump call sites outside harness_state.py.template"
+  pass "hs: zero json.dump( call sites outside harness_state.py.template"
 else
-  fail "hs: json.dump found outside harness_state.py.template in: $DUMP_HITS"
+  fail "hs: json.dump( found outside harness_state.py.template in: $DUMP_HITS"
 fi
 
 HS_LOAD="$WORK/hs-load"

@@ -3,6 +3,10 @@
 # Runs before Bash tool calls that contain git push/pull/clone.
 # Exit code 0 = allow
 # Exit code 2 = block (identity mismatch)
+# Failure posture: fail-open. Missing harness.json, or a harness.json with no recorded
+# git_identity, allows the command (exit 0) rather than blocking it; only an actually
+# detected mismatch blocks (exit 2). Residual: an incomplete harness.json silently
+# disables identity verification.
 
 # Read hook input from stdin
 INPUT=$(cat)
