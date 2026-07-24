@@ -74,8 +74,10 @@ def make_nullable_string_check(field):
 
 def check_coverage(feature, index, errors):
     value = feature.get("coverage")
-    if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
-        errors.append(f"features[{index}].coverage: must be a number or null")
+    if value is None or isinstance(value, str):
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        errors.append(f"features[{index}].coverage: must be a number, string, or null")
 
 
 def make_optional_int_check(field):

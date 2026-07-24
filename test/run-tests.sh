@@ -760,6 +760,18 @@ OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-design-contract.json" 2>&1)
 RC=$?
 assert_rc0 "$RC" "fsv: accepts a design_contract string"
 
+fsv_mutate "coverage-string.json" \
+  'd["features"][0]["coverage"] = "n/a (shell suite, no coverage tooling)"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/coverage-string.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts a descriptive string for coverage (F022)"
+
+fsv_mutate "coverage-bad-type.json" 'd["features"][0]["coverage"] = True'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/coverage-bad-type.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: still rejects a boolean coverage value"
+assert_contains "$OUT" "features[0].coverage" "fsv: bad coverage error names the location"
+
 echo ""
 echo "== spec gate artifacts =="
 
