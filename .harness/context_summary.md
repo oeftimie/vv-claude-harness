@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F022 merged (d0c8dff), coverage field type resolved
-- Next up: /harness-issue-prep the next P2/P3 epic issue (F011-F021 remain, most depend_on the now-passing F001/F002/F003 baseline; F005/OVI-61 is next by priority order). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred)
+- Currently working on: F005 / OVI-61 prepped this session, scope narrowed to hostile-gate tests only (cold-start dogfood gate dropped entirely, not deferred — see OVI-61 Linear comment); normalized, remote write-back done, UNSTAMPED; not yet implemented
+- Next up: implement F005/OVI-61 (hostile-gate tests in test/run-tests.sh only). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -19,6 +19,19 @@ This file is referenced in CLAUDE.md and loaded every session.
 ## Domain: Harness Plugin Engineering
 
 ### Decisions
+- OVI-61/F005's cold-start dogfood release gate is DROPPED, not deferred: a
+  recommended-but-unenforced checklist item would drift into ceremony (this
+  project's own README rates written-only rules "medium reliability... compliance
+  drifts over long contexts"), and there's no historical evidence in this project
+  that skipped dogfooding caused a real incident — every past bug was caught by the
+  automated suite or code review. Presented as a binary (mechanize it for real, or
+  drop it) rather than a soft middle ground, per Ovidiu's explicit rejection of
+  "recommended, not blocking." If ever revisited, it needs genuine mechanical
+  enforcement (e.g. a session-end.sh check tied to plugin.json version-bump
+  detection requiring a fresh MAINTENANCE_LOG.md entry) as its own future ticket —
+  none exists today. F005's scope is now hostile-gate tests only
+  (test/run-tests.sh); reasoning recorded as a Linear comment on OVI-61
+  (2026-07-24, per Ovidiu)
 - F022 resolved: `coverage` is typed `number|string|null` in both
   schemas/feature.schema.json and scripts/validate-features.py — Ovidiu chose
   "relax the schema" over rewriting the live data, since this repo (and any other
