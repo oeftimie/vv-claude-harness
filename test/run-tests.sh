@@ -2098,7 +2098,9 @@ fi
 
 MAINT_YML="$REPO_ROOT/.github/workflows/maintenance.yml"
 if [ -f "$MAINT_YML" ]; then
-  MAINT_YML_ERRORS=$(python3 - "$MAINT_YML" <<'PYEOF'
+  # Capture stderr too: a checker crash must surface as a failure, not
+  # silently leave MAINT_YML_ERRORS empty (which would read as a false PASS).
+  MAINT_YML_ERRORS=$(python3 - "$MAINT_YML" 2>&1 <<'PYEOF'
 import sys
 
 path = sys.argv[1]
@@ -2132,10 +2134,22 @@ try:
         if not isinstance(jobs, dict) or not jobs:
             errors.append("'jobs' is missing or empty")
         else:
+            issue_step_found = False
             for job in jobs.values():
                 perms = job.get("permissions") if isinstance(job, dict) else None
                 if not isinstance(perms, dict) or perms.get("issues") != "write":
                     errors.append("a job is missing permissions.issues: write")
+                for step in (job.get("steps") or []) if isinstance(job, dict) else []:
+                    if not isinstance(step, dict):
+                        continue
+                    if "github-script" in (step.get("uses") or ""):
+                        issue_step_found = True
+                        if step.get("if") != "failure()":
+                            errors.append(
+                                "the github-script step is not gated on if: failure()"
+                            )
+            if not issue_step_found:
+                errors.append("no github-script step found")
 except ImportError:
     # No PyYAML in this environment: fall back to a structural check. Real
     # parsing happens for free in CI (GitHub Actions itself validates the
@@ -2146,13 +2160,24 @@ except ImportError:
         errors.append("no 'workflow_dispatch' key found (structural check)")
     if "jobs:" not in text:
         errors.append("no 'jobs' key found (structural check)")
+    lines = text.splitlines()
+    script_idx = next((i for i, l in enumerate(lines) if "github-script" in l), None)
+    if script_idx is None:
+        errors.append("no github-script step found (structural check)")
+    else:
+        preceding = lines[max(0, script_idx - 3):script_idx]
+        if not any("if: failure()" in l for l in preceding):
+            errors.append(
+                "the github-script step is not gated on if: failure() "
+                "(structural check)"
+            )
     if "issues: write" not in text:
         errors.append("no 'issues: write' permission found (structural check)")
 
 for e in errors:
     print(e)
 PYEOF
-)
+  )
   if [ -z "$MAINT_YML_ERRORS" ]; then
     pass "mnt: maintenance.yml is well-formed with weekly cron + workflow_dispatch"
   else
@@ -2169,10 +2194,10 @@ PYEOF
   else
     fail "mnt: maintenance.yml has no real npm retry ($NPM_INSTALL_COUNT attempts)"
   fi
-  if grep -q "issues.create" "$MAINT_YML" && grep -q "if: failure()" "$MAINT_YML"; then
-    pass "mnt: maintenance.yml opens an issue only on failure"
+  if grep -q "issues.create" "$MAINT_YML"; then
+    pass "mnt: maintenance.yml opens an issue"
   else
-    fail "mnt: maintenance.yml does not open an issue gated on if: failure()"
+    fail "mnt: maintenance.yml does not open an issue on failure"
   fi
 else
   fail "mnt: .github/workflows/maintenance.yml does not exist"
@@ -2209,10 +2234,25 @@ else
   fail "mnt: expected 2 retirement conditions, found $PROTOCOL_RETIREMENT_COUNT"
 fi
 
-if grep -q "Correction (\`MAINTENANCE_LOG.md\` run #0" "$PROTOCOL_MD"; then
-  pass "mnt: agent-teams-protocol.md carries the run-#0 correction"
+if grep -q "Correction (\`MAINTENANCE_LOG.md\` run #0" "$PROTOCOL_MD" \
+  && grep -q "could not confirm" "$PROTOCOL_MD" \
+  && grep -q "open follow-up" "$PROTOCOL_MD"; then
+  pass "mnt: the run-#0 correction is hedged, not a flat counter-claim"
 else
-  fail "mnt: agent-teams-protocol.md is missing the run-#0 correction"
+  fail "mnt: the run-#0 correction is missing or reads as an unhedged counter-claim"
+fi
+if ! grep -q "not accurate as of the current CLI" "$PROTOCOL_MD"; then
+  pass "mnt: the pre-fix overstated correction wording is gone"
+else
+  fail "mnt: the pre-fix overstated correction wording is still present"
+fi
+
+PROTOCOL_POINTER_COUNT=$(grep -c \
+  "unverified as of \`MAINTENANCE_LOG.md\` run #0" "$PROTOCOL_MD")
+if [ "$PROTOCOL_POINTER_COUNT" -eq 3 ]; then
+  pass "mnt: all 3 still-instructional plan_approval_request sites carry a pointer"
+else
+  fail "mnt: expected 3 plan_approval_request pointer sites, found $PROTOCOL_POINTER_COUNT"
 fi
 
 if grep -q "[Rr]etirement condition" "$REPO_ROOT/README.md"; then

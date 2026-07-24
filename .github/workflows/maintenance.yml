@@ -21,6 +21,7 @@ jobs:
             || (sleep 10 && npm install -g @anthropic-ai/claude-code)
 
       - name: Record probed CLI version
+        id: record_version
         run: |
           echo "cli_version=$(claude --version)" >> "$GITHUB_ENV"
           {
@@ -36,12 +37,17 @@ jobs:
         if: failure()
         uses: actions/github-script@v7
         env:
+          install_outcome: ${{ steps.install.outcome }}
+          record_version_outcome: ${{ steps.record_version.outcome }}
           tests_outcome: ${{ steps.tests.outcome }}
         with:
           script: |
             const version = process.env.cli_version || 'unknown version'
-            const failingSection = process.env.tests_outcome === 'failure'
-              ? 'test suite' : 'CLI install'
+            const failingSection =
+              process.env.install_outcome === 'failure' ? 'CLI install' :
+              process.env.record_version_outcome === 'failure' ? 'CLI version probe' :
+              process.env.tests_outcome === 'failure' ? 'test suite' :
+              'unknown step'
             const body = [
               'The weekly maintenance cron failed. Check the workflow run logs',
               'for the failing section (CLI install or test suite) and the job',
