@@ -148,14 +148,11 @@
     },
     {
       "id": "F005",
-      "description": "[OVI-61] S1: Hostile-gate tests + cold-start dogfood release gate \u2014 Add an adversarial section to test/run-tests.sh where real attacks (out-of-scope edits, state-file writes, git push under mismatched identity, failing-smoke commits, secret-shaped staged additions) must be denied with the invariant named, and add docs/release-checklist.md defining a cold-start dogfood gate recorded to MAINTENANCE_LOG.md, run once as run #0. Ownership note: this issue CREATES MAINTENANCE_LOG.md and writes the dogfood-gate series' run #0; per OVI-61 the log is OVI-56's durable state, and dogfood entries are a distinct record series from OVI-56's maintenance-probe runs.",
+      "description": "## Problem\n\nNothing in the test suite currently proves that an attack against a mechanical gate actually fails, with the specific violated invariant named. <issue id=\"4ca10113-4d20-4cef-b975-690851c67c4d\" href=\"https://linear.app/eftimie/issue/OVI-48/p03-hook-robustness-test-coverage-for-the-5-per-project-hook-templates\">OVI-48</issue>/F003 proves the hooks fire correctly on well-formed and malformed fixtures; nothing proves they correctly DENY a hostile input, and nothing checks that a denial message actually teaches the invariant it enforces rather than failing silently.\n\nAdd an adversarial section to `test/run-tests.sh`: per gate, attack cases that must be denied, each asserting both the deny mechanics (exit code) and that the denial message names the violated invariant and the repair. A gate that blocks without teaching is half a gate.\n\n(This issue originally also specified a cold-start dogfood release gate. That half will NOT be implemented \u2014 see the Linear comment on <issue id=\"e3b71020-1b75-4519-8dc0-ee15ae0ad35b\" href=\"https://linear.app/eftimie/issue/OVI-61/s1-hostile-gate-tests-cold-start-dogfood-release-gate\">OVI-61</issue> dated 2026-07-24 for the full reasoning: a recommended-but-unenforced checklist item drifts into ceremony, and there's no evidence in this project's history that skipped dogfooding caused a real incident. This is not a deferral to a later pass of this issue; it is dropped.)\n\n## Acceptance criteria\n\n1. At least 8 new adversarial assertions; suite green on ubuntu CI.\n2. Every adversarial case checks the denial message content, not just the exit code.\n3. Attack cases cover:\n   a. enforce-scope: out-of-scope Edit; Edit to `.harness/features.json` in teammate context (F009/<issue id=\"600268cd-4a6d-470d-a618-6d7aa64de47d\" href=\"https://linear.app/eftimie/issue/OVI-51/p21-mechanize-lead-only-state-ownership-best-effort-bash-write\">OVI-51</issue>'s lead-owned-file denial); Bash `>>` redirect outside scope (F009/<issue id=\"600268cd-4a6d-470d-a618-6d7aa64de47d\" href=\"https://linear.app/eftimie/issue/OVI-51/p21-mechanize-lead-only-state-ownership-best-effort-bash-write\">OVI-51</issue>'s Bash-write-boundary denial).\n   b. verify-git-identity: `git push` under mismatched name; mismatched email.\n   c. verify-task-quality: TaskCompleted with a failing smoke test; missing `init.sh`.\n   d. check-remaining-tasks: no attack case (prompt-tier hook, never blocks) \u2014 assert only the existing rc 0/2 contract, no new adversarial case needed here.\n4. The two commit-content-gate attack cases (compound `git add && git commit`; secret-shaped staged addition) are marked skip-until-S4: F011/<issue id=\"cc065d0e-47a0-461d-a0cb-ec1f784694da\" href=\"https://linear.app/eftimie/issue/OVI-64/s4-commit-content-gate-secret-scan-compound-stage-and-commit-denial\">OVI-64</issue> (the commit-content gate itself) is still `pending`, so these cases cannot exist yet.\n\n## Edge and error cases\n\nAttacks run against fixtures in temp dirs, never the repo's own tree \u2014 matching the existing `make_fixture()`/`WORK` temp-dir pattern already used throughout `test/run-tests.sh`.\n\n## Non-functional requirements\n\nbash 3.2+, python3 + git only. No new dependencies.\n\n## Dependencies\n\nBlocked by <issue id=\"4ca10113-4d20-4cef-b975-690851c67c4d\" href=\"https://linear.app/eftimie/issue/OVI-48/p03-hook-robustness-test-coverage-for-the-5-per-project-hook-templates\">OVI-48</issue> (F003, already passing). Two cases dependent on S4 (F011/<issue id=\"cc065d0e-47a0-461d-a0cb-ec1f784694da\" href=\"https://linear.app/eftimie/issue/OVI-64/s4-commit-content-gate-secret-scan-compound-stage-and-commit-denial\">OVI-64</issue>, still pending) \u2014 marked skip-until-S4, not blocking this issue's completion.\n\n## Assumptions ledger\n\n* Scope narrowed to hostile-gate tests only; the cold-start dogfood gate (`docs/release-checklist.md`, `MAINTENANCE_LOG.md`, a sample-app seed, and a version-bump-blocking rule) is dropped from this issue entirely, not deferred \u2014 documented via Linear comment rather than in the acceptance criteria themselves (2026-07-24, per Ovidiu).\n\n## Out of scope\n\nCold-start dogfood release gate \u2014 will NOT be implemented (see the Problem section and the 2026-07-24 Linear comment). If mechanical dogfood enforcement is ever wanted, it requires its own future ticket designed from scratch; no such ticket exists today and none is implied by this one. Also out of scope: commit-content gate attack cases (deferred to when F011/<issue id=\"cc065d0e-47a0-461d-a0cb-ec1f784694da\" href=\"https://linear.app/eftimie/issue/OVI-64/s4-commit-content-gate-secret-scan-compound-stage-and-commit-denial\">OVI-64</issue> lands); CI-automating anything beyond the existing `bash test/run-tests.sh` run; fuzzing.",
       "priority": 5,
       "status": "pending",
       "scope": [
-        "test/run-tests.sh",
-        "docs/release-checklist.md",
-        "MAINTENANCE_LOG.md",
-        "CLAUDE.md"
+        "test/run-tests.sh"
       ],
       "depends_on": [
         "F003"
@@ -163,17 +160,17 @@
       "assigned_to": null,
       "test_file": null,
       "coverage": null,
-      "notes": "Linear: OVI-61. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "notes": "Linear: OVI-61. Full spec re-verified per-issue by /harness-issue-prep before implementation. SV ASK (1 Q: dogfood substrate contradiction) -> lead recommendation approved -> RV PASS cycle 1 (flagged the combined substrate+scope-narrowing approval as worth separate confirmation) -> Ovidiu explicitly rejected the soft 'recommended, not blocking' middle ground -> chose to drop the cold-start dogfood gate entirely (not deferred). Scope reduced to hostile-gate tests only (test/run-tests.sh). Reasoning recorded as a Linear comment on OVI-61 (2026-07-24). lane=code, risk=standard (self-classified: single file, no new enforcement mechanism, testing existing hooks only). Unstamped: same Keychain/Bash-sandbox block confirmed a third time; not re-asked about the override since already declined twice.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {
-        "hash": "c020766fcf257b100fa06ea45b601d4914a55ebe73a51bdb9b0bde0665e88773",
+        "hash": "1ffc9fdb4392a106ca6cf4aefee13f937afd251c8fd2405c68848a3616fcf873",
         "verdict": "PASS",
         "sv_version": "1.0",
-        "verified_at": "2026-07-22T18:15:31Z",
+        "verified_at": "2026-07-24T14:11:08Z",
         "source": "linear:OVI-61"
       }
     },

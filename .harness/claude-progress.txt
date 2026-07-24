@@ -155,3 +155,4 @@
 - 2026-07-24 F022 reviewed APPROVE with 1 non-blocking nit (scope array missing
   scripts/validate-features.py + test/run-tests.sh, fixed before merge); merged
   @ d0c8dff (no Linear issue, internal discovery via F004)
+- 2026-07-24 /harness-issue-prep OVI-61 -> F005: SV ASK (1 Q: dogfood substrate contradiction) -> lead recommendation approved -> RV PASS (cycle 1, flagged combined approval for separate confirmation) -> Ovidiu rejected the soft middle ground, dropped the dogfood gate entirely (not deferred), scope reduced to hostile-gate tests only; reasoning posted as a Linear comment on OVI-61; remote mode, Linear description + spec_hash updated; UNSTAMPED (Keychain/Bash-sandbox block confirmed a third time, not re-asked)
