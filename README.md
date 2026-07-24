@@ -105,7 +105,7 @@ Two bugs discovered in real Agent Teams sessions:
 
 **PostToolUse hook schema.** The hooks were generated with `postToolUse` (wrong casing) and a flat structure that Claude Code silently ignores. Fixed to `PostToolUse` with proper nested `matcher` + `hooks` array. The kind of bug you only catch by actually running the system.
 
-**plan_approval_response delivery bug.** `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Discovered when a lead agent kept sending approvals that teammates never received. The workaround (confirmed in production): use `type: "message"` for all plan approvals. The harness now documents this as a known Claude Code bug and routes all approvals through direct messages.
+**plan_approval_response delivery bug.** `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Discovered when a lead agent kept sending approvals that teammates never received. The workaround (confirmed in production): use `type: "message"` for all plan approvals. The harness now documents this as a known Claude Code bug and routes all approvals through direct messages. Retirement condition and current status tracked in `docs/maintenance-runbook.md` and `MAINTENANCE_LOG.md`.
 
 ### v3.3: Metacognitive self-improvement (March 2026)
 

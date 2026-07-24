@@ -2074,6 +2074,194 @@ else
 fi
 
 echo ""
+echo "== maintenance loop =="
+
+RUNBOOK="$REPO_ROOT/docs/maintenance-runbook.md"
+if [ -f "$RUNBOOK" ]; then
+  for HEADER in "Condition" "Departure Signal" "Restoration Evidence" \
+    "Autonomous vs Approval-Required Operations" "Durable State" "Probe Checklist"; do
+    if grep -q "^## $HEADER" "$RUNBOOK"; then
+      pass "mnt: maintenance-runbook.md has a '## $HEADER' section"
+    else
+      fail "mnt: maintenance-runbook.md is missing a '## $HEADER' section"
+    fi
+  done
+  if grep -q "plan_approval_response" "$RUNBOOK" \
+    && grep -q "FIXED" "$RUNBOOK" && grep -q "BROKEN" "$RUNBOOK"; then
+    pass "mnt: runbook's probe checklist gives a concrete FIXED/BROKEN criterion"
+  else
+    fail "mnt: runbook's plan_approval_response probe is missing a FIXED/BROKEN criterion"
+  fi
+else
+  fail "mnt: docs/maintenance-runbook.md does not exist"
+fi
+
+MAINT_YML="$REPO_ROOT/.github/workflows/maintenance.yml"
+if [ -f "$MAINT_YML" ]; then
+  # Capture stderr too: a checker crash must surface as a failure, not
+  # silently leave MAINT_YML_ERRORS empty (which would read as a false PASS).
+  MAINT_YML_ERRORS=$(python3 - "$MAINT_YML" 2>&1 <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+errors = []
+
+if "\t" in text:
+    errors.append("contains a literal tab character")
+
+WEEKLY_CRON = "0 6 * * 1"  # Mondays 06:00 UTC -- once a week, not hourly/daily
+
+try:
+    import yaml
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        errors.append(f"does not parse as YAML: {exc}")
+        data = None
+    if isinstance(data, dict):
+        on = data.get(True, data.get("on"))
+        crons = [
+            e.get("cron") for e in (on.get("schedule") or []) if isinstance(e, dict)
+        ] if isinstance(on, dict) else []
+        if not isinstance(on, dict) or "schedule" not in on:
+            errors.append("'on.schedule' is missing")
+        elif WEEKLY_CRON not in crons:
+            errors.append(f"'on.schedule' has no weekly cron entry ({WEEKLY_CRON}); found {crons}")
+        if not isinstance(on, dict) or "workflow_dispatch" not in on:
+            errors.append("'on.workflow_dispatch' is missing")
+        jobs = data.get("jobs") if isinstance(data, dict) else None
+        if not isinstance(jobs, dict) or not jobs:
+            errors.append("'jobs' is missing or empty")
+        else:
+            issue_step_found = False
+            for job in jobs.values():
+                perms = job.get("permissions") if isinstance(job, dict) else None
+                if not isinstance(perms, dict) or perms.get("issues") != "write":
+                    errors.append("a job is missing permissions.issues: write")
+                for step in (job.get("steps") or []) if isinstance(job, dict) else []:
+                    if not isinstance(step, dict):
+                        continue
+                    if "github-script" in (step.get("uses") or ""):
+                        issue_step_found = True
+                        if step.get("if") != "failure()":
+                            errors.append(
+                                "the github-script step is not gated on if: failure()"
+                            )
+            if not issue_step_found:
+                errors.append("no github-script step found")
+except ImportError:
+    # No PyYAML in this environment: fall back to a structural check. Real
+    # parsing happens for free in CI (GitHub Actions itself validates the
+    # file), so this is a degrade-gracefully sanity check, not the only gate.
+    if WEEKLY_CRON not in text:
+        errors.append(f"no weekly cron entry ({WEEKLY_CRON}) found (structural check)")
+    if "workflow_dispatch" not in text:
+        errors.append("no 'workflow_dispatch' key found (structural check)")
+    if "jobs:" not in text:
+        errors.append("no 'jobs' key found (structural check)")
+    lines = text.splitlines()
+    script_idx = next((i for i, l in enumerate(lines) if "github-script" in l), None)
+    if script_idx is None:
+        errors.append("no github-script step found (structural check)")
+    else:
+        preceding = lines[max(0, script_idx - 3):script_idx]
+        if not any("if: failure()" in l for l in preceding):
+            errors.append(
+                "the github-script step is not gated on if: failure() "
+                "(structural check)"
+            )
+    if "issues: write" not in text:
+        errors.append("no 'issues: write' permission found (structural check)")
+
+for e in errors:
+    print(e)
+PYEOF
+  )
+  if [ -z "$MAINT_YML_ERRORS" ]; then
+    pass "mnt: maintenance.yml is well-formed with weekly cron + workflow_dispatch"
+  else
+    fail "mnt: maintenance.yml -- $MAINT_YML_ERRORS"
+  fi
+  if grep -q "bash test/run-tests.sh" "$MAINT_YML"; then
+    pass "mnt: maintenance.yml runs the test suite"
+  else
+    fail "mnt: maintenance.yml does not run bash test/run-tests.sh"
+  fi
+  NPM_INSTALL_COUNT=$(grep -c "npm install -g @anthropic-ai/claude-code" "$MAINT_YML")
+  if [ "$NPM_INSTALL_COUNT" -ge 2 ]; then
+    pass "mnt: maintenance.yml retries the npm install on flake ($NPM_INSTALL_COUNT attempts)"
+  else
+    fail "mnt: maintenance.yml has no real npm retry ($NPM_INSTALL_COUNT attempts)"
+  fi
+  if grep -q "issues.create" "$MAINT_YML"; then
+    pass "mnt: maintenance.yml opens an issue"
+  else
+    fail "mnt: maintenance.yml does not open an issue on failure"
+  fi
+else
+  fail "mnt: .github/workflows/maintenance.yml does not exist"
+fi
+
+MAINT_LOG="$REPO_ROOT/MAINTENANCE_LOG.md"
+if [ -f "$MAINT_LOG" ]; then
+  if grep -qi "run #0" "$MAINT_LOG"; then
+    pass "mnt: MAINTENANCE_LOG.md is seeded with run #0"
+  else
+    fail "mnt: MAINTENANCE_LOG.md has no run #0 entry"
+  fi
+  if grep -qi "plan_approval_response" "$MAINT_LOG"; then
+    pass "mnt: MAINTENANCE_LOG.md run #0 records the plan_approval_response retest outcome"
+  else
+    fail "mnt: MAINTENANCE_LOG.md does not record the plan_approval_response retest outcome"
+  fi
+else
+  fail "mnt: MAINTENANCE_LOG.md does not exist"
+fi
+
+if grep -q "retirement condition" "$REPO_ROOT/CLAUDE.md"; then
+  pass "mnt: CLAUDE.md has the new every-workaround-needs-a-retirement-condition rule"
+else
+  fail "mnt: CLAUDE.md is missing the retirement-condition rule"
+fi
+
+PROTOCOL_MD="$REPO_ROOT/rules/agent-teams-protocol.md"
+PROTOCOL_RETIREMENT_PATTERN="plan_approval_response.*[Rr]etirement condition"
+PROTOCOL_RETIREMENT_COUNT=$(grep -c "$PROTOCOL_RETIREMENT_PATTERN" "$PROTOCOL_MD")
+if [ "$PROTOCOL_RETIREMENT_COUNT" -eq 2 ]; then
+  pass "mnt: both plan_approval_response mentions have a retirement condition"
+else
+  fail "mnt: expected 2 retirement conditions, found $PROTOCOL_RETIREMENT_COUNT"
+fi
+
+if grep -q "Correction (\`MAINTENANCE_LOG.md\` run #0" "$PROTOCOL_MD" \
+  && grep -q "could not confirm" "$PROTOCOL_MD" \
+  && grep -q "open follow-up" "$PROTOCOL_MD"; then
+  pass "mnt: the run-#0 correction is hedged, not a flat counter-claim"
+else
+  fail "mnt: the run-#0 correction is missing or reads as an unhedged counter-claim"
+fi
+if ! grep -q "not accurate as of the current CLI" "$PROTOCOL_MD"; then
+  pass "mnt: the pre-fix overstated correction wording is gone"
+else
+  fail "mnt: the pre-fix overstated correction wording is still present"
+fi
+
+PROTOCOL_POINTER_COUNT=$(grep -c \
+  "unverified as of \`MAINTENANCE_LOG.md\` run #0" "$PROTOCOL_MD")
+if [ "$PROTOCOL_POINTER_COUNT" -eq 3 ]; then
+  pass "mnt: all 3 still-instructional plan_approval_request sites carry a pointer"
+else
+  fail "mnt: expected 3 plan_approval_request pointer sites, found $PROTOCOL_POINTER_COUNT"
+fi
+
+if grep -q "[Rr]etirement condition" "$REPO_ROOT/README.md"; then
+  pass "mnt: README.md's plan_approval_response mention carries a retirement condition"
+else
+  fail "mnt: README.md's plan_approval_response mention is missing a retirement condition"
+fi
+
+echo ""
 echo "== agent frontmatter =="
 
 AGENT_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
