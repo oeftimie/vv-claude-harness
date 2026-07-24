@@ -49,6 +49,10 @@ Run the project's build/test smoke test:
 
 This is a gate, not a diagnostic. Its purpose is to confirm the environment is in a known-good state BEFORE any changes. If it fails, you know the problem is pre-existing, not something you introduced. Run it within the first 5 actions of every session. No exceptions. The 15-second cost prevents 15-minute debugging sessions later.
 
+If it fails unexpectedly, `/harness-doctor` can help narrow down why — it structurally
+checks hook presence/executability, `.claude/settings.json` wiring, `.gitignore`
+rules, and `.harness/` file validity in about 10 seconds.
+
 ## Step 3: Set Effort Level
 
 Set effort based on the current phase:

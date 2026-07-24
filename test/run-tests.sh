@@ -810,7 +810,7 @@ import os
 import sys
 
 root = sys.argv[1]
-for skill_dir in ("harness-issue-prep", "harness-issue-debug"):
+for skill_dir in ("harness-issue-prep", "harness-issue-debug", "harness-doctor"):
     path = os.path.join(root, "skills", skill_dir, "SKILL.md")
     if not os.path.isfile(path):
         print(f"missing: {path}")
@@ -833,7 +833,7 @@ for skill_dir in ("harness-issue-prep", "harness-issue-debug"):
 PYEOF
 )
 if [ -z "$SKILL_ERRORS" ]; then
-  pass "w: harness-issue-prep and harness-issue-debug SKILL.md files have sane frontmatter"
+  pass "w: harness-issue-prep/-debug/-doctor SKILL.md files have sane frontmatter"
 else
   fail "w: skill frontmatter -- $SKILL_ERRORS"
 fi
@@ -1627,6 +1627,450 @@ if [ -n "$NEXT_PLAIN" ] && [ "$NEXT_PLAIN" = "$NEXT_MODULE" ]; then
   pass "hs: next-claimable output is identical whether harness_state.py is present or not"
 else
   fail "hs: next-claimable output differs -- plain: '$NEXT_PLAIN' module: '$NEXT_MODULE'"
+fi
+
+echo ""
+echo "== harness-doctor =="
+
+DOCTOR_PY="$REPO_ROOT/skills/harness-doctor/doctor.py"
+
+run_doctor() {
+  DIR="$1"; shift
+  (CLAUDE_PLUGIN_ROOT="$REPO_ROOT" python3 "$DOCTOR_PY" "$@" "$DIR")
+}
+
+run_doctor_with_root() {
+  DIR="$1"; ROOT="$2"; shift 2
+  (CLAUDE_PLUGIN_ROOT="$ROOT" python3 "$DOCTOR_PY" "$@" "$DIR")
+}
+
+# Builds a fully v5-healthy fixture: baseline + all hooks incl. statusline.sh +
+# correctly-wired settings.json + a complete .gitignore + a context_summary.md
+# with every required section. The settings.json is embedded inline (not
+# copied from this repo's own live .claude/settings.json) so this test does
+# not depend on that file's current shape.
+make_healthy_doctor_fixture() {
+  make_fixture "$1"
+  install_hooks "$1"
+  cp "$REPO_ROOT/hooks/statusline.sh" "$1/.claude/hooks/statusline.sh"
+  chmod +x "$1/.claude/hooks/statusline.sh"
+  cat > "$1/.claude/settings.json" <<'SETTINGSEOF'
+{
+  "statusLine": {"type": "command", "command": "bash .claude/hooks/statusline.sh"},
+  "env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"},
+  "permissions": {"allow": ["Bash(bash .claude/hooks/*.sh)"]},
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{"type": "command", "command": "bash .claude/hooks/enforce-scope.sh"}]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": "bash .claude/hooks/verify-git-identity.sh"}]
+      }
+    ],
+    "TaskCompleted": [
+      {"hooks": [{"type": "command", "command": "bash .claude/hooks/verify-task-quality.sh"}]}
+    ],
+    "TeammateIdle": [
+      {"hooks": [{"type": "command", "command": "bash .claude/hooks/check-remaining-tasks.sh"}]}
+    ]
+  }
+}
+SETTINGSEOF
+  printf '.harness/SESSION_INCOMPLETE\n' > "$1/.gitignore"
+  cat >> "$1/.harness/context_summary.md" <<'CTXEOF'
+
+## Cross-Cutting Concerns
+- none
+
+## Meta-Patterns
+- (none yet)
+CTXEOF
+  git -C "$1" add -A
+  git -C "$1" commit -q -m "doctor fixture: v5-healthy"
+}
+
+DIR_DOC_HEALTHY="$WORK/doctor-healthy"
+make_healthy_doctor_fixture "$DIR_DOC_HEALTHY"
+OUT=$(run_doctor "$DIR_DOC_HEALTHY")
+RC=$?
+assert_rc0 "$RC" "hd: a fully healthy fixture exits 0"
+if [ "$OUT" = "healthy" ]; then
+  pass "hd: a fully healthy fixture prints a single 'healthy' line"
+else
+  fail "hd: a fully healthy fixture prints a single 'healthy' line -- got: $OUT"
+fi
+assert_not_contains "$OUT" "commit-gate" \
+  "hd: healthy fixture has no commit-gate finding (F011/OVI-64 template not shipped)"
+
+# AC1: seeded breakages -- non-executable hook, missing settings wiring, invalid
+# features.json, gitignored .claude/. Each finding must name its repair.
+DIR_DOC_SEEDED="$WORK/doctor-seeded"
+make_healthy_doctor_fixture "$DIR_DOC_SEEDED"
+chmod -x "$DIR_DOC_SEEDED/.claude/hooks/enforce-scope.sh"
+python3 - "$DIR_DOC_SEEDED/.claude/settings.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    settings = json.load(f)
+del settings["env"]
+with open(path, "w") as f:
+    json.dump(settings, f)
+PYEOF
+printf '{"features": [' >> "$DIR_DOC_SEEDED/.harness/features.json"  # corrupt JSON
+printf '.claude/\n' > "$DIR_DOC_SEEDED/.gitignore"
+OUT=$(run_doctor "$DIR_DOC_SEEDED")
+RC=$?
+assert_rc_nonzero "$RC" "hd: a seeded-breakage fixture exits non-zero"
+assert_contains "$OUT" "hook 'enforce-scope.sh' is not executable" \
+  "hd: seeded fixture names the non-executable hook"
+assert_contains "$OUT" "chmod +x .claude/hooks/enforce-scope.sh" \
+  "hd: seeded fixture gives the non-executable hook's repair"
+assert_contains "$OUT" "missing env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS wiring" \
+  "hd: seeded fixture names the missing settings wiring"
+assert_contains "$OUT" "does not parse" \
+  "hd: seeded fixture names the invalid features.json"
+assert_contains "$OUT" "exclude .claude/ without un-ignoring" \
+  "hd: seeded fixture names the gitignored .claude/ problem"
+
+# AC5: only an optional-v5 artifact missing -> a single "upgrade available"
+# finding, not an error.
+DIR_DOC_V5="$WORK/doctor-v5-only"
+make_healthy_doctor_fixture "$DIR_DOC_V5"
+rm "$DIR_DOC_V5/.claude/hooks/harness_state.py"
+OUT=$(run_doctor "$DIR_DOC_V5")
+RC=$?
+assert_rc_nonzero "$RC" "hd: an optional-v5-only gap still exits non-zero (there is a finding)"
+assert_contains "$OUT" "upgrade available: harness_state.py not present" \
+  "hd: optional-v5-only gap is reported as upgrade-available, not a hard error"
+FINDING_LINES=$(printf '%s\n' "$OUT" | grep -c '^FINDING:')
+if [ "$FINDING_LINES" -eq 1 ]; then
+  pass "hd: an optional-v5-only gap produces exactly one finding"
+else
+  fail "hd: an optional-v5-only gap produces exactly one finding -- got $FINDING_LINES"
+fi
+
+# AC7: an untracked (never-committed) broken artifact is classified as an
+# uncommitted local edit, with an explicit note that no history was available.
+DIR_DOC_UNTRACKED="$WORK/doctor-untracked"
+make_fixture "$DIR_DOC_UNTRACKED"
+mkdir -p "$DIR_DOC_UNTRACKED/.claude"
+echo '{"hooks": {}}' > "$DIR_DOC_UNTRACKED/.claude/settings.json"
+OUT=$(run_doctor "$DIR_DOC_UNTRACKED")
+assert_contains "$OUT" \
+  "missing statusLine wiring (no committed history for this file; treating as local)" \
+  "hd: an untracked broken artifact is classified as an uncommitted local edit"
+
+# Non-harness project -> exits early pointing to /harness-init.
+DIR_DOC_NONE="$WORK/doctor-none"
+mkdir -p "$DIR_DOC_NONE"
+OUT=$(run_doctor "$DIR_DOC_NONE")
+RC=$?
+assert_rc2 "$RC" "hd: a non-harness project exits 2"
+assert_contains "$OUT" "/harness-init" "hd: a non-harness project points to /harness-init"
+
+# --fix applies the mechanical INSTALL.md steps and leaves only unfixable findings.
+DIR_DOC_FIX="$WORK/doctor-fix"
+make_healthy_doctor_fixture "$DIR_DOC_FIX"
+python3 - "$DIR_DOC_FIX/.claude/settings.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    settings = json.load(f)
+del settings["env"]
+settings["hooks"]["PostCompact"] = [{"hooks": [{"type": "command", "command": "echo stale"}]}]
+with open(path, "w") as f:
+    json.dump(settings, f)
+PYEOF
+rm "$DIR_DOC_FIX/.claude/hooks/statusline.sh"
+printf '' > "$DIR_DOC_FIX/.gitignore"
+rm "$DIR_DOC_FIX/.claude/hooks/harness_state.py"
+printf '# stale placeholder\n' > "$DIR_DOC_FIX/.claude/hooks/verify-task-quality.sh"
+chmod +x "$DIR_DOC_FIX/.claude/hooks/verify-task-quality.sh"
+FIX_OUT=$(run_doctor "$DIR_DOC_FIX" --fix)
+assert_not_contains "$FIX_OUT" "PostCompact" "hd: --fix removes the stale PostCompact block"
+assert_not_contains "$FIX_OUT" "statusLine wiring" "hd: --fix restores missing settings wiring"
+assert_not_contains "$FIX_OUT" "statusline.sh' is missing" "hd: --fix restores statusline.sh"
+assert_not_contains "$FIX_OUT" "SESSION_INCOMPLETE" "hd: --fix appends the gitignore entry"
+assert_not_contains "$FIX_OUT" "harness_state.py not present" \
+  "hd: --fix restores harness_state.py"
+if grep -q '"PostCompact"' "$DIR_DOC_FIX/.claude/settings.json"; then
+  fail "hd: --fix -- settings.json still has a PostCompact block on disk"
+else
+  pass "hd: --fix -- settings.json no longer has a PostCompact block on disk"
+fi
+if [ -x "$DIR_DOC_FIX/.claude/hooks/harness_state.py" ] \
+  && cmp -s "$DIR_DOC_FIX/.claude/hooks/harness_state.py" \
+    "$TEMPLATES_DIR/harness_state.py.template"; then
+  pass "hd: --fix -- harness_state.py on disk matches the plugin template"
+else
+  fail "hd: --fix -- harness_state.py on disk does not match the plugin template"
+fi
+if grep -q "stale placeholder" "$DIR_DOC_FIX/.claude/hooks/verify-task-quality.sh"; then
+  fail "hd: --fix -- verify-task-quality.sh was not re-copied from the current template"
+else
+  pass "hd: --fix -- verify-task-quality.sh was re-copied from the current template"
+fi
+
+# Spec item 2's whole point: an artifact whose current state MATCHES the last
+# commit is classified as committed drift, not a local edit. Commit a settings.json
+# that already has the gap; the doctor sees no local modification at all.
+DIR_DOC_COMMITTED="$WORK/doctor-committed-drift"
+make_healthy_doctor_fixture "$DIR_DOC_COMMITTED"
+python3 - "$DIR_DOC_COMMITTED/.claude/settings.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    settings = json.load(f)
+del settings["env"]
+with open(path, "w") as f:
+    json.dump(settings, f)
+PYEOF
+git -C "$DIR_DOC_COMMITTED" add -A
+git -C "$DIR_DOC_COMMITTED" commit -q -m "commit the gap itself"
+OUT=$(run_doctor "$DIR_DOC_COMMITTED")
+assert_contains "$OUT" \
+  "missing env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS wiring (matches the last commit; any problem here is committed, not local)" \
+  "hd: an artifact matching the last commit is classified as committed drift"
+
+# Spec item 3: settings.json must parse.
+DIR_DOC_BADSETTINGS="$WORK/doctor-bad-settings"
+make_healthy_doctor_fixture "$DIR_DOC_BADSETTINGS"
+printf '{ not valid json' > "$DIR_DOC_BADSETTINGS/.claude/settings.json"
+OUT=$(run_doctor "$DIR_DOC_BADSETTINGS")
+assert_contains "$OUT" ".claude/settings.json does not parse" \
+  "hd: a malformed settings.json is reported as a parse error"
+
+# Spec item 5: context_summary.md must carry every required section heading.
+DIR_DOC_CTXGAP="$WORK/doctor-context-gap"
+make_healthy_doctor_fixture "$DIR_DOC_CTXGAP"
+python3 - "$DIR_DOC_CTXGAP/.harness/context_summary.md" <<'PYEOF'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+open(path, "w").write(text.replace("## Meta-Patterns\n- (none yet)\n", ""))
+PYEOF
+OUT=$(run_doctor "$DIR_DOC_CTXGAP")
+assert_contains "$OUT" "missing required section(s): ## Meta-Patterns" \
+  "hd: context_summary.md missing a required heading is reported by name"
+
+# Spec item 7: the mld non-injection guarantee. session-start.sh is never copied
+# into a project's .claude/hooks/ -- it runs directly from CLAUDE_PLUGIN_ROOT -- so
+# the check targets the plugin's own copy, via a fake plugin root here.
+DIR_DOC_MLD="$WORK/doctor-mld"
+make_healthy_doctor_fixture "$DIR_DOC_MLD"
+mkdir -p "$DIR_DOC_MLD/.harness/mld"
+FAKE_PLUGIN_ROOT="$WORK/fake-plugin-root-mld-bad"
+mkdir -p "$FAKE_PLUGIN_ROOT/hooks"
+printf '#!/usr/bin/env bash\ncat "$CLAUDE_PROJECT_DIR/.harness/mld/telemetry.jsonl"\n' \
+  > "$FAKE_PLUGIN_ROOT/hooks/session-start.sh"
+OUT=$(run_doctor_with_root "$DIR_DOC_MLD" "$FAKE_PLUGIN_ROOT")
+assert_contains "$OUT" "non-injection guarantee broken" \
+  "hd: the plugin's session-start.sh referencing .harness/mld/ breaks the guarantee"
+
+DIR_DOC_MLD_OK="$WORK/doctor-mld-ok"
+make_healthy_doctor_fixture "$DIR_DOC_MLD_OK"
+mkdir -p "$DIR_DOC_MLD_OK/.harness/mld"
+OUT=$(run_doctor "$DIR_DOC_MLD_OK")
+assert_not_contains "$OUT" "non-injection" \
+  "hd: .harness/mld/ present with the real (mld-free) session-start.sh is not a finding"
+
+# mld/ present but no plugin root available at all -> can't check, no finding.
+DIR_DOC_MLD_NOROOT="$WORK/doctor-mld-noroot"
+make_healthy_doctor_fixture "$DIR_DOC_MLD_NOROOT"
+mkdir -p "$DIR_DOC_MLD_NOROOT/.harness/mld"
+OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_MLD_NOROOT")
+assert_not_contains "$OUT" "non-injection" \
+  "hd: .harness/mld/ present with no CLAUDE_PLUGIN_ROOT set produces no finding"
+
+# mld/ present, plugin root set, but that root has no hooks/session-start.sh at all.
+DIR_DOC_MLD_NOFILE="$WORK/doctor-mld-nofile"
+make_healthy_doctor_fixture "$DIR_DOC_MLD_NOFILE"
+mkdir -p "$DIR_DOC_MLD_NOFILE/.harness/mld"
+EMPTY_PLUGIN_ROOT="$WORK/empty-plugin-root"
+mkdir -p "$EMPTY_PLUGIN_ROOT"
+OUT=$(run_doctor_with_root "$DIR_DOC_MLD_NOFILE" "$EMPTY_PLUGIN_ROOT")
+assert_not_contains "$OUT" "non-injection" \
+  "hd: a plugin root with no hooks/session-start.sh produces no mld finding"
+
+# Missing (not malformed) settings.json, harness.json, and context_summary.md.
+DIR_DOC_NOSETTINGS="$WORK/doctor-no-settings"
+make_healthy_doctor_fixture "$DIR_DOC_NOSETTINGS"
+rm "$DIR_DOC_NOSETTINGS/.claude/settings.json"
+OUT=$(run_doctor "$DIR_DOC_NOSETTINGS")
+assert_contains "$OUT" ".claude/settings.json is missing" \
+  "hd: a project with no settings.json at all is reported as missing"
+
+DIR_DOC_NOHARNESSJSON="$WORK/doctor-no-harnessjson"
+make_healthy_doctor_fixture "$DIR_DOC_NOHARNESSJSON"
+rm "$DIR_DOC_NOHARNESSJSON/.harness/harness.json"
+OUT=$(run_doctor "$DIR_DOC_NOHARNESSJSON")
+assert_contains "$OUT" ".harness/harness.json is missing" \
+  "hd: a project with no harness.json at all is reported as missing"
+
+DIR_DOC_NOCTX="$WORK/doctor-no-context"
+make_healthy_doctor_fixture "$DIR_DOC_NOCTX"
+rm "$DIR_DOC_NOCTX/.harness/context_summary.md"
+OUT=$(run_doctor "$DIR_DOC_NOCTX")
+assert_contains "$OUT" ".harness/context_summary.md is missing" \
+  "hd: a project with no context_summary.md at all is reported as missing"
+
+# context_summary.md present but missing a Domain section specifically (distinct
+# from the Meta-Patterns-missing case already covered).
+DIR_DOC_NODOMAIN="$WORK/doctor-no-domain"
+make_healthy_doctor_fixture "$DIR_DOC_NODOMAIN"
+python3 - "$DIR_DOC_NODOMAIN/.harness/context_summary.md" <<'PYEOF'
+import re, sys
+path = sys.argv[1]
+text = open(path).read()
+text = re.sub(r"## Domain:.*?(?=\n## )", "", text, flags=re.S)
+open(path, "w").write(text)
+PYEOF
+OUT=$(run_doctor "$DIR_DOC_NODOMAIN")
+assert_contains "$OUT" "## Domain:" \
+  "hd: context_summary.md missing any Domain section is reported by name"
+
+# harness_state.py present but not executable.
+DIR_DOC_STATENOEXEC="$WORK/doctor-state-noexec"
+make_healthy_doctor_fixture "$DIR_DOC_STATENOEXEC"
+chmod -x "$DIR_DOC_STATENOEXEC/.claude/hooks/harness_state.py"
+OUT=$(run_doctor "$DIR_DOC_STATENOEXEC")
+assert_contains "$OUT" "harness_state.py is not executable" \
+  "hd: a present-but-non-executable harness_state.py is reported"
+
+# Fully-satisfied commit-gate: the plugin ships a template AND the project already
+# has its own copy -> no finding at all (the "everything's fine" tail path).
+DIR_DOC_GATEOK="$WORK/doctor-commit-gate-satisfied"
+make_healthy_doctor_fixture "$DIR_DOC_GATEOK"
+FAKE_PLUGIN_ROOT_GATE="$WORK/fake-plugin-root-gate-satisfied"
+mkdir -p "$FAKE_PLUGIN_ROOT_GATE/skills/harness-init"
+echo "# fake commit gate" > "$FAKE_PLUGIN_ROOT_GATE/skills/harness-init/commit-gate.sh.template"
+cp "$FAKE_PLUGIN_ROOT_GATE/skills/harness-init/commit-gate.sh.template" \
+  "$DIR_DOC_GATEOK/.claude/hooks/commit-gate.sh"
+chmod +x "$DIR_DOC_GATEOK/.claude/hooks/commit-gate.sh"
+OUT=$(run_doctor_with_root "$DIR_DOC_GATEOK" "$FAKE_PLUGIN_ROOT_GATE")
+assert_not_contains "$OUT" "commit-gate" \
+  "hd: a project with its own commit-gate.sh already copied has no finding"
+
+# Mirror case: the plugin ships a commit-gate template but the project hasn't
+# copied it yet -> "upgrade available", same tier as harness_state.py.
+DIR_DOC_GATEMISSING="$WORK/doctor-commit-gate-missing"
+make_healthy_doctor_fixture "$DIR_DOC_GATEMISSING"
+FAKE_PLUGIN_ROOT_GATE2="$WORK/fake-plugin-root-gate-missing"
+mkdir -p "$FAKE_PLUGIN_ROOT_GATE2/skills/harness-init"
+echo "# fake commit gate" > "$FAKE_PLUGIN_ROOT_GATE2/skills/harness-init/commit-gate.sh.template"
+OUT=$(run_doctor_with_root "$DIR_DOC_GATEMISSING" "$FAKE_PLUGIN_ROOT_GATE2")
+assert_contains "$OUT" "upgrade available: commit-gate.sh not present (post-S4/OVI-64)" \
+  "hd: a shipped-but-uncopied commit-gate template is reported as upgrade-available"
+
+# git subprocess itself unavailable during drift classification -> degrades to
+# "no committed history available", never crashes.
+DIR_DOC_NOGIT="$WORK/doctor-no-git-binary"
+make_healthy_doctor_fixture "$DIR_DOC_NOGIT"
+python3 - "$DIR_DOC_NOGIT/.claude/settings.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    settings = json.load(f)
+del settings["env"]
+with open(path, "w") as f:
+    json.dump(settings, f)
+PYEOF
+EMPTY_PATH_DIR="$WORK/empty-path-dir"
+mkdir -p "$EMPTY_PATH_DIR"
+REAL_PYTHON3=$(command -v python3)
+ln -sf "$REAL_PYTHON3" "$EMPTY_PATH_DIR/python3"
+OUT=$(PATH="$EMPTY_PATH_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" python3 "$DOCTOR_PY" "$DIR_DOC_NOGIT")
+assert_contains "$OUT" "no committed history available for this file; treating as local" \
+  "hd: git being unavailable degrades drift classification instead of crashing"
+
+# fixes.py: the four single-purpose fixers' no-op ("already resolved" or
+# "can't act") branches are unreachable through the CLI (apply_fixes only invokes
+# a fix_id when a finding actually calls for it), so exercise them directly.
+FIXES_ERRORS=$(python3 - "$REPO_ROOT/skills/harness-doctor" <<'PYEOF'
+import json
+import os
+import sys
+import tempfile
+
+sys.path.insert(0, sys.argv[1])
+import fixes
+
+errors = []
+with tempfile.TemporaryDirectory() as d:
+    os.makedirs(os.path.join(d, ".claude"))
+    settings_path = os.path.join(d, ".claude", "settings.json")
+    with open(settings_path, "w") as fh:
+        json.dump({"hooks": {}}, fh)
+
+    if fixes._remove_postcompact(d, None) is not False:
+        errors.append("_remove_postcompact should no-op when there is no PostCompact block")
+    if fixes._copy_statusline(d, None) is not False:
+        errors.append("_copy_statusline should no-op when plugin_root is None")
+    if fixes._copy_harness_state(d, None) is not False:
+        errors.append("_copy_harness_state should no-op when plugin_root is None")
+
+    gitignore_path = os.path.join(d, ".gitignore")
+    with open(gitignore_path, "w") as fh:
+        fh.write(".harness/SESSION_INCOMPLETE\n")
+    if fixes._append_gitignore(d, None) is not False:
+        errors.append("_append_gitignore should no-op when the line is already present")
+
+    if fixes._load_json(os.path.join(d, "does-not-exist.json")) is not None:
+        errors.append("_load_json should return None for a missing file")
+    bad_path = os.path.join(d, "bad.json")
+    with open(bad_path, "w") as fh:
+        fh.write("{ not json")
+    if fixes._load_json(bad_path) is not None:
+        errors.append("_load_json should return None for invalid JSON")
+
+    # partial hooks: TeammateIdle present, TaskCompleted missing -> only the
+    # missing event should be added (exercises the per-event "changed" branch).
+    partial_hooks = {"TeammateIdle": [{"hooks": [{"type": "command", "command": "x"}]}]}
+    with open(settings_path, "w") as fh:
+        json.dump({"hooks": partial_hooks}, fh)
+    if not fixes._add_settings_wiring(d, None):
+        errors.append("_add_settings_wiring should report a change when TaskCompleted is missing")
+    with open(settings_path) as fh:
+        merged = json.load(fh)
+    if "TaskCompleted" not in merged["hooks"]:
+        errors.append("_add_settings_wiring did not add the missing TaskCompleted block")
+    if merged["hooks"]["TeammateIdle"] != partial_hooks["TeammateIdle"]:
+        errors.append("_add_settings_wiring should not touch an already-present hook event")
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$FIXES_ERRORS" ]; then
+  pass "hd: fixes.py's no-op and partial-merge branches behave correctly"
+else
+  fail "hd: fixes.py direct unit checks -- $FIXES_ERRORS"
+fi
+
+# AC2: doctor never writes without approval -- the skill text asserts it.
+if grep -qi "report-first" "$REPO_ROOT/skills/harness-doctor/SKILL.md" 2>/dev/null \
+  && grep -q "never writes\|without explicit approval\|without approval" \
+    "$REPO_ROOT/skills/harness-doctor/SKILL.md" 2>/dev/null; then
+  pass "hd: SKILL.md asserts the report-first, no-writes-without-approval rule"
+else
+  fail "hd: SKILL.md is missing or does not assert the report-first rule"
+fi
+
+# AC3: INSTALL.md's upgrade section points to the doctor.
+if grep -q "/harness-doctor" "$REPO_ROOT/INSTALL.md"; then
+  pass "hd: INSTALL.md's upgrade section points to /harness-doctor"
+else
+  fail "hd: INSTALL.md does not mention /harness-doctor"
+fi
+
+# harness-continue Step 2.5 suggests the doctor on smoke-test failure.
+if grep -q "harness-doctor" "$REPO_ROOT/skills/harness-continue/SKILL.md"; then
+  pass "hd: harness-continue Step 2.5 suggests /harness-doctor on smoke-test failure"
+else
+  fail "hd: harness-continue does not mention /harness-doctor"
 fi
 
 echo ""

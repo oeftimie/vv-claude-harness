@@ -122,8 +122,14 @@ Then enable the plugin:
 
 ## Upgrading an existing harness project
 
-`/harness-init` has no upgrade mode — for projects initialized under v3, these four
-manual steps, run in a Claude Code session inside the project, are the upgrade:
+Run `/harness-doctor` in a Claude Code session inside the project: it reports every
+gap between the project's current state and the current plugin version (missing
+hooks, stale settings blocks, gitignore rules, `.harness/` validity) and, on request,
+fixes them with `/harness-doctor --fix`. It replaces the manual upgrade steps this
+section used to require.
+
+Under the hood, `--fix` applies exactly these mechanical steps (for projects
+initialized under v3, run without the plugin's install mechanism):
 
 1. Remove the PostCompact block from `.claude/settings.json` (the plugin's SessionStart
    hook now covers post-compaction recovery, so it is redundant).
