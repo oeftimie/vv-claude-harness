@@ -192,7 +192,7 @@ If the lead catches itself starting to implement code instead of delegating, it 
 Each teammate is a focused implementer. It:
 
 1. Reads its spawn prompt for scope, deliverable, and constraints
-2. If `require_plan_approval` is true: sends a `plan_approval_request` via `SendMessage` and waits for a direct message approval from the lead before writing any code
+2. If `require_plan_approval` is true: sends a `plan_approval_request` via `SendMessage` and waits for a direct message approval from the lead before writing any code (this mechanism is unverified as of `MAINTENANCE_LOG.md` run #0 — see Known Limitations)
 3. Runs `.harness/init.sh` to verify the project builds
 4. Claims its task via `TaskUpdate({ taskId: "[ID]", status: "in_progress", owner: "[teammate-name]" })`
 5. Works ONLY within its assigned scope (files, directories)
@@ -218,6 +218,8 @@ All team communication uses `SendMessage`. These are the message patterns for ha
 | Blocked | `SendMessage({ type: "message", recipient: "team-lead", content: "Blocked on task #N: [what I need, who has it]", summary: "Blocked: [reason]" })` |
 | Scope expansion needed | `SendMessage({ type: "message", recipient: "team-lead", content: "Need access to [files] because [reason]. Currently outside my scope.", summary: "Scope expand: [files]" })` |
 | Plan for approval | `SendMessage({ type: "plan_approval_request", recipient: "team-lead", content: "# Implementation Plan\n\n1. [step]\n2. [step]\n...", summary: "Plan for task #N" })` |
+
+The "Plan for approval" row is unverified as of `MAINTENANCE_LOG.md` run #0 — see Known Limitations.
 
 **Completion deduplication**: Send the "Task #N complete" message exactly once per task ID.
 If the TeammateIdle hook immediately prompts you to pick up a new task after completing:
@@ -299,7 +301,7 @@ For complex or risky work, require teammates to submit a plan before implementin
 
 1. Lead sets `require_plan_approval: true` in the spawn prompt
 2. Teammate reads the codebase and produces an implementation plan
-3. Teammate sends `plan_approval_request` via `SendMessage`
+3. Teammate sends `plan_approval_request` via `SendMessage` (unverified as of `MAINTENANCE_LOG.md` run #0 — see Known Limitations)
 4. Lead reviews and responds with a direct `SendMessage` (type `"message"`, not `"plan_approval_response"` which has a delivery bug)
 5. On rejection: teammate revises and resubmits
 6. On approval: teammate proceeds with implementation
@@ -509,7 +511,7 @@ Don't optimize for cost at the expense of quality. The point of model mixing is 
 
 ## Known Limitations
 
-- **plan_approval_response delivery bug**: `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Use `type: "message"` for all plan approvals. **Retirement condition**: the maintenance loop's `plan_approval_response` probe reports FIXED on a live round trip (see `docs/maintenance-runbook.md`). Correction (`MAINTENANCE_LOG.md` run #0, 2026-07-24): the previous version of this entry claimed "the `plan_approval_request` type (teammate to lead) works fine" — that is not accurate as of the current CLI. `plan_approval_request` cannot be manually constructed via `SendMessage` at all (its `message` schema has no such outgoing type), and the underlying `EnterPlanMode`/`ExitPlanMode` mechanism is not exposed to a spawned teammate, so the round trip this workaround describes could not be reached to test either direction.
+- **plan_approval_response delivery bug**: `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Use `type: "message"` for all plan approvals. **Retirement condition**: the maintenance loop's `plan_approval_response` probe reports FIXED on a live round trip (see `docs/maintenance-runbook.md`). Correction (`MAINTENANCE_LOG.md` run #0, 2026-07-24): the previous version of this entry claimed "the `plan_approval_request` type (teammate to lead) works fine" — run #0 could not confirm that. From the `Agent`-tool spawn surface available in that session, no `plan_approval_request` outgoing type was present in `SendMessage`'s schema, and neither `EnterPlanMode` nor `ExitPlanMode` was exposed to the spawned teammate, so neither direction of the round trip could be tested. Whether a different spawn surface exposes the mechanism is an open follow-up (see `MAINTENANCE_LOG.md`) — this section's other instructions (Teammate Responsibilities item 2, the Native Messaging Protocol table, Plan Approval step 3) describe the intended flow but are themselves unverified pending that follow-up.
 - **No session resumption**: if the lead session dies, in-process teammates are lost. Since `teammateMode` defaults to `"in-process"`, set it explicitly to `tmux` (or `auto`) for sessions that might be interrupted. On restart, `features.json` `assigned_to` fields help reconstruct what was in progress.
 - **One team per session**: a lead can only manage one team at a time.
 - **No nested teams**: teammates can't create their own sub-teams.

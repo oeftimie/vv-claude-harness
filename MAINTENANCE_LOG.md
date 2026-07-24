@@ -5,9 +5,10 @@ nothing wrong is still logged, never skipped.
 
 ## Run #0 — 2026-07-24
 
-- **CLI version probed**: 2.1.218 (live interactive session, not the automated
-  cron path — this is the bootstrapping run required by F007/OVI-56's own
-  acceptance criteria, executed manually since the cron and monthly-agent parts
+- **CLI version probed**: 2.1.218 (from `claude --version`; live interactive
+  session, not the automated cron path — this is the bootstrapping run required
+  by F007/OVI-56's own acceptance criteria, executed manually since the cron
+  and monthly-agent parts
   didn't exist yet before this run).
 - **Trigger**: manual, during F007/OVI-56's implementation.
 
@@ -53,10 +54,11 @@ nothing wrong is still logged, never skipped.
 4. **Plugin cache/update layout — HOLD.** `~/.claude/plugins/cache/vv-harness-marketplace/vv-harness/`
    contains `4.1.0/` and `4.2.2/` side by side, matching `INSTALL.md`'s claim
    of no stale-file mixing between versions.
-5. **`fable` model-allowlist entry — CONFIRMED INTENT, no removal.** Fable is a
-   current, real Claude model family (alongside Sonnet 5, Opus 4.8, Haiku 4.5);
-   no agent in `agents/*.md` uses it yet, but it is kept for forward
-   compatibility, not stale cruft.
+5. **`fable` model-allowlist entry — CONFIRMED INTENT, no removal.** Per this
+   session's environment context, Fable is a current, real Claude model family
+   (alongside Sonnet 5, Opus 4.8, Haiku 4.5) — not independently verified
+   against an external source this run. No agent in `agents/*.md` uses it yet,
+   but it is kept for forward compatibility, not stale cruft.
 
 ### Follow-ups
 
