@@ -69,6 +69,7 @@ except Exception:
     pass
 PYEOF
 )
-[ -n "$PROOF_NOTES" ] && printf 'Discipline note (informational, not blocking):\n%s\n' "$PROOF_NOTES"
+[ -n "$PROOF_NOTES" ] && \
+  printf 'Discipline note (informational, not blocking):\n%s\n' "$PROOF_NOTES"
 
 exit 0
