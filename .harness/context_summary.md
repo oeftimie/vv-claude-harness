@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F006/OVI-62 implemented and passing this session (skills/harness-doctor/{SKILL.md,doctor.py,fixes.py}; INSTALL.md and harness-continue Step 2.5 wired). Not yet shipped (PR/CI/review/merge pending).
-- Next up: ship F006/OVI-62 (PR + CI + adversarial review + merge + Linear Done), then continue the OVI-44 epic with the next priority feature. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
+- Currently working on: F006/OVI-62 passing and merged (PR #38 @ c3767d2, after one REQUEST CHANGES round on coverage). 10/22 features now passing.
+- Next up: /harness-issue-prep the next P2/P3 epic issue by priority. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)

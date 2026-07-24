@@ -179,3 +179,33 @@
   aa998df; Linear OVI-61 Done
 
 - 2026-07-24 /harness-issue-prep OVI-62 -> F006: SV ASK (5 Qs, all undefined-term/consistency gaps) -> lead answered all 5 by grounding each in existing repo files (no invention) -> RV PASS cycle 1 (3/5 exact doc restatements, 2/5 evidence-backed lead policy calls; RV flagged the untracked-file default for Ovidiu's spot-check and the v3.6-list removal as a disclosed scope narrowing); remote mode, Linear description + spec_hash updated, local F006 spec object mirrored; UNSTAMPED (Keychain/Bash-sandbox block confirmed a fourth time, not re-asked)
+
+## Session 10 - 2026-07-24
+- Feature: F006 - /harness-doctor instance health check + upgrade engine (OVI-62)
+- Status: complete, merged
+- Tests: 307/307 assertions passed (288 baseline + 15 new in the first pass + 4
+  more closing coverage gaps found via re-review)
+- Coverage: ~98.6% (stdlib trace module; no coverage tool ships in this repo;
+  full_test 307/307 is the gate)
+- Decisions: scope expanded beyond the prep's SKILL.md-only scope to include
+  doctor.py/fixes.py -- a testable "report-first structural check" needs an actual
+  executable, matching the harness_state.py precedent; reused the plugin's own
+  scripts/validate-features.py rather than duplicating validator logic (F004/OVI-49
+  one-owner decision) -- details in context_summary.md Meta-Session 2026-07-24
+  (session 10, F006/OVI-62)
+- Next: /harness-issue-prep the next P2/P3 epic issue by priority. Also refresh
+  live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still
+  deferred, carried across many sessions now)
+- Blockers: none
+- 2026-07-24 F006 first review: REQUEST CHANGES on a coverage-gate rejection alone
+  (correctness never in question) -- reviewer measured ~79% combined via the
+  stdlib trace module and named 5 specific untested behaviors by file:line. Closing
+  them by hand (not just adding assertions to move a number) surfaced a real design
+  bug: check_mld_non_injection was checking session-start.sh under the project's
+  .claude/hooks/, but that file is never copied per-project (it runs directly from
+  CLAUDE_PLUGIN_ROOT) -- the check was permanent dead code against any real
+  project. Fixed to check the plugin's own copy. Re-review: APPROVE, independently
+  re-measured coverage (full reachable-line coverage on the subset checked), all 5
+  gaps confirmed closed with real fixtures/assertions, no scope creep (fixes.py
+  byte-identical between commits, closed via new tests only). Merged @ c3767d2;
+  Linear OVI-62 Done.
