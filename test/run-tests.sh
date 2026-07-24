@@ -897,6 +897,16 @@ RC=$?
 assert_rc0 "$RC" "hs2: in-scope Bash cp passes through, rc 0"
 assert_not_contains "$OUT" "permissionDecision" "hs2: in-scope cp has no deny fields"
 
+# Regression: a '>' inside a quoted string before the real redirect must not be
+# mistaken for the redirect target (found in review: first-match regex denied
+# legitimate in-scope writes containing markup/arrows/blockquotes).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo "a => b" > src/parser/map.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: an in-scope redirect after a quoted '>' passes through, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: quoted-'>' in-scope redirect has no deny fields"
+
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm src/parser/tmp.py')")
 RC=$?
 assert_rc0 "$RC" "hs2: in-scope Bash rm passes through, rc 0"

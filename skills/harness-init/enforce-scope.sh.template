@@ -13,7 +13,10 @@
 # blocking everything. Bash coverage is pattern-based and evadable by construction
 # (compound commands, quoting, subshells, and a write hidden inside a heredoc body fed
 # to a nested interpreter are known false-negative surfaces) -- the goal is stopping
-# accidental drift, not defeating an adversarial teammate.
+# accidental drift, not defeating an adversarial teammate. Known false-positive
+# residual: redirect-target extraction takes the LAST >/>> on the line, so a bare
+# string comparison like [[ "$v" > "1.0" ]] (no real redirect) can still be
+# mistaken for one; quote-stripping to fix this was judged disproportionate.
 # verified live 2026-07-24 on Claude Code 2.1.218
 
 # Read hook input from stdin
@@ -147,10 +150,12 @@ def last_flagless_token(tokens):
 
 
 def redirect_target(segment):
-    # Finds the token after >/>> regardless of other operators (e.g. <<EOF) on the
-    # same line, so a heredoc-into-redirect line is still caught.
-    m = re.search(r">>?\s*([^\s<>|&;]+)", segment)
-    return m.group(1) if m else None
+    # Finds the token after the LAST >/>> on the line (an earlier one may be inside
+    # a quoted string, e.g. echo "a => b" > file -- the real redirect is the last
+    # occurrence), regardless of other operators (e.g. <<EOF) on the same line, so a
+    # heredoc-into-redirect line is still caught.
+    matches = re.findall(r">>?\s*([^\s<>|&;]+)", segment)
+    return matches[-1] if matches else None
 
 
 def sed_inplace_target(tokens):
