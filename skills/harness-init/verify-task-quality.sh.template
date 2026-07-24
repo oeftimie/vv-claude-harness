@@ -92,6 +92,70 @@ FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
     exit 2
 }
 
+# Coverage target gate: compare the targeted feature's own recorded `coverage`
+# number against its `coverage_target` (falls back to 95). Skipped entirely when
+# coverage isn't a number yet (e.g. this repo's own descriptive strings) --
+# proportional: don't punish projects without numeric coverage tooling.
+if [ -n "$FEATURE_ID" ] && [ -f ".harness/features.json" ]; then
+    COVERAGE_RESULT=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
+import json
+import sys
+
+path, feature_id = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+match = next((f for f in data.get("features", []) if f.get("id") == feature_id), None)
+if match is None:
+    sys.exit(0)
+coverage = match.get("coverage")
+if not isinstance(coverage, (int, float)) or isinstance(coverage, bool):
+    sys.exit(0)
+target = match.get("coverage_target")
+if not isinstance(target, int) or isinstance(target, bool):
+    target = 95
+if coverage < target:
+    print(f"{coverage}|{target}")
+PYEOF
+)
+    if [ -n "$COVERAGE_RESULT" ]; then
+        ACHIEVED="${COVERAGE_RESULT%%|*}"
+        TARGET="${COVERAGE_RESULT##*|}"
+        echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%."
+        increment_correction_cycles
+        exit 2
+    fi
+fi
+
+# Claim-matched proof: warn (never block) when this feature accepts with no
+# proof recorded, or with proof whose evidence_type doesn't match its declared
+# qa_binding. Reads both fields directly off the feature object -- no external
+# lookup, no re-parsing of prose.
+if [ -n "$FEATURE_ID" ] && [ -f ".harness/features.json" ]; then
+    PROOF_WARNING=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
+import json
+import sys
+
+path, feature_id = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+match = next((f for f in data.get("features", []) if f.get("id") == feature_id), None)
+if match is None:
+    sys.exit(0)
+proof = match.get("proof")
+qa_binding = match.get("qa_binding")
+if not proof:
+    print(f"WARN: {feature_id} accepted with no proof recorded.")
+elif qa_binding and proof.get("evidence_type") != qa_binding:
+    print(
+        f"WARN: {feature_id}'s proof.evidence_type "
+        f"'{proof.get('evidence_type')}' does not match its declared "
+        f"qa_binding '{qa_binding}'. Fix the proof or the binding."
+    )
+PYEOF
+)
+    [ -n "$PROOF_WARNING" ] && echo "$PROOF_WARNING"
+fi
+
 # Remind about stale in-progress features
 if [ -f ".harness/features.json" ]; then
     IN_PROGRESS=$(python3 -c "

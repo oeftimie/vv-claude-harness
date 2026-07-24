@@ -117,6 +117,45 @@
             "verified_at": { "type": "string" },
             "source": { "type": "string" }
           }
+        },
+        "qa_binding": {
+          "type": ["string", "null"],
+          "enum": ["unit", "integration", "journey", "manual", "corpus", "conformance", null],
+          "description": "Optional, for backward compatibility. Declared at prep time (harness-issue-prep Step 5's mandatory 'QA binding' line): the evidence_type this feature promises to be proven with. verify-task-quality.sh compares it against proof.evidence_type to warn on a mismatch. Absent/null for legacy features."
+        },
+        "proof": {
+          "type": ["object", "null"],
+          "description": "Optional, for backward compatibility. Claim-matched evidence recorded at completion time. Absent or null means no proof recorded. When present, all four subfields are required and must be non-empty.",
+          "required": ["claim", "evidence_type", "artifact", "not_established"],
+          "properties": {
+            "claim": { "type": "string", "minLength": 1, "description": "The assertion this evidence supports." },
+            "evidence_type": {
+              "type": "string",
+              "enum": ["unit", "integration", "journey", "manual", "corpus", "conformance"],
+              "description": "What kind of evidence this is; compared against qa_binding."
+            },
+            "artifact": { "type": "string", "minLength": 1, "description": "Path or URL: test file, screenshot dir, recording, CI run." },
+            "not_established": { "type": "string", "minLength": 1, "description": "HE's honesty field: what the evidence did NOT establish. Explicit content required (e.g. \"none\" is valid, but the key must be present and non-empty)." }
+          }
+        },
+        "coverage_target": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Optional, for backward compatibility. Overrides the 95% default coverage gate; integer 1-100. Overrides should be justified in notes -- advisory only, never machine-enforced."
+        },
+        "delivered": {
+          "type": ["object", "null"],
+          "description": "Optional, for backward compatibility. Delivery closure for projects that ship via PRs. Absent or null means not yet delivered or not applicable.",
+          "properties": {
+            "pr": { "type": "string" },
+            "merged_at": { "type": "string", "description": "ISO8601 timestamp; the validator rejects a malformed value." },
+            "verified": { "type": "string" }
+          }
+        },
+        "design_contract": {
+          "type": ["string", "null"],
+          "description": "Optional, for backward compatibility. Pointer to a locked design artifact (mock, redline, screenshot set) that journey or manual proof is compared against."
         }
       }
     }

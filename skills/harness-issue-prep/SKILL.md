@@ -115,6 +115,8 @@ On `PASS` (from SV directly, or from RV after the human loop), rewrite the spec 
 canonical template:
 
 ```markdown
+QA binding: <unit|integration|journey|manual|corpus|conformance>
+
 ## Problem
 ## Acceptance criteria   (numbered; each one testable as written)
 ## Edge and error cases
@@ -123,6 +125,12 @@ canonical template:
 ## Assumptions ledger    (decisions made during prep, dated)
 ## Out of scope
 ```
+
+The `QA binding` line is mandatory: it declares, up front, which kind of evidence
+(`proof.evidence_type` in `schemas/feature.schema.json`) this spec will eventually be
+proven with, so Pass 1 is never improvised at close time. It is written into the
+feature's `qa_binding` field at write-back time (Step 6); `verify-task-quality.sh`
+compares it against the recorded `proof.evidence_type` and warns on a mismatch.
 
 Fill each section from the verified spec content and the human loop's answers; do not
 invent requirements that were not established during verification. Populate the

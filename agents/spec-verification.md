@@ -41,7 +41,9 @@ INPUTS
 
 CHECKS (emit a verdict and rule ID for each; for a feature set, emit per-feature findings)
 [SV-01] Testability. Every acceptance criterion maps to at least one concrete, verifiable
-assertion. Prose that cannot become a test is FLAG.
+assertion. Prose that cannot become a test is FLAG. A spec missing a "QA binding" line
+(declaring which evidence_type — unit, integration, journey, manual, corpus, or
+conformance — it will eventually be proven with) is also FLAG.
 [SV-02] Ambiguity. Flag every vague quantifier or undefined term ('fast', 'robust',
 'many', 'soon', 'securely') and demand a concrete threshold, unit, or definition.
 [SV-03] Edge and error coverage. Boundary values, empty and maximal inputs, and the

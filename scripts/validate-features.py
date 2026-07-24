@@ -2,10 +2,13 @@
 import json
 import re
 import sys
+from datetime import datetime
 
 FEATURE_ID_RE = re.compile(r"^F[0-9]{3}$")
 STATUS_VALUES = {"pending", "in-progress", "blocked", "passing", "failed"}
 SPEC_VERDICTS = (None, "PASS", "ASK", "BLOCK")
+EVIDENCE_TYPES = ("unit", "integration", "journey", "manual", "corpus", "conformance")
+PROOF_SUBFIELDS = ("claim", "artifact", "not_established")
 
 REQUIRED_FEATURE_FIELDS = (
     "id", "description", "priority", "status", "scope",
@@ -14,6 +17,7 @@ REQUIRED_FEATURE_FIELDS = (
 OPTIONAL_FEATURE_FIELDS = (
     "correction_cycles", "scope_expansions", "approaches_tried",
     "failure_reason", "discovered_via", "spec",
+    "qa_binding", "proof", "coverage_target", "delivered", "design_contract",
 )
 KNOWN_FEATURE_FIELDS = set(REQUIRED_FEATURE_FIELDS) | set(OPTIONAL_FEATURE_FIELDS)
 
@@ -111,6 +115,69 @@ def check_spec(feature, index, errors):
         errors.append(f"features[{index}].spec.verdict: invalid value {value.get('verdict')!r}")
 
 
+def check_qa_binding(feature, index, errors):
+    if "qa_binding" not in feature or feature["qa_binding"] is None:
+        return
+    value = feature["qa_binding"]
+    if value not in EVIDENCE_TYPES:
+        errors.append(f"features[{index}].qa_binding: invalid value {value!r}")
+
+
+def check_proof(feature, index, errors):
+    if "proof" not in feature or feature["proof"] is None:
+        return
+    value = feature["proof"]
+    if not isinstance(value, dict):
+        errors.append(f"features[{index}].proof: must be an object or null")
+        return
+    for key in PROOF_SUBFIELDS:
+        sub = value.get(key)
+        if not isinstance(sub, str) or not sub:
+            errors.append(f"features[{index}].proof.{key}: must be a non-empty string")
+    evidence_type = value.get("evidence_type")
+    if evidence_type not in EVIDENCE_TYPES:
+        errors.append(f"features[{index}].proof.evidence_type: invalid value {evidence_type!r}")
+
+
+def check_coverage_target(feature, index, errors):
+    if "coverage_target" not in feature or feature["coverage_target"] is None:
+        return
+    value = feature["coverage_target"]
+    if not is_plain_int(value) or value < 1 or value > 100:
+        errors.append(f"features[{index}].coverage_target: must be an integer 1-100, got {value!r}")
+
+
+def is_iso8601(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def check_delivered(feature, index, errors):
+    if "delivered" not in feature or feature["delivered"] is None:
+        return
+    value = feature["delivered"]
+    if not isinstance(value, dict):
+        errors.append(f"features[{index}].delivered: must be an object or null")
+        return
+    if "merged_at" in value and not is_iso8601(value["merged_at"]):
+        errors.append(
+            f"features[{index}].delivered.merged_at: invalid ISO8601 value "
+            f"{value.get('merged_at')!r}"
+        )
+
+
+def check_design_contract(feature, index, errors):
+    if "design_contract" not in feature or feature["design_contract"] is None:
+        return
+    if not isinstance(feature["design_contract"], str):
+        errors.append(f"features[{index}].design_contract: must be a string or null")
+
+
 REQUIRED_CHECKS = {
     "id": check_id,
     "description": check_description,
@@ -131,6 +198,11 @@ OPTIONAL_CHECKS = {
     "failure_reason": make_optional_nullable_string_check("failure_reason"),
     "discovered_via": make_optional_nullable_string_check("discovered_via"),
     "spec": check_spec,
+    "qa_binding": check_qa_binding,
+    "proof": check_proof,
+    "coverage_target": check_coverage_target,
+    "delivered": check_delivered,
+    "design_contract": check_design_contract,
 }
 
 
