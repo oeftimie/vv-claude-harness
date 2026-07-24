@@ -77,8 +77,8 @@
           "description": "Path to the test file proving this feature. Required non-null once status is \"passing\"."
         },
         "coverage": {
-          "type": ["number", "null"],
-          "description": "Coverage percentage on touched code. Required non-null once status is \"passing\"."
+          "type": ["number", "string", "null"],
+          "description": "Coverage percentage on touched code, or a descriptive string for projects without coverage tooling (e.g. \"n/a (shell suite, no coverage tooling; full_test is the gate)\"). Required non-null once status is \"passing\"."
         },
         "notes": {
           "type": ["string", "null"],

@@ -135,3 +135,20 @@
 - 2026-07-24 adversarial Opus review APPROVE with 1 real nit (101-char line, fixed
   before merge) and 1 by-design observation; independently reconfirmed the F022 gap
   without being asked; merged @ e5f1fdf; Linear OVI-52 Done
+
+## Session 9 - 2026-07-24 (single-session)
+- Feature: F022 - coverage field type (discovered_via F004)
+- Status: implementation complete; PR pending, CI + review in progress
+- Tests: 250/250 passing (247 baseline + 3 new; TDD red phase confirmed 1 failing first)
+- Coverage: n/a (shell suite, no coverage tooling; full_test 250/250 is the gate)
+- Decisions: Ovidiu chose "relax the schema" (coverage: number|string|null) over
+  rewriting the live data; live .harness/features.json now validates cleanly for
+  the first time — details in context_summary.md
+- Also: added a durable go-ahead default to global CLAUDE.md (skip the wait when a
+  plan raises no open questions) and a risk/lane self-classification rule to this
+  repo's CLAUDE.md (apply the existing dynamic-override heuristic without asking,
+  per Ovidiu's request to reduce per-session confirmation overhead)
+- Next: /harness-issue-prep the next P2/P3 epic issue (F005/OVI-61 next by priority).
+  Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed
+  templates (still deferred)
+- Blockers: none
