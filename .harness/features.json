@@ -727,7 +727,8 @@
       "status": "passing",
       "scope": [
         "schemas/feature.schema.json",
-        ".harness/features.json"
+        "scripts/validate-features.py",
+        "test/run-tests.sh"
       ],
       "depends_on": [
         "F004"
