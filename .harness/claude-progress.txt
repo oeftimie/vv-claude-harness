@@ -177,3 +177,5 @@
   suite, cross-checked all 15 new assertions against the actual .sh.template
   denial strings, and verified the email-mismatch test's isolation; merged @
   aa998df; Linear OVI-61 Done
+
+- 2026-07-24 /harness-issue-prep OVI-62 -> F006: SV ASK (5 Qs, all undefined-term/consistency gaps) -> lead answered all 5 by grounding each in existing repo files (no invention) -> RV PASS cycle 1 (3/5 exact doc restatements, 2/5 evidence-backed lead policy calls; RV flagged the untracked-file default for Ovidiu's spot-check and the v3.6-list removal as a disclosed scope narrowing); remote mode, Linear description + spec_hash updated, local F006 spec object mirrored; UNSTAMPED (Keychain/Bash-sandbox block confirmed a fourth time, not re-asked)

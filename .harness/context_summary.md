@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F005/OVI-61 passing and merged (PR #37 @ aa998df). Next feature per orientation is F006/OVI-62 (/harness-doctor instance health check + upgrade engine).
-- Next up: /harness-issue-prep + implement F006/OVI-62. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
+- Currently working on: F006/OVI-62 prepped this session (SV ASK -> 5 lead-answered questions, all grounded in existing repo files -> RV PASS); normalized, remote write-back done, local spec object mirrored, UNSTAMPED; not yet implemented.
+- Next up: implement F006/OVI-62 (/harness-doctor instance health check + upgrade engine; scope: skills/harness-doctor/SKILL.md, INSTALL.md, skills/harness-continue/SKILL.md, test/run-tests.sh). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
