@@ -152,3 +152,6 @@
   Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed
   templates (still deferred)
 - Blockers: none
+- 2026-07-24 F022 reviewed APPROVE with 1 non-blocking nit (scope array missing
+  scripts/validate-features.py + test/run-tests.sh, fixed before merge); merged
+  @ d0c8dff (no Linear issue, internal discovery via F004)

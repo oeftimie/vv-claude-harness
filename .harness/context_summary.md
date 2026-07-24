@@ -4,7 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F022 implemented this session (coverage: number|string|null); PR pending, CI + review in progress
+- Currently working on: F022 merged (d0c8dff), coverage field type resolved
 - Next up: /harness-issue-prep the next P2/P3 epic issue (F011-F021 remain, most depend_on the now-passing F001/F002/F003 baseline; F005/OVI-61 is next by priority order). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred)
 
 ## Cross-Cutting Concerns
@@ -319,3 +319,11 @@ This file is referenced in CLAUDE.md and loaded every session.
   pre-existing F022 gap (live features.json's descriptive-string coverage doesn't pass
   validate-features.py) without being asked — noted as orthogonal, not a defect of this
   PR. Merged clean @ e5f1fdf; Linear OVI-52 Done.
+- Review value: even a small, non-Linear internal fix (F022) benefited from review —
+  the reviewer confirmed the bool-can't-slip-through-string-check logic empirically,
+  ran the fix against the live features.json end-to-end (not just fixtures), grepped
+  for other coverage-type consumers to rule out a regression, and caught a real
+  (non-blocking) accuracy gap: F022's own `scope` array didn't list
+  scripts/validate-features.py or test/run-tests.sh even though the fix necessarily
+  touched both. Fixed before merge. Merged clean @ d0c8dff; no Linear issue (internal
+  discovery via F004).
