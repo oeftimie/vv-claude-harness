@@ -105,3 +105,9 @@
   .claude/hooks/*.sh from F003's/F008's/F009's fixed templates (three things deferred
   now); decide F022
 - Blockers: none
+- 2026-07-24 adversarial Opus review (elevated risk) REQUEST CHANGES: found a real
+  false-positive (redirect_target's first-match regex mistook a '>' inside a quoted
+  string for the redirect operator, denying legitimate in-scope writes with
+  markup/arrows/blockquotes); fixed with a one-line change (last match, not first) +
+  regression test, 207/207; re-review APPROVE end-to-end against the real hook; merged
+  @ 8ec5df5; Linear OVI-51 Done

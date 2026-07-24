@@ -4,7 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F009 / OVI-51 implemented this session (lead-owned state files + Bash write boundary in enforce-scope.sh.template); PR pending, CI + review in progress
+- Currently working on: F009 / OVI-51 merged (8ec5df5), OVI-51 Done in Linear
 - Next up: F010/OVI-52 (P2.2) next in plan order. Also refresh live .claude/hooks/*.sh from F003's/F008's fixed templates AND F009's new enforce-scope.sh (three things deferred now, same reason); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
@@ -243,3 +243,11 @@ This file is referenced in CLAUDE.md and loaded every session.
   (rather than delegating the read to the agent) exposes the raw secret to the
   transcript — worth flagging immediately and treating as burned, every time, not just
   when the user seems to realize it.
+- Review value: the elevated-risk classification earned its keep — the Opus reviewer
+  found a real false-positive (redirect_target's first-match regex mistook a `>` inside
+  a quoted string for the real redirect operator, denying legitimate in-scope writes
+  containing markup/arrows/blockquotes; 205/205 green suite never exercised this because
+  no existing test had a `>` inside a string before the real redirect). Fixed with a
+  one-line change (take the LAST match, not the first) plus a regression test; re-review
+  confirmed APPROVE end-to-end against the real hook, not just re-reading the diff.
+  Merged clean @ 8ec5df5; Linear OVI-51 Done.
