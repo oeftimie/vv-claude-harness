@@ -111,3 +111,4 @@
   markup/arrows/blockquotes); fixed with a one-line change (last match, not first) +
   regression test, 207/207; re-review APPROVE end-to-end against the real hook; merged
   @ 8ec5df5; Linear OVI-51 Done
+- 2026-07-24 /harness-issue-prep OVI-52 -> F010: SV ASK (6 Qs) -> RV ASK (1 new gap: qa_binding field, cycle 1) -> RV PASS (cycle 2); remote mode, Linear description updated + spec_hash written to features.json; UNSTAMPED (same Keychain/Bash-sandbox block as OVI-51, confirmed persistent; Ovidiu declined the sandbox override again) -- no label applied
