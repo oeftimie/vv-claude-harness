@@ -39,6 +39,36 @@ try:
     feats = json.load(open(sys.argv[1])).get("features", [])
     passing = sum(1 for f in feats if f.get("status") == "passing")
     print(f"Features: {passing}/{len(feats)} passing")
+except Exception:
+    pass
+PYEOF
+
+# next-claimable: delegate the algorithm to harness_state.py when a per-project
+# copy exists (v5+ projects); fall back to the inline computation otherwise
+# (older projects initialized before this module existed).
+STATE_MODULE="$ROOT/.claude/hooks/harness_state.py"
+if [ -f "$STATE_MODULE" ] && [ -f "$H/features.json" ]; then
+  RESULT=$(python3 "$STATE_MODULE" next-claimable "$H/features.json" 2>/dev/null || true)
+  if [ "$RESULT" = "no claimable feature" ]; then
+    echo "Next claimable: none (no pending or failed features)"
+  elif [ -n "$RESULT" ]; then
+    python3 - "$RESULT" <<'PYEOF' 2>/dev/null || true
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+    f = data["next"]
+    scope = ", ".join(f.get("scope") or [])
+    desc = f.get("description", "")
+    print(f"Next claimable: {f.get('id', '?')} - {desc} (scope: {scope})")
+except Exception:
+    pass
+PYEOF
+  fi
+else
+  python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
+import json, sys
+try:
+    feats = json.load(open(sys.argv[1])).get("features", [])
     status = {f.get("id"): f.get("status") for f in feats}
     claimable = [f for f in feats if f.get("status") in ("pending", "failed")
                  and all(status.get(d) == "passing" for d in (f.get("depends_on") or []))]
@@ -53,6 +83,7 @@ try:
 except Exception:
     pass
 PYEOF
+fi
 
 python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
 import hashlib, json, sys

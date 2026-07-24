@@ -132,6 +132,10 @@ manual steps, run in a Claude Code session inside the project, are the upgrade:
 3. Add the `statusLine`, `env`, and `permissions` wiring to `.claude/settings.json` per
    harness-init Step 3.6.
 4. Append `.harness/SESSION_INCOMPLETE` to `.gitignore`.
+5. Copy the shared state module: `cp "${CLAUDE_PLUGIN_ROOT}/skills/harness-init/harness_state.py.template"
+   .claude/hooks/harness_state.py && chmod +x .claude/hooks/harness_state.py` — `verify-task-quality.sh`
+   and `check-remaining-tasks.sh` consume it if present; re-copy the two templates from the
+   current plugin version too, since older per-project copies still have the old inline logic.
 
 ## Personalize your CLAUDE.md
 

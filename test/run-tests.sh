@@ -84,7 +84,8 @@ run_statusline() {
 
 TEMPLATES_DIR="$REPO_ROOT/skills/harness-init"
 
-# Installs the hook templates into $1/.claude/hooks/ as executable .sh files.
+# Installs the hook templates into $1/.claude/hooks/ as executable .sh files,
+# plus harness_state.py which check-remaining-tasks.sh and verify-task-quality.sh consume.
 install_hooks() {
   mkdir -p "$1/.claude/hooks"
   for TPL in "$TEMPLATES_DIR"/*.sh.template; do
@@ -92,6 +93,8 @@ install_hooks() {
     cp "$TPL" "$1/.claude/hooks/$BASE"
     chmod +x "$1/.claude/hooks/$BASE"
   done
+  cp "$TEMPLATES_DIR/harness_state.py.template" "$1/.claude/hooks/harness_state.py"
+  chmod +x "$1/.claude/hooks/harness_state.py"
 }
 
 # Invokes a hook the way settings.json does: "$CLAUDE_PROJECT_DIR"/.claude/hooks/<name>.sh
@@ -1020,6 +1023,188 @@ if [ -z "$SETTINGS_BLOCK_ERRORS" ]; then
   pass "ht: SKILL.md settings block invokes hooks via \$CLAUDE_PROJECT_DIR"
 else
   fail "ht: SKILL.md settings block -- $SETTINGS_BLOCK_ERRORS"
+fi
+
+echo ""
+echo "== harness_state.py =="
+
+STATE_MODULE_TEMPLATE="$TEMPLATES_DIR/harness_state.py.template"
+
+hs_increment() {
+  python3 "$STATE_MODULE_TEMPLATE" increment-correction-cycles "$1" "$2"
+}
+
+hs_read_correction_cycles() {
+  python3 -c "
+import json
+data = json.load(open('$1'))
+print(data['features'][0]['correction_cycles'])
+"
+}
+
+DUMP_HITS=$(grep -l "json.dump" "$TEMPLATES_DIR"/*.template 2>/dev/null \
+  | grep -v "harness_state.py.template" || true)
+if [ -z "$DUMP_HITS" ]; then
+  pass "hs: zero json.dump call sites outside harness_state.py.template"
+else
+  fail "hs: json.dump found outside harness_state.py.template in: $DUMP_HITS"
+fi
+
+HS_LOAD="$WORK/hs-load"
+mkdir -p "$HS_LOAD"
+printf '{ not json' > "$HS_LOAD/features.json"
+OUT=$(python3 "$STATE_MODULE_TEMPLATE" load "$HS_LOAD/features.json" 2>"$HS_LOAD/stderr.log")
+RC=$?
+assert_rc0 "$RC" "hs: load exits 0 on malformed JSON"
+assert_contains "$OUT" "[]" "hs: load prints an empty result on malformed JSON"
+HS_LOAD_STDERR=$(cat "$HS_LOAD/stderr.log")
+assert_contains "$HS_LOAD_STDERR" "cannot parse" "hs: load notes the parse failure on stderr"
+
+HS_MISSING="$WORK/hs-missing-fid"
+mkdir -p "$HS_MISSING"
+printf '{"features": [{"id": "F001", "status": "in-progress", "correction_cycles": 2}]}' \
+  > "$HS_MISSING/features.json"
+SUM_BEFORE=$(cksum < "$HS_MISSING/features.json")
+OUT=$(hs_increment "$HS_MISSING/features.json" F099 2>&1)
+RC=$?
+if [ "$RC" -eq 3 ]; then
+  pass "hs: increment on a missing feature id exits 3"
+else
+  fail "hs: increment on a missing feature id exited $RC, expected 3"
+fi
+SUM_AFTER=$(cksum < "$HS_MISSING/features.json")
+if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
+  pass "hs: increment on a missing feature id performs no write"
+else
+  fail "hs: increment on a missing feature id modified features.json"
+fi
+if [ -f "$HS_MISSING/features.json.tmp" ]; then
+  fail "hs: increment on a missing feature id left a tmp file"
+else
+  pass "hs: increment on a missing feature id leaves no tmp file"
+fi
+
+HS_INIT="$WORK/hs-init-cc"
+mkdir -p "$HS_INIT"
+printf '{"features": [{"id": "F001", "status": "in-progress"}]}' > "$HS_INIT/features.json"
+OUT=$(hs_increment "$HS_INIT/features.json" F001 2>&1)
+RC=$?
+assert_rc0 "$RC" "hs: increment on an absent correction_cycles field exits 0"
+if [ -f "$HS_INIT/features.json.tmp" ]; then
+  CC=$(hs_read_correction_cycles "$HS_INIT/features.json.tmp")
+  if [ "$CC" = "1" ]; then
+    pass "hs: absent correction_cycles is initialized to 1"
+  else
+    fail "hs: correction_cycles was $CC, expected 1"
+  fi
+else
+  fail "hs: expected increment to write a .tmp file"
+fi
+
+HS_INIT_NULL="$WORK/hs-init-cc-null"
+mkdir -p "$HS_INIT_NULL"
+printf '{"features": [{"id": "F001", "status": "in-progress", "correction_cycles": null}]}' \
+  > "$HS_INIT_NULL/features.json"
+OUT=$(hs_increment "$HS_INIT_NULL/features.json" F001 2>&1)
+RC=$?
+assert_rc0 "$RC" "hs: increment on a null correction_cycles field exits 0"
+CC=$(hs_read_correction_cycles "$HS_INIT_NULL/features.json.tmp")
+if [ "$CC" = "1" ]; then
+  pass "hs: null correction_cycles is initialized to 1"
+else
+  fail "hs: correction_cycles was $CC, expected 1"
+fi
+
+HS_GATE="$WORK/hs-status-gate"
+mkdir -p "$HS_GATE"
+printf '{"features": [{"id": "F001", "status": "pending", "correction_cycles": 0}]}' \
+  > "$HS_GATE/features.json"
+OUT=$(hs_increment "$HS_GATE/features.json" F001 2>&1)
+RC=$?
+assert_rc0 "$RC" "hs: increment on a non-in-progress feature exits 0 (silent no-op)"
+if [ -f "$HS_GATE/features.json.tmp" ]; then
+  fail "hs: a non-in-progress feature should not produce a tmp write"
+else
+  pass "hs: a non-in-progress feature produces no tmp write"
+fi
+
+HS_NONE="$WORK/hs-none-claimable"
+mkdir -p "$HS_NONE"
+cat > "$HS_NONE/features.json" <<'JSON'
+{"features": [{"id": "F001", "status": "passing", "priority": 1, "scope": [], "depends_on": []}]}
+JSON
+OUT=$(python3 "$STATE_MODULE_TEMPLATE" next-claimable "$HS_NONE/features.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "hs: next-claimable exits 0 when nothing is claimable"
+if [ "$OUT" = "no claimable feature" ]; then
+  pass "hs: next-claimable prints the exact literal string when empty"
+else
+  fail "hs: next-claimable printed '$OUT', expected 'no claimable feature'"
+fi
+
+HS_SOME="$WORK/hs-claimable"
+mkdir -p "$HS_SOME"
+cat > "$HS_SOME/features.json" <<'JSON'
+{"features": [
+  {"id": "F001", "status": "passing", "priority": 1, "scope": [], "depends_on": []},
+  {"id": "F002", "status": "pending", "priority": 2, "scope": ["src/x/"], "depends_on": ["F001"]}
+]}
+JSON
+OUT=$(python3 "$STATE_MODULE_TEMPLATE" next-claimable "$HS_SOME/features.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "hs: next-claimable exits 0 when a feature is claimable"
+assert_contains "$OUT" '"id": "F002"' "hs: next-claimable JSON names the claimable feature"
+
+HS_COUNTS="$WORK/hs-counts"
+mkdir -p "$HS_COUNTS"
+cat > "$HS_COUNTS/features.json" <<'JSON'
+{"features": [
+  {"id": "F001", "status": "passing"},
+  {"id": "F002", "status": "in-progress"},
+  {"id": "F003", "status": "pending"}
+]}
+JSON
+OUT=$(python3 "$STATE_MODULE_TEMPLATE" counts "$HS_COUNTS/features.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "hs: counts exits 0"
+assert_contains "$OUT" '"passing": 1' "hs: counts reports the passing count"
+assert_contains "$OUT" '"total": 3' "hs: counts reports the total count"
+assert_contains "$OUT" '"F002"' "hs: counts lists in-progress ids"
+
+HS_INTERRUPT="$WORK/hs-interrupt"
+mkdir -p "$HS_INTERRUPT"
+printf '{"features": [{"id": "F001", "status": "in-progress", "correction_cycles": 0}]}' \
+  > "$HS_INTERRUPT/features.json"
+chmod 555 "$HS_INTERRUPT"
+OUT=$(hs_increment "$HS_INTERRUPT/features.json" F001 2>&1)
+RC=$?
+chmod 755 "$HS_INTERRUPT"
+assert_rc_nonzero "$RC" "hs: a write failure (permission-denied dir) exits non-zero"
+assert_contains "$(cat "$HS_INTERRUPT/features.json")" '"correction_cycles": 0' \
+  "hs: original features.json is unchanged after a write failure"
+if [ -f "$HS_INTERRUPT/features.json.tmp" ]; then
+  fail "hs: a failed write left an orphaned tmp file"
+else
+  pass "hs: a failed write leaves no orphaned tmp file"
+fi
+
+DIR_HS_PLAIN="$WORK/hs-delegate-plain"
+make_fixture "$DIR_HS_PLAIN"
+OUT_PLAIN=$(run_session_start "$DIR_HS_PLAIN" '{"source":"startup"}')
+NEXT_PLAIN=$(printf '%s\n' "$OUT_PLAIN" | grep "^Next claimable:")
+
+DIR_HS_MODULE="$WORK/hs-delegate-module"
+make_fixture "$DIR_HS_MODULE"
+mkdir -p "$DIR_HS_MODULE/.claude/hooks"
+cp "$STATE_MODULE_TEMPLATE" "$DIR_HS_MODULE/.claude/hooks/harness_state.py"
+chmod +x "$DIR_HS_MODULE/.claude/hooks/harness_state.py"
+OUT_MODULE=$(run_session_start "$DIR_HS_MODULE" '{"source":"startup"}')
+NEXT_MODULE=$(printf '%s\n' "$OUT_MODULE" | grep "^Next claimable:")
+
+if [ -n "$NEXT_PLAIN" ] && [ "$NEXT_PLAIN" = "$NEXT_MODULE" ]; then
+  pass "hs: next-claimable output is identical whether harness_state.py is present or not"
+else
+  fail "hs: next-claimable output differs -- plain: '$NEXT_PLAIN' module: '$NEXT_MODULE'"
 fi
 
 echo ""

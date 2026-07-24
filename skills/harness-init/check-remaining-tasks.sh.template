@@ -18,56 +18,29 @@ if [ ! -f ".harness/features.json" ]; then
     exit 0
 fi
 
-# Check features.json for remaining work.
+# Check features.json for remaining work via the shared state module.
 # Status enum: pending, in-progress, blocked, passing, failed
 # Claimable statuses: pending (ready for work), failed (needs re-attempt)
-NEXT=$(python3 - <<'PYEOF' || true
+STATE_MODULE=".claude/hooks/harness_state.py"
+RESULT=$(python3 "$STATE_MODULE" next-claimable .harness/features.json || true)
+
+if [ -z "$RESULT" ] || [ "$RESULT" = "no claimable feature" ]; then
+    exit 0
+fi
+
+NEXT=$(printf '%s' "$RESULT" | python3 -c "
 import json
 import sys
 
-try:
-    with open('.harness/features.json') as fh:
-        data = json.load(fh)
-except Exception as exc:
-    print(f"check-remaining-tasks: cannot parse features.json: {exc}", file=sys.stderr)
-    sys.exit(0)
+data = json.load(sys.stdin)
+f = data['next']
+status_note = ' (retry)' if f.get('status') == 'failed' else ''
+scope = ', '.join(f.get('scope') or []) or 'no scope defined'
+print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
+      f\"{f.get('description')} (priority {f.get('priority', 'unset')})\"
+      f\"{status_note} [scope: {scope}]\")
+")
 
-features = data.get('features', []) if isinstance(data, dict) else []
-valid = []
-for entry in features:
-    try:
-        entry.get('status')
-        valid.append(entry)
-    except Exception:
-        print(f"check-remaining-tasks: skipping malformed feature entry: {entry!r}",
-              file=sys.stderr)
-
-passing_ids = {f.get('id') for f in valid if f.get('status') == 'passing'}
-claimable = []
-for f in valid:
-    try:
-        if f.get('status') in ('pending', 'failed') \
-                and all(dep in passing_ids for dep in f.get('depends_on') or []):
-            claimable.append(f)
-    except Exception as exc:
-        print(f"check-remaining-tasks: skipping malformed feature entry "
-              f"{f.get('id')!r}: {exc}", file=sys.stderr)
-if claimable:
-    claimable.sort(key=lambda f: f.get('priority') or 999)
-    f = claimable[0]
-    status_note = ' (retry)' if f.get('status') == 'failed' else ''
-    scope = ', '.join(f.get('scope') or []) or 'no scope defined'
-    print(f"{len(claimable)} claimable feature(s). Next: {f.get('id')}: "
-          f"{f.get('description')} (priority {f.get('priority', 'unset')})"
-          f"{status_note} [scope: {scope}]")
-PYEOF
-)
-
-if [ -n "$NEXT" ]; then
-    echo "$NEXT"
-    echo "Read .harness/features.json for full details, then claim it via TaskUpdate."
-    exit 2
-fi
-
-# No remaining work
-exit 0
+echo "$NEXT"
+echo "Read .harness/features.json for full details, then claim it via TaskUpdate."
+exit 2
