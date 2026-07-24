@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F004 / OVI-49 merged (5b15018), OVI-49 Done in Linear
-- Next up: /harness-issue-prep the next P0/P1 issue, then implement; also refresh live .claude/hooks/*.sh from F003's fixed templates; F022 (discovered_via F004) needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
+- Currently working on: F008 / OVI-50 implemented this session (shared harness_state.py); PR pending, CI + review in progress
+- Next up: /harness-issue-prep the next P2 issue (P2.1/F009 or P2.2/F010, both unblocked by P1.1); also refresh live .claude/hooks/*.sh from F003's fixed templates AND from F008's new harness_state.py (now two things deferred, same reason); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -27,10 +27,15 @@ This file is referenced in CLAUDE.md and loaded every session.
 - verify-task-quality is the only features.json writer besides the lead: targeted feature only, indent=2, trailing newline, atomic .tmp + mv (2026-07-22, OVI-48)
 - schemas/feature.schema.json (JSON Schema draft 2020-12) is now the single owner of the features.json envelope + 16-field feature object; scripts/validate-features.py hand-implements the same checks in stdlib Python (no jsonschema dependency, per spec) rather than loading the schema at runtime — the schema documents intent for humans/external tools, the script enforces it (2026-07-23, F004/OVI-49)
 - Only the 10 pre-v3.3 core fields are required in the schema/validator; the 5 operational metrics + `spec` are optional and type-checked only when present, so the existing shared test fixture (test/fixtures/harness-project/.harness/features.json, which predates v3.3 and has no envelope fields either) validates unmodified — kept envelope fields (project/created/total_features/passing) optional too for the same backward-compat reason (2026-07-23, F004)
+- harness_state.py.template's increment-correction-cycles writes only the `.tmp` file; the final `mv` promotion stays in the bash templates (verify-task-quality.sh.template), preserving the existing grep-tested atomic-write pattern (`grep -q 'mv '`) rather than moving the whole atomic write into Python (2026-07-24, F008/OVI-50)
+- increment-correction-cycles preserves the original id-AND-status=='in-progress' match gate exactly (silent no-op, exit 0, no write, if the id exists but status differs); the NEW exit-3 code is reserved strictly for "no feature with that id at all" — these are two different conditions the OVI-50 spec only fully specified for the latter (2026-07-24, F008)
+- session-start.sh (plugin-shipped, must support pre-v5 projects) delegates ONLY the next-claimable algorithm to harness_state.py when `.claude/hooks/harness_state.py` exists; the "Features: N/M passing" line and the fallback inline logic are untouched — per the OVI-50 spec's explicit scoping of point 4, not a full rewrite of session-start.sh's read path (2026-07-24, F008)
 
 ### Patterns
 - Tests must pin env vars the hooks read: run_session_start forces CLAUDE_PLUGIN_ROOT unset (env -u), run_session_start_with_root sets it — never inherit the test shell's env for hook behavior assertions (2026-07-22)
 - Fixture tests install templates via install_hooks and invoke them exactly the way settings.json does (`CLAUDE_PROJECT_DIR=<fixture> <fixture>/.claude/hooks/<name>.sh`) — testing through the real invocation form caught the cwd bugs the old `bash relative/path` form hid (2026-07-22)
+- To prove a delegated code path produces byte-identical output to the inline path it replaces, install the real module into one fixture and not the other, run the SAME hook against both, and diff the specific output line — don't just assert the delegated path "looks right" in isolation (2026-07-24, F008)
+- A portable way to simulate an atomic-write interrupt without OS-specific mocking: chmod the containing directory to remove write permission (555), attempt the write, assert the original file untouched and no tmp file was created, then chmod back — works on macOS and Linux CI without root (2026-07-24, F008)
 
 ### Gotchas
 - Baseline before any change: 66/66 assertions passing on main @ d3661ff (2026-07-22)
@@ -39,6 +44,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - session-start.sh's own warning blocks are the reference pattern for new orientation checks: wrap the whole python heredoc body in try/except pass AND pipe stderr to /dev/null with `|| true` at the shell level — belt-and-suspenders against a malformed features.json ever leaking a traceback into model context (2026-07-23, F002)
 - This repo's live .claude/hooks/*.sh lag the fixed templates: the old verify-task-quality corrupted correction_cycles (F003 +1, no trailing newline) when the gate rejected a TDD red-phase task completion; reset to 0 as a false positive. Refresh live hooks from templates after OVI-48 merges (2026-07-22)
 - Dogfooding scripts/validate-features.py against this repo's own live .harness/features.json (not required by F004's acceptance criteria, just a sanity check) found F001-F004's `coverage` field holds a descriptive string ("n/a (shell suite, no coverage tooling; full_test N/N is the gate)"), not the number|null the OVI-49 spec types verbatim. Did not loosen the schema or rewrite the live data to make this pass — filed as F022 (discovered_via F004) instead, since silently relaxing a just-verified spec to match existing non-conformant data would be gaming the check, not fixing it (2026-07-23, F004)
+- Marking a TDD sub-task "completed" while the suite is intentionally red still trips the TaskCompleted gate and bumps correction_cycles — this is now the FOURTH session in a row (F002, F003, F004, F008) hitting the identical false positive. The procedural fix (mark red-phase tasks complete only after green) keeps slipping under real work pressure; worth tightening harness-continue's task-template wording or the gate itself rather than continuing to just log it (2026-07-24, F008)
 
 ## Meta-Patterns
 <!-- Coordination insights that apply across features — NOT domain-specific.
@@ -155,3 +161,27 @@ This file is referenced in CLAUDE.md and loaded every session.
   check rather than duplicating the schema's `^F[0-9]{3}$` pattern check — acceptable
   drift given the no-jsonschema constraint, but noted for anyone touching this again).
   Merged on green CI (2 checks) + APPROVE @ 5b15018; Linear OVI-49 Done.
+
+## Meta-Session 2026-07-24 (session 6, F008/OVI-50)
+- Scope accuracy: F008's scope (harness_state.py.template + the two per-project hook
+  templates + session-start.sh + SKILL.md/INSTALL.md + test/run-tests.sh) matched the
+  work exactly; the one addition (updating install_hooks() test helper) was implied by
+  the refactor itself, not a scope expansion.
+- Model calibration: single-session, 2 correction_cycles — both the known TDD-red-phase
+  false-rejection (marking a sub-task complete mid-red), not real correction cycles.
+- Prep quality: this feature's spec went through SV ASK (4 questions) -> RV PASS in one
+  cycle. All 4 questions resolved genuine ambiguities that would have caused rework if
+  guessed at implementation time (especially the criterion-1-vs-point-3 contradiction on
+  the write-surface test, and the two unspecified edge cases for next-claimable/increment).
+  The prep investment paid for itself directly in this session.
+- Discovery lineage: none this session (no new features filed).
+- Approach patterns: preserving an EXISTING grep-tested pattern (the literal `mv ` string
+  in verify-task-quality.sh.template) shaped the module's design — increment-correction-cycles
+  writes only the .tmp file rather than doing a complete atomic write internally, keeping
+  the real promotion step in bash. Worth checking existing grep-based tests for what they
+  actually assert BEFORE consolidating logic into a new shared module, not after.
+- Approach patterns: writing a manual before/after comparison (install harness_state.py
+  into one fixture, not the other, diff the specific output line) caught that the
+  delegation-parity test would otherwise pass vacuously until session-start.sh's actual
+  delegation logic existed — a good habit for any "output must be identical" acceptance
+  criterion, not just a shell-test assertion.
