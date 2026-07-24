@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F009 / OVI-51 prepped this session (SV BLOCK -> 5 Qs -> RV PASS); normalized, remote write-back to Linear done, UNSTAMPED (Keychain blocked by Bash sandbox, see Gotchas); not yet implemented
-- Next up: implement F009/OVI-51 (lane=code, risk=elevated -> Opus implementer), or F010/OVI-52 first if preferred. Also refresh live .claude/hooks/*.sh from F003's fixed templates AND from F008's new harness_state.py (still deferred); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
+- Currently working on: F009 / OVI-51 implemented this session (lead-owned state files + Bash write boundary in enforce-scope.sh.template); PR pending, CI + review in progress
+- Next up: F010/OVI-52 (P2.2) next in plan order. Also refresh live .claude/hooks/*.sh from F003's/F008's fixed templates AND F009's new enforce-scope.sh (three things deferred now, same reason); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -19,6 +19,18 @@ This file is referenced in CLAUDE.md and loaded every session.
 ## Domain: Harness Plugin Engineering
 
 ### Decisions
+- enforce-scope.sh.template now handles both Edit/Write/MultiEdit and Bash matchers.
+  The pre-existing out-of-scope Edit/Write check is untouched (exit 2, "legacy path
+  until touched" per Amendment 5). Two new denial paths — lead-owned state files
+  (features.json, context_summary.md, claude-progress.txt) and best-effort Bash write
+  coverage — use `hookSpecificOutput.permissionDecision: "deny"` (exit 0) with a
+  `verified live YYYY-MM-DD on Claude Code X.Y.Z` annotation (format sourced from
+  OVI-57 Amendment 1 item 6, though OVI-57 itself is unimplemented) (2026-07-24, F009/OVI-51)
+- Bash write-command matching strips heredoc bodies (opening line through closing
+  marker) before segmenting on `|`/`;`/`&&`, so payload text can never false-positive
+  and a heredoc-into-redirect line's real `>`/`>>` target is still caught; a write
+  hidden inside a heredoc body fed to a nested interpreter is an explicit, documented
+  residual hole, not solved (2026-07-24, F009/OVI-51)
 - `.harness/harness.json` now carries a `prep` block: `prep.linear` (labels `harness-ready` / `harness-needs-prep`, created this session) and `prep.stamp` (`stamper: "ovidiu"`) are configured; `prep.runner` deliberately omitted — no external issue-to-PR runner exists in this environment. This switches `/harness-issue-prep` from local-only to full remote mode (Linear write-back + stamping) for all future preps in this project (2026-07-24, per Ovidiu)
 - Custom stack targets: full_test = `bash test/run-tests.sh`; smoke_test = `bash -n hooks/*.sh` + `python3 -m json.tool` over both .claude-plugin/*.json manifests (2026-07-22, per OVI-44)
 - Features F001–F021 mirror the 21 OVI-44 sub-issues; depends_on mirrors the epic's dependency graph; "independent after P0" encoded as depends_on the three P0 features (2026-07-22)
@@ -39,6 +51,12 @@ This file is referenced in CLAUDE.md and loaded every session.
 - A portable way to simulate an atomic-write interrupt without OS-specific mocking: chmod the containing directory to remove write permission (555), attempt the write, assert the original file untouched and no tmp file was created, then chmod back — works on macOS and Linux CI without root (2026-07-24, F008)
 
 ### Gotchas
+- F008's single-writer grep test (`grep -l "json.dump" ...`) false-positived on F009's
+  legitimate new `json.dumps(...)` calls (serializing a JSON string for hook stdout,
+  not writing features.json at all) — "json.dump" is a substring of "json.dumps".
+  Fixed by requiring the literal open-paren: `"json.dump("`, which "json.dumps(" does
+  not contain. Any future grep-based test on a substring this loose should check
+  whether a legitimate near-miss identifier could collide (2026-07-24, F009/OVI-51)
 - The Claude Code Bash tool runs in an OS-level sandbox (macOS Seatbelt) that blocks `security find-generic-password` for the vv-harness-stamp Keychain item — confirmed NOT a Keychain-ACL/prompt issue: rotating the item with `-A` (allow all local apps, no prompt) made zero difference, exact same silent exit code 36 before and after. The block happens before the keychain ACL is ever evaluated. `dangerouslyDisableSandbox: true` on that one Bash call would get past it; Ovidiu declined it for OVI-51's prep, so that spec is normalized-but-unstamped. Anyone re-attempting stamping from an agent session should expect this and ask before reaching for the sandbox override (2026-07-24, F009/OVI-51 prep)
 - Running `security find-generic-password -s <service> -w` prints the RAW SECRET, not a derived value — if a human runs this themselves and pastes the output into the conversation (as opposed to letting the agent invoke it and only see the derived HMAC), that secret is burned per the transcript-secrets doctrine and must be rotated immediately, not reused (2026-07-24, F009/OVI-51 prep)
 - Baseline before any change: 66/66 assertions passing on main @ d3661ff (2026-07-22)
@@ -195,3 +213,33 @@ This file is referenced in CLAUDE.md and loaded every session.
   "persisted"; check-remaining-tasks.sh's silent no-fallback if harness_state.py is ever
   missing; a cosmetic stderr-merge detail). Merged clean on green CI + APPROVE @
   d0af1ac (no classifier block this time); Linear OVI-50 Done.
+
+## Meta-Session 2026-07-24 (session 7, F009/OVI-51)
+- Scope accuracy: initial scope (5 entries) expanded to 8 mid-implementation once
+  Amendment 7's acceptance criterion 8 ("every gate .sh.template carries a Failure
+  posture: line") was read closely — it demands touching all 4 gate templates, not
+  just enforce-scope.sh.template. This was already implied by the RV-approved spec
+  text, so treated as a scope_expansion to record, not a new decision requiring
+  re-approval. Lesson: when a spec's acceptance criteria say "every X", check whether
+  the feature's own `scope` array actually covers every X before starting.
+- Model calibration: single-session, 2 correction_cycles — both the known
+  TDD-red-phase false-rejection pattern (now 5 sessions running), not real corrections.
+- Prep quality: this was the first BLOCK verdict (not just ASK) this project has seen —
+  the spec's base text and its own amendment directly contradicted each other on the
+  exit-code contract. Resolving it required a genuine design judgment call (which
+  denial paths count as "new" vs "legacy"), not just filling in a missing detail; the
+  lead's recommendation, grounded in the amendment's own carve-out clause, is what RV
+  ultimately verified as non-capitulating. Worth remembering: a BLOCK from internal
+  spec contradiction needs a design decision, not just an answer.
+- Discovery lineage: none new filed; found and fixed one PRE-EXISTING test bug (F008's
+  overly-broad json.dump grep, see Gotchas) exposed by legitimate new code.
+- Approach patterns: this session also stood up the full remote /harness-issue-prep
+  flow for the first time (prep.linear + prep.stamp configured, Linear labels created).
+  Stamping itself hit a real environmental wall (Bash tool sandbox blocking Keychain
+  access) that no amount of Keychain ACL tuning could fix — recognizing "this isn't the
+  ACL, it's a different layer" after the identical failure survived an ACL rotation
+  was the key diagnostic step, not guessing at more Keychain fixes.
+- Approach patterns: a human running a keychain read-and-paste command themselves
+  (rather than delegating the read to the agent) exposes the raw secret to the
+  transcript — worth flagging immediately and treating as burned, every time, not just
+  when the user seems to realize it.
