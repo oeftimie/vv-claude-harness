@@ -235,7 +235,7 @@ If the TeammateIdle hook immediately prompts you to pick up a new task after com
 | Plan rejected | `SendMessage({ type: "message", recipient: "teammate-name", content: "Plan rejected. Revise: [feedback]. Resubmit before implementing." })` |
 | Shutdown | `SendMessage({ type: "shutdown_request", recipient: "teammate-name", content: "All tasks complete, shutting down team." })` |
 
-> **Known bug:** `plan_approval_response` type in `SendMessage` reports success but the message is never delivered to the recipient. Use `type: "message"` for all plan approvals and rejections. This workaround is confirmed working as of Claude Code v2.1.33+.
+> **Known bug:** `plan_approval_response` type in `SendMessage` reports success but the message is never delivered to the recipient. Use `type: "message"` for all plan approvals and rejections. This workaround is confirmed working as of Claude Code v2.1.33+. **Retirement condition**: the maintenance loop's `plan_approval_response` probe (`docs/maintenance-runbook.md`) reports FIXED on a live spawned-teammate round trip; as of run #0 (`MAINTENANCE_LOG.md`, 2026-07-24) the round trip itself could not be reached (no `require_plan_approval`-equivalent spawn option, no `EnterPlanMode`/`ExitPlanMode` exposed to teammates), so this remains open, not retired.
 
 **Teammate to Teammate:**
 
@@ -509,7 +509,7 @@ Don't optimize for cost at the expense of quality. The point of model mixing is 
 
 ## Known Limitations
 
-- **plan_approval_response delivery bug**: `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Use `type: "message"` for all plan approvals. The `plan_approval_request` type (teammate to lead) works fine; only the response direction is broken.
+- **plan_approval_response delivery bug**: `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Use `type: "message"` for all plan approvals. **Retirement condition**: the maintenance loop's `plan_approval_response` probe reports FIXED on a live round trip (see `docs/maintenance-runbook.md`). Correction (`MAINTENANCE_LOG.md` run #0, 2026-07-24): the previous version of this entry claimed "the `plan_approval_request` type (teammate to lead) works fine" — that is not accurate as of the current CLI. `plan_approval_request` cannot be manually constructed via `SendMessage` at all (its `message` schema has no such outgoing type), and the underlying `EnterPlanMode`/`ExitPlanMode` mechanism is not exposed to a spawned teammate, so the round trip this workaround describes could not be reached to test either direction.
 - **No session resumption**: if the lead session dies, in-process teammates are lost. Since `teammateMode` defaults to `"in-process"`, set it explicitly to `tmux` (or `auto`) for sessions that might be interrupted. On restart, `features.json` `assigned_to` fields help reconstruct what was in progress.
 - **One team per session**: a lead can only manage one team at a time.
 - **No nested teams**: teammates can't create their own sub-teams.

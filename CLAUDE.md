@@ -50,3 +50,7 @@ This project uses: Ovidiu Eftimie <eovidiu@gmail.com> (GitHub account `eovidiu`)
 ## Harness Prep: Risk/Lane Self-Classification
 
 When `/harness-issue-prep` needs `lane`/`risk` for a readiness stamp, apply the existing dynamic-override heuristic in `rules/agent-teams-protocol.md` (10+ files, cross-cutting concerns, security-sensitive code, first feature in a new codebase → elevated) without asking. Only ask when the call is genuinely close.
+
+## Documented Workarounds Require a Retirement Condition
+
+Every documented workaround (a pattern adopted to route around a platform bug or gap, as opposed to a permanent design limitation) MUST name the version or event that removes it — never leave one pinned to "confirmed as of vX.Y+" with no condition for revisiting it. The maintenance loop (`docs/maintenance-runbook.md`, `MAINTENANCE_LOG.md`, `.github/workflows/maintenance.yml`) exists to check these retirement conditions on a schedule; a workaround without one can't be checked. Retiring a workaround (removing it from the files that document it) is always an explicit, approval-required change — never performed automatically by a probe run, even when a probe reports the underlying bug fixed.

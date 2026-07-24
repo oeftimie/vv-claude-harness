@@ -1,0 +1,47 @@
+name: maintenance
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install latest Claude Code CLI (retry once on flake)
+        run: |
+          npm install -g @anthropic-ai/claude-code \
+            || (sleep 10 && npm install -g @anthropic-ai/claude-code)
+
+      - name: Record probed CLI version
+        run: |
+          echo "cli_version=$(claude --version)" >> "$GITHUB_ENV"
+          {
+            echo "### Maintenance probe"
+            echo "Claude Code CLI version: $(claude --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run test suite
+        run: bash test/run-tests.sh
+
+      - name: Open an issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = process.env.cli_version || 'unknown version'
+            const body = [
+              'The weekly maintenance cron failed. Check the workflow run logs',
+              'for the failing section (CLI install or test suite) and the job',
+              'summary for the probed CLI version. See',
+              'docs/maintenance-runbook.md for the full probe checklist.',
+            ].join(' ')
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Maintenance probe failed on Claude Code ${version}`,
+              body,
+            })
