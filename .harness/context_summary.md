@@ -410,3 +410,20 @@ This file is referenced in CLAUDE.md and loaded every session.
   F004/OVI-49's one-owner design decision -- checked this against the actual
   installed-plugin path convention (INSTALL.md's ${CLAUDE_PLUGIN_ROOT} references)
   before assuming it would resolve correctly outside this repo's own dev context.
+- Review value: adversarial Opus reviewer measured actual coverage with the stdlib
+  trace module (no coverage tool ships in this repo) by replaying the shipped test
+  scenarios against real fixtures -- found doctor.py/fixes.py combined ~79%, below
+  the 95% gate, and named 5 specific untested behaviors by file:line rather than
+  just citing a percentage. REQUEST CHANGES, not APPROVE-with-nits, on a coverage
+  gate alone -- correctness was never in question. Closing the gaps surfaced a real
+  design bug the coverage push forced a closer look at: check_mld_non_injection was
+  checking session-start.sh under the PROJECT's .claude/hooks/, but that file is
+  never copied per-project (it runs directly from CLAUDE_PLUGIN_ROOT) -- the check
+  was permanent dead code against any real project. Fixed to check the plugin's own
+  copy. Re-measured combined coverage after closing all 5 gaps plus a 6th found via
+  self-remeasurement (a commit-gate-template-shipped-but-not-copied case): ~98.6%.
+  Lesson: a coverage-gate rejection is worth taking seriously even when the
+  reviewer's own listed nits are all "minor" -- the act of closing coverage gaps by
+  hand (not just adding assertions to make the number move) is what surfaces bugs
+  the original implementation-and-test pass didn't catch, because writing a test to
+  match your own mental model of the code doesn't test the model itself.
