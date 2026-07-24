@@ -46,3 +46,7 @@ This project uses the Long-Running Agent Harness (vv-harness plugin) to manage i
 ## Git Identity
 
 This project uses: Ovidiu Eftimie <eovidiu@gmail.com> (GitHub account `eovidiu`) over HTTPS with the gh credential helper; SSH is not available in this environment. Always verify identity before push/pull/clone operations. Never push directly to main — PR-based flow only.
+
+## Harness Prep: Risk/Lane Self-Classification
+
+When `/harness-issue-prep` needs `lane`/`risk` for a readiness stamp, apply the existing dynamic-override heuristic in `rules/agent-teams-protocol.md` (10+ files, cross-cutting concerns, security-sensitive code, first feature in a new codebase → elevated) without asking. Only ask when the call is genuinely close.
