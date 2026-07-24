@@ -77,10 +77,11 @@ one worked example in the Feature Schema section of
 `${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. `scripts/validate-features.py`
 enforces it in the test suite.
 
-Feature is not done until:
-- `status` is `"passing"`
-- `test_file` points to a test
-- `coverage` >= 95% on touched code
+The done-definition (passing / done / shipped) and the optional claim-matched-proof
+fields (`qa_binding`, `proof`, `coverage_target`, `delivered`, `design_contract`) are
+defined once, in the Feature Schema section of
+`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md` — see that section rather than
+this one for the current definition.
 
 A feature may also carry a `spec` verification object; see the Feature Schema section of the Agent Teams protocol.
 

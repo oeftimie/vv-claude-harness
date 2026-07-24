@@ -438,9 +438,24 @@ path = sys.argv[1]
 with open(path) as fh:
     data = json.load(fh)
 for feature in data["features"]:
+    if feature["id"] == "F001":
+        # Already passing in the base fixture with no proof; give it one too so
+        # this stays a genuinely clean, no-discipline-note scenario.
+        feature["proof"] = {
+            "claim": "pipeline parsing works",
+            "evidence_type": "unit",
+            "artifact": "tests/parser/test_parser.py",
+            "not_established": "none",
+        }
     if feature["id"] == "F002":
         feature["status"] = "passing"
         feature["coverage"] = 96
+        feature["proof"] = {
+            "claim": "hook coverage reporting works",
+            "evidence_type": "unit",
+            "artifact": "tests/hooks/test_hooks.py",
+            "not_established": "none",
+        }
 with open(path, "w") as fh:
     json.dump(data, fh, indent=2)
     fh.write("\n")
@@ -455,7 +470,7 @@ if [ -f "$DIR_G/.harness/SESSION_INCOMPLETE" ]; then
 else
   pass "g: SESSION_INCOMPLETE absent after a clean session"
 fi
-assert_empty "$OUT" "g: clean session-end prints nothing"
+assert_empty "$OUT" "g: clean session-end prints nothing (proof recorded, no discipline note)"
 
 printf 'stale gap from previous run\n' > "$DIR_G/.harness/SESSION_INCOMPLETE"
 OUT=$(run_session_end "$DIR_G")
@@ -474,6 +489,38 @@ assert_rc0 "$RC" "h: session-start after gaps exits 0"
 assert_contains "$OUT" "unresolved discipline gaps" "h: warns about the incomplete session"
 assert_contains "$OUT" "F002 is in-progress but missing test_file or coverage." \
   "h: surfaces the SESSION_INCOMPLETE contents"
+
+DIR_PROOF="$WORK/session-end-proof-note"
+make_fixture "$DIR_PROOF"
+python3 - "$DIR_PROOF/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["status"] = "passing"
+        feature["coverage"] = 96
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+TODAY=$(date -u +%Y-%m-%d)
+printf '\n## Meta-Session %s\n- clean\n' "$TODAY" >> "$DIR_PROOF/.harness/context_summary.md"
+git -C "$DIR_PROOF" add -A
+git -C "$DIR_PROOF" commit -q -m "session work committed, F002 passing, no proof"
+OUT=$(run_session_end "$DIR_PROOF")
+RC=$?
+assert_rc0 "$RC" "pf: session-end exits 0 with a passing-no-proof feature"
+assert_contains "$OUT" "F002" "pf: proof discipline note names the feature"
+assert_contains "$OUT" "no proof" "pf: proof discipline note mentions no proof"
+if [ -f "$DIR_PROOF/.harness/SESSION_INCOMPLETE" ]; then
+  fail "pf: a missing-proof note must not write SESSION_INCOMPLETE"
+else
+  pass "pf: a missing-proof note does not trigger SESSION_INCOMPLETE"
+fi
 
 echo ""
 echo "== statusline.sh =="
@@ -626,11 +673,92 @@ RC=$?
 assert_rc_nonzero "$RC" "fsv: rejects a dangling depends_on reference"
 assert_contains "$OUT" "features[1].depends_on" "fsv: dangling depends_on error names the location"
 
-fsv_mutate "unknown-field.json" 'd["features"][0]["proof"] = "sha256:abc"'
+fsv_mutate "unknown-field.json" 'd["features"][0]["custom_metadata"] = "not a real field"'
 OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/unknown-field.json" 2>&1)
 RC=$?
 assert_rc0 "$RC" "fsv: an unknown top-level feature field is a warning, not an error"
-assert_contains "$OUT" "proof" "fsv: unknown field warning names the field"
+assert_contains "$OUT" "custom_metadata" "fsv: unknown field warning names the field"
+
+fsv_mutate "bad-qa-binding.json" 'd["features"][0]["qa_binding"] = "vibes"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-qa-binding.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects an invalid qa_binding value"
+assert_contains "$OUT" "features[0].qa_binding" "fsv: bad qa_binding error names the location"
+
+fsv_mutate "good-qa-binding.json" 'd["features"][0]["qa_binding"] = "unit"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-qa-binding.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts a valid qa_binding value"
+
+fsv_mutate "conformance-qa-binding.json" 'd["features"][0]["qa_binding"] = "conformance"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/conformance-qa-binding.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts qa_binding value 'conformance'"
+
+fsv_mutate "bad-proof-missing-subfield.json" \
+  'd["features"][0]["proof"] = {"claim": "x", "evidence_type": "unit", "artifact": "y"}'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-proof-missing-subfield.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects a proof object missing not_established"
+assert_contains "$OUT" "features[0].proof.not_established" \
+  "fsv: missing proof subfield error names the location"
+
+fsv_mutate "bad-proof-empty-subfield.json" \
+  'd["features"][0]["proof"] = {"claim": "", "evidence_type": "unit",\
+  "artifact": "y", "not_established": "z"}'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-proof-empty-subfield.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects a proof object with an empty subfield"
+assert_contains "$OUT" "features[0].proof.claim" \
+  "fsv: empty proof subfield error names the location"
+
+fsv_mutate "bad-proof-evidence-type.json" \
+  'd["features"][0]["proof"] = {"claim": "x", "evidence_type": "vibes",\
+  "artifact": "y", "not_established": "z"}'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-proof-evidence-type.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects a proof object with a bad evidence_type"
+assert_contains "$OUT" "features[0].proof.evidence_type" \
+  "fsv: bad proof evidence_type error names the location"
+
+fsv_mutate "good-proof.json" \
+  'd["features"][0]["proof"] = {"claim": "x", "evidence_type": "unit",\
+  "artifact": "y", "not_established": "z"}'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-proof.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts a complete proof object"
+
+fsv_mutate "bad-coverage-target-range.json" 'd["features"][0]["coverage_target"] = 150'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-coverage-target-range.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects an out-of-range coverage_target"
+assert_contains "$OUT" "features[0].coverage_target" \
+  "fsv: bad coverage_target error names the location"
+
+fsv_mutate "good-coverage-target.json" 'd["features"][0]["coverage_target"] = 80'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-coverage-target.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts a valid coverage_target"
+
+fsv_mutate "bad-delivered-merged-at.json" \
+  'd["features"][0]["delivered"] = {"pr": "#1", "merged_at": "not-a-date", "verified": "x"}'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-delivered-merged-at.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects a non-ISO8601 delivered.merged_at"
+assert_contains "$OUT" "features[0].delivered.merged_at" \
+  "fsv: bad delivered.merged_at error names the location"
+
+fsv_mutate "good-delivered.json" \
+  'd["features"][0]["delivered"] = {"pr": "#1",\
+  "merged_at": "2026-07-24T12:00:00Z", "verified": "x"}'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-delivered.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts a valid delivered object with ISO8601 merged_at"
+
+fsv_mutate "good-design-contract.json" 'd["features"][0]["design_contract"] = "docs/mock.png"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-design-contract.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts a design_contract string"
 
 echo ""
 echo "== spec gate artifacts =="
@@ -696,6 +824,18 @@ if [ -z "$SKILL_ERRORS" ]; then
   pass "w: harness-issue-prep and harness-issue-debug SKILL.md files have sane frontmatter"
 else
   fail "w: skill frontmatter -- $SKILL_ERRORS"
+fi
+
+if grep -q "QA binding" "$REPO_ROOT/skills/harness-issue-prep/SKILL.md"; then
+  pass "w: harness-issue-prep's Step 5 template carries a QA binding line"
+else
+  fail "w: harness-issue-prep's Step 5 template is missing the QA binding line"
+fi
+
+if grep -q "QA binding" "$REPO_ROOT/agents/spec-verification.md"; then
+  pass "w: spec-verification's SV-01 checklist references the QA binding requirement"
+else
+  fail "w: spec-verification's SV-01 checklist is missing the QA binding requirement"
 fi
 
 DIR_X="$WORK/x"
@@ -774,6 +914,14 @@ if [ "$FULL_EXAMPLE_COUNT" -eq 1 ]; then
   pass "z: the full 16-field feature JSON example appears exactly once across *.md"
 else
   fail "z: the full feature JSON example appears $FULL_EXAMPLE_COUNT times across *.md, expected 1"
+fi
+
+DONE_DEF_COUNT=$(grep -r "Feature is not done until" "$REPO_ROOT" --include="*.md" \
+  | wc -l | tr -d ' ')
+if [ "$DONE_DEF_COUNT" -eq 1 ]; then
+  pass "z: the done-definition sentence appears exactly once across *.md"
+else
+  fail "z: the done-definition sentence appears $DONE_DEF_COUNT times across *.md, expected 1"
 fi
 
 for DOC_FILE in rules/agent-teams-protocol.md skills/harness-init/SKILL.md README.md; do
@@ -1126,6 +1274,94 @@ if [ -f "$DIR_HQ4/.harness/features.json.tmp" ]; then
 else
   pass "ht: the stale tmp is cleared"
 fi
+
+set_f003_fields() {
+  # $1: fixture dir, $2: python snippet setting fields on the F003 dict named `feature`
+  python3 - "$1/.harness/features.json" <<PYEOF
+import json
+path = "$1/.harness/features.json"
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["status"] = "in-progress"
+        $2
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+}
+
+DIR_HQ5="$WORK/ht-quality-coverage-target-accept"
+make_fixture "$DIR_HQ5"
+install_hooks "$DIR_HQ5"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ5/.harness/init.sh"
+set_f003_fields "$DIR_HQ5" 'feature["coverage_target"] = 80
+        feature["coverage"] = 85'
+OUT=$(run_hook "$DIR_HQ5" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "ht: coverage_target 80 with 85% coverage accepts"
+
+DIR_HQ6="$WORK/ht-quality-coverage-target-reject"
+make_fixture "$DIR_HQ6"
+install_hooks "$DIR_HQ6"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ6/.harness/init.sh"
+set_f003_fields "$DIR_HQ6" 'feature["coverage"] = 85'
+OUT=$(run_hook "$DIR_HQ6" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht: no coverage_target with 85% coverage rejects (95% default)"
+assert_contains "$OUT" "coverage" "ht: coverage rejection message mentions coverage"
+
+DIR_HQ7="$WORK/ht-quality-no-proof-warn"
+make_fixture "$DIR_HQ7"
+install_hooks "$DIR_HQ7"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ7/.harness/init.sh"
+set_f003_fields "$DIR_HQ7" 'pass'
+OUT=$(run_hook "$DIR_HQ7" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "ht: acceptance with no proof still exits 0"
+assert_contains "$OUT" "no proof recorded" "ht: no-proof acceptance warns on stdout"
+assert_contains "$OUT" "F003" "ht: no-proof warning names the feature"
+
+DIR_HQ8="$WORK/ht-quality-qa-binding-match"
+make_fixture "$DIR_HQ8"
+install_hooks "$DIR_HQ8"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ8/.harness/init.sh"
+set_f003_fields "$DIR_HQ8" 'feature["qa_binding"] = "unit"
+        feature["proof"] = {"claim": "x", "evidence_type": "unit",
+        "artifact": "y", "not_established": "z"}'
+OUT=$(run_hook "$DIR_HQ8" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "ht: acceptance with matching proof/qa_binding exits 0"
+assert_not_contains "$OUT" "no proof recorded" "ht: matching proof has no no-proof warning"
+assert_not_contains "$OUT" "does not match" "ht: matching proof has no mismatch warning"
+
+DIR_HQ9="$WORK/ht-quality-qa-binding-mismatch"
+make_fixture "$DIR_HQ9"
+install_hooks "$DIR_HQ9"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ9/.harness/init.sh"
+set_f003_fields "$DIR_HQ9" 'feature["qa_binding"] = "unit"
+        feature["proof"] = {"claim": "x", "evidence_type": "journey",
+        "artifact": "y", "not_established": "z"}'
+OUT=$(run_hook "$DIR_HQ9" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "ht: acceptance with mismatched proof/qa_binding still exits 0"
+assert_contains "$OUT" "unit" "ht: mismatch warning names the declared qa_binding"
+assert_contains "$OUT" "journey" "ht: mismatch warning names the actual evidence_type"
+
+DIR_HQ10="$WORK/ht-quality-legacy-no-binding"
+make_fixture "$DIR_HQ10"
+install_hooks "$DIR_HQ10"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ10/.harness/init.sh"
+set_f003_fields "$DIR_HQ10" \
+  'feature["proof"] = {"claim": "x", "evidence_type": "unit",
+  "artifact": "y", "not_established": "z"}'
+OUT=$(run_hook "$DIR_HQ10" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "ht: acceptance with proof but no declared qa_binding exits 0"
+assert_not_contains "$OUT" "no proof recorded" "ht: legacy no-binding case has no no-proof warning"
+assert_not_contains "$OUT" "does not match" "ht: legacy no-binding case has no mismatch warning"
 
 SETTINGS_BLOCK_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import os

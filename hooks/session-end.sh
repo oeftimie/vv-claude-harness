@@ -54,4 +54,22 @@ if [ -n "$GAPS" ]; then
 else
   rm -f "$H/SESSION_INCOMPLETE" 2>/dev/null
 fi
+
+# Proof discipline note: informational only, never written to SESSION_INCOMPLETE
+# (not a gap) -- a passing feature with no proof recorded is worth surfacing, not
+# blocking the next session over.
+PROOF_NOTES=$(python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
+import json, sys
+try:
+    feats = json.load(open(sys.argv[1])).get("features", [])
+    for f in feats:
+        if f.get("status") == "passing" and not f.get("proof"):
+            print(f"{f.get('id', '?')} is passing with no proof recorded.")
+except Exception:
+    pass
+PYEOF
+)
+[ -n "$PROOF_NOTES" ] && \
+  printf 'Discipline note (informational, not blocking):\n%s\n' "$PROOF_NOTES"
+
 exit 0

@@ -109,7 +109,23 @@ that drift. Absent or `null` means unverified. Hooks and the lead must tolerate 
 states. A stamp-sourced `risk: "elevated"` maps to `require_plan_approval: true` plus an
 Opus implementer (see the dynamic-override table).
 
-Feature is not done until: `status` is `"passing"`, `test_file` points to a test, and `coverage` >= 95% on touched code.
+Feature is not done until: `status` is `"passing"`, `test_file` points to a test, and
+`coverage` >= `coverage_target` (or 95% on touched code when `coverage_target` is
+absent). That is the mechanical gate — **passing**. **Done** is passing plus a `proof`
+object recorded (claim, evidence type, artifact, and what the evidence did NOT
+establish). **Shipped** is done plus `delivered` (PR merged and verified), when the
+project ships through PRs. All other prose restatements of this definition — including
+in `skills/harness-init/SKILL.md` — link here instead of repeating it.
+
+**Claim-matched proof** (optional, for backward compatibility): a feature may declare a
+`qa_binding` at prep time (`/harness-issue-prep` Step 5's mandatory "QA binding" line) —
+the `evidence_type` it promises to be proven with. At completion time the lead records
+a `proof` object; `verify-task-quality.sh` warns (never blocks) when a feature accepts
+with no `proof`, or with `proof.evidence_type` not matching its declared `qa_binding`.
+`coverage_target` (integer 1-100) overrides the 95% default; overrides should be
+justified in `notes`, advisory only, never machine-enforced. `delivered.merged_at` must
+be valid ISO8601. `design_contract` optionally points at a locked design artifact
+(mock, redline, screenshot set) that journey/manual proof is compared against.
 
 ## Model Selection
 
