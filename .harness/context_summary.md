@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F009 / OVI-51 merged (8ec5df5), OVI-51 Done in Linear
-- Next up: F010/OVI-52 (P2.2) next in plan order. Also refresh live .claude/hooks/*.sh from F003's/F008's fixed templates AND F009's new enforce-scope.sh (three things deferred now, same reason); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
+- Currently working on: F010 / OVI-52 prepped this session (SV ASK -> 6 Qs -> RV ASK, 1 new gap -> RV PASS cycle 2); normalized, remote write-back to Linear done, UNSTAMPED (Keychain still blocked by Bash sandbox); not yet implemented
+- Next up: implement F010/OVI-52 (lane=code, risk=standard). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's fixed templates (still deferred); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -57,7 +57,7 @@ This file is referenced in CLAUDE.md and loaded every session.
   Fixed by requiring the literal open-paren: `"json.dump("`, which "json.dumps(" does
   not contain. Any future grep-based test on a substring this loose should check
   whether a legitimate near-miss identifier could collide (2026-07-24, F009/OVI-51)
-- The Claude Code Bash tool runs in an OS-level sandbox (macOS Seatbelt) that blocks `security find-generic-password` for the vv-harness-stamp Keychain item — confirmed NOT a Keychain-ACL/prompt issue: rotating the item with `-A` (allow all local apps, no prompt) made zero difference, exact same silent exit code 36 before and after. The block happens before the keychain ACL is ever evaluated. `dangerouslyDisableSandbox: true` on that one Bash call would get past it; Ovidiu declined it for OVI-51's prep, so that spec is normalized-but-unstamped. Anyone re-attempting stamping from an agent session should expect this and ask before reaching for the sandbox override (2026-07-24, F009/OVI-51 prep)
+- The Claude Code Bash tool runs in an OS-level sandbox (macOS Seatbelt) that blocks `security find-generic-password` for the vv-harness-stamp Keychain item — confirmed NOT a Keychain-ACL/prompt issue: rotating the item with `-A` (allow all local apps, no prompt) made zero difference, exact same silent exit code 36 before and after. The block happens before the keychain ACL is ever evaluated. `dangerouslyDisableSandbox: true` on that one Bash call would get past it; Ovidiu declined it for OVI-51's prep, so that spec is normalized-but-unstamped. CONFIRMED PERSISTENT, not a one-off: OVI-52's prep hit the exact same exit 36 with no changes in between; stop re-diagnosing this each session, it's an environmental constant until someone explicitly authorizes the sandbox override or an alternative signing path (2026-07-24, F009/F010 preps)
 - Running `security find-generic-password -s <service> -w` prints the RAW SECRET, not a derived value — if a human runs this themselves and pastes the output into the conversation (as opposed to letting the agent invoke it and only see the derived HMAC), that secret is burned per the transcript-secrets doctrine and must be rotated immediately, not reused (2026-07-24, F009/OVI-51 prep)
 - Baseline before any change: 66/66 assertions passing on main @ d3661ff (2026-07-22)
 - README's v2.x date repeats live under the "## The evolution: v2.0 to v4.2" heading, not a section literally named "Evolution" as OVI-47 claimed (2026-07-22)
