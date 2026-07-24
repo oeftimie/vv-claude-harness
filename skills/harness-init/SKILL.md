@@ -254,17 +254,21 @@ Present the hook to the user and wait for confirmation before creating or modify
 Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in this skill's directory and install them:
 
 1. Create `.claude/hooks/` directory: `mkdir -p .claude/hooks`
-2. Copy `verify-task-quality.sh.template` to `.claude/hooks/verify-task-quality.sh`
-3. Copy `check-remaining-tasks.sh.template` to `.claude/hooks/check-remaining-tasks.sh`
-4. Copy `enforce-scope.sh.template` to `.claude/hooks/enforce-scope.sh`
-5. Copy `verify-git-identity.sh.template` to `.claude/hooks/verify-git-identity.sh`
-6. Copy the plugin's status line script into the project:
+2. Copy `harness_state.py.template` to `.claude/hooks/harness_state.py` — the shared,
+   stdlib-only `features.json` read/write module that `verify-task-quality.sh` and
+   `check-remaining-tasks.sh` consume (schema in
+   `${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json`).
+3. Copy `verify-task-quality.sh.template` to `.claude/hooks/verify-task-quality.sh`
+4. Copy `check-remaining-tasks.sh.template` to `.claude/hooks/check-remaining-tasks.sh`
+5. Copy `enforce-scope.sh.template` to `.claude/hooks/enforce-scope.sh`
+6. Copy `verify-git-identity.sh.template` to `.claude/hooks/verify-git-identity.sh`
+7. Copy the plugin's status line script into the project:
    `cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.sh" .claude/hooks/statusline.sh`
    — the plugin cache path changes on every plugin update, so the project keeps its own copy.
-7. Make all executable: `chmod +x .claude/hooks/*.sh`
-8. Append `.harness/SESSION_INCOMPLETE` to the project's `.gitignore` (create it if missing).
+8. Make all executable: `chmod +x .claude/hooks/*.sh .claude/hooks/harness_state.py`
+9. Append `.harness/SESSION_INCOMPLETE` to the project's `.gitignore` (create it if missing).
    It is transient session state written by the plugin's SessionEnd hook.
-9. Add to `.claude/settings.json` (merge with the PostToolUse hooks from Step 3.5):
+10. Add to `.claude/settings.json` (merge with the PostToolUse hooks from Step 3.5):
 
 ```json
 {

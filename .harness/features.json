@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 22,
-  "passing": 4,
+  "passing": 5,
   "features": [
     {
       "id": "F001",
@@ -249,7 +249,7 @@
       "id": "F008",
       "description": "## Problem\n\nEvery vv-harness hook re-implements `.harness/features.json` parsing and mutation\nindependently: session-start.sh has several separate inline python3 heredocs;\nstatusline.sh, session-end.sh, and every per-project hook template each duplicate this\nlogic. The divergence already produced one real inconsistency (P0.3: `.get()` vs. hard\nsubscripts). The sharper risk is multiple independent writers: `verify-task-quality.sh`\nand the lead both mutate the same file with no single owner.\n\nIntroduce `skills/harness-init/harness_state.py.template` \u2014 a stdlib-only Python module\ninstalled by `/harness-init` to `.claude/hooks/harness_state.py` \u2014 as the one place that\nwrites `features.json`, and migrate `check-remaining-tasks.sh`, `verify-task-quality.sh`,\nand (for the next-claimable algorithm only) `session-start.sh` to consume it via a small\nCLI: `load`, `next-claimable`, `counts`, `increment-correction-cycles <FID>`.\n\nPlugin hooks (session-start/end/statusline) stay self-contained with their own read-only\ndefensive parsing, since they must keep working against pre-v5 projects that lack\n`harness_state.py`; only the write path and the next-claimable *algorithm* are\nconsolidated \u2014 session-start.sh delegates to `harness_state.py` when present and falls\nback to its inline logic when it is not.\n\n## Acceptance criteria\n\n1. `grep -rl \"json.dump\" skills/harness-init/*.template | grep -v harness_state.py.template` returns no results \u2014 zero `json.dump` call sites outside `harness_state.py.template`. Any number of `json.dump` call sites inside `harness_state.py.template` is permitted.\n2. All P0.3 fixture tests pass unchanged against the refactored templates.\n3. `harness_state.py load`: a malformed JSON file exits 0, with a stderr note and an empty result (fail-soft for read paths).\n4. `harness_state.py increment-correction-cycles <FID>`: a missing feature id performs no write and exits 3.\n5. `harness_state.py increment-correction-cycles <FID>`: an existing feature id whose `correction_cycles` field is absent or null is initialized to 0, then incremented to 1, and the write succeeds with exit 0.\n6. `harness_state.py next-claimable`: when nothing is claimable (empty features list, all features passing, or every pending feature blocked by an unmet `depends_on`), it exits 0 and prints exactly `no claimable feature` to stdout, with no JSON payload.\n7. `harness_state.py`'s atomic write leaves either the old or the new content on a simulated interrupt; the tmp file is cleaned up (asserted by test).\n8. `session-start.sh`: with `.claude/hooks/harness_state.py` present in the fixture, `next-claimable` output is identical to the existing inline-computation path (test compares both).\n9. `bash test/run-tests.sh` is green.\n\n## Edge and error cases\n\n- `next-claimable` with nothing claimable \u2014 see criterion 6.\n- `increment-correction-cycles` with a missing FID \u2014 see criterion 4 (no write, exit 3).\n- `increment-correction-cycles` with an existing FID but absent/null `correction_cycles` \u2014 see criterion 5 (initialize to 0, increment to 1, write).\n- Malformed `features.json` on `load` \u2014 see criterion 3 (fail-soft, exit 0, stderr note, empty result).\n- An interrupted atomic write \u2014 see criterion 7 (old-or-new content guarantee, no orphaned tmp file).\n\n## Non-functional requirements\n\n- python3 stdlib only; no third-party dependencies.\n- bash 3.2+ compatibility (macOS system bash).\n- Single-writer invariant is code consolidation, not runtime write-serialization: all\n  `features.json`-writing code lives in `harness_state.py.template`; each invocation\n  (lead, `verify-task-quality.sh`, etc.) still performs its own independent atomic\n  tmp+mv write. No file lock, advisory lock, or IPC coordination between concurrent\n  invocations is required.\n- Plugin hooks (session-start/end/statusline) remain self-contained with their own\n  read-only defensive parsing for backward compatibility with pre-v5 projects.\n\n## Dependencies\n\nBlocked by P0.3 / F003 (green base, already passing) and P1.1 / F004 (schema semantics\nthe library implements, already passing).\n\n## Assumptions ledger\n\n- Single-writer invariant means code consolidation only (all write logic in one\n  module), not runtime lock-based serialization; concurrent invocations remain\n  independent atomic tmp+mv writers (2026-07-24, per Ovidiu).\n- The write-surface acceptance criterion is \"zero `json.dump` outside\n  `harness_state.py.template`,\" not an exact total count of 1; the template may\n  contain multiple `json.dump` call sites internally (2026-07-24, per Ovidiu).\n- `next-claimable` with nothing claimable: exit 0, stdout is the literal string\n  `no claimable feature`, no JSON payload (2026-07-24, per Ovidiu).\n- `increment-correction-cycles` on a feature with absent/null `correction_cycles`:\n  initialize to 0, then increment to 1, and write \u2014 not an error path; only a missing\n  FID triggers exit 3 (2026-07-24, per Ovidiu).\n\n## Out of scope\n\nRewriting the three plugin hooks' read paths beyond the next-claimable delegation; any\nnew state files; runtime write-serialization or file locking across concurrent\ninvocations (each invocation's own atomic tmp+mv write is sufficient).",
       "priority": 8,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/harness_state.py.template",
         "skills/harness-init/check-remaining-tasks.sh.template",
@@ -264,12 +264,15 @@
         "F004"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh (== harness_state.py == section, hs: prefix)",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 170/170 is the gate)",
       "notes": "Linear: OVI-50. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
-      "correction_cycles": 0,
+      "correction_cycles": 2,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Extracted skills/harness-init/harness_state.py.template as a stdlib-only module (load/next-claimable/counts/increment-correction-cycles); the two per-project hook templates call it instead of their own inline python3 heredocs. Session-start.sh (plugin-shipped) delegates the next-claimable ALGORITHM only when .claude/hooks/harness_state.py exists, falling back to its untouched inline logic for pre-v5 projects.",
+        "Kept the final tmp->real 'mv' promotion in the bash templates (not inside the python module) specifically to preserve the existing grep-tested atomic-write pattern in verify-task-quality.sh.template; the module only writes the .tmp file, matching the original architecture."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {

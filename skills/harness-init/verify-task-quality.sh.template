@@ -43,9 +43,10 @@ if [ ! -f ".harness/init.sh" ]; then
     exit 2
 fi
 
-# Increment correction_cycles for the targeted in-progress feature.
-# This tracks how many times the quality gate rejected completion —
-# useful for retrospectives and dynamic model selection.
+# Increment correction_cycles for the targeted in-progress feature via the
+# shared state module. This tracks how many times the quality gate rejected
+# completion — useful for retrospectives and dynamic model selection.
+STATE_MODULE=".claude/hooks/harness_state.py"
 increment_correction_cycles() {
     if [ -z "$FEATURE_ID" ]; then
         echo "verify-task-quality: no feature_id in task metadata or subject;" \
@@ -56,31 +57,10 @@ increment_correction_cycles() {
         return 0
     fi
     # Clear any tmp orphaned by an earlier killed run: the guarded mv below
-    # must only ever promote a tmp that THIS python invocation wrote.
+    # must only ever promote a tmp that THIS invocation wrote.
     rm -f .harness/features.json.tmp
-    python3 - "$FEATURE_ID" <<'PYEOF'
-import json, sys
-target_id = sys.argv[1]
-try:
-    with open('.harness/features.json', 'r') as f:
-        data = json.load(f)
-    changed = False
-    for feature in data.get('features', []):
-        if feature.get('id') == target_id and feature.get('status') == 'in-progress':
-            feature['correction_cycles'] = feature.get('correction_cycles', 0) + 1
-            changed = True
-    if changed:
-        with open('.harness/features.json.tmp', 'w') as f:
-            json.dump(data, f, indent=2)
-            f.write('\n')
-except Exception as e:
-    print(f"verify-task-quality: could not update correction_cycles: {e}", file=sys.stderr)
-    import os
-    try:
-        os.remove('.harness/features.json.tmp')
-    except OSError:
-        pass
-PYEOF
+    python3 "$STATE_MODULE" increment-correction-cycles .harness/features.json "$FEATURE_ID" \
+        2>&1 || true
     if [ -f ".harness/features.json.tmp" ]; then
         mv .harness/features.json.tmp .harness/features.json
     fi
