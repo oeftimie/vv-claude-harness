@@ -156,3 +156,24 @@
   scripts/validate-features.py + test/run-tests.sh, fixed before merge); merged
   @ d0c8dff (no Linear issue, internal discovery via F004)
 - 2026-07-24 /harness-issue-prep OVI-61 -> F005: SV ASK (1 Q: dogfood substrate contradiction) -> lead recommendation approved -> RV PASS (cycle 1, flagged combined approval for separate confirmation) -> Ovidiu rejected the soft middle ground, dropped the dogfood gate entirely (not deferred), scope reduced to hostile-gate tests only; reasoning posted as a Linear comment on OVI-61; remote mode, Linear description + spec_hash updated; UNSTAMPED (Keychain/Bash-sandbox block confirmed a third time, not re-asked)
+
+## Session 9 (cont.) - 2026-07-24
+- Feature: F005 - hostile-gate tests for the 4 mechanical hooks (OVI-61, scope
+  narrowed; cold-start dogfood gate dropped entirely)
+- Status: complete, merged
+- Tests: 265/265 assertions passed (250 baseline + 15 new hostile-gate content
+  assertions, 7 over the 8-minimum acceptance criterion)
+- Coverage: n/a (shell suite, no coverage tooling; full_test 265/265 is the gate)
+- Decisions: audited all 4 gates for existing content assertions first; 2 gates
+  (enforce-scope's out-of-scope Edit, verify-git-identity's name-mismatch) already
+  had them from earlier features, so only the gaps needed new assertions -- details
+  in context_summary.md Meta-Session 2026-07-24 (session 9, F005/OVI-61)
+- Next: /harness-issue-prep F006/OVI-62 (/harness-doctor instance health check +
+  upgrade engine). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/
+  F010's fixed templates (still deferred, carried across many sessions now)
+- Blockers: none
+- 2026-07-24 F005 reviewed APPROVE (1 non-blocking wording nit on the PR
+  description, no code/test change) by Opus reviewer who independently ran the
+  suite, cross-checked all 15 new assertions against the actual .sh.template
+  denial strings, and verified the email-mismatch test's isolation; merged @
+  aa998df; Linear OVI-61 Done

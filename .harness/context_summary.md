@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F005 / OVI-61 prepped this session, scope narrowed to hostile-gate tests only (cold-start dogfood gate dropped entirely, not deferred — see OVI-61 Linear comment); normalized, remote write-back done, UNSTAMPED; not yet implemented
-- Next up: implement F005/OVI-61 (hostile-gate tests in test/run-tests.sh only). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred)
+- Currently working on: F005/OVI-61 passing and merged (PR #37 @ aa998df). Next feature per orientation is F006/OVI-62 (/harness-doctor instance health check + upgrade engine).
+- Next up: /harness-issue-prep + implement F006/OVI-62. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -340,3 +340,39 @@ This file is referenced in CLAUDE.md and loaded every session.
   scripts/validate-features.py or test/run-tests.sh even though the fix necessarily
   touched both. Fixed before merge. Merged clean @ d0c8dff; no Linear issue (internal
   discovery via F004).
+
+## Meta-Session 2026-07-24 (session 9, F005/OVI-61)
+- Scope narrowing under pushback: this session's prep produced a soft "recommended,
+  not blocking" middle ground for the dogfood-gate half of the original spec. Ovidiu
+  rejected it outright ("not agreeing with downgrading. Is either dogfooding or
+  useless") — a firm signal that an unenforced checklist item is worse than no item at
+  all, since it drifts into ceremony without ever being checked. The lesson: when a
+  proposed compromise softens a mechanical-vs-prose distinction this project already
+  treats as load-bearing (see README's tiers table), don't offer the soft middle
+  ground as the default recommendation — offer the two real options (build it for
+  real, or drop it) and let the human pick.
+  - Why: the middle ground was proposed once and rejected once already; re-offering it
+    would be re-litigating a settled call.
+- Discovery lineage: no new features filed. The dropped dogfood-gate scope was
+  documented via a Linear comment on OVI-61 rather than a features.json entry, since
+  it explicitly will not be implemented (not deferred) — there is nothing to track.
+- Approach patterns: for a test-only feature (no hook script behavior changes), there
+  is no traditional TDD red phase. Validation instead was: audit existing assertions
+  first to avoid duplicate coverage, add each new assertion, run the suite, and
+  independently confirm each content check is a real transcription of the hook's
+  actual output (cross-referenced against the .sh.template source) rather than a
+  tautology. This audit-first step found 2 of the 4 gates already had adequate
+  content coverage from earlier features (F009's enforce-scope Edit case,
+  F009-era verify-git-identity's name-mismatch case) — only the gaps needed new
+  assertions, which kept the diff smaller than a from-scratch pass would have.
+- Review value: adversarial Opus reviewer ran the suite itself (265/265), cross-
+  checked all 15 new content assertions against the actual .sh.template denial
+  strings line-by-line rather than trusting the PR summary, and verified the
+  email-mismatch test's isolation (confirmed only the email diverges from the
+  fixture's expected identity, so the failure is genuinely attributable to email
+  alone). Caught one real but non-blocking nit: the PR description's blanket
+  "invariant + repair" phrasing overstated two Bash out-of-scope cases (tee, new
+  `>>` redirect) that correctly assert only the invariant, because the underlying
+  hook deliberately emits no repair verb on that path — asserting one anyway would
+  have been the exact tautology-avoidance failure the review was watching for.
+  APPROVE, no code/test change needed. Merged clean @ aa998df; Linear OVI-61 Done.
