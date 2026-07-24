@@ -82,3 +82,4 @@
 - 2026-07-24 F008/OVI-50 merged @ d0af1ac; adversarial Opus review APPROVE with 3
   non-blocking nits (split-write footgun, no-fallback in check-remaining-tasks.sh,
   cosmetic stderr merge), no classifier block on this merge; Linear OVI-50 Done
+- 2026-07-24 /harness-issue-prep OVI-51 -> F009: SV BLOCK (exit-code contradiction between the base spec and Amendment 5) -> 5 questions answered -> RV PASS cycle 1; remote mode (prep.linear/prep.stamp newly configured this session), Linear description updated + spec_hash written to features.json; UNSTAMPED (Keychain HMAC access blocked by the Bash tool sandbox, not an ACL issue; Ovidiu declined the sandbox override) -- no label applied

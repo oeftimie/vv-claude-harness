@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F008 / OVI-50 merged (d0af1ac), OVI-50 Done in Linear
-- Next up: /harness-issue-prep the next P2 issue (P2.1/F009 or P2.2/F010, both unblocked by P1.1); also refresh live .claude/hooks/*.sh from F003's fixed templates AND from F008's new harness_state.py (now two things deferred, same reason); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
+- Currently working on: F009 / OVI-51 prepped this session (SV BLOCK -> 5 Qs -> RV PASS); normalized, remote write-back to Linear done, UNSTAMPED (Keychain blocked by Bash sandbox, see Gotchas); not yet implemented
+- Next up: implement F009/OVI-51 (lane=code, risk=elevated -> Opus implementer), or F010/OVI-52 first if preferred. Also refresh live .claude/hooks/*.sh from F003's fixed templates AND from F008's new harness_state.py (still deferred); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -19,6 +19,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 ## Domain: Harness Plugin Engineering
 
 ### Decisions
+- `.harness/harness.json` now carries a `prep` block: `prep.linear` (labels `harness-ready` / `harness-needs-prep`, created this session) and `prep.stamp` (`stamper: "ovidiu"`) are configured; `prep.runner` deliberately omitted — no external issue-to-PR runner exists in this environment. This switches `/harness-issue-prep` from local-only to full remote mode (Linear write-back + stamping) for all future preps in this project (2026-07-24, per Ovidiu)
 - Custom stack targets: full_test = `bash test/run-tests.sh`; smoke_test = `bash -n hooks/*.sh` + `python3 -m json.tool` over both .claude-plugin/*.json manifests (2026-07-22, per OVI-44)
 - Features F001–F021 mirror the 21 OVI-44 sub-issues; depends_on mirrors the epic's dependency graph; "independent after P0" encoded as depends_on the three P0 features (2026-07-22)
 - Fixture harness.json version stays frozen at 4.0.0 with a "_note" key — bumping it to the live plugin version would recreate the copied-fact drift OVI-47 removes (2026-07-22)
@@ -38,6 +39,8 @@ This file is referenced in CLAUDE.md and loaded every session.
 - A portable way to simulate an atomic-write interrupt without OS-specific mocking: chmod the containing directory to remove write permission (555), attempt the write, assert the original file untouched and no tmp file was created, then chmod back — works on macOS and Linux CI without root (2026-07-24, F008)
 
 ### Gotchas
+- The Claude Code Bash tool runs in an OS-level sandbox (macOS Seatbelt) that blocks `security find-generic-password` for the vv-harness-stamp Keychain item — confirmed NOT a Keychain-ACL/prompt issue: rotating the item with `-A` (allow all local apps, no prompt) made zero difference, exact same silent exit code 36 before and after. The block happens before the keychain ACL is ever evaluated. `dangerouslyDisableSandbox: true` on that one Bash call would get past it; Ovidiu declined it for OVI-51's prep, so that spec is normalized-but-unstamped. Anyone re-attempting stamping from an agent session should expect this and ask before reaching for the sandbox override (2026-07-24, F009/OVI-51 prep)
+- Running `security find-generic-password -s <service> -w` prints the RAW SECRET, not a derived value — if a human runs this themselves and pastes the output into the conversation (as opposed to letting the agent invoke it and only see the derived HMAC), that secret is burned per the transcript-secrets doctrine and must be rotated immediately, not reused (2026-07-24, F009/OVI-51 prep)
 - Baseline before any change: 66/66 assertions passing on main @ d3661ff (2026-07-22)
 - README's v2.x date repeats live under the "## The evolution: v2.0 to v4.2" heading, not a section literally named "Evolution" as OVI-47 claimed (2026-07-22)
 - macOS resolves `/var` → `/private/var`, so `git rev-parse --show-toplevel` returns a different prefix than an unresolved `$TMPDIR`/CLAUDE_PROJECT_DIR path — absolute-path prefix-stripping against the git toplevel silently fails on macOS; prefer CLAUDE_PROJECT_DIR (2026-07-22)
