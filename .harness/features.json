@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 22,
-  "passing": 5,
+  "passing": 7,
   "features": [
     {
       "id": "F001",
@@ -328,25 +328,35 @@
       "id": "F010",
       "description": "## Problem\n\nvv-harness today defines \"done\" uniformly for every feature: `passing` + `test_file` + coverage >= 95%. Nothing represents review, merge, or user-visible verification, and for UI-heavy work, unit coverage proves the wrong boundary \u2014 a green check doesn't say what it actually established, or what it didn't.\n\nIntroduce a claim-matched proof mechanism: each feature can declare a `qa_binding` (the kind of evidence it promises) at prep time, and record a `proof` object (claim, evidence type, artifact, and \u2014 critically \u2014 what the evidence did NOT establish) at completion time. `verify-task-quality.sh` warns (never blocks) when a feature passes without proof, or with proof that doesn't match its declared binding. A `coverage_target` lets non-unit-test-shaped features declare a different bar than the 95% default, and an optional `delivered` record closes the loop through PR merge.\n\nThe \"Feature is not done until\" sentence becomes the single, one-time-only owner of the done-definition (passing = mechanical gate; done = passing + proof recorded; shipped = done + delivered) \u2014 consolidating the two copies that exist today (`rules/agent-teams-protocol.md` and `skills/harness-init/SKILL.md`) down to one.\n\n## Acceptance criteria\n\n1. Validator accepts features with/without the four new fields (`qa_binding`, `proof`, `coverage_target`, `delivered`). When `proof` is present, it rejects a proof object missing any of `claim`, `evidence_type`, `artifact`, or `not_established`, or where any of those four is an empty string. It rejects a bad `evidence_type` or `qa_binding` value (not in the shared enum) and an out-of-range `coverage_target` (outside 1-100).\n2. Fixture test: feature with `coverage_target: 80` and 85% coverage -> TaskCompleted accepts; without the field and 85% -> rejects (95% default applies).\n3. Fixture tests, all reading `qa_binding`/`proof` directly off the feature object:\n   a. Passing feature with no `proof` -> hook output contains the no-proof warning.\n   b. Passing feature with `proof` present, `qa_binding` present, `proof.evidence_type` == `qa_binding` -> no warning.\n   c. Passing feature with `proof` present, `qa_binding` present, `proof.evidence_type` != `qa_binding` -> hook output contains the mismatch warning naming both values.\n   d. Passing feature with `proof` present, `qa_binding` absent (legacy) -> no warning.\n4. The literal string \"Feature is not done until\" appears exactly once across all `*.md` files (grep test), in `rules/agent-teams-protocol.md`; `skills/harness-init/SKILL.md`'s prior copy is converted to a link. `bash test/run-tests.sh` green.\n5. The prep template (harness-issue-prep Step 5's canonical spec template) contains a \"QA binding\" line; the spec-verification checklist's SV-01 check treats a missing binding as a flag, prospectively (not retroactive to pre-existing specs including <issue id=\"184b13fc-e119-46aa-82a8-627cdd95c3e5\" href=\"https://linear.app/eftimie/issue/OVI-52/p22-claim-matched-proof-per-feature-coverage-target-delivery-closure\">OVI-52</issue>).\n6. Schema accepts an optional `design_contract: string|null` field.\n7. Schema accepts `evidence_type` and `qa_binding` value `\"conformance\"`.\n\n## Edge and error cases\n\n* Old projects: absent fields (`qa_binding`, `proof`, `coverage_target`, `delivered`, `design_contract`) remain valid forever.\n* `delivered.merged_at`, when present, must be valid ISO8601 \u2014 rejected otherwise.\n* `coverage_target` override justification in `notes` is advisory only, never machine-checked.\n* `qa_binding` absent means the mismatch-warning case (3c) never fires for that feature \u2014 only the no-proof case (3a) or no-warning case (3d/legacy) apply.\n* No new dependencies.\n\n## Non-functional requirements\n\n* No new blocking gates: warn first, promote to blocking only if the warning proves insufficient in practice (promotion criterion to be recorded when/if that happens).\n* `verify-task-quality.sh` reads `qa_binding` and `proof` directly off the feature object \u2014 no external lookup, no re-parsing of prose.\n\n## Dependencies\n\nBlocked by P1.1 (schema owner). Complements P0.3/P1.2 (hook write path). The QA-binding SV-01 rule (acceptance criterion 5) modifies the harness-issue-prep skill and the spec-verification agent's own checklist \u2014 both of which are actively used to prep and verify THIS spec. This circularity is resolved by making the rule prospective: <issue id=\"184b13fc-e119-46aa-82a8-627cdd95c3e5\" href=\"https://linear.app/eftimie/issue/OVI-52/p22-claim-matched-proof-per-feature-coverage-target-delivery-closure\">OVI-52</issue>'s own prep is not required to retroactively satisfy a rule this same ticket introduces.\n\n## Assumptions ledger\n\n* `proof` object: all four subfields (`claim`, `evidence_type`, `artifact`, `not_established`) required non-empty when `proof` is present (2026-07-24, per Ovidiu \u2014 lead's recommendation, approved).\n* Done-definition grep target: literal string \"Feature is not done until\", exactly once across `*.md`; consolidating the two existing occurrences down to one (2026-07-24, per Ovidiu; occurrence count corrected during re-verification).\n* `coverage_target` override justification in `notes` is advisory only, never machine-enforced (2026-07-24, per Ovidiu).\n* `delivered.merged_at`: validator rejects non-ISO8601 values (2026-07-24, per Ovidiu).\n* `proof`/`qa_binding` mismatch: hook emits a warning naming both values and prompting a fix (2026-07-24, per Ovidiu).\n* QA-binding-missing SV-01 flag rule is prospective; <issue id=\"184b13fc-e119-46aa-82a8-627cdd95c3e5\" href=\"https://linear.app/eftimie/issue/OVI-52/p22-claim-matched-proof-per-feature-coverage-target-delivery-closure\">OVI-52</issue> itself is exempt (2026-07-24, per Ovidiu).\n* `qa_binding` is a new persisted feature-object field (schema + `features.json`), sharing `proof.evidence_type`'s enum, set at prep time and read directly by `verify-task-quality.sh` \u2014 no external lookup (2026-07-24, per Ovidiu, resolving a gap found during re-verification).\n\n## Out of scope\n\nAutomated journey-test runners; blocking on proof (explicitly deferred with a promotion criterion to be recorded later); further design-surface machinery beyond the `design_contract` pointer field.",
       "priority": 10,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "schemas/feature.schema.json",
+        "scripts/validate-features.py",
         "rules/agent-teams-protocol.md",
+        "skills/harness-init/SKILL.md",
         "skills/harness-init/verify-task-quality.sh.template",
         "hooks/session-end.sh",
         "skills/harness-issue-prep/SKILL.md",
+        "agents/spec-verification.md",
         "test/run-tests.sh"
       ],
       "depends_on": [
         "F004"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh (fsv:/ht:/pf:/z:/w: prefixes, coverage_target + proof/qa_binding cases)",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 247/247 is the gate)",
       "notes": "Linear: OVI-52. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation. SV ASK (6 Qs) -> RV ASK (1 new gap surfaced: qa_binding field) -> RV PASS cycle 2. lane=code, risk=standard (additive/backward-compatible schema+hook changes, no existing enforcement semantics altered). Unstamped: same Keychain/Bash-sandbox block as F009/OVI-51 (confirmed persistent, not a fluke); Ovidiu declined the sandbox override again. Remote write-back to Linear done (description normalized); harness-ready label withheld since stamping is gated on it.",
-      "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "correction_cycles": 4,
+      "scope_expansions": [
+        "scripts/validate-features.py, skills/harness-init/SKILL.md, agents/spec-verification.md -- the schema extension needs its hand-rolled validator counterpart (per F004's split-ownership design), and the done-definition dedup + QA-binding-as-SV-01-flag requirements (spec item 2, Amendment item 5) directly named these two files."
+      ],
+      "approaches_tried": [
+        "coverage_target gate compares the TARGETED feature's own already-recorded `coverage` number against `coverage_target` (falls back to 95); skipped entirely when coverage isn't numeric yet (this repo's own descriptive strings), so it's dormant here but fully functional/tested via fixture for projects with real coverage tooling.",
+        "proof/qa_binding WARN logic reads both fields directly off the feature object at TaskCompleted-accept time (not at a later status='passing' transition, since the hook itself never sets that status) -- 'accepted' is the operative event, not a status-field check.",
+        "session-end.sh's proof discipline note is a separate stdout emission, deliberately NOT routed through add_gap()/SESSION_INCOMPLETE, matching the spec's explicit 'informational, not a trigger' requirement.",
+        "Fixed a second real pre-existing test dependency along the way: the 'clean session prints nothing' fixture had F001 already passing with no proof in the base fixture; gave it a proof object too so the test stays genuinely clean under the new done-definition."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {

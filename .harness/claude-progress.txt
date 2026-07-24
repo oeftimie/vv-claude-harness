@@ -112,3 +112,23 @@
   regression test, 207/207; re-review APPROVE end-to-end against the real hook; merged
   @ 8ec5df5; Linear OVI-51 Done
 - 2026-07-24 /harness-issue-prep OVI-52 -> F010: SV ASK (6 Qs) -> RV ASK (1 new gap: qa_binding field, cycle 1) -> RV PASS (cycle 2); remote mode, Linear description updated + spec_hash written to features.json; UNSTAMPED (same Keychain/Bash-sandbox block as OVI-51, confirmed persistent; Ovidiu declined the sandbox override again) -- no label applied
+
+## Session 8 - 2026-07-24 (single-session)
+- Feature: F010 - [OVI-52] P2.2 claim-matched proof, per-feature coverage target, delivery closure
+- Status: implementation complete; PR pending, CI + adversarial review + merge in progress this session
+- Tests: 247/247 passing (207 baseline + 40 new; TDD red phase confirmed 21 new
+  fsv:/ht:/pf:/z:/w: checks failing first)
+- Coverage: n/a (shell suite, no coverage tooling; full_test 247/247 is the gate)
+- Decisions: 5 new optional feature fields (qa_binding, proof, coverage_target,
+  delivered, design_contract), all backward-compatible; done-definition is now three
+  tiers (passing -> done -> shipped); verify-task-quality.sh reads coverage_target and
+  proof/qa_binding straight off the targeted feature at accept-time, no status check;
+  session-end.sh's proof discipline note is informational only, not a
+  SESSION_INCOMPLETE trigger — details in context_summary.md
+- Found and fixed: two pre-existing test fixtures collided with new fields/behavior
+  (F004's "unknown field" example used `proof`; session-end's "clean" fixture had
+  F001 already passing with no proof) — both fixed, not worked around
+- Next: /harness-issue-prep the next P2/P3 issue (F011-F021 remain). Also refresh live
+  .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred);
+  decide F022
+- Blockers: none

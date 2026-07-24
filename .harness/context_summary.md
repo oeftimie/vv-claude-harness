@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F010 / OVI-52 prepped this session (SV ASK -> 6 Qs -> RV ASK, 1 new gap -> RV PASS cycle 2); normalized, remote write-back to Linear done, UNSTAMPED (Keychain still blocked by Bash sandbox); not yet implemented
-- Next up: implement F010/OVI-52 (lane=code, risk=standard). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's fixed templates (still deferred); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
+- Currently working on: F010 / OVI-52 implemented this session (qa_binding/proof/coverage_target/delivered/design_contract); PR pending, CI + review in progress
+- Next up: /harness-issue-prep the next P2/P3 issue (F011-F021 remain, most depend_on the now-passing F001/F002/F003 baseline). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (four things deferred now, same reason); F022 (discovered_via F004) still needs a decision on the `coverage` field's type vs. this repo's own descriptive-string values
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -19,6 +19,18 @@ This file is referenced in CLAUDE.md and loaded every session.
 ## Domain: Harness Plugin Engineering
 
 ### Decisions
+- Claim-matched proof (F010/OVI-52): five new optional feature fields (`qa_binding`,
+  `proof`, `coverage_target`, `delivered`, `design_contract`), all backward-compatible
+  (absent/null forever valid). The done-definition is now three tiers: passing
+  (mechanical: tests + coverage_target) -> done (passing + proof) -> shipped (done +
+  delivered). `verify-task-quality.sh`'s coverage_target gate and proof/qa_binding WARN
+  both read straight off the TARGETED feature's own object at accept-time — no external
+  lookup, no status-field check (the hook itself never sets status="passing", so
+  "accepted" is the operative event, not a status transition) (2026-07-24, F010)
+- `harness-issue-prep`'s Step 5 template gained a mandatory "QA binding" line, and
+  `spec-verification`'s SV-01 check now flags a spec missing one — naturally prospective
+  since it's new text in a static agent definition file: only future invocations see it,
+  no grandfather-clause logic needed (2026-07-24, F010)
 - enforce-scope.sh.template now handles both Edit/Write/MultiEdit and Bash matchers.
   The pre-existing out-of-scope Edit/Write check is untouched (exit 2, "legacy path
   until touched" per Amendment 5). Two new denial paths — lead-owned state files
@@ -51,6 +63,18 @@ This file is referenced in CLAUDE.md and loaded every session.
 - A portable way to simulate an atomic-write interrupt without OS-specific mocking: chmod the containing directory to remove write permission (555), attempt the write, assert the original file untouched and no tmp file was created, then chmod back — works on macOS and Linux CI without root (2026-07-24, F008)
 
 ### Gotchas
+- Two existing test fixtures broke silently when F010 added new known feature fields
+  and new session-end.sh behavior: (1) F004's "unknown field" test used `proof` as its
+  example of a not-yet-existing field name — became a real, validated field this
+  session, so the test needed a genuinely-still-unused field name (`custom_metadata`)
+  instead. (2) session-end.sh's "clean session prints nothing" fixture had F001
+  already `passing` with no `proof` in the BASE shared fixture (unrelated to what the
+  test itself mutates) — the new proof-discipline-note logic correctly flagged it,
+  breaking the "prints nothing" assertion; fixed by giving F001 a proof object too.
+  Both are the same lesson: when a new field/behavior becomes real, grep the whole
+  test suite for anything that used its name/shape as a "doesn't exist yet" example or
+  relied on a shared fixture's OTHER entries being unaffected by new logic
+  (2026-07-24, F010)
 - F008's single-writer grep test (`grep -l "json.dump" ...`) false-positived on F009's
   legitimate new `json.dumps(...)` calls (serializing a JSON string for hook stdout,
   not writing features.json at all) — "json.dump" is a substring of "json.dumps".
@@ -251,3 +275,31 @@ This file is referenced in CLAUDE.md and loaded every session.
   one-line change (take the LAST match, not the first) plus a regression test; re-review
   confirmed APPROVE end-to-end against the real hook, not just re-reading the diff.
   Merged clean @ 8ec5df5; Linear OVI-51 Done.
+
+## Meta-Session 2026-07-24 (session 8, F010/OVI-52)
+- Scope accuracy: initial scope (6 entries) expanded to 9 mid-implementation once the
+  schema-split-ownership pattern (F004) and the doc-consolidation requirements
+  (Amendment item 5) were followed through to their actual file targets
+  (scripts/validate-features.py, skills/harness-init/SKILL.md, agents/spec-verification.md).
+  Same lesson as F009's session: read acceptance criteria for "every X" claims and check
+  the feature's scope array actually covers every X before starting, not after.
+- Model calibration: single-session, 4 correction_cycles — all the known TDD-red-phase
+  false-rejection pattern (now six sessions running: F002, F003, F004, F008, F009,
+  F010). This has never once been a real correction. Worth a harder look at whether the
+  procedural fix (mark red-phase tasks complete only after green) needs to become
+  mechanical instead of relying on memory, since six sessions of "don't do this" hasn't
+  stopped it recurring.
+- Prep quality: this spec needed 2 RV cycles, not 1 — cycle 1 surfaced a genuine new
+  gap (qa_binding had no machine-readable home) that neither the original SV report nor
+  the human's first round of answers had caught. Lesson reinforced from F009: RV isn't
+  just re-checking the human's answers, it's re-deriving testability from scratch, and
+  that can find things nobody asked about yet.
+- Discovery lineage: no new features filed. Found and fixed two pre-existing test
+  fragility issues (see Gotchas) — both were "a new field/behavior collided with an
+  existing test's fixture assumptions," not the same bug twice, but the same category.
+- Approach patterns: designing the coverage_target/proof mechanism required accepting
+  that THIS repo's own coverage field (a descriptive string) means the new gate stays
+  dormant here — rather than forcing a decision on F022 to make the new feature
+  "fully exercised" in this repo, the gate was built to degrade gracefully (skip when
+  coverage isn't numeric) so it's correct and testable via fixture for any project,
+  including this one whenever F022 is eventually resolved.
