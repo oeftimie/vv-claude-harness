@@ -83,3 +83,25 @@
   non-blocking nits (split-write footgun, no-fallback in check-remaining-tasks.sh,
   cosmetic stderr merge), no classifier block on this merge; Linear OVI-50 Done
 - 2026-07-24 /harness-issue-prep OVI-51 -> F009: SV BLOCK (exit-code contradiction between the base spec and Amendment 5) -> 5 questions answered -> RV PASS cycle 1; remote mode (prep.linear/prep.stamp newly configured this session), Linear description updated + spec_hash written to features.json; UNSTAMPED (Keychain HMAC access blocked by the Bash tool sandbox, not an ACL issue; Ovidiu declined the sandbox override) -- no label applied
+
+## Session 7 - 2026-07-24 (single-session)
+- Feature: F009 - [OVI-51] P2.1 mechanize lead-only state ownership + best-effort Bash write boundary
+- Status: implementation complete; PR pending, CI + adversarial review + merge in progress this session
+- Tests: 205/205 passing (170 baseline + 30 new + 1 fixed pre-existing false positive;
+  TDD red phase confirmed all new hs2: checks failing first)
+- Coverage: n/a (shell suite, no coverage tooling; full_test 205/205 is the gate)
+- Decisions: pre-existing out-of-scope Edit/Write check untouched (exit 2, legacy path);
+  two new denial paths (lead-owned state files, Bash write boundary) use
+  hookSpecificOutput.permissionDecision:"deny" (exit 0) with a verified-live annotation;
+  heredoc bodies stripped before |/;/&& segmentation so payload text can't
+  false-positive while heredoc-into-redirect lines still get caught — details in
+  context_summary.md
+- Scope expansion: added the other 3 gate templates (check-remaining-tasks,
+  verify-git-identity, verify-task-quality) for the Failure posture: header,
+  already implied by the RV-approved spec's own acceptance criteria
+- Found and fixed: F008's single-writer grep test false-positived on legitimate
+  json.dumps() calls; tightened to "json.dump(" 
+- Next: implement F010/OVI-52 (P2.2) next in plan order. Also refresh live
+  .claude/hooks/*.sh from F003's/F008's/F009's fixed templates (three things deferred
+  now); decide F022
+- Blockers: none

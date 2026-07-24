@@ -5,6 +5,11 @@
 # Exit code 2 = send feedback, keep teammate working
 # Degraded behavior: a malformed feature entry is skipped with a stderr note;
 # the remaining features are still evaluated for claimable work.
+# Failure posture: fail-open. A missing or malformed features.json, or an unexpected
+# harness_state.py output, results in exit 0 (idle allowed) rather than blocking.
+# Residual: the reformatting step assumes harness_state.py's documented contract (the
+# literal string "no claimable feature" or valid JSON) and is not independently
+# validated -- an out-of-contract module output would raise rather than fall back.
 
 set -euo pipefail
 

@@ -12,6 +12,10 @@
 # Formatting: this hook's features.json writes own indent=2, a trailing
 # newline, and atomic replacement (.tmp + mv); only the targeted feature
 # is modified.
+# Failure posture: fail-closed for the core gate -- a missing .harness/init.sh or any
+# smoke/full test failure rejects completion (exit 2). Fail-open/best-effort for the
+# correction_cycles bookkeeping side effect: a harness_state.py write failure there is
+# noted on stderr but never changes the accept/reject verdict.
 
 set -euo pipefail
 

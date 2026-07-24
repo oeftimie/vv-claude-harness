@@ -250,16 +250,17 @@ The real insight from iterating through these versions: there are three reliabil
 | Hook | Event | What it enforces |
 |------|-------|-----------------|
 | `verify-task-quality.sh` | TaskCompleted | Tests must pass before task completion is accepted |
-| `enforce-scope.sh` | PreToolUse (Edit/Write) | Edits blocked outside teammate's assigned scope |
+| `enforce-scope.sh` | PreToolUse (Edit/Write/MultiEdit) | Edits blocked outside teammate's assigned scope, and to the three lead-owned state files (`features.json`, `context_summary.md`, `claude-progress.txt`) regardless of scope |
 | `verify-git-identity.sh` | PreToolUse (Bash) | Git push/pull blocked if identity doesn't match harness.json |
 
-**Prompted (shell hooks with feedback)**: high reliability. The hook delivers a message to the agent, but the agent decides whether to follow it.
+**Prompted (shell hooks with feedback)**: high reliability. The hook delivers a message to the agent, but the agent decides whether to follow it. `enforce-scope.sh`'s Bash coverage lives here rather than in the mechanical tier above: it does block the call, but the *detection* itself is pattern-based and evadable by construction (unlike Edit/Write, where the tool reports the real target unambiguously) — the goal is stopping accidental drift, not defeating an adversarial teammate.
 
 | Hook | Event | What it does |
 |------|-------|-------------|
 | `check-remaining-tasks.sh` | TeammateIdle | Prompts teammate to pick up next pending feature |
 | `session-start.sh` (plugin) | SessionStart | Injects orientation at start; its `compact` matcher re-injects context after compaction |
 | `session-end.sh` (plugin) | SessionEnd | Audits discipline into `SESSION_INCOMPLETE`, surfaced at next session start |
+| `enforce-scope.sh` | PreToolUse (Bash) | Best-effort: denies Bash write commands (`>`, `>>`, `tee`, `cp`, `mv`, `sed -i`, `rm`) whose target is outside scope or is a lead-owned state file |
 
 **Structural (file existence, JSON schema)**: high reliability. `features.json` requiring `test_file` and `coverage` fields. The `.harness/` directory gating mode selection. Agents respect structure more than prose.
 

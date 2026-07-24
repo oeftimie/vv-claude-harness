@@ -29,6 +29,11 @@ Constraints:
   what blocks approval.
 - If the TeammateIdle hook offers you an implementation feature, decline it and message
   the lead: you have no Edit or Write tools.
+- Bash remains open by instruction, not by construction: unlike Edit/Write, nothing
+  stops you from using Bash to write files. `enforce-scope.sh`'s best-effort Bash
+  coverage is the mechanical backstop in teammate context (a scope file present); it is
+  pattern-based and evadable by construction, so it is a backstop, not a substitute for
+  following the constraints above.
 
 Modes: as an Agent Teams teammate, SendMessage and the task-management tools are available
 to you even though they are not in the tools list above (platform behavior). When spawned

@@ -307,6 +307,10 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
         "hooks": [
           {
             "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/enforce-scope.sh"
+          },
+          {
+            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-git-identity.sh"
           }
         ]
