@@ -209,3 +209,5 @@
   gaps confirmed closed with real fixtures/assertions, no scope creep (fixes.py
   byte-identical between commits, closed via new tests only). Merged @ c3767d2;
   Linear OVI-62 Done.
+
+- 2026-07-24 /harness-issue-prep OVI-56 -> F007: SV ASK (2 Qs: plan_approval_response retest repro/criterion, run-#0 removal scope) -> lead answered both grounded in verified repo state -> RV PASS cycle 1 (RV caught and flagged one lead overreach -- an ungrounded CLI-version claim, not load-bearing); corrected stale line-number citations and a stale local ownership-note claim that F005 already created MAINTENANCE_LOG.md (it does not exist; F005 dropped that scope this session); remote mode, Linear description + spec_hash updated, local F007 mirrored; UNSTAMPED (Keychain/Bash-sandbox block confirmed a fifth time, not re-asked)

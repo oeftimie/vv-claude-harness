@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F006/OVI-62 passing and merged (PR #38 @ c3767d2, after one REQUEST CHANGES round on coverage). 10/22 features now passing.
-- Next up: /harness-issue-prep the next P2/P3 epic issue by priority. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
+- Currently working on: F007/OVI-56 prepped this session (platform-drift maintenance loop: runbook, weekly CI cron, workaround retirement conditions). Normalized, remote write-back done, local F007 mirrored, UNSTAMPED; not yet implemented. Corrected a stale local note that F005 had already created MAINTENANCE_LOG.md -- it does not exist; F005's dogfood-gate scope was dropped entirely this session (2026-07-24).
+- Next up: implement F007/OVI-56. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
