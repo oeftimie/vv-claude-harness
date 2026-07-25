@@ -263,13 +263,17 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
 4. Copy `check-remaining-tasks.sh.template` to `.claude/hooks/check-remaining-tasks.sh`
 5. Copy `enforce-scope.sh.template` to `.claude/hooks/enforce-scope.sh`
 6. Copy `verify-git-identity.sh.template` to `.claude/hooks/verify-git-identity.sh`
-7. Copy the plugin's status line script into the project:
+7. Copy `commit-gate.sh.template` to `.claude/hooks/commit-gate.sh` — a PreToolUse
+   Bash hook that fires only on `git commit`, denying compound stage-and-commit
+   forms and staged secret-shaped content (see the template's own header for the
+   full check list and fail-open posture).
+8. Copy the plugin's status line script into the project:
    `cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.sh" .claude/hooks/statusline.sh`
    — the plugin cache path changes on every plugin update, so the project keeps its own copy.
-8. Make all executable: `chmod +x .claude/hooks/*.sh .claude/hooks/harness_state.py`
-9. Append `.harness/SESSION_INCOMPLETE` to the project's `.gitignore` (create it if missing).
-   It is transient session state written by the plugin's SessionEnd hook.
-10. Add to `.claude/settings.json` (merge with the PostToolUse hooks from Step 3.5):
+9. Make all executable: `chmod +x .claude/hooks/*.sh .claude/hooks/harness_state.py`
+10. Append `.harness/SESSION_INCOMPLETE` to the project's `.gitignore` (create it if missing).
+    It is transient session state written by the plugin's SessionEnd hook.
+11. Add to `.claude/settings.json` (merge with the PostToolUse hooks from Step 3.5):
 
 ```json
 {
@@ -313,6 +317,10 @@ Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in t
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-git-identity.sh"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/commit-gate.sh"
           }
         ]
       }
@@ -366,9 +374,10 @@ If either script fails to execute (permission denied, syntax error, missing depe
 Tell the user:
 
 ```
-I've set up four hooks plus a status line:
+I've set up five hooks plus a status line:
 - PreToolUse (scope): blocks edits to files outside the teammate's assigned scope. Only active when .claude/teammate-scope.txt exists.
 - PreToolUse (git identity): blocks git push/pull/clone if identity doesn't match .harness/harness.json.
+- PreToolUse (commit gate): blocks git commit if it stages-and-commits in one step, or if staged content looks like a secret.
 - TaskCompleted: runs tests when a teammate marks work done. Rejects if tests fail.
 - TeammateIdle: checks for remaining features when a teammate finishes. Prompts teammate to pick up next task.
 - Status line: live feature progress (N/M passing, in-progress IDs, incomplete-session flag).

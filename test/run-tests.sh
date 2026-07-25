@@ -1955,9 +1955,13 @@ assert_not_contains "$OUT" "commit-gate" \
   "hd: a project with its own commit-gate.sh already copied has no finding"
 
 # Mirror case: the plugin ships a commit-gate template but the project hasn't
-# copied it yet -> "upgrade available", same tier as harness_state.py.
+# copied it yet -> "upgrade available", same tier as harness_state.py. F011/OVI-64
+# shipped a real commit-gate.sh.template, so install_hooks() now copies it into
+# every fixture automatically; remove it here to restore the "not yet copied"
+# precondition this case is testing.
 DIR_DOC_GATEMISSING="$WORK/doctor-commit-gate-missing"
 make_healthy_doctor_fixture "$DIR_DOC_GATEMISSING"
+rm -f "$DIR_DOC_GATEMISSING/.claude/hooks/commit-gate.sh"
 FAKE_PLUGIN_ROOT_GATE2="$WORK/fake-plugin-root-gate-missing"
 mkdir -p "$FAKE_PLUGIN_ROOT_GATE2/skills/harness-init"
 echo "# fake commit gate" > "$FAKE_PLUGIN_ROOT_GATE2/skills/harness-init/commit-gate.sh.template"
@@ -2260,6 +2264,146 @@ if grep -q "[Rr]etirement condition" "$REPO_ROOT/README.md"; then
 else
   fail "mnt: README.md's plan_approval_response mention is missing a retirement condition"
 fi
+
+echo ""
+echo "== commit-gate.sh =="
+
+run_commit_gate() {
+  DIR="$1"; CMD="$2"
+  (cd "$DIR" && printf '%s' "$(bash_command_json "$CMD")" \
+    | CLAUDE_PROJECT_DIR="$DIR" "$DIR/.claude/hooks/commit-gate.sh")
+}
+
+DIR_CG_COMPOUND="$WORK/commit-gate-compound"
+make_fixture "$DIR_CG_COMPOUND"
+install_hooks "$DIR_CG_COMPOUND"
+OUT=$(run_commit_gate "$DIR_CG_COMPOUND" 'git add newfile.txt && git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: compound git add && git commit exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: compound form denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: compound form denial names the finding class"
+
+DIR_CG_DASHA="$WORK/commit-gate-dash-a"
+make_fixture "$DIR_CG_DASHA"
+install_hooks "$DIR_CG_DASHA"
+OUT=$(run_commit_gate "$DIR_CG_DASHA" 'git commit -a -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: git commit -a exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: -a form denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" "cg: -a form denial names the finding class"
+
+DIR_CG_SECRET="$WORK/commit-gate-secret"
+make_fixture "$DIR_CG_SECRET"
+install_hooks "$DIR_CG_SECRET"
+echo 'api_key = "abcdefghijklmnopqrstuvwx"' > "$DIR_CG_SECRET/config.py"
+git -C "$DIR_CG_SECRET" add config.py
+OUT=$(run_commit_gate "$DIR_CG_SECRET" 'git commit -m "add config"')
+RC=$?
+assert_rc0 "$RC" "cg: staged secret-shaped addition exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: secret-assignment denial uses JSON deny form"
+if printf '%s' "$OUT" | grep -qE "secret-assignment|url-credential"; then
+  pass "cg: secret denial names a closed finding class"
+else
+  fail "cg: secret denial does not name secret-assignment or url-credential"
+fi
+assert_not_contains "$OUT" "abcdefghijklmnopqrstuvwx" \
+  "cg: denial message does not leak the matched value"
+
+DIR_CG_CLEAN="$WORK/commit-gate-clean"
+make_fixture "$DIR_CG_CLEAN"
+install_hooks "$DIR_CG_CLEAN"
+echo "clean content" > "$DIR_CG_CLEAN/clean.txt"
+git -C "$DIR_CG_CLEAN" add clean.txt
+OUT=$(run_commit_gate "$DIR_CG_CLEAN" 'git commit -m "clean commit"')
+RC=$?
+assert_rc0 "$RC" "cg: clean commit exits 0"
+assert_not_contains "$OUT" "permissionDecision" "cg: clean commit has no deny fields"
+
+DIR_CG_ENVEX="$WORK/commit-gate-envexample"
+make_fixture "$DIR_CG_ENVEX"
+install_hooks "$DIR_CG_ENVEX"
+echo 'api_key = "abcdefghijklmnopqrstuvwx"' > "$DIR_CG_ENVEX/.env.example"
+git -C "$DIR_CG_ENVEX" add .env.example
+OUT=$(run_commit_gate "$DIR_CG_ENVEX" 'git commit -m "add example"')
+RC=$?
+assert_rc0 "$RC" "cg: .env.example staged passes despite secret-shaped content"
+assert_not_contains "$OUT" "permissionDecision" "cg: .env.example exemption has no deny fields"
+
+DIR_CG_STYLEOFF="$WORK/commit-gate-style-off"
+make_fixture "$DIR_CG_STYLEOFF"
+install_hooks "$DIR_CG_STYLEOFF"
+printf 'a sentence \xe2\x80\x94 with an em dash\n' > "$DIR_CG_STYLEOFF/prose.md"
+git -C "$DIR_CG_STYLEOFF" add prose.md
+OUT=$(run_commit_gate "$DIR_CG_STYLEOFF" 'git commit -m "prose"')
+RC=$?
+assert_rc0 "$RC" "cg: style gate off by default, em dash passes"
+assert_not_contains "$OUT" "permissionDecision" "cg: default-off style gate has no deny fields"
+
+DIR_CG_STYLEON="$WORK/commit-gate-style-on"
+make_fixture "$DIR_CG_STYLEON"
+install_hooks "$DIR_CG_STYLEON"
+python3 - "$DIR_CG_STYLEON/.harness/harness.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+data["style_gate"] = {"enabled": True}
+with open(path, "w") as f:
+    json.dump(data, f)
+PYEOF
+printf 'a sentence \xe2\x80\x94 with an em dash\n' > "$DIR_CG_STYLEON/prose.md"
+git -C "$DIR_CG_STYLEON" add prose.md
+OUT=$(run_commit_gate "$DIR_CG_STYLEON" 'git commit -m "prose"')
+RC=$?
+assert_rc0 "$RC" "cg: style gate on, em dash denied (JSON deny)"
+assert_deny_json "$OUT" "cg: style-violation denial uses JSON deny form"
+assert_contains "$OUT" "style-violation" "cg: style-violation denial names the finding class"
+
+DIR_CG_FALSEPOS="$WORK/commit-gate-falsepositive"
+make_fixture "$DIR_CG_FALSEPOS"
+install_hooks "$DIR_CG_FALSEPOS"
+echo "clean" > "$DIR_CG_FALSEPOS/clean2.txt"
+git -C "$DIR_CG_FALSEPOS" add clean2.txt
+OUT=$(run_commit_gate "$DIR_CG_FALSEPOS" 'git commit -m "run git add later"')
+RC=$?
+assert_rc0 "$RC" \
+  "cg: commit message mentioning git add is not compound (false-positive regression)"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: false-positive regression has no deny fields"
+
+# RV's non-blocking recommendation (cycle 2): a scanning exception during Check 1
+# logs only the exception TYPE NAME to stderr, never the exception message/args
+# (which could itself carry matched line content). Invalid-UTF8 staged bytes force
+# a real UnicodeDecodeError when git diff --cached output is decoded.
+DIR_CG_DECODEEXC="$WORK/commit-gate-decode-exc"
+make_fixture "$DIR_CG_DECODEEXC"
+install_hooks "$DIR_CG_DECODEEXC"
+printf '\x80\x81\x82 invalid utf8 bytes\n' > "$DIR_CG_DECODEEXC/binaryish.txt"
+git -C "$DIR_CG_DECODEEXC" add binaryish.txt
+CG_STDERR_FILE=$(mktemp)
+OUT=$(cd "$DIR_CG_DECODEEXC" \
+  && printf '%s' "$(bash_command_json 'git commit -m "binary"')" \
+  | CLAUDE_PROJECT_DIR="$DIR_CG_DECODEEXC" \
+    "$DIR_CG_DECODEEXC/.claude/hooks/commit-gate.sh" 2>"$CG_STDERR_FILE")
+RC=$?
+CG_STDERR_CONTENT=$(cat "$CG_STDERR_FILE")
+rm -f "$CG_STDERR_FILE"
+assert_rc0 "$RC" "cg: invalid-UTF8 staged content exits 0 (fail-open, no crash)"
+assert_not_contains "$OUT" "permissionDecision" "cg: scanning exception fails open (no deny)"
+assert_contains "$CG_STDERR_CONTENT" "UnicodeDecodeError" \
+  "cg: scanning exception logs the exception type name"
+assert_not_contains "$CG_STDERR_CONTENT" "invalid utf8 bytes" \
+  "cg: scanning exception does not leak line content to stderr"
+
+# Non-git-commit commands must be a pure no-op (never denied, never scanned).
+DIR_CG_NOOP="$WORK/commit-gate-noop"
+make_fixture "$DIR_CG_NOOP"
+install_hooks "$DIR_CG_NOOP"
+OUT=$(run_commit_gate "$DIR_CG_NOOP" 'git status')
+RC=$?
+assert_rc0 "$RC" "cg: a non-commit git command exits 0"
+assert_not_contains "$OUT" "permissionDecision" "cg: non-commit command has no deny fields"
 
 echo ""
 echo "== agent frontmatter =="
