@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F007/OVI-56 passing and merged (PR #39 @ 67d64a5, after two review-fix rounds -- first REQUEST CHANGES with 3 blockers, then APPROVE with nits). 11/22 features now passing.
-- Next up: /harness-issue-prep the next P2/P3 epic issue by priority (F011/OVI-64 commit-content gate is next claimable). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
+- Currently working on: F011/OVI-64 prepped this session (commit-content gate: secret scan + compound stage-and-commit denial). Unusually deep prep -- 12 SV questions, 3 RV cycles, one Linear comment + one local features.json cross-reference posted to coordinate with F013/OVI-63. Normalized, remote write-back done, local F011 mirrored, UNSTAMPED; not yet implemented. lane=code, risk=ELEVATED (security-sensitive: a secret-scanning gate).
+- Next up: implement F011/OVI-64. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)

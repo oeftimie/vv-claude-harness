@@ -251,3 +251,5 @@
   verdict was already APPROVE and the remaining fixes were narrow, verified,
   and directly tied to already-reviewed files. Merged @ 67d64a5; Linear
   OVI-56 Done.
+
+- 2026-07-25 /harness-issue-prep OVI-64 -> F011: SV ASK (12 Qs, unusually many -- security-relevant secret-scanning gate) -> lead answered all 12 grounded in real repo files -> RV ASK cycle 1 (9/12 resolved; 2 explicitly routed to Ovidiu -- the no-echo security rule and the wiring-ownership fix -- plus a real content gap found: no git-diff-cached timeout) -> lead + Ovidiu resolved all 3 (Ovidiu re-delegated the 2 escalated items after being told why) -> RV ASK cycle 2 (accepted the informed re-delegation on the merits; found the coordination note needed to live in repo-tracked state, not just Linear) -> posted Linear comment on OVI-63 + mirrored into F013 local notes -> RV PASS cycle 3 (independently verified both); remote mode, Linear description + spec_hash updated, local F011 mirrored; lane=code, risk=ELEVATED (security-sensitive code); UNSTAMPED (Keychain/Bash-sandbox block confirmed a sixth time, not re-asked)
