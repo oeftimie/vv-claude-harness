@@ -107,10 +107,11 @@
 # the global flags that consume a following space-separated argument,
 # probed mechanically against git 2.52 (see its own comment above); it is
 # not a full git CLI parser and does not claim to track every future git
-# release -- for example, `--super-prefix` consumed an argument on older
-# git and doesn't on 2.52 (removed), so it was dropped from the set per
-# that probe; this is a narrow, old-git-version-only regression versus
-# keeping it, not a general bypass on any currently supported git.
+# release -- for example, `--super-prefix` consumed an argument through at
+# least git 2.38 but is absent from handle_options() by 2.43 (removed
+# somewhere in that range; not pinned closer), so it was dropped from the
+# set per the 2.52 probe; this is a narrow regression on git older than
+# roughly 2.42, not a general bypass on any currently supported git.
 
 INPUT=$(cat)
 
