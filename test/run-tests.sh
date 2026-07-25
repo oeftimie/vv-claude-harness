@@ -2561,6 +2561,50 @@ RC=$?
 assert_rc0 "$RC" "cg: a git diff --cached timeout fails open, exits 0"
 assert_not_contains "$OUT" "permissionDecision" "cg: timeout fail-open has no deny fields"
 
+# Second adversarial-review round: the .* between "git" and the subcommand let
+# COMMIT_PATTERN/STAGE_PATTERN match "commit"/"add" as bare substrings of a
+# filename or branch name, denying commands that were never staging-and-
+# committing at all.
+DIR_CG_FILENAMEFP="$WORK/commit-gate-filename-false-positive"
+make_fixture "$DIR_CG_FILENAMEFP"
+install_hooks "$DIR_CG_FILENAMEFP"
+echo "x" > "$DIR_CG_FILENAMEFP/commit-gate-helper.sh"
+OUT=$(run_commit_gate "$DIR_CG_FILENAMEFP" 'git add commit-gate-helper.sh')
+RC=$?
+assert_rc0 "$RC" "cg: 'git add' of a file whose name contains 'commit' exits 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: filename-substring false positive has no deny fields"
+
+DIR_CG_BRANCHFP="$WORK/commit-gate-branch-name-false-positive"
+make_fixture "$DIR_CG_BRANCHFP"
+install_hooks "$DIR_CG_BRANCHFP"
+OUT=$(run_commit_gate "$DIR_CG_BRANCHFP" 'git commit -m "x" && git push origin add-feature')
+RC=$?
+assert_rc0 "$RC" "cg: a branch name containing 'add' exits 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: branch-name-substring false positive has no deny fields"
+
+# SECRET_PATTERN's prefix wildcard created polynomial-time backtracking on
+# adversarially repeated keyword-shaped text with no valid terminator. Assert
+# the scan completes well under the hook's own ~1s design budget even on a
+# long adversarial line, proving the fix (keyword-anchored pattern + a hard
+# length cap in find_secret) bounds worst-case time regardless of input.
+DIR_CG_REDOS="$WORK/commit-gate-redos-guard"
+make_fixture "$DIR_CG_REDOS"
+install_hooks "$DIR_CG_REDOS"
+python3 -c "print('key' * 3000)" > "$DIR_CG_REDOS/adversarial.txt"
+git -C "$DIR_CG_REDOS" add adversarial.txt
+CG_REDOS_START=$(date +%s)
+OUT=$(run_commit_gate "$DIR_CG_REDOS" 'git commit -m "test"')
+RC=$?
+CG_REDOS_ELAPSED=$(( $(date +%s) - CG_REDOS_START ))
+assert_rc0 "$RC" "cg: an adversarial keyword-repeated line exits 0"
+if [ "$CG_REDOS_ELAPSED" -le 3 ]; then
+  pass "cg: adversarial-input scan completes in bounded time (${CG_REDOS_ELAPSED}s)"
+else
+  fail "cg: adversarial-input scan took ${CG_REDOS_ELAPSED}s, exceeding the bound"
+fi
+
 echo ""
 echo "== agent frontmatter =="
 

@@ -98,19 +98,37 @@ REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
 
 STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
 
+# No leading wildcard prefix before the keyword: an earlier version had
+# "[A-Za-z0-9_.\-]*" before the keyword alternation, which is a second
+# independent quantifier over an overlapping character class -- adversarially
+# repeated keyword-shaped text with no valid 16+ char terminator forced
+# polynomial-time backtracking (found by adversarial review of PR #40).
+# Anchoring directly on the keyword still matches AWS_SECRET_ACCESS_KEY= and
+# "api_key": (the suffix wildcard after the keyword covers those), it just no
+# longer also searches for an arbitrary-length prefix before it.
 SECRET_KEYWORDS = "key|secret|password|passwd|pwd|token"
 SECRET_PATTERN = re.compile(
-    r"(?i)(?:^|[^A-Za-z0-9_])[A-Za-z0-9_.\-]*(?:" + SECRET_KEYWORDS + r")"
-    r"[A-Za-z0-9_.\-]*['\"]?\s*[:=]\s*['\"]?([A-Za-z0-9+/_.\-]{16,})"
+    r"(?i)(?:" + SECRET_KEYWORDS + r")[A-Za-z0-9_.\-]*['\"]?\s*[:=]\s*"
+    r"['\"]?([A-Za-z0-9+/_.\-]{16,})"
 )
+# Defense in depth against the same class of risk regardless of the regex's
+# exact worst-case complexity: no real secret assignment is anywhere close to
+# this long, so capping the scanned span bounds match time unconditionally.
+SECRET_SCAN_MAX_LEN = 2048
 URL_CREDENTIAL_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]+:[^\s@/]+@")
 EM_DASH_PATTERN = re.compile("\u2014")
-# ".*" between "git" and the subcommand (not "\s+") so a command like
-# "git -C . commit" -- "git" and "commit" separated by flags, not just
-# whitespace -- is still recognized; requiring only adjacency let that form
-# skip the scan entirely.
-COMMIT_PATTERN = re.compile(r"\bgit\b.*\bcommit\b")
-STAGE_PATTERN = re.compile(r"\bgit\b.*\b(?:add|stage)\b")
+# "[^|;&]*" between "git" and the subcommand (not ".*") so "git -C . commit" --
+# "git" and "commit" separated by flags, not just whitespace -- is still
+# recognized, WITHOUT letting the match span across a command separator into
+# an unrelated later command (found by adversarial review: ".*" let "git
+# commit -m x && git push origin add-feature" match STAGE_PATTERN via the
+# branch name). The subcommand itself must be its own whitespace-bounded
+# token, not merely a \b-delimited substring: \bcommit\b alone still matches
+# inside a filename like "commit-gate.sh" ("/" and "-" are non-word chars, so
+# \b holds on both sides), which denied a plain "git add" of an unrelated file
+# whose name happened to contain "commit".
+COMMIT_PATTERN = re.compile(r"\bgit\b[^|;&]*(?:^|\s)commit(?:\s|$)")
+STAGE_PATTERN = re.compile(r"\bgit\b[^|;&]*(?:^|\s)(?:add|stage)(?:\s|$)")
 
 
 def strip_quotes(command):
@@ -210,13 +228,14 @@ def find_secret(lines):
     for path, lineno, content in lines:
         if is_exempt(path):
             continue
-        if SECRET_PATTERN.search(content):
+        scanned = content[:SECRET_SCAN_MAX_LEN]
+        if SECRET_PATTERN.search(scanned):
             return (
                 f"secret-assignment: a staged addition at {path}:{lineno} looks "
                 f"like a secret value (key/token/password assignment, length >= "
                 f"16). Repair: {REPAIR_STAGED}."
             )
-        if URL_CREDENTIAL_PATTERN.search(content):
+        if URL_CREDENTIAL_PATTERN.search(scanned):
             return (
                 f"url-credential: a staged addition at {path}:{lineno} contains a "
                 f"URL with embedded credentials. Repair: {REPAIR_STAGED}."
