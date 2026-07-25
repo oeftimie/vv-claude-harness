@@ -2405,6 +2405,162 @@ RC=$?
 assert_rc0 "$RC" "cg: a non-commit git command exits 0"
 assert_not_contains "$OUT" "permissionDecision" "cg: non-commit command has no deny fields"
 
+# CRITICAL regressions (adversarial review of PR #40): a STAGED line that
+# happens to start with "++ " was mis-parsed as a real diff file header, both
+# (a) leaking the staged content into the denial message, and (b) letting a
+# forged path (matching *.env.example) skip the rest of the scan entirely.
+DIR_CG_HEADERLEAK="$WORK/commit-gate-fake-header-leak"
+make_fixture "$DIR_CG_HEADERLEAK"
+install_hooks "$DIR_CG_HEADERLEAK"
+printf '++ LEAKED_ADJACENT_LINE_sk-live-9f8e7d6c5b4a3210\napi_key = "abcdefghijklmnopqrstuvwx"\n' \
+  > "$DIR_CG_HEADERLEAK/leaktest.py"
+git -C "$DIR_CG_HEADERLEAK" add leaktest.py
+OUT=$(run_commit_gate "$DIR_CG_HEADERLEAK" 'git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: a staged '++ ' line is still scanned as content, not a fake header"
+assert_deny_json "$OUT" "cg: fake-header-adjacent secret still denied (JSON deny)"
+assert_not_contains "$OUT" "LEAKED_ADJACENT_LINE" \
+  "cg: a staged '++ ' line's own content is never echoed into the denial"
+
+DIR_CG_HEADERFORGE="$WORK/commit-gate-fake-header-exemption-forge"
+make_fixture "$DIR_CG_HEADERFORGE"
+install_hooks "$DIR_CG_HEADERFORGE"
+printf '++ b/harmless.env.example\napi_key = "REALSECRETabcdefghijklmnop"\n' \
+  > "$DIR_CG_HEADERFORGE/prod_config.py"
+git -C "$DIR_CG_HEADERFORGE" add prod_config.py
+OUT=$(run_commit_gate "$DIR_CG_HEADERFORGE" 'git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: a forged .env.example-shaped fake header cannot exempt a real secret"
+assert_deny_json "$OUT" "cg: exemption-forgery attempt still denied (JSON deny)"
+
+# 'git -C . commit' bypassed the old bash-level substring prefilter entirely
+# (the flags between "git" and "commit" broke a \s+-anchored match).
+DIR_CG_GITC="$WORK/commit-gate-git-c-flag"
+make_fixture "$DIR_CG_GITC"
+install_hooks "$DIR_CG_GITC"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_GITC/bypass.py"
+git -C "$DIR_CG_GITC" add bypass.py
+OUT=$(run_commit_gate "$DIR_CG_GITC" 'git -C . commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git -C . commit' is still scanned, not bypassed (JSON deny)"
+assert_deny_json "$OUT" "cg: 'git -C . commit' secret denial uses JSON deny form"
+
+# 'git stage' is a real built-in alias for 'git add' and defeated Check 0.
+DIR_CG_STAGE="$WORK/commit-gate-stage-alias"
+make_fixture "$DIR_CG_STAGE"
+install_hooks "$DIR_CG_STAGE"
+OUT=$(run_commit_gate "$DIR_CG_STAGE" 'git stage newfile2.txt && git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git stage' alias is treated as compound-stage-and-commit (JSON deny)"
+assert_deny_json "$OUT" "cg: 'git stage' compound denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: 'git stage' compound denial names the finding class"
+
+# The keyword-boundary secret pattern missed the dominant real-world shape:
+# a keyword as part of a larger SCREAMING_SNAKE_CASE identifier, or preceded
+# by a JSON quote rather than a bare word boundary.
+DIR_CG_SNAKE="$WORK/commit-gate-snake-case-secret"
+make_fixture "$DIR_CG_SNAKE"
+install_hooks "$DIR_CG_SNAKE"
+echo 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY' > "$DIR_CG_SNAKE/aws.env"
+git -C "$DIR_CG_SNAKE" add aws.env
+OUT=$(run_commit_gate "$DIR_CG_SNAKE" 'git commit -m "add aws config"')
+RC=$?
+assert_rc0 "$RC" "cg: SCREAMING_SNAKE_CASE secret exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: SCREAMING_SNAKE_CASE secret denial uses JSON deny form"
+assert_not_contains "$OUT" "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY" \
+  "cg: SCREAMING_SNAKE_CASE secret denial does not leak the matched value"
+
+DIR_CG_JSONKEY="$WORK/commit-gate-json-key-secret"
+make_fixture "$DIR_CG_JSONKEY"
+install_hooks "$DIR_CG_JSONKEY"
+printf '{\n  "api_key": "abcdefghijklmnopqrstuvwx"\n}\n' > "$DIR_CG_JSONKEY/config.json"
+git -C "$DIR_CG_JSONKEY" add config.json
+OUT=$(run_commit_gate "$DIR_CG_JSONKEY" 'git commit -m "add config"')
+RC=$?
+assert_rc0 "$RC" "cg: JSON-quoted secret key exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: JSON-quoted secret denial uses JSON deny form"
+
+# URL-credential detection was http(s)-only; the spec says "URL-embedded
+# credentials" with no protocol narrowing.
+DIR_CG_URLCRED="$WORK/commit-gate-url-credential"
+make_fixture "$DIR_CG_URLCRED"
+install_hooks "$DIR_CG_URLCRED"
+echo 'DATABASE_URL=postgres://user:hunter2pass@db.example.com/prod' > "$DIR_CG_URLCRED/db.env"
+git -C "$DIR_CG_URLCRED" add db.env
+OUT=$(run_commit_gate "$DIR_CG_URLCRED" 'git commit -m "add db config"')
+RC=$?
+assert_rc0 "$RC" "cg: non-https URL-embedded credential exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: url-credential denial uses JSON deny form (non-https scheme)"
+assert_contains "$OUT" "url-credential" \
+  "cg: url-credential denial names the finding class (non-https scheme)"
+assert_not_contains "$OUT" "hunter2pass" \
+  "cg: url-credential denial does not leak the matched credential"
+
+# Combined short-flag cluster (git commit -am), formalizing what was previously
+# only manually verified.
+DIR_CG_DASHAM="$WORK/commit-gate-dash-am"
+make_fixture "$DIR_CG_DASHAM"
+install_hooks "$DIR_CG_DASHAM"
+OUT=$(run_commit_gate "$DIR_CG_DASHAM" 'git commit -am "test"')
+RC=$?
+assert_rc0 "$RC" "cg: combined -am flag exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: -am combined flag denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: -am combined flag denial names the finding class"
+
+# Not a git repo at all -> git diff --cached fails -> fail open.
+DIR_CG_NOTGITREPO="$WORK/commit-gate-not-a-repo"
+mkdir -p "$DIR_CG_NOTGITREPO"
+cp -R "$FIXTURE_SRC/." "$DIR_CG_NOTGITREPO/"
+mkdir -p "$DIR_CG_NOTGITREPO/.claude/hooks"
+cp "$TEMPLATES_DIR/commit-gate.sh.template" "$DIR_CG_NOTGITREPO/.claude/hooks/commit-gate.sh"
+chmod +x "$DIR_CG_NOTGITREPO/.claude/hooks/commit-gate.sh"
+OUT=$(run_commit_gate "$DIR_CG_NOTGITREPO" 'git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: not-a-git-repo fails open, exits 0"
+assert_not_contains "$OUT" "permissionDecision" "cg: not-a-git-repo has no deny fields"
+
+# Corrupt harness.json must not suppress secret detection (Check 1 never reads
+# harness.json; only the opt-in style gate, Check 2, does).
+DIR_CG_BADHARNESS="$WORK/commit-gate-bad-harness-json"
+make_fixture "$DIR_CG_BADHARNESS"
+install_hooks "$DIR_CG_BADHARNESS"
+printf '{ not valid json' > "$DIR_CG_BADHARNESS/.harness/harness.json"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_BADHARNESS/secret.py"
+git -C "$DIR_CG_BADHARNESS" add secret.py
+OUT=$(run_commit_gate "$DIR_CG_BADHARNESS" 'git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: corrupt harness.json does not suppress secret detection"
+assert_deny_json "$OUT" "cg: secret still denied despite corrupt harness.json"
+
+# The 5-second git-diff-cached timeout fails open. COMMIT_GATE_DIFF_TIMEOUT is a
+# testing-only override (undocumented for production use) so this doesn't cost
+# a real 5-second wait; a fake slow `git` stands in for the real binary.
+DIR_CG_TIMEOUT="$WORK/commit-gate-diff-timeout"
+make_fixture "$DIR_CG_TIMEOUT"
+install_hooks "$DIR_CG_TIMEOUT"
+echo "irrelevant" > "$DIR_CG_TIMEOUT/whatever.txt"
+git -C "$DIR_CG_TIMEOUT" add whatever.txt
+FAKE_GIT_DIR="$WORK/fake-git-slow-diff"
+mkdir -p "$FAKE_GIT_DIR"
+cat > "$FAKE_GIT_DIR/git" <<'FAKEGIT'
+#!/bin/bash
+if [ "$1" = "diff" ]; then
+  sleep 0.5
+  exit 0
+fi
+exit 1
+FAKEGIT
+chmod +x "$FAKE_GIT_DIR/git"
+OUT=$(cd "$DIR_CG_TIMEOUT" \
+  && printf '%s' "$(bash_command_json 'git commit -m "test"')" \
+  | PATH="$FAKE_GIT_DIR:$PATH" COMMIT_GATE_DIFF_TIMEOUT=0.1 \
+    CLAUDE_PROJECT_DIR="$DIR_CG_TIMEOUT" "$DIR_CG_TIMEOUT/.claude/hooks/commit-gate.sh")
+RC=$?
+assert_rc0 "$RC" "cg: a git diff --cached timeout fails open, exits 0"
+assert_not_contains "$OUT" "permissionDecision" "cg: timeout fail-open has no deny fields"
+
 echo ""
 echo "== agent frontmatter =="
 

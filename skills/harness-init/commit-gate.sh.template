@@ -1,32 +1,43 @@
 #!/bin/bash
 # VV Claude Code Harness - PreToolUse commit-content gate
-# Runs before Bash tool calls; no-ops unless the command contains "git commit".
+# Runs before Bash tool calls; no-ops unless the command matches the same
+# `\bgit\b.*\bcommit\b` regex the analysis below uses (a single source of truth --
+# an earlier version used a separate, looser bash substring check as a fast-path
+# no-op gate, which let forms like `git -C . commit` skip the scan entirely).
 # Adapted from Setlist's commit-gate.sh (Alex Ciortan, CC BY 4.0).
 #
 # Checks (each names a closed finding class in its denial):
 #   0. compound-stage-and-commit -- denies a command that stages AND commits in one
-#      step (`git add ... && git commit`, or `git commit -a`/`-i`/`--all`/`--include`).
-#      A pre-commit hook can only scan an index that already holds the content;
-#      newly staged content in the SAME command is invisible to Check 1's scan.
-#      Quoted spans (single, double, ANSI-C $'...') are stripped before pattern
-#      testing, so a commit message like `git commit -m "run git add later"` does
-#      not false-trip.
+#      step (`git add|stage ... && git commit`, or
+#      `git commit -a`/`-i`/`--all`/`--include`, including combined short-flag
+#      clusters like `-am`). A pre-commit hook can only scan an index that already
+#      holds the content; newly staged content in the SAME command is invisible to
+#      Check 1's scan. Quoted spans (single, double, ANSI-C $'...') are stripped
+#      before pattern testing, so a commit message like
+#      `git commit -m "run git add later"` does not false-trip.
 #   1. secret-assignment / url-credential -- scans staged additions
 #      (`git diff --cached -U0`, `+` lines) for key/secret/password/token
-#      assignments >= 16 chars and URL-embedded credentials. Any staged path whose
-#      basename matches `*.env.example` is exempt. Denial names the finding class,
-#      file, and line number -- NEVER the matched value or line content, to avoid
-#      writing a candidate secret into the transcript or hook logs. Pattern set is
-#      tuned by editing this copied-then-project-owned file directly; no separate
-#      runtime override mechanism exists.
+#      assignments >= 16 chars (keyword may appear as part of a larger identifier,
+#      e.g. AWS_SECRET_ACCESS_KEY or a quoted JSON key, not just a bare word --
+#      this trades some false positives for fewer false negatives, acceptable
+#      since the pattern set is the project's own tuning surface) and
+#      URL-embedded credentials (any scheme, not just http/https). Any staged
+#      path whose basename matches `*.env.example` is exempt. Denial names the
+#      finding class, file, and line number -- NEVER the matched value or line
+#      content, to avoid writing a candidate secret into the transcript or hook
+#      logs. Pattern set is tuned by editing this copied-then-project-owned file
+#      directly; no separate runtime override mechanism exists.
 #   2. style-violation -- opt-in via harness.json's `style_gate` key (shape
-#      `{"enabled": false}`; absent or false means off). Example shipped: an em-dash
-#      ban, built from an escape sequence so this file never contains the character.
+#      `{"enabled": false}`; absent, false, or any non-object value means off).
+#      Example shipped: an em-dash ban, built from an escape sequence so this
+#      file never contains the character.
 #
 # Fail-open for: parse errors, not a git repo, `git diff --cached` exiting non-zero
-# or timing out after 5 seconds, python3 unavailable, or any unexpected scanning
-# exception (logged to stderr as the exception TYPE NAME only, never its
-# message/args, since exception text can itself carry matched line content).
+# or timing out (COMMIT_GATE_DIFF_TIMEOUT env var, default 5 seconds -- overridable
+# only for testing; production installs should not set it), python3 unavailable, or
+# any unexpected scanning exception (logged to stderr as the exception TYPE NAME
+# only, never its message/args, since exception text can itself carry matched line
+# content).
 #
 # Residual hole: `git commit <pathspec>` commits the working tree without staging,
 # which this hook cannot distinguish from a normal commit of already-staged content.
@@ -48,11 +59,6 @@ data = json.load(sys.stdin)
 print(data.get('tool_input', {}).get('command', ''))
 " 2>/dev/null)
 
-case "$COMMAND" in
-    *"git commit"*) ;;
-    *) exit 0 ;;
-esac
-
 deny_json() {
     python3 - "$1" <<'PYEOF'
 import json
@@ -71,6 +77,8 @@ PYEOF
 
 DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" <<'PYEOF'
 import fnmatch
+import json
+import os
 import re
 import subprocess
 import sys
@@ -90,12 +98,19 @@ REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
 
 STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
 
+SECRET_KEYWORDS = "key|secret|password|passwd|pwd|token"
 SECRET_PATTERN = re.compile(
-    r"(?i)\b(key|secret|password|passwd|pwd|token|api_key|apikey|access_key|"
-    r"secret_key)\b\s*[:=]\s*['\"]?([A-Za-z0-9+/_.\-]{16,})['\"]?"
+    r"(?i)(?:^|[^A-Za-z0-9_])[A-Za-z0-9_.\-]*(?:" + SECRET_KEYWORDS + r")"
+    r"[A-Za-z0-9_.\-]*['\"]?\s*[:=]\s*['\"]?([A-Za-z0-9+/_.\-]{16,})"
 )
-URL_CREDENTIAL_PATTERN = re.compile(r"https?://[^\s:/@]+:[^\s@/]+@")
+URL_CREDENTIAL_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]+:[^\s@/]+@")
 EM_DASH_PATTERN = re.compile("\u2014")
+# ".*" between "git" and the subcommand (not "\s+") so a command like
+# "git -C . commit" -- "git" and "commit" separated by flags, not just
+# whitespace -- is still recognized; requiring only adjacency let that form
+# skip the scan entirely.
+COMMIT_PATTERN = re.compile(r"\bgit\b.*\bcommit\b")
+STAGE_PATTERN = re.compile(r"\bgit\b.*\b(?:add|stage)\b")
 
 
 def strip_quotes(command):
@@ -120,31 +135,35 @@ def has_staging_flag(tokens):
     return False
 
 
+def commit_segment_has_staging_flag(segment):
+    tokens = segment.split()
+    try:
+        idx = tokens.index("commit")
+    except ValueError:
+        return False
+    return has_staging_flag(tokens[idx + 1:])
+
+
 def check_compound_stage_and_commit(command):
     stripped = strip_quotes(command)
     segments = command_segments(stripped)
-    has_add = any(re.search(r"\bgit\s+add\b", seg) for seg in segments)
-    has_commit_seg = [seg for seg in segments if re.search(r"\bgit\s+commit\b", seg)]
-    if has_add and has_commit_seg:
+    has_stage = any(STAGE_PATTERN.search(seg) for seg in segments)
+    commit_segments = [seg for seg in segments if COMMIT_PATTERN.search(seg)]
+    if has_stage and commit_segments:
         return DENY_COMPOUND
-    for seg in has_commit_seg:
-        tokens = seg.split()
-        try:
-            idx = tokens.index("commit")
-        except ValueError:
-            continue
-        if has_staging_flag(tokens[idx + 1:]):
-            return DENY_COMPOUND
+    if any(commit_segment_has_staging_flag(seg) for seg in commit_segments):
+        return DENY_COMPOUND
     return None
 
 
 def staged_diff(project_root):
+    timeout = float(os.environ.get("COMMIT_GATE_DIFF_TIMEOUT", "5"))
     result = subprocess.run(
         ["git", "diff", "--cached", "-U0"],
         cwd=project_root,
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=timeout,
     )
     if result.returncode != 0:
         return None
@@ -152,34 +171,43 @@ def staged_diff(project_root):
 
 
 def added_lines(diff_text):
-    # -U0 means every hunk carries only '+'/'-' lines, no unchanged context lines,
-    # so the running line counter is never thrown off by context.
+    # -U0 means every hunk carries only '+'/'-' lines, no unchanged context
+    # lines, so the running counter is never thrown off by context. `in_hunk`
+    # distinguishes a REAL "+++ " diff header (only ever seen before a file's
+    # first "@@" hunk marker) from STAGED CONTENT that happens to read like one
+    # (e.g. a line from a staged .patch/.diff file) -- treating the latter as a
+    # header would both misattribute file/line in a denial message (leaking
+    # staged content into it) and, if the fake path matched *.env.example,
+    # forge the exemption and skip scanning the rest of the diff. git
+    # terminates a "+++"/"---" header with a trailing tab when the path
+    # contains a space; strip it.
     current_file = None
     current_line = None
+    in_hunk = False
     for line in diff_text.splitlines():
-        if line.startswith("+++ "):
-            path = line[4:]
+        if line.startswith("diff --git "):
+            current_file, current_line, in_hunk = None, None, False
+            continue
+        if not in_hunk and line.startswith("+++ "):
+            path = line[4:].split("\t", 1)[0]
             current_file = path[2:] if path.startswith("b/") else path
             continue
         if line.startswith("@@"):
+            in_hunk = True
             m = re.search(r"\+(\d+)", line)
             current_line = int(m.group(1)) if m else None
             continue
-        if line.startswith("+") and not line.startswith("+++"):
-            if current_file is not None and current_line is not None:
-                yield current_file, current_line, line[1:]
-                current_line += 1
+        if in_hunk and line.startswith("+") and current_file and current_line:
+            yield current_file, current_line, line[1:]
+            current_line += 1
 
 
 def is_exempt(path):
     return fnmatch.fnmatch(path.rsplit("/", 1)[-1], "*.env.example")
 
 
-def check_secrets(project_root):
-    diff_text = staged_diff(project_root)
-    if diff_text is None:
-        return None
-    for path, lineno, content in added_lines(diff_text):
+def find_secret(lines):
+    for path, lineno, content in lines:
         if is_exempt(path):
             continue
         if SECRET_PATTERN.search(content):
@@ -196,26 +224,8 @@ def check_secrets(project_root):
     return None
 
 
-def style_gate_enabled(project_root):
-    import json
-    import os
-
-    path = os.path.join(project_root, ".harness", "harness.json")
-    try:
-        with open(path) as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        return False
-    return bool(data.get("style_gate", {}).get("enabled", False))
-
-
-def check_style(project_root):
-    if not style_gate_enabled(project_root):
-        return None
-    diff_text = staged_diff(project_root)
-    if diff_text is None:
-        return None
-    for path, lineno, content in added_lines(diff_text):
+def find_style_violation(lines):
+    for path, lineno, content in lines:
         if EM_DASH_PATTERN.search(content):
             return (
                 f"style-violation: a staged addition at {path}:{lineno} violates "
@@ -224,9 +234,25 @@ def check_style(project_root):
     return None
 
 
+def style_gate_enabled(project_root):
+    path = os.path.join(project_root, ".harness", "harness.json")
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return False
+    style_gate = data.get("style_gate")
+    if not isinstance(style_gate, dict):
+        return False
+    return bool(style_gate.get("enabled", False))
+
+
 def main():
     command = sys.argv[1]
     project_root = sys.argv[2]
+
+    if not COMMIT_PATTERN.search(command):
+        return
 
     reason = check_compound_stage_and_commit(command)
     if reason:
@@ -234,19 +260,22 @@ def main():
         return
 
     try:
-        reason = check_secrets(project_root)
+        diff_text = staged_diff(project_root)
+        if diff_text is None:
+            return
+        lines = list(added_lines(diff_text))
+        reason = find_secret(lines)
         if reason:
             print(reason)
             return
-        reason = check_style(project_root)
-        if reason:
-            print(reason)
-            return
+        if style_gate_enabled(project_root):
+            reason = find_style_violation(lines)
+            if reason:
+                print(reason)
     except subprocess.TimeoutExpired:
         return
     except Exception as exc:
         print(type(exc).__name__, file=sys.stderr)
-        return
 
 
 main()
