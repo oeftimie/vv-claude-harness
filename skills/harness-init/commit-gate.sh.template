@@ -1,0 +1,492 @@
+#!/bin/bash
+# VV Claude Code Harness - PreToolUse commit-content gate
+# Runs before Bash tool calls; no-ops unless the command tokenizes to a
+# segment starting with "git" whose subcommand is "commit" (see
+# segment_subcommand below). Three earlier revisions used progressively wider
+# regexes for this decision (bash substring match -> \bgit\s+commit\b ->
+# \bgit\b.*\bcommit\b -> \bgit\b[^|;&]*(?:^|\s)commit(?:\s|$)), each fixing
+# one adversarial-review finding while introducing another (a filename or
+# branch name containing "commit"/"add" as a substring; a newline inside the
+# command letting an unrelated later line match; a separator with no
+# surrounding whitespace bypassing the boundary check entirely). Real
+# tokenization replaces all four of those regexes: it compares whole tokens,
+# so a substring occurrence inside a longer word is never a match, and
+# segmenting on the control operators command_segments recognizes (see its
+# own comment) up front means a token from one logical command can't pair
+# with a token from another -- for those operators specifically. This is
+# still pattern-based tokenization, not a real shell parser: an operator
+# command_segments doesn't split on, or a leading token segment_subcommand
+# doesn't know to skip, can still glue two logical commands into one
+# unrecognized segment (see Residual holes below for the ones found so far).
+# Adapted from Setlist's commit-gate.sh (Alex Ciortan, CC BY 4.0).
+#
+# Checks (each names a closed finding class in its denial):
+#   0. compound-stage-and-commit -- denies a command that stages AND commits in one
+#      step (`git add|stage ... && git commit`, or
+#      `git commit -a`/`-i`/`--all`/`--include`, including combined short-flag
+#      clusters like `-am`). A pre-commit hook can only scan an index that already
+#      holds the content; newly staged content in the SAME command is invisible to
+#      Check 1's scan. Quoted spans (single, double, ANSI-C $'...') are stripped
+#      before segmenting, so a commit message like
+#      `git commit -m "run git add later"` does not false-trip.
+#   1. secret-assignment / url-credential -- scans staged additions
+#      (`git diff --cached -U0`, `+` lines) for key/secret/password/token
+#      assignments >= 16 chars (keyword may appear as part of a larger identifier,
+#      e.g. AWS_SECRET_ACCESS_KEY or a quoted JSON key, not just a bare word --
+#      this trades some false positives for fewer false negatives, acceptable
+#      since the pattern set is the project's own tuning surface) and
+#      URL-embedded credentials (any scheme, not just http/https). Any staged
+#      path whose basename matches `*.env.example` is exempt. Denial names the
+#      finding class, file, and line number -- NEVER the matched value or line
+#      content, to avoid writing a candidate secret into the transcript or hook
+#      logs. Pattern set is tuned by editing this copied-then-project-owned file
+#      directly; no separate runtime override mechanism exists. The pattern is
+#      still worst-case polynomial in a single line's length on adversarially
+#      repeated keyword-shaped text with no valid terminator (removing its
+#      leading wildcard prefix cut the constant factor by roughly two orders of
+#      magnitude but did not change its complexity class) -- SECRET_SCAN_MAX_LEN
+#      bounds any one line's scan time regardless, and SCAN_TIME_BUDGET_SECONDS
+#      bounds the total across every line, so neither the pattern's exact
+#      complexity nor the number of staged lines can make this hook hang.
+#   2. style-violation -- opt-in via harness.json's `style_gate` key (shape
+#      `{"enabled": false}`; absent, false, or any non-object value means off).
+#      Example shipped: an em-dash ban, built from an escape sequence so this
+#      file never contains the character.
+#
+# Fail-open for: parse errors, not a git repo, `git diff --cached` exiting non-zero
+# or timing out (COMMIT_GATE_DIFF_TIMEOUT env var, default 5 seconds -- overridable
+# only for testing; production installs should not set it), the scan-time budget
+# being exceeded, python3 unavailable, or any unexpected scanning exception
+# (logged to stderr as the exception TYPE NAME only, never its message/args,
+# since exception text can itself carry matched line content).
+#
+# Residual holes: `git commit <pathspec>` commits the working tree without
+# staging, which this hook cannot distinguish from a normal commit of
+# already-staged content. A single staged line longer than SECRET_SCAN_MAX_LEN
+# is only scanned up to that length -- a secret past that point on the same
+# line is silently missed (accepted: scanning overlapping windows to close
+# this adds real complexity for a line length no ordinary commit approaches).
+# No automated latency test exists for any hook in this repo; design target
+# (undocumented elsewhere) is under 1 second for a typical commit's staged diff,
+# since this hook blocks an interactive PreToolUse Bash call synchronously.
+# Check 0's quote-stripping covers single/double/ANSI-C quoting only; recursive or
+# nested quoting is out of scope, consistent with this repo's existing
+# pattern-based-and-evadable-by-construction posture for Bash-command hooks.
+# A quoted span containing a heredoc body is not stripped correctly (the
+# quote-stripping regex doesn't cross heredoc syntax) -- if the heredoc body's
+# literal text happens to read like a staging command, this can produce a
+# false denial (fail-closed, over-blocking); accepted, same
+# evadable-by-construction posture.
+# parse_command joins backslash-newline shell continuations (outside quotes)
+# into a single space before segmenting, so `git \` + newline + `commit -m x`
+# is recognized as one git-commit invocation rather than being split into two
+# segments that neither alone tokenize as one -- an earlier version of this
+# hook didn't join continuations, which no-op'ed the entire gate for a
+# continued command (fail-open bypass, not merely a missed check: the secret
+# scan itself was skipped). This closes the unquoted case only; a
+# continuation inside a quoted span is already collapsed to whitespace by
+# quote-stripping either way, so it doesn't matter there. Not attempted:
+# joining a continuation that falls inside a heredoc body (see above) --
+# that would require tracking heredoc state across the whole command, not a
+# one-line fix like the unquoted case was.
+# segment_subcommand recognizes "git" invoked directly, via a path
+# (/usr/bin/git, ./git), backslash-prefixed (\git, the standard alias-bypass
+# idiom), or paren-wrapped ("(git ..."); it also skips a closed set of shell
+# reserved words that can lead a simple command inside a control structure
+# (SHELL_LEADING_KEYWORDS: "then", "do", "else", "elif" -- e.g. "if true;
+# then git commit -m x; fi"). A brace-grouped invocation ("{ git commit -m
+# x; }") is not recognized, and neither is an invocation wrapped in another
+# command (`sudo git commit`, `env FOO=1 git commit`) -- accepted rather
+# than maintaining an open-ended wrapper/grouping-command allowlist (sudo,
+# doas, env, nice, timeout, brace groups, ...) in a way the closed
+# keyword/flag classification isn't. A `case ... in PATTERN) git commit
+# ...` segment is also not recognized: the token immediately before "git"
+# is an arbitrary case pattern, not a fixed word to skip, so closing this
+# would need real shell parsing rather than one more set entry -- accepted,
+# same class as the wrapper-command gap. GIT_FLAGS_WITH_VALUE enumerates
+# the global flags that consume a following space-separated argument,
+# probed mechanically against git 2.52 (see its own comment above); it is
+# not a full git CLI parser and does not claim to track every future git
+# release -- for example, `--super-prefix` consumed an argument through at
+# least git 2.38 but is absent from handle_options() by 2.43 (removed
+# somewhere in that range; not pinned closer), so it was dropped from the
+# set per the 2.52 probe; this is a narrow regression on git older than
+# roughly 2.42, not a general bypass on any currently supported git.
+
+INPUT=$(cat)
+
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+cd "$PROJECT_ROOT" 2>/dev/null || exit 0
+
+COMMAND=$(echo "$INPUT" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(data.get('tool_input', {}).get('command', ''))
+" 2>/dev/null)
+
+deny_json() {
+    python3 - "$1" <<'PYEOF'
+import json
+import sys
+
+print(json.dumps({
+    "hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": sys.argv[1],
+    }
+}))
+PYEOF
+    exit 0
+}
+
+DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" <<'PYEOF'
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+DENY_COMPOUND = (
+    "compound-stage-and-commit: this command stages and commits in one step, but "
+    "a pre-commit hook can only scan an index that already holds the content -- "
+    "newly staged content in the same command is invisible to the secret scan. "
+    "Repair: split into a separate 'git add <files>' followed by 'git commit' "
+    "with no staging flags (avoid -a/-i/--all/--include)."
+)
+REPAIR_STAGED = (
+    "remove or redact the flagged value from the staged diff, or move it to an "
+    "untracked file (e.g. .env, already gitignored)"
+)
+REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
+
+STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
+# Global git flags that consume a following argument in their space-separated
+# form (the "=value" form, e.g. --git-dir=.git, is already handled -- it's a
+# single token with no following argument to skip). This set was probed
+# mechanically against git 2.52, not assembled from memory: every long-option-
+# shaped string in the git binary was tried as `git <flag> ARG1VAL ZZBOGUS`
+# and classified by whether git reports ZZBOGUS (consumes an arg) or the flag
+# itself (doesn't); all 52 single-letter short flags were swept the same way.
+# An earlier version had only -C/-c, then a second pass added --git-dir/
+# --work-tree/--namespace/--exec-path/--super-prefix/--attr-source from
+# memory rather than probing -- that pass both missed two real ones
+# (--config-env, --shallow-file) and kept two that don't actually consume a
+# following argument (--exec-path prints and exits; --super-prefix was
+# removed in 2.52) -- found by adversarial review of PR #40. Any flag missing
+# from this set causes the same bypass: segment_subcommand returns the flag's
+# VALUE as the subcommand, no-op'ing the entire gate.
+GIT_FLAGS_WITH_VALUE = {
+    "-C", "-c", "--config-env", "--git-dir", "--work-tree",
+    "--namespace", "--attr-source", "--shallow-file",
+}
+
+# No leading wildcard prefix before the keyword: an earlier version had
+# "[A-Za-z0-9_.\-]*" before the keyword alternation, which is a second
+# independent quantifier over an overlapping character class -- adversarially
+# repeated keyword-shaped text with no valid 16+ char terminator forced
+# polynomial-time backtracking (found by adversarial review of PR #40).
+# Anchoring directly on the keyword still matches AWS_SECRET_ACCESS_KEY= and
+# "api_key": (the suffix wildcard after the keyword covers those), it just no
+# longer also searches for an arbitrary-length prefix before it.
+SECRET_KEYWORDS = "key|secret|password|passwd|pwd|token"
+SECRET_PATTERN = re.compile(
+    r"(?i)(?:" + SECRET_KEYWORDS + r")[A-Za-z0-9_.\-]*['\"]?\s*[:=]\s*"
+    r"['\"]?([A-Za-z0-9+/_.\-]{16,})"
+)
+# Bounds any single line's scan time regardless of the pattern's complexity;
+# no real secret assignment is anywhere close to this long.
+SECRET_SCAN_MAX_LEN = 2048
+# Bounds TOTAL scan time across every staged line, since the per-line cap
+# alone doesn't bound aggregate time against many adversarial lines (~1000
+# adversarially-crafted 2048-char lines measured at ~18s combined even with
+# the per-line cap in place).
+SCAN_TIME_BUDGET_SECONDS = 2.0
+URL_CREDENTIAL_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]+:[^\s@/]+@")
+EM_DASH_PATTERN = re.compile("\u2014")
+
+
+def strip_quotes(command):
+    # Removes single-quoted, double-quoted, and ANSI-C $'...' spans (including the
+    # quotes themselves) so a commit message mentioning "git add" or containing
+    # -a/-i/--all/--include as plain text does not false-trip Check 0.
+    pattern = re.compile(r"\$'(?:[^'\\]|\\.)*'|'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+    return pattern.sub(" ", command)
+
+
+def command_segments(command):
+    # Splits on shell control operators, including a literal newline -- a
+    # multi-line command (a heredoc'd commit message, or two commands
+    # separated by a newline rather than ;/&&) must not let a "git" token on
+    # one line pair with an unrelated token on another line. "&" (background
+    # execution, and the leading half of "|&") is itself a control operator
+    # exactly like ";" -- an earlier version omitted it, so everything before
+    # an "&" stayed glued to everything after it and only the first
+    # segment's subcommand was ever seen (found by adversarial review of PR
+    # #40, round 6). "&&" is listed as its own alternative before the
+    # single-character class, so it is still consumed whole and never
+    # mistaken for two lone "&" separators.
+    return [s.strip() for s in re.split(r"\|\||&&|[|;\n&]", command) if s.strip()]
+
+
+def is_git_token(tok):
+    # Matches "git" invoked via a path (/usr/bin/git, ./git), wrapped in a
+    # subshell paren ("(git add ..."), or backslash-prefixed ("\git ...", the
+    # standard idiom for bypassing a shell alias named git, not adversarial
+    # evasion) -- not just the bare literal "git". Found by adversarial
+    # review of PR #40 (bare-literal matching let /usr/bin/git and (git ...
+    # no-op the gate entirely); \git found in round 5 of the same review.
+    return os.path.basename(tok.lstrip("(\\")) == "git"
+
+
+SHELL_LEADING_KEYWORDS = {"then", "do", "else", "elif"}
+
+
+def segment_subcommand(tokens):
+    # Returns (subcommand_token, index_in_tokens) for a "git <subcommand> ..."
+    # segment, e.g. ("commit", 3) for ["git", "-C", ".", "commit", "-m", "x"].
+    # Skips "VAR=value" env-assignment prefixes, the closed set of shell
+    # reserved words that can lead a simple command inside a control
+    # structure (SHELL_LEADING_KEYWORDS -- "if true; then git commit -m x; fi"
+    # splits into a segment starting "then git commit ...", and without this
+    # skip "then" is mistaken for the whole segment being non-git-shaped;
+    # found by adversarial review of PR #40, round 6), and git global flags --
+    # both the ones that take no argument and the ones that do (see
+    # GIT_FLAGS_WITH_VALUE). Returns (None, None) if this segment isn't a
+    # real "git <subcommand>" invocation at all. A "case ... in PATTERN)"
+    # segment is NOT handled here: unlike the four reserved words above, the
+    # token immediately before the command is an arbitrary case pattern, not
+    # a fixed word to skip -- accepted as a residual hole (see header).
+    i = 0
+    while i < len(tokens) and (
+        re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[i])
+        or tokens[i] in SHELL_LEADING_KEYWORDS
+    ):
+        i += 1
+    if i >= len(tokens) or not is_git_token(tokens[i]):
+        return None, None
+    i += 1
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in GIT_FLAGS_WITH_VALUE:
+            i += 2
+            continue
+        if tok.startswith("-"):
+            i += 1
+            continue
+        return tok, i
+    return None, None
+
+
+def join_continuations(command):
+    # Joins a backslash-newline shell continuation to a space, but only when
+    # the backslash immediately before the newline is itself unescaped: an
+    # ODD run of backslashes right before a newline means the last one
+    # escapes the newline (a real continuation); an EVEN run (including
+    # zero) means the newline is a real command separator and the
+    # backslashes are literal characters, which must be left alone. The
+    # first version of this fix used a blanket command.replace("\\n", " ")
+    # with no parity check, which wrongly joined "echo a\\\\" + newline +
+    # "git commit" (an ESCAPED backslash followed by a genuine separator
+    # newline) into one segment, hiding the second command from the gate
+    # entirely -- found by adversarial review of PR #40, round 6.
+    def repl(m):
+        backslashes = m.group(1)
+        if len(backslashes) % 2 == 1:
+            return backslashes[:-1] + " "
+        return backslashes + "\n"
+
+    return re.sub(r"(\\*)\n", repl, command)
+
+
+def parse_command(command):
+    # Quote-strips and segments the raw command once, then finds each
+    # segment's git subcommand (if any) -- a single source of truth shared by
+    # the no-op decision and the compound-stage-and-commit check below.
+    # Backslash-newline continuations are joined to a space before anything
+    # else, so a continued command isn't split into fragments that
+    # individually fail to tokenize as git-shaped (see header).
+    stripped = strip_quotes(join_continuations(command))
+    parsed = []
+    for seg in command_segments(stripped):
+        tokens = seg.split()
+        sc, idx = segment_subcommand(tokens)
+        parsed.append((seg, sc, idx))
+    return parsed
+
+
+# Short flags that take an attached value in a cluster like "-mfix" or
+# "-Fdraft.txt" -- once one of these appears, the rest of that cluster is its
+# value, not further flag letters. Without this, "-mfix" was denied for
+# containing the letter "i", and "-- -a.txt" (a pathspec after "--", not a
+# flag at all) was denied too (found by adversarial review of PR #40).
+VALUE_TAKING_SHORT_FLAGS = set("mFtSCcu")
+
+
+def has_staging_flag(tokens):
+    for tok in tokens:
+        if tok == "--":
+            break  # everything after this is a pathspec, never a flag
+        if tok in STAGING_FLAGS:
+            return True
+        if tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
+            for c in tok[1:]:
+                if c in ("a", "i"):
+                    return True
+                if c in VALUE_TAKING_SHORT_FLAGS:
+                    break
+    return False
+
+
+def check_compound_stage_and_commit(parsed):
+    subcommands = [sc for _, sc, _ in parsed]
+    has_stage = any(sc in ("add", "stage") for sc in subcommands)
+    commit_present = any(sc == "commit" for sc in subcommands)
+    if has_stage and commit_present:
+        return DENY_COMPOUND
+    for seg, sc, idx in parsed:
+        if sc == "commit" and has_staging_flag(seg.split()[idx + 1:]):
+            return DENY_COMPOUND
+    return None
+
+
+def staged_diff(project_root):
+    timeout = float(os.environ.get("COMMIT_GATE_DIFF_TIMEOUT", "5"))
+    result = subprocess.run(
+        ["git", "diff", "--cached", "-U0"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def added_lines(diff_text):
+    # -U0 means every hunk carries only '+'/'-' lines, no unchanged context
+    # lines, so the running counter is never thrown off by context. `in_hunk`
+    # distinguishes a REAL "+++ " diff header (only ever seen before a file's
+    # first "@@" hunk marker) from STAGED CONTENT that happens to read like one
+    # (e.g. a line from a staged .patch/.diff file) -- treating the latter as a
+    # header would both misattribute file/line in a denial message (leaking
+    # staged content into it) and, if the fake path matched *.env.example,
+    # forge the exemption and skip scanning the rest of the diff. git
+    # terminates a "+++"/"---" header with a trailing tab when the path
+    # contains a space; strip it.
+    current_file = None
+    current_line = None
+    in_hunk = False
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            current_file, current_line, in_hunk = None, None, False
+            continue
+        if not in_hunk and line.startswith("+++ "):
+            path = line[4:].split("\t", 1)[0]
+            current_file = path[2:] if path.startswith("b/") else path
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            m = re.search(r"\+(\d+)", line)
+            current_line = int(m.group(1)) if m else None
+            continue
+        if in_hunk and line.startswith("+") and current_file and current_line:
+            yield current_file, current_line, line[1:]
+            current_line += 1
+
+
+def is_exempt(path):
+    return fnmatch.fnmatch(path.rsplit("/", 1)[-1], "*.env.example")
+
+
+def find_secret(lines, deadline):
+    for path, lineno, content in lines:
+        if time.monotonic() > deadline:
+            return None
+        if is_exempt(path):
+            continue
+        scanned = content[:SECRET_SCAN_MAX_LEN]
+        if SECRET_PATTERN.search(scanned):
+            return (
+                f"secret-assignment: a staged addition at {path}:{lineno} looks "
+                f"like a secret value (key/token/password assignment, length >= "
+                f"16). Repair: {REPAIR_STAGED}."
+            )
+        if URL_CREDENTIAL_PATTERN.search(scanned):
+            return (
+                f"url-credential: a staged addition at {path}:{lineno} contains a "
+                f"URL with embedded credentials. Repair: {REPAIR_STAGED}."
+            )
+    return None
+
+
+def find_style_violation(lines, deadline):
+    for path, lineno, content in lines:
+        if time.monotonic() > deadline:
+            return None
+        if EM_DASH_PATTERN.search(content):
+            return (
+                f"style-violation: a staged addition at {path}:{lineno} violates "
+                f"house style (em dash). Repair: {REPAIR_STYLE}."
+            )
+    return None
+
+
+def style_gate_enabled(project_root):
+    path = os.path.join(project_root, ".harness", "harness.json")
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return False
+    style_gate = data.get("style_gate")
+    if not isinstance(style_gate, dict):
+        return False
+    return bool(style_gate.get("enabled", False))
+
+
+def main():
+    command = sys.argv[1]
+    project_root = sys.argv[2]
+
+    parsed = parse_command(command)
+    if not any(sc == "commit" for _, sc, _ in parsed):
+        return
+
+    reason = check_compound_stage_and_commit(parsed)
+    if reason:
+        print(reason)
+        return
+
+    try:
+        diff_text = staged_diff(project_root)
+        if diff_text is None:
+            return
+        lines = list(added_lines(diff_text))
+        deadline = time.monotonic() + SCAN_TIME_BUDGET_SECONDS
+        reason = find_secret(lines, deadline)
+        if reason:
+            print(reason)
+            return
+        if style_gate_enabled(project_root):
+            reason = find_style_violation(lines, deadline)
+            if reason:
+                print(reason)
+    except subprocess.TimeoutExpired:
+        return
+    except Exception as exc:
+        print(type(exc).__name__, file=sys.stderr)
+
+
+main()
+PYEOF
+)
+
+if [ -n "$DENY_REASON" ]; then
+    deny_json "$DENY_REASON"
+fi
+
+exit 0

@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F011/OVI-64 prepped this session (commit-content gate: secret scan + compound stage-and-commit denial). Unusually deep prep -- 12 SV questions, 3 RV cycles, one Linear comment + one local features.json cross-reference posted to coordinate with F013/OVI-63. Normalized, remote write-back done, local F011 mirrored, UNSTAMPED; not yet implemented. lane=code, risk=ELEVATED (security-sensitive: a secret-scanning gate).
-- Next up: implement F011/OVI-64. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
+- Currently working on: F011/OVI-64 implemented and passing this session (skills/harness-init/commit-gate.sh.template + SKILL.md Step 3.6 wiring + README/templates/CLAUDE.md docs). Not yet shipped (PR/CI/review/merge pending) -- flag for an explicit security-review pass given lane=code, risk=ELEVATED.
+- Next up: ship F011/OVI-64, then continue the OVI-44 epic with the next priority feature. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -491,3 +491,37 @@ This file is referenced in CLAUDE.md and loaded every session.
   "the assertion reads correctly" for anything checking that specific wording
   or specific logic survived a change, since a test that merely checks a
   header or keyword is present can pass on both the broken and fixed version.
+
+## Meta-Session 2026-07-25 (session 11 continued, F011/OVI-64)
+- Scope accuracy: scope held exactly as prepped (5 files); the one surprise was a
+  cross-feature interaction, not a scope gap -- F006/OVI-62's harness-doctor
+  commit-gate probe test assumed commit-gate.sh.template would never actually
+  exist in this repo's own plugin source (it tested "shipped by the plugin but
+  not yet copied to the project" using a FAKE plugin root specifically to avoid
+  needing a real template). Once F011 shipped a real one, install_hooks()'s
+  glob-copy-everything convention silently satisfied that fixture's "not yet
+  copied" precondition. Lesson: a test fixture that depends on "this artifact
+  doesn't exist yet" is inherently fragile against a LATER feature actually
+  building that artifact -- worth a comment (added) flagging the coupling for
+  whoever touches either feature next.
+- Model calibration: single-session, correction_cycles 1 -- the same known
+  TDD-red-phase false-rejection pattern (9 sessions running now). Not a real
+  correction, as always.
+- Discovery lineage: no new features filed.
+- Approach patterns: for a security-sensitive check (secret-shaped-content
+  detection), writing the "must never leak the matched value" tests FIRST
+  (asserting the denial message does NOT contain the planted secret string) was
+  more valuable than the usual red-then-green flow, since it's the kind of
+  requirement that's easy to satisfy accidentally-wrong (e.g. an f-string that
+  includes the matched group by mistake) without a dedicated negative
+  assertion. Also: manually exercising known evasion/edge shapes NOT covered by
+  the 8 formal test cases (combined -am flag, git commit <pathspec>'s
+  documented residual hole, --amend with nothing staged) before considering the
+  feature done caught nothing broken here, but is worth doing as standard
+  practice for any hook whose job is denying an adversarial-ish input, per the
+  same principle F005/OVI-61 established for the harness's OWN gates.
+- Review value: not yet reviewed as of this entry (PR pending). Given
+  risk=ELEVATED (self-classified at prep time: security-sensitive code), the
+  review request should explicitly ask the reviewer to adversarially probe the
+  no-echo-matched-content guarantee and the compound-detection evasion surface,
+  not just re-read the diff for correctness.

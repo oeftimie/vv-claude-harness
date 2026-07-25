@@ -261,6 +261,7 @@ The real insight from iterating through these versions: there are three reliabil
 | `session-start.sh` (plugin) | SessionStart | Injects orientation at start; its `compact` matcher re-injects context after compaction |
 | `session-end.sh` (plugin) | SessionEnd | Audits discipline into `SESSION_INCOMPLETE`, surfaced at next session start |
 | `enforce-scope.sh` | PreToolUse (Bash) | Best-effort: denies Bash write commands (`>`, `>>`, `tee`, `cp`, `mv`, `sed -i`, `rm`) whose target is outside scope or is a lead-owned state file |
+| `commit-gate.sh` | PreToolUse (Bash) | Best-effort: denies `git commit` calls that stage-and-commit in one step, or whose staged additions look like a secret; opt-in house-style scan. Pattern-based and evadable by construction, same posture as `enforce-scope.sh`'s Bash coverage |
 
 **Structural (file existence, JSON schema)**: high reliability. `features.json` requiring `test_file` and `coverage` fields. The `.harness/` directory gating mode selection. Agents respect structure more than prose.
 

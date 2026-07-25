@@ -253,7 +253,7 @@ Before any git push, pull, or clone: verify the active SSH identity by running `
 
 In harness projects, the confirmed identity is stored in `.harness/harness.json` under `git_identity`. Compare against it at session start.
 
-When gitleaks blocks a push due to false positives, add entries to `.gitleaks.toml` allowlist rather than restructuring code. After committing, confirm push succeeded and verify remote state with `git log --oneline origin/<branch>`.
+When gitleaks blocks a push due to false positives, add entries to `.gitleaks.toml` allowlist rather than restructuring code. After committing, confirm push succeeded and verify remote state with `git log --oneline origin/<branch>`. In harness projects, `commit-gate.sh` (PreToolUse, `git commit`) is the mechanical agent-side control that scans staged content for secret-shaped strings before the commit lands; gitleaks/lefthook remain the human-side control for anything that slips past it.
 
 ### Commit Hygiene
 - No auto-generated signatures
