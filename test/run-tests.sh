@@ -2600,7 +2600,11 @@ OUT=$(run_commit_gate "$DIR_CG_REDOS" 'git commit -m "test"')
 RC=$?
 CG_REDOS_ELAPSED=$(python3 -c "import time; print(time.monotonic() - $CG_REDOS_START)")
 assert_rc0 "$RC" "cg: an adversarial keyword-repeated line exits 0"
-if python3 -c "import sys; sys.exit(0 if $CG_REDOS_ELAPSED <= 1.0 else 1)"; then
+# Round-6 review: a 1.0s external wall-clock bound measures process startup
+# and subprocess spawn overhead on top of the actual scan, and flaked under
+# CI load. Widened with real margin over SECRET_SCAN_MAX_LEN's per-line cap
+# while still catching a return to the original ~18s-class regression.
+if python3 -c "import sys; sys.exit(0 if $CG_REDOS_ELAPSED <= 5.0 else 1)"; then
   pass "cg: single adversarial line scan completes in bounded time (${CG_REDOS_ELAPSED}s)"
 else
   fail "cg: single adversarial line scan took ${CG_REDOS_ELAPSED}s, exceeding the bound"
@@ -2624,7 +2628,10 @@ CG_REDOS_MANY_ELAPSED=$(python3 -c "import time; print(time.monotonic() - $CG_RE
 assert_rc0 "$RC" "cg: many adversarial lines still exits 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "cg: many-adversarial-lines scan fails open (budget exceeded, no deny)"
-if python3 -c "import sys; sys.exit(0 if $CG_REDOS_MANY_ELAPSED <= 5.0 else 1)"; then
+# Round-6 review: same widening as above, and for the same reason -- this
+# bound includes process/subprocess overhead on top of
+# SCAN_TIME_BUDGET_SECONDS' 2.0s internal cutoff.
+if python3 -c "import sys; sys.exit(0 if $CG_REDOS_MANY_ELAPSED <= 15.0 else 1)"; then
   pass "cg: many-adversarial-lines scan completes in bounded time (${CG_REDOS_MANY_ELAPSED}s)"
 else
   fail "cg: many-adversarial-lines scan took ${CG_REDOS_MANY_ELAPSED}s, exceeding the bound"
@@ -2695,6 +2702,8 @@ do
   RC=$?
   assert_rc0 "$RC" "cg: 'git $CG_FLAG_CASE commit' still scans (JSON deny), not bypassed"
   assert_deny_json "$OUT" "cg: 'git $CG_FLAG_CASE commit' secret denial uses JSON deny form"
+  assert_contains "$OUT" "secret-assignment" \
+    "cg: 'git $CG_FLAG_CASE commit' denial names secret-assignment specifically"
 done
 
 # A segment that IS "git" plus flags but never reaches a real subcommand
@@ -2765,16 +2774,27 @@ assert_deny_json "$OUT" "cg: continued-command secret denial uses JSON deny form
 
 # The continuation join must not defeat quote-stripping: a continuation
 # INSIDE a quoted commit message is already collapsed to whitespace by
-# quote-stripping either way, so it must not itself trigger a denial.
+# quote-stripping either way, so it must not itself trigger a denial. Stages
+# a real secret and asserts a positive secret-assignment denial (not just
+# "not denied") -- proving the command IS recognized as git-shaped and
+# scanned, rather than merely unrecognized. A clean-index "not denied"
+# assertion can't tell those two apart, which is exactly the weakness that
+# let the continuation bypass go undetected for several review rounds
+# (found by adversarial review of PR #40, round 6).
 DIR_CG_CONTINUATION_QUOTED="$WORK/commit-gate-continuation-inside-quotes"
 make_fixture "$DIR_CG_CONTINUATION_QUOTED"
 install_hooks "$DIR_CG_CONTINUATION_QUOTED"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_CONTINUATION_QUOTED/secret.py"
+git -C "$DIR_CG_CONTINUATION_QUOTED" add secret.py
 OUT=$(run_commit_gate "$DIR_CG_CONTINUATION_QUOTED" 'git commit -m "line one \
 line two"')
 RC=$?
 assert_rc0 "$RC" "cg: a continuation inside a quoted commit message exits 0"
-assert_not_contains "$OUT" "permissionDecision" \
-  "cg: a continuation inside a quoted commit message is not denied"
+assert_deny_json "$OUT" "cg: continuation-inside-quotes is recognized and scanned (secret denial)"
+assert_contains "$OUT" "secret-assignment" \
+  "cg: continuation-inside-quotes denial names secret-assignment, not compound"
+assert_not_contains "$OUT" "compound-stage-and-commit" \
+  "cg: continuation-inside-quotes is not wrongly denied as compound"
 
 # A genuine compound command split across a continuation must still deny --
 # joining continuations must not accidentally merge two real segments into
@@ -2789,6 +2809,81 @@ assert_rc0 "$RC" "cg: compound form split across a continuation exits 0 (JSON de
 assert_deny_json "$OUT" "cg: continuation-split compound denial uses JSON deny form"
 assert_contains "$OUT" "compound-stage-and-commit" \
   "cg: continuation-split compound denial names the finding class"
+
+# Round-6 review: "&" (background execution, and the leading half of "|&")
+# was not a segment separator, so everything before it stayed glued to
+# everything after it and only the first segment's subcommand was ever
+# seen -- a real, working commit path, not hypothetical.
+DIR_CG_AMPERSAND="$WORK/commit-gate-ampersand-separator"
+make_fixture "$DIR_CG_AMPERSAND"
+install_hooks "$DIR_CG_AMPERSAND"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_AMPERSAND/secret.py"
+git -C "$DIR_CG_AMPERSAND" add secret.py
+for CG_AMP_CMD in \
+  'git status & git commit -m x' \
+  'git add . & git commit -m x' \
+  'git status |& git commit -m x'
+do
+  OUT=$(run_commit_gate "$DIR_CG_AMPERSAND" "$CG_AMP_CMD")
+  RC=$?
+  assert_rc0 "$RC" "cg: '$CG_AMP_CMD' still scans (JSON deny), not bypassed"
+  assert_deny_json "$OUT" "cg: '$CG_AMP_CMD' secret denial uses JSON deny form"
+done
+
+# The same missing "&" separator also hid a compound-stage-and-commit case
+# on the Check 0 side: an unrelated command glued to "git add ." by "&"
+# collapsed into one segment led by the unrelated command, so the "git add"
+# was invisible and no compound denial fired.
+DIR_CG_AMPERSAND_COMPOUND="$WORK/commit-gate-ampersand-compound"
+make_fixture "$DIR_CG_AMPERSAND_COMPOUND"
+install_hooks "$DIR_CG_AMPERSAND_COMPOUND"
+OUT=$(run_commit_gate "$DIR_CG_AMPERSAND_COMPOUND" 'echo hi & git add . && git commit -m x')
+RC=$?
+assert_rc0 "$RC" "cg: '&'-glued compound form exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: '&'-glued compound denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: '&'-glued compound denial names the finding class"
+
+# Round-6 review: the continuation-join fix (b9d639a) introduced its own
+# fail-open regression -- a blanket replace("\\n", " ") with no parity check
+# wrongly joined an ESCAPED backslash followed by a genuine separator
+# newline (an EVEN run of backslashes) into one segment, hiding the second
+# command from the gate entirely. join_continuations now only joins when an
+# ODD run of backslashes precedes the newline.
+DIR_CG_ESCAPED_BACKSLASH="$WORK/commit-gate-escaped-backslash-real-separator"
+make_fixture "$DIR_CG_ESCAPED_BACKSLASH"
+install_hooks "$DIR_CG_ESCAPED_BACKSLASH"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_ESCAPED_BACKSLASH/secret.py"
+git -C "$DIR_CG_ESCAPED_BACKSLASH" add secret.py
+CG_ESCAPED_CMD=$(printf 'echo a\\\\\ngit commit -m x')
+OUT=$(run_commit_gate "$DIR_CG_ESCAPED_BACKSLASH" "$CG_ESCAPED_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: an escaped backslash before a real separator newline exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: escaped-backslash-then-real-newline still scans the second command"
+assert_contains "$OUT" "secret-assignment" \
+  "cg: escaped-backslash-then-real-newline denial names secret-assignment"
+
+# Round-6 review: a shell reserved word ("then"/"do"/"else"/"elif") leading
+# a simple command inside a control structure defeated recognition, since
+# segment_subcommand only skipped VAR=value prefixes. A closed 4-word set,
+# unlike the open-ended wrapper-command class, so it is enumerated and
+# fixed rather than merely documented as accepted.
+DIR_CG_KEYWORDS="$WORK/commit-gate-shell-leading-keywords"
+make_fixture "$DIR_CG_KEYWORDS"
+install_hooks "$DIR_CG_KEYWORDS"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_KEYWORDS/secret.py"
+git -C "$DIR_CG_KEYWORDS" add secret.py
+for CG_KEYWORD_CMD in \
+  'if true; then git commit -m x; fi' \
+  'for f in a; do git commit -m x; done' \
+  'while true; do git commit -m x; done' \
+  'until false; do git commit -m x; done'
+do
+  OUT=$(run_commit_gate "$DIR_CG_KEYWORDS" "$CG_KEYWORD_CMD")
+  RC=$?
+  assert_rc0 "$RC" "cg: '$CG_KEYWORD_CMD' still scans (JSON deny), not bypassed"
+  assert_deny_json "$OUT" "cg: '$CG_KEYWORD_CMD' secret denial uses JSON deny form"
+done
 
 # Round-4/5 review: attached short-flag clusters where the flag TAKES a value
 # (-m, -F, -S, ...) were wrongly denied because the rest of the cluster's

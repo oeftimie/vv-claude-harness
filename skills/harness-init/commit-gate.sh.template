@@ -11,9 +11,13 @@
 # surrounding whitespace bypassing the boundary check entirely). Real
 # tokenization replaces all four of those regexes: it compares whole tokens,
 # so a substring occurrence inside a longer word is never a match, and
-# segmenting on control operators (including a literal newline) up front
-# means a token from one logical command can never pair with a token from
-# another.
+# segmenting on the control operators command_segments recognizes (see its
+# own comment) up front means a token from one logical command can't pair
+# with a token from another -- for those operators specifically. This is
+# still pattern-based tokenization, not a real shell parser: an operator
+# command_segments doesn't split on, or a leading token segment_subcommand
+# doesn't know to skip, can still glue two logical commands into one
+# unrecognized segment (see Residual holes below for the ones found so far).
 # Adapted from Setlist's commit-gate.sh (Alex Ciortan, CC BY 4.0).
 #
 # Checks (each names a closed finding class in its denial):
@@ -87,15 +91,26 @@
 # one-line fix like the unquoted case was.
 # segment_subcommand recognizes "git" invoked directly, via a path
 # (/usr/bin/git, ./git), backslash-prefixed (\git, the standard alias-bypass
-# idiom), or paren-wrapped ("(git ..."), but a brace-grouped invocation
-# ("{ git commit -m x; }") is not recognized, and neither is an invocation
-# wrapped in another command (`sudo git commit`, `env FOO=1 git commit`) --
-# accepted rather than maintaining an open-ended wrapper/grouping-command
-# allowlist (sudo, doas, env, nice, timeout, brace groups, ...) in a way the
-# flag/token classification below isn't. GIT_FLAGS_WITH_VALUE enumerates the
-# global flags that consume a following space-separated argument, probed
-# mechanically against git 2.52 (see its own comment above); it is not a
-# full git CLI parser and does not claim to track every future git release.
+# idiom), or paren-wrapped ("(git ..."); it also skips a closed set of shell
+# reserved words that can lead a simple command inside a control structure
+# (SHELL_LEADING_KEYWORDS: "then", "do", "else", "elif" -- e.g. "if true;
+# then git commit -m x; fi"). A brace-grouped invocation ("{ git commit -m
+# x; }") is not recognized, and neither is an invocation wrapped in another
+# command (`sudo git commit`, `env FOO=1 git commit`) -- accepted rather
+# than maintaining an open-ended wrapper/grouping-command allowlist (sudo,
+# doas, env, nice, timeout, brace groups, ...) in a way the closed
+# keyword/flag classification isn't. A `case ... in PATTERN) git commit
+# ...` segment is also not recognized: the token immediately before "git"
+# is an arbitrary case pattern, not a fixed word to skip, so closing this
+# would need real shell parsing rather than one more set entry -- accepted,
+# same class as the wrapper-command gap. GIT_FLAGS_WITH_VALUE enumerates
+# the global flags that consume a following space-separated argument,
+# probed mechanically against git 2.52 (see its own comment above); it is
+# not a full git CLI parser and does not claim to track every future git
+# release -- for example, `--super-prefix` consumed an argument on older
+# git and doesn't on 2.52 (removed), so it was dropped from the set per
+# that probe; this is a narrow, old-git-version-only regression versus
+# keeping it, not a general bypass on any currently supported git.
 
 INPUT=$(cat)
 
@@ -204,8 +219,15 @@ def command_segments(command):
     # Splits on shell control operators, including a literal newline -- a
     # multi-line command (a heredoc'd commit message, or two commands
     # separated by a newline rather than ;/&&) must not let a "git" token on
-    # one line pair with an unrelated token on another line.
-    return [s.strip() for s in re.split(r"\|\||&&|[|;\n]", command) if s.strip()]
+    # one line pair with an unrelated token on another line. "&" (background
+    # execution, and the leading half of "|&") is itself a control operator
+    # exactly like ";" -- an earlier version omitted it, so everything before
+    # an "&" stayed glued to everything after it and only the first
+    # segment's subcommand was ever seen (found by adversarial review of PR
+    # #40, round 6). "&&" is listed as its own alternative before the
+    # single-character class, so it is still consumed whole and never
+    # mistaken for two lone "&" separators.
+    return [s.strip() for s in re.split(r"\|\||&&|[|;\n&]", command) if s.strip()]
 
 
 def is_git_token(tok):
@@ -218,15 +240,29 @@ def is_git_token(tok):
     return os.path.basename(tok.lstrip("(\\")) == "git"
 
 
+SHELL_LEADING_KEYWORDS = {"then", "do", "else", "elif"}
+
+
 def segment_subcommand(tokens):
     # Returns (subcommand_token, index_in_tokens) for a "git <subcommand> ..."
     # segment, e.g. ("commit", 3) for ["git", "-C", ".", "commit", "-m", "x"].
-    # Skips "VAR=value" env-assignment prefixes and git global flags -- both
-    # the ones that take no argument and the ones that do (see
+    # Skips "VAR=value" env-assignment prefixes, the closed set of shell
+    # reserved words that can lead a simple command inside a control
+    # structure (SHELL_LEADING_KEYWORDS -- "if true; then git commit -m x; fi"
+    # splits into a segment starting "then git commit ...", and without this
+    # skip "then" is mistaken for the whole segment being non-git-shaped;
+    # found by adversarial review of PR #40, round 6), and git global flags --
+    # both the ones that take no argument and the ones that do (see
     # GIT_FLAGS_WITH_VALUE). Returns (None, None) if this segment isn't a
-    # real "git <subcommand>" invocation at all.
+    # real "git <subcommand>" invocation at all. A "case ... in PATTERN)"
+    # segment is NOT handled here: unlike the four reserved words above, the
+    # token immediately before the command is an arbitrary case pattern, not
+    # a fixed word to skip -- accepted as a residual hole (see header).
     i = 0
-    while i < len(tokens) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[i]):
+    while i < len(tokens) and (
+        re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[i])
+        or tokens[i] in SHELL_LEADING_KEYWORDS
+    ):
         i += 1
     if i >= len(tokens) or not is_git_token(tokens[i]):
         return None, None
@@ -243,6 +279,27 @@ def segment_subcommand(tokens):
     return None, None
 
 
+def join_continuations(command):
+    # Joins a backslash-newline shell continuation to a space, but only when
+    # the backslash immediately before the newline is itself unescaped: an
+    # ODD run of backslashes right before a newline means the last one
+    # escapes the newline (a real continuation); an EVEN run (including
+    # zero) means the newline is a real command separator and the
+    # backslashes are literal characters, which must be left alone. The
+    # first version of this fix used a blanket command.replace("\\n", " ")
+    # with no parity check, which wrongly joined "echo a\\\\" + newline +
+    # "git commit" (an ESCAPED backslash followed by a genuine separator
+    # newline) into one segment, hiding the second command from the gate
+    # entirely -- found by adversarial review of PR #40, round 6.
+    def repl(m):
+        backslashes = m.group(1)
+        if len(backslashes) % 2 == 1:
+            return backslashes[:-1] + " "
+        return backslashes + "\n"
+
+    return re.sub(r"(\\*)\n", repl, command)
+
+
 def parse_command(command):
     # Quote-strips and segments the raw command once, then finds each
     # segment's git subcommand (if any) -- a single source of truth shared by
@@ -250,7 +307,7 @@ def parse_command(command):
     # Backslash-newline continuations are joined to a space before anything
     # else, so a continued command isn't split into fragments that
     # individually fail to tokenize as git-shaped (see header).
-    stripped = strip_quotes(command.replace("\\\n", " "))
+    stripped = strip_quotes(join_continuations(command))
     parsed = []
     for seg in command_segments(stripped):
         tokens = seg.split()
