@@ -775,6 +775,27 @@
       "failure_reason": null,
       "discovered_via": "F004",
       "spec": null
+    },
+    {
+      "id": "F023",
+      "description": "skills/harness-init/enforce-scope.sh.template's segments_of() (line ~142) splits commands on `\\|\\||&&|[|;]` -- missing a literal newline. commit-gate.sh.template hit exactly this bug in F011's round-3 review and fixed it (its split includes \\n); enforce-scope.sh never did. CONFIRMED FAIL-OPEN: a two-line command with an out-of-scope write on line 1 and an in-scope write on line 2 collapses into one segment; redirect_target() returns only the LAST '>' match on that merged segment, so the in-scope write on line 2 masks the out-of-scope write on line 1 and the whole command is ALLOWED. Verified end-to-end against a real scope fixture (.claude/teammate-scope.txt = 'src/allowed/'): baseline out-of-scope write denies, baseline in-scope write allows, the ';'-separated case denies correctly, but 'echo x > src/forbidden/a.txt\\necho y > src/allowed/ok.txt' (real newline, not ';') is wrongly ALLOWED. Note the bug is narrower than commit-gate's equivalent: '&' does NOT bypass enforce-scope (redirect_target regexes over the whole merged segment rather than depending on the segment's leading token), only the missing newline split does. Likely fix is the same shape as commit-gate's (add \\n, probably & too for consistency), but this hook has its own heredoc handling (strip_heredoc_bodies) and its own test surface, so it needs a real review, not a copied one-liner.",
+      "priority": 12,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by F011/OVI-64's round-6 reviewer while idle, via one grep for the same bug class it had just spent that round on, then verified with a real fixture before reporting -- not fixed there since it's a different, already-shipped hook, out of F011's scope. Explicitly flagged as its own issue rather than folded into PR #40.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F011",
+      "spec": null
     }
   ]
 }
