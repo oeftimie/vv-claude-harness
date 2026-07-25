@@ -211,3 +211,43 @@
   Linear OVI-62 Done.
 
 - 2026-07-24 /harness-issue-prep OVI-56 -> F007: SV ASK (2 Qs: plan_approval_response retest repro/criterion, run-#0 removal scope) -> lead answered both grounded in verified repo state -> RV PASS cycle 1 (RV caught and flagged one lead overreach -- an ungrounded CLI-version claim, not load-bearing); corrected stale line-number citations and a stale local ownership-note claim that F005 already created MAINTENANCE_LOG.md (it does not exist; F005 dropped that scope this session); remote mode, Linear description + spec_hash updated, local F007 mirrored; UNSTAMPED (Keychain/Bash-sandbox block confirmed a fifth time, not re-asked)
+
+## Session 11 - 2026-07-25
+- Feature: F007 - platform-drift maintenance loop (runbook + weekly CI cron +
+  retirement-condition rule) (OVI-56)
+- Status: complete, merged
+- Tests: 326/326 assertions passed (307 baseline + 19 new maintenance-loop
+  assertions across two review-response rounds)
+- Coverage: n/a (shell suite, no coverage tooling; full_test 326/326 is the gate)
+- Decisions: ran the plan_approval_response delivery-bug retest LIVE (spawned a
+  real teammate) rather than reasoning from docs -- the round trip couldn't be
+  completed at all (SendMessage has no plan_approval_request outgoing type;
+  EnterPlanMode/ExitPlanMode aren't exposed to teammates), which is a bigger
+  finding than a simple FIXED/BROKEN verdict and let us correct an actively
+  wrong claim already in agent-teams-protocol.md -- details in
+  context_summary.md Meta-Session 2026-07-25 (session 11, F007/OVI-56)
+- Next: /harness-issue-prep the next P2/P3 epic issue by priority (F011/OVI-64
+  commit-content gate is next claimable). Also refresh live .claude/hooks/*.sh
+  from F003's/F008's/F009's/F010's fixed templates (still deferred, carried
+  across many sessions now)
+- Blockers: none
+- Auth note: this session hit a git-push rejection ("refusing to allow an
+  OAuth App to create or update workflow... without workflow scope") when
+  pushing .github/workflows/maintenance.yml for the first time in this repo.
+  gh auth refresh -s workflow plus /login (re-authenticating this session's
+  own credential store, separate from a terminal-level gh token) were both
+  needed before pushes worked from within this session -- worth remembering
+  if a future session needs to touch .github/workflows/ for the first time.
+- 2026-07-24/25 F007 first review: REQUEST CHANGES -- 3 blockers (a self-
+  contradiction between a hedged correction and 3 unqualified instructional
+  sites in the same doc; the correction overstating run #0's own evidence; a
+  missing GH Actions permissions block that would have silently 403'd the
+  exact failure-reporting path this feature exists for) plus test-quality
+  gaps (spuriously-satisfiable assertions the reviewer proved by literally
+  reverting the fix and confirming they still passed). Fixed and mutation-
+  tested. Re-review: APPROVE with nits (a regression test that passed on both
+  pre-fix and post-fix wording; a failure-title bug). Fixed those too,
+  mutation-tested again, merged without a third full review round since the
+  verdict was already APPROVE and the remaining fixes were narrow, verified,
+  and directly tied to already-reviewed files. Merged @ 67d64a5; Linear
+  OVI-56 Done.

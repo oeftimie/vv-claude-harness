@@ -4,8 +4,8 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F007/OVI-56 implemented and passing this session (docs/maintenance-runbook.md, .github/workflows/maintenance.yml, MAINTENANCE_LOG.md run #0, CLAUDE.md repo rule, retirement conditions in agent-teams-protocol.md/README.md). Not yet shipped (PR/CI/review/merge pending).
-- Next up: ship F007/OVI-56, then continue the OVI-44 epic with the next priority feature. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
+- Currently working on: F007/OVI-56 passing and merged (PR #39 @ 67d64a5, after two review-fix rounds -- first REQUEST CHANGES with 3 blockers, then APPROVE with nits). 11/22 features now passing.
+- Next up: /harness-issue-prep the next P2/P3 epic issue by priority (F011/OVI-64 commit-content gate is next claimable). Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -464,4 +464,30 @@ This file is referenced in CLAUDE.md and loaded every session.
   latter ("Record it as found and move on") -- a useful calibration: a
   maintenance probe's job is to surface drift accurately, not to fully resolve
   every thread it opens in the same session.
-- Review value: not yet reviewed as of this entry (PR pending).
+- Review value: the first review pass caught something no amount of self-
+  checking would have surfaced -- when I hedged the run-#0 correction in
+  agent-teams-protocol.md, I only edited the one Known Limitations entry and
+  didn't notice 3 other sites in the SAME file (Teammate Responsibilities,
+  Native Messaging Protocol table, Plan Approval steps) still gave teammates
+  unqualified instructions to do the exact thing the correction said couldn't
+  be verified. A single-paragraph fix silently left a self-contradiction in
+  shipped plugin content. The reviewer also caught something I should have
+  caught myself: my "correction" swapped one flat, overconfident claim
+  ("works fine") for the opposite flat, overconfident claim ("not accurate...
+  at all"), when the actual evidence (recorded correctly in MAINTENANCE_LOG.md)
+  was properly hedged as inconclusive. Fixing an overstated claim by asserting
+  its negation just moves the overstatement, it doesn't remove it -- worth
+  remembering as a pattern next time a "correction" is being written.
+  Also caught: a missing GH Actions `permissions:` block that would have
+  silently 403'd the exact failure-reporting path this feature exists to
+  provide -- the kind of bug that only shows up when the thing it protects
+  against actually happens, so it would never surface in a normal green-CI
+  review pass. Second review round proved the value of MUTATION TESTING test
+  assertions, not just reading them: the reviewer literally reverted my fixes
+  on a scratch copy and reported which assertions still passed against the
+  broken state. I adopted the same technique when fixing the flagged gaps
+  (temporarily reverting to the pre-fix content, confirming the tightened
+  assertion now fails, then restoring) -- a much stronger validation than
+  "the assertion reads correctly" for anything checking that specific wording
+  or specific logic survived a change, since a test that merely checks a
+  header or keyword is present can pass on both the broken and fixed version.
