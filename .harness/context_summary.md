@@ -4,8 +4,9 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- Currently working on: F011/OVI-64 implemented and passing this session (skills/harness-init/commit-gate.sh.template + SKILL.md Step 3.6 wiring + README/templates/CLAUDE.md docs). Not yet shipped (PR/CI/review/merge pending) -- flag for an explicit security-review pass given lane=code, risk=ELEVATED.
-- Next up: ship F011/OVI-64, then continue the OVI-44 epic with the next priority feature. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now)
+- F011/OVI-64 shipped: PR #40 merged @ 07ba2e4 after 6 adversarial review rounds (unusually many, warranted by risk=ELEVATED); Linear OVI-64 Done.
+- F023 opened (pending, priority 12, discovered_via F011): enforce-scope.sh.template's segments_of() is missing a literal newline in its split regex (the same bug class F011's own round-3 review found and fixed in commit-gate.sh) -- CONFIRMED fail-open via a real scope fixture by the F011 round-6 reviewer. Out of F011's scope, not fixed; needs its own session.
+- Next up: claim F023 or the next priority feature (F012, [OVI-53] portable readiness-stamp signing) to continue the OVI-44 epic. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now).
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -520,8 +521,50 @@ This file is referenced in CLAUDE.md and loaded every session.
   feature done caught nothing broken here, but is worth doing as standard
   practice for any hook whose job is denying an adversarial-ish input, per the
   same principle F005/OVI-61 established for the harness's OWN gates.
-- Review value: not yet reviewed as of this entry (PR pending). Given
-  risk=ELEVATED (self-classified at prep time: security-sensitive code), the
-  review request should explicitly ask the reviewer to adversarially probe the
-  no-echo-matched-content guarantee and the compound-detection evasion surface,
-  not just re-read the diff for correctness.
+- Review value: extreme -- 6 adversarial rounds before APPROVE, each finding
+  a real bug the previous round's fix introduced or missed, none of them
+  hypothetical (every finding was verified end-to-end against a real hook
+  invocation with a real staged secret before being reported or fixed).
+  Rounds 1-3 progressively broke and fixed a regex-based git-subcommand
+  detector (diff-header mis-parsing -> secret-scan total bypass; then two
+  rounds of "the fix for the last regex bug introduced a new regex bug in an
+  untested dimension"), ending with round 3 explicitly diagnosing this as
+  "tuning a regex against a growing list of examples rather than deciding
+  what the matcher's contract is" and recommending a real tokenizer, which I
+  implemented immediately rather than risk a round-4 regex edge case. Rounds
+  4-6 then did the same thing to the TOKENIZER: round 4 found an incomplete,
+  memory-assembled flag set and an unreproducible coverage claim; round 5
+  independently re-probed round 4's OWN fix and found it still wrong
+  (mechanically re-probing the git binary rather than trusting a from-memory
+  list caught 2 more missing flags and 2 wrongly-kept ones), plus recommended
+  a fix for an "accepted" hole that turned out to be one line away from
+  closed; round 6 found that round 5's OWN continuation-join fix had
+  introduced a NEW fail-open bypass (an escaped backslash before a real
+  separator newline), plus a missing "&" separator, plus a reserved-word
+  recognition gap -- three more findings in the same "the fix for the last
+  bug introduces a new one" pattern, this time in the tokenizer itself
+  rather than in regexes. The pattern only broke once round 6 ran a
+  systematic 96-case fuzz sweep AFTER applying its own proposed patches and
+  found zero new classes, converging the surface to exactly 2 documented
+  residual holes (wrapper commands, brace groups) plus one newly-added one
+  (case-pattern segments). Two meta-lessons worth carrying forward: (1) a
+  security-relevant matcher built by iteratively patching one adversarial
+  example at a time will keep finding new bugs in new dimensions
+  indefinitely -- the fix is a structural rewrite (regex -> tokenizer) that
+  eliminates a whole class at once, not another patch; (2) even a
+  "structural rewrite" isn't immune to the same failure mode at a smaller
+  scale (the flag set, the continuation-join, the separator set all needed
+  their own iteration) -- what changed the trajectory was independent
+  reviewers explicitly re-deriving numbers/sets from source (probing the
+  git binary, re-measuring coverage from scratch) rather than trusting the
+  previous round's fix, plus a final systematic fuzz sweep to get evidence
+  of convergence rather than assuming "no new finding this round" means
+  "done." Also: a peer reviewer, working autonomously during idle time
+  between assigned tasks, found an identical bug class in a DIFFERENT
+  already-shipped hook (enforce-scope.sh's segments_of(), missing the same
+  newline-in-split-regex bug commit-gate.sh's round 3 had found and fixed)
+  purely from having just internalized what to look for -- filed as F023
+  rather than scope-creeping into fixing it. Every fix across all 6 rounds
+  was mutation-tested (by me, and independently re-verified by the round-5
+  and round-6 reviewers reverting the fixes themselves in separate scratch
+  copies) before being trusted.
