@@ -68,20 +68,32 @@
 # Check 0's quote-stripping covers single/double/ANSI-C quoting only; recursive or
 # nested quoting is out of scope, consistent with this repo's existing
 # pattern-based-and-evadable-by-construction posture for Bash-command hooks.
-# A quoted span containing a heredoc body, or a backslash-newline shell
-# continuation, is not stripped correctly (the quote-stripping regex doesn't
-# cross those constructs) -- either can produce a false denial if the
-# heredoc/continued body happens to read like a staging command; accepted,
-# same evadable-by-construction posture. segment_subcommand recognizes "git"
-# invoked directly, via a path (/usr/bin/git, ./git), or paren-wrapped
-# ("(git ..."), but an invocation wrapped in another command (`sudo git
-# commit`, `env FOO=1 git commit`) is not recognized as git-shaped at all and
-# no-ops the gate entirely -- accepted rather than maintaining a wrapper-
-# command allowlist, which is open-ended (sudo, doas, env, nice, timeout, ...)
-# in a way the flag/token classification below isn't. GIT_FLAGS_WITH_VALUE
-# enumerates the common global flags that consume a following argument; it is
-# a heuristic, not a full git CLI parser, and does not claim to enumerate
-# every git global option.
+# A quoted span containing a heredoc body is not stripped correctly (the
+# quote-stripping regex doesn't cross heredoc syntax) -- if the heredoc body's
+# literal text happens to read like a staging command, this can produce a
+# false denial (fail-closed, over-blocking); accepted, same
+# evadable-by-construction posture.
+# Separately, and more seriously: command_segments splits on a literal "\n"
+# without first joining backslash-newline shell continuations, so
+# `git \` + newline + `commit -m x` is split into two segments, neither of
+# which alone tokenizes as a git-commit invocation -- the whole command is
+# never recognized as git-shaped at all, and the gate no-ops for it
+# (fail-open bypass, not merely a missed check: the secret scan itself is
+# skipped). Accepted for the same reason as the wrapper-command gap below
+# (joining continuations correctly requires real shell parsing), but this one
+# is a bypass, not just a false positive -- do not describe it as symmetric
+# with the heredoc case above.
+# segment_subcommand recognizes "git" invoked directly, via a path
+# (/usr/bin/git, ./git), backslash-prefixed (\git, the standard alias-bypass
+# idiom), or paren-wrapped ("(git ..."), but a brace-grouped invocation
+# ("{ git commit -m x; }") is not recognized, and neither is an invocation
+# wrapped in another command (`sudo git commit`, `env FOO=1 git commit`) --
+# accepted rather than maintaining an open-ended wrapper/grouping-command
+# allowlist (sudo, doas, env, nice, timeout, brace groups, ...) in a way the
+# flag/token classification below isn't. GIT_FLAGS_WITH_VALUE enumerates the
+# global flags that consume a following space-separated argument, probed
+# mechanically against git 2.52 (see its own comment above); it is not a
+# full git CLI parser and does not claim to track every future git release.
 
 INPUT=$(cat)
 
@@ -135,13 +147,22 @@ REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
 STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
 # Global git flags that consume a following argument in their space-separated
 # form (the "=value" form, e.g. --git-dir=.git, is already handled -- it's a
-# single token with no following argument to skip). An earlier version had
-# only -C/-c; every other flag in this set caused the same bypass -C's fix
-# was meant to close (the flag's VALUE was returned as the subcommand,
-# no-op'ing the entire gate) -- found by adversarial review of PR #40.
+# single token with no following argument to skip). This set was probed
+# mechanically against git 2.52, not assembled from memory: every long-option-
+# shaped string in the git binary was tried as `git <flag> ARG1VAL ZZBOGUS`
+# and classified by whether git reports ZZBOGUS (consumes an arg) or the flag
+# itself (doesn't); all 52 single-letter short flags were swept the same way.
+# An earlier version had only -C/-c, then a second pass added --git-dir/
+# --work-tree/--namespace/--exec-path/--super-prefix/--attr-source from
+# memory rather than probing -- that pass both missed two real ones
+# (--config-env, --shallow-file) and kept two that don't actually consume a
+# following argument (--exec-path prints and exits; --super-prefix was
+# removed in 2.52) -- found by adversarial review of PR #40. Any flag missing
+# from this set causes the same bypass: segment_subcommand returns the flag's
+# VALUE as the subcommand, no-op'ing the entire gate.
 GIT_FLAGS_WITH_VALUE = {
-    "-C", "-c", "--git-dir", "--work-tree", "--namespace",
-    "--exec-path", "--super-prefix", "--attr-source",
+    "-C", "-c", "--config-env", "--git-dir", "--work-tree",
+    "--namespace", "--attr-source", "--shallow-file",
 }
 
 # No leading wildcard prefix before the keyword: an earlier version had
@@ -186,11 +207,13 @@ def command_segments(command):
 
 
 def is_git_token(tok):
-    # Matches "git" invoked via a path (/usr/bin/git, ./git) or wrapped in a
-    # subshell paren ("(git add ..."), not just the bare literal "git" --
-    # found by adversarial review of PR #40 (bare-literal matching let
-    # /usr/bin/git and (git ... no-op the gate entirely).
-    return os.path.basename(tok.lstrip("(")) == "git"
+    # Matches "git" invoked via a path (/usr/bin/git, ./git), wrapped in a
+    # subshell paren ("(git add ..."), or backslash-prefixed ("\git ...", the
+    # standard idiom for bypassing a shell alias named git, not adversarial
+    # evasion) -- not just the bare literal "git". Found by adversarial
+    # review of PR #40 (bare-literal matching let /usr/bin/git and (git ...
+    # no-op the gate entirely); \git found in round 5 of the same review.
+    return os.path.basename(tok.lstrip("(\\")) == "git"
 
 
 def segment_subcommand(tokens):

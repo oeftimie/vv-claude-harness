@@ -2671,16 +2671,20 @@ assert_deny_json "$OUT" "cg: newline-separated compound denial uses JSON deny fo
 assert_contains "$OUT" "compound-stage-and-commit" \
   "cg: newline-separated compound denial names the finding class"
 
-# Round-4 review: GIT_FLAGS_WITH_VALUE previously only knew -C/-c; every other
-# global flag that consumes a following argument caused segment_subcommand to
-# return the flag's VALUE as the subcommand, no-op'ing the entire gate. One
-# regression test per flag, each with a real staged secret to prove the gate
-# actually scans (not just "doesn't crash").
+# Round-4/5 review: GIT_FLAGS_WITH_VALUE previously only knew -C/-c, then a
+# from-memory pass added 6 more flags that both missed 2 real ones
+# (--config-env, --shallow-file) and kept 2 that don't actually consume a
+# following argument on git 2.52 (--exec-path, --super-prefix) -- round 5
+# probed the full flag set mechanically and confirmed the corrected set
+# below. One regression test per flag, each with a real staged secret to
+# prove the gate actually scans (not just "doesn't crash").
 for CG_FLAG_CASE in \
   "--git-dir .git" \
   "--work-tree ." \
   "--namespace ns" \
-  "--attr-source HEAD"
+  "--attr-source HEAD" \
+  "--config-env u.x=MYVAR" \
+  "--shallow-file /dev/null"
 do
   CG_FLAG_DIR="$WORK/commit-gate-global-flag-$(echo "$CG_FLAG_CASE" | tr -c 'a-zA-Z0-9' '-')"
   make_fixture "$CG_FLAG_DIR"
@@ -2730,12 +2734,30 @@ RC=$?
 assert_rc0 "$RC" "cg: '(git commit ...)' still scans (JSON deny), not bypassed"
 assert_deny_json "$OUT" "cg: paren-wrapped git secret denial uses JSON deny form"
 
-# Round-4 review: attached short-flag clusters where the flag TAKES a value
+# Round-5 review: \git (the standard idiom for bypassing a shell alias named
+# git, not adversarial evasion) was not recognized as git-shaped at all.
+DIR_CG_BACKSLASHGIT="$WORK/commit-gate-backslash-prefixed-git"
+make_fixture "$DIR_CG_BACKSLASHGIT"
+install_hooks "$DIR_CG_BACKSLASHGIT"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_BACKSLASHGIT/secret.py"
+git -C "$DIR_CG_BACKSLASHGIT" add secret.py
+OUT=$(run_commit_gate "$DIR_CG_BACKSLASHGIT" '\git commit -m msg')
+RC=$?
+assert_rc0 "$RC" "cg: '\\git commit' still scans (JSON deny), not bypassed"
+assert_deny_json "$OUT" "cg: backslash-prefixed git secret denial uses JSON deny form"
+
+# Round-4/5 review: attached short-flag clusters where the flag TAKES a value
 # (-m, -F, -S, ...) were wrongly denied because the rest of the cluster's
-# characters were scanned for 'a'/'i' as if they were more flags.
+# characters were scanned for 'a'/'i' as if they were more flags. Each case
+# stages a real secret and asserts a secret-assignment denial (not just "not
+# denied"), proving the command was recognized as a commit and scanned --
+# not merely unrecognized -- and that it wasn't ALSO wrongly flagged as
+# compound-stage-and-commit.
 DIR_CG_ATTACHEDFLAG="$WORK/commit-gate-attached-value-flags"
 make_fixture "$DIR_CG_ATTACHEDFLAG"
 install_hooks "$DIR_CG_ATTACHEDFLAG"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_ATTACHEDFLAG/secret.py"
+git -C "$DIR_CG_ATTACHEDFLAG" add secret.py
 for CG_ATTACHED_CMD in \
   'git commit -mfix' \
   'git commit -Fdraft.txt' \
@@ -2745,7 +2767,10 @@ do
   OUT=$(run_commit_gate "$DIR_CG_ATTACHEDFLAG" "$CG_ATTACHED_CMD")
   RC=$?
   assert_rc0 "$RC" "cg: '$CG_ATTACHED_CMD' exits 0"
-  assert_not_contains "$OUT" "permissionDecision" \
+  assert_deny_json "$OUT" "cg: '$CG_ATTACHED_CMD' is scanned and denied for the secret"
+  assert_contains "$OUT" "secret-assignment" \
+    "cg: '$CG_ATTACHED_CMD' denial names secret-assignment, not compound"
+  assert_not_contains "$OUT" "compound-stage-and-commit" \
     "cg: '$CG_ATTACHED_CMD' is not wrongly denied as a staging flag"
 done
 
