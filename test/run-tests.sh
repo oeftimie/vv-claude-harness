@@ -2671,6 +2671,172 @@ assert_deny_json "$OUT" "cg: newline-separated compound denial uses JSON deny fo
 assert_contains "$OUT" "compound-stage-and-commit" \
   "cg: newline-separated compound denial names the finding class"
 
+# Round-4 review: GIT_FLAGS_WITH_VALUE previously only knew -C/-c; every other
+# global flag that consumes a following argument caused segment_subcommand to
+# return the flag's VALUE as the subcommand, no-op'ing the entire gate. One
+# regression test per flag, each with a real staged secret to prove the gate
+# actually scans (not just "doesn't crash").
+for CG_FLAG_CASE in \
+  "--git-dir .git" \
+  "--work-tree ." \
+  "--namespace ns" \
+  "--attr-source HEAD"
+do
+  CG_FLAG_DIR="$WORK/commit-gate-global-flag-$(echo "$CG_FLAG_CASE" | tr -c 'a-zA-Z0-9' '-')"
+  make_fixture "$CG_FLAG_DIR"
+  install_hooks "$CG_FLAG_DIR"
+  printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$CG_FLAG_DIR/secret.py"
+  git -C "$CG_FLAG_DIR" add secret.py
+  OUT=$(run_commit_gate "$CG_FLAG_DIR" "git $CG_FLAG_CASE commit -m msg")
+  RC=$?
+  assert_rc0 "$RC" "cg: 'git $CG_FLAG_CASE commit' still scans (JSON deny), not bypassed"
+  assert_deny_json "$OUT" "cg: 'git $CG_FLAG_CASE commit' secret denial uses JSON deny form"
+done
+
+# A segment that IS "git" plus flags but never reaches a real subcommand
+# token (e.g. the first half of "git -C . && git commit") must not be
+# mistaken for a subcommand-bearing segment.
+DIR_CG_FLAGSONLY="$WORK/commit-gate-flags-only-segment"
+make_fixture "$DIR_CG_FLAGSONLY"
+install_hooks "$DIR_CG_FLAGSONLY"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_FLAGSONLY/secret.py"
+git -C "$DIR_CG_FLAGSONLY" add secret.py
+OUT=$(run_commit_gate "$DIR_CG_FLAGSONLY" 'git -C . && git commit -m msg')
+RC=$?
+assert_rc0 "$RC" "cg: a flags-only git segment followed by a real commit still scans"
+assert_deny_json "$OUT" "cg: flags-only-segment secret denial uses JSON deny form"
+
+# Round-4 review: "sudo git"/"env FOO=1 git" wrapper prefixes remain an
+# accepted, documented residual hole (open-ended wrapper-command allowlist,
+# out of scope), but /usr/bin/git and a paren-wrapped "(git ..." are cheap to
+# recognize and were fixed.
+DIR_CG_PATHGIT="$WORK/commit-gate-path-prefixed-git"
+make_fixture "$DIR_CG_PATHGIT"
+install_hooks "$DIR_CG_PATHGIT"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_PATHGIT/secret.py"
+git -C "$DIR_CG_PATHGIT" add secret.py
+OUT=$(run_commit_gate "$DIR_CG_PATHGIT" '/usr/bin/git commit -m msg')
+RC=$?
+assert_rc0 "$RC" "cg: '/usr/bin/git commit' still scans (JSON deny), not bypassed"
+assert_deny_json "$OUT" "cg: path-prefixed git secret denial uses JSON deny form"
+
+DIR_CG_PARENGIT="$WORK/commit-gate-paren-wrapped-git"
+make_fixture "$DIR_CG_PARENGIT"
+install_hooks "$DIR_CG_PARENGIT"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_PARENGIT/secret.py"
+git -C "$DIR_CG_PARENGIT" add secret.py
+OUT=$(run_commit_gate "$DIR_CG_PARENGIT" '(git commit -m msg)')
+RC=$?
+assert_rc0 "$RC" "cg: '(git commit ...)' still scans (JSON deny), not bypassed"
+assert_deny_json "$OUT" "cg: paren-wrapped git secret denial uses JSON deny form"
+
+# Round-4 review: attached short-flag clusters where the flag TAKES a value
+# (-m, -F, -S, ...) were wrongly denied because the rest of the cluster's
+# characters were scanned for 'a'/'i' as if they were more flags.
+DIR_CG_ATTACHEDFLAG="$WORK/commit-gate-attached-value-flags"
+make_fixture "$DIR_CG_ATTACHEDFLAG"
+install_hooks "$DIR_CG_ATTACHEDFLAG"
+for CG_ATTACHED_CMD in \
+  'git commit -mfix' \
+  'git commit -Fdraft.txt' \
+  'git commit -S0a46826a -m x' \
+  'git commit -- -a.txt'
+do
+  OUT=$(run_commit_gate "$DIR_CG_ATTACHEDFLAG" "$CG_ATTACHED_CMD")
+  RC=$?
+  assert_rc0 "$RC" "cg: '$CG_ATTACHED_CMD' exits 0"
+  assert_not_contains "$OUT" "permissionDecision" \
+    "cg: '$CG_ATTACHED_CMD' is not wrongly denied as a staging flag"
+done
+
+# Coverage: a VAR=value env-assignment prefix before "git" must not prevent
+# the command from being recognized and scanned.
+DIR_CG_ENVPREFIX="$WORK/commit-gate-env-assignment-prefix"
+make_fixture "$DIR_CG_ENVPREFIX"
+install_hooks "$DIR_CG_ENVPREFIX"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_ENVPREFIX/secret.py"
+git -C "$DIR_CG_ENVPREFIX" add secret.py
+OUT=$(run_commit_gate "$DIR_CG_ENVPREFIX" 'GIT_AUTHOR_NAME=x GIT_AUTHOR_EMAIL=y git commit -m msg')
+RC=$?
+assert_rc0 "$RC" "cg: multiple VAR=value prefixes before git still scans (JSON deny)"
+assert_deny_json "$OUT" "cg: env-assignment-prefixed secret denial uses JSON deny form"
+
+# Coverage: an argument-less global flag (--no-pager) between "git" and the
+# real subcommand.
+DIR_CG_NOPAGER="$WORK/commit-gate-no-pager-flag"
+make_fixture "$DIR_CG_NOPAGER"
+install_hooks "$DIR_CG_NOPAGER"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_NOPAGER/secret.py"
+git -C "$DIR_CG_NOPAGER" add secret.py
+OUT=$(run_commit_gate "$DIR_CG_NOPAGER" 'git --no-pager commit -m msg')
+RC=$?
+assert_rc0 "$RC" "cg: 'git --no-pager commit' still scans (JSON deny)"
+assert_deny_json "$OUT" "cg: --no-pager secret denial uses JSON deny form"
+
+# Coverage: find_style_violation's own scan-time-budget-exhausted return path
+# (distinct from find_secret's, which the earlier ReDoS-guard tests exercise).
+DIR_CG_STYLE_BUDGET="$WORK/commit-gate-style-budget-exhausted"
+make_fixture "$DIR_CG_STYLE_BUDGET"
+install_hooks "$DIR_CG_STYLE_BUDGET"
+python3 - "$DIR_CG_STYLE_BUDGET/.harness/harness.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+data["style_gate"] = {"enabled": True}
+with open(path, "w") as f:
+    json.dump(data, f)
+PYEOF
+python3 -c "
+line = 'key' * 700
+print('\n'.join([line] * 1500))
+" > "$DIR_CG_STYLE_BUDGET/adversarial_style.txt"
+git -C "$DIR_CG_STYLE_BUDGET" add adversarial_style.txt
+OUT=$(run_commit_gate "$DIR_CG_STYLE_BUDGET" 'git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: style-gate scan under budget pressure still exits 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: style-gate budget exhaustion fails open (no deny)"
+
+# Coverage: find_style_violation's own clean-completion path (the loop runs to
+# the end without finding an em dash), distinct from the deadline-exhausted
+# return above and from the positive-match case tested elsewhere.
+DIR_CG_STYLE_CLEAN="$WORK/commit-gate-style-clean-completion"
+make_fixture "$DIR_CG_STYLE_CLEAN"
+install_hooks "$DIR_CG_STYLE_CLEAN"
+python3 - "$DIR_CG_STYLE_CLEAN/.harness/harness.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+data["style_gate"] = {"enabled": True}
+with open(path, "w") as f:
+    json.dump(data, f)
+PYEOF
+printf 'no secrets and no house-style violations here\n' > "$DIR_CG_STYLE_CLEAN/plain.txt"
+git -C "$DIR_CG_STYLE_CLEAN" add plain.txt
+OUT=$(run_commit_gate "$DIR_CG_STYLE_CLEAN" 'git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: style gate on, clean staged content exits 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: style gate on, clean staged content is not denied"
+
+# Coverage: style_gate_enabled()'s except branch fires only when execution
+# reaches that function at all, which requires find_secret to find nothing
+# first (a corrupt harness.json alone, as tested above, never gets there
+# because that fixture's staged content also contains a secret).
+DIR_CG_STYLE_CORRUPT="$WORK/commit-gate-style-corrupt-harness-json"
+make_fixture "$DIR_CG_STYLE_CORRUPT"
+install_hooks "$DIR_CG_STYLE_CORRUPT"
+printf 'not valid json{{{' > "$DIR_CG_STYLE_CORRUPT/.harness/harness.json"
+printf 'no secrets and no house-style violations here\n' > "$DIR_CG_STYLE_CORRUPT/plain.txt"
+git -C "$DIR_CG_STYLE_CORRUPT" add plain.txt
+OUT=$(run_commit_gate "$DIR_CG_STYLE_CORRUPT" 'git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: corrupt harness.json with no secret in diff exits 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: corrupt harness.json treats style gate as disabled, not denied"
+
 echo ""
 echo "== agent frontmatter =="
 

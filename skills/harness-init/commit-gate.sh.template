@@ -68,10 +68,20 @@
 # Check 0's quote-stripping covers single/double/ANSI-C quoting only; recursive or
 # nested quoting is out of scope, consistent with this repo's existing
 # pattern-based-and-evadable-by-construction posture for Bash-command hooks.
-# segment_subcommand is a heuristic, not a full git CLI parser: it recognizes
-# "git", global flags that take no argument, and the two that do (-C <path>,
-# -c <key>=<value>) closely enough for every form this file's own tests cover,
-# but does not enumerate every git global option.
+# A quoted span containing a heredoc body, or a backslash-newline shell
+# continuation, is not stripped correctly (the quote-stripping regex doesn't
+# cross those constructs) -- either can produce a false denial if the
+# heredoc/continued body happens to read like a staging command; accepted,
+# same evadable-by-construction posture. segment_subcommand recognizes "git"
+# invoked directly, via a path (/usr/bin/git, ./git), or paren-wrapped
+# ("(git ..."), but an invocation wrapped in another command (`sudo git
+# commit`, `env FOO=1 git commit`) is not recognized as git-shaped at all and
+# no-ops the gate entirely -- accepted rather than maintaining a wrapper-
+# command allowlist, which is open-ended (sudo, doas, env, nice, timeout, ...)
+# in a way the flag/token classification below isn't. GIT_FLAGS_WITH_VALUE
+# enumerates the common global flags that consume a following argument; it is
+# a heuristic, not a full git CLI parser, and does not claim to enumerate
+# every git global option.
 
 INPUT=$(cat)
 
@@ -123,7 +133,16 @@ REPAIR_STAGED = (
 REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
 
 STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
-GIT_FLAGS_WITH_VALUE = {"-C", "-c"}
+# Global git flags that consume a following argument in their space-separated
+# form (the "=value" form, e.g. --git-dir=.git, is already handled -- it's a
+# single token with no following argument to skip). An earlier version had
+# only -C/-c; every other flag in this set caused the same bypass -C's fix
+# was meant to close (the flag's VALUE was returned as the subcommand,
+# no-op'ing the entire gate) -- found by adversarial review of PR #40.
+GIT_FLAGS_WITH_VALUE = {
+    "-C", "-c", "--git-dir", "--work-tree", "--namespace",
+    "--exec-path", "--super-prefix", "--attr-source",
+}
 
 # No leading wildcard prefix before the keyword: an earlier version had
 # "[A-Za-z0-9_.\-]*" before the keyword alternation, which is a second
@@ -166,17 +185,25 @@ def command_segments(command):
     return [s.strip() for s in re.split(r"\|\||&&|[|;\n]", command) if s.strip()]
 
 
+def is_git_token(tok):
+    # Matches "git" invoked via a path (/usr/bin/git, ./git) or wrapped in a
+    # subshell paren ("(git add ..."), not just the bare literal "git" --
+    # found by adversarial review of PR #40 (bare-literal matching let
+    # /usr/bin/git and (git ... no-op the gate entirely).
+    return os.path.basename(tok.lstrip("(")) == "git"
+
+
 def segment_subcommand(tokens):
     # Returns (subcommand_token, index_in_tokens) for a "git <subcommand> ..."
     # segment, e.g. ("commit", 3) for ["git", "-C", ".", "commit", "-m", "x"].
     # Skips "VAR=value" env-assignment prefixes and git global flags -- both
-    # the ones that take no argument and the two common ones that do (-C, -c).
-    # Returns (None, None) if this segment isn't a real "git <subcommand>"
-    # invocation at all.
+    # the ones that take no argument and the ones that do (see
+    # GIT_FLAGS_WITH_VALUE). Returns (None, None) if this segment isn't a
+    # real "git <subcommand>" invocation at all.
     i = 0
     while i < len(tokens) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[i]):
         i += 1
-    if i >= len(tokens) or tokens[i] != "git":
+    if i >= len(tokens) or not is_git_token(tokens[i]):
         return None, None
     i += 1
     while i < len(tokens):
@@ -204,13 +231,26 @@ def parse_command(command):
     return parsed
 
 
+# Short flags that take an attached value in a cluster like "-mfix" or
+# "-Fdraft.txt" -- once one of these appears, the rest of that cluster is its
+# value, not further flag letters. Without this, "-mfix" was denied for
+# containing the letter "i", and "-- -a.txt" (a pathspec after "--", not a
+# flag at all) was denied too (found by adversarial review of PR #40).
+VALUE_TAKING_SHORT_FLAGS = set("mFtSCcu")
+
+
 def has_staging_flag(tokens):
     for tok in tokens:
+        if tok == "--":
+            break  # everything after this is a pathspec, never a flag
         if tok in STAGING_FLAGS:
             return True
         if tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
-            if any(c in ("a", "i") for c in tok[1:]):
-                return True
+            for c in tok[1:]:
+                if c in ("a", "i"):
+                    return True
+                if c in VALUE_TAKING_SHORT_FLAGS:
+                    break
     return False
 
 
