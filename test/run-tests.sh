@@ -2746,6 +2746,50 @@ RC=$?
 assert_rc0 "$RC" "cg: '\\git commit' still scans (JSON deny), not bypassed"
 assert_deny_json "$OUT" "cg: backslash-prefixed git secret denial uses JSON deny form"
 
+# Round-5 review (post-approval recommendation): an unquoted backslash-newline
+# shell continuation split "git" and "commit" into two segments that neither
+# alone tokenized as git-shaped, no-op'ing the entire gate -- a fail-open
+# bypass, not merely a missed check, since the secret scan itself was
+# skipped. Joining continuations before segmenting closes this at zero cost
+# (verified: no other matrix entry changes).
+DIR_CG_CONTINUATION="$WORK/commit-gate-backslash-newline-continuation"
+make_fixture "$DIR_CG_CONTINUATION"
+install_hooks "$DIR_CG_CONTINUATION"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_CONTINUATION/secret.py"
+git -C "$DIR_CG_CONTINUATION" add secret.py
+OUT=$(run_commit_gate "$DIR_CG_CONTINUATION" 'git \
+commit -m msg')
+RC=$?
+assert_rc0 "$RC" "cg: backslash-newline-continued 'git commit' still scans (JSON deny), not bypassed"
+assert_deny_json "$OUT" "cg: continued-command secret denial uses JSON deny form"
+
+# The continuation join must not defeat quote-stripping: a continuation
+# INSIDE a quoted commit message is already collapsed to whitespace by
+# quote-stripping either way, so it must not itself trigger a denial.
+DIR_CG_CONTINUATION_QUOTED="$WORK/commit-gate-continuation-inside-quotes"
+make_fixture "$DIR_CG_CONTINUATION_QUOTED"
+install_hooks "$DIR_CG_CONTINUATION_QUOTED"
+OUT=$(run_commit_gate "$DIR_CG_CONTINUATION_QUOTED" 'git commit -m "line one \
+line two"')
+RC=$?
+assert_rc0 "$RC" "cg: a continuation inside a quoted commit message exits 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: a continuation inside a quoted commit message is not denied"
+
+# A genuine compound command split across a continuation must still deny --
+# joining continuations must not accidentally merge two real segments into
+# one that dodges the compound check.
+DIR_CG_CONTINUATION_COMPOUND="$WORK/commit-gate-continuation-compound"
+make_fixture "$DIR_CG_CONTINUATION_COMPOUND"
+install_hooks "$DIR_CG_CONTINUATION_COMPOUND"
+OUT=$(run_commit_gate "$DIR_CG_CONTINUATION_COMPOUND" 'git add newfile.txt \
+&& git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: compound form split across a continuation exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: continuation-split compound denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: continuation-split compound denial names the finding class"
+
 # Round-4/5 review: attached short-flag clusters where the flag TAKES a value
 # (-m, -F, -S, ...) were wrongly denied because the rest of the cluster's
 # characters were scanned for 'a'/'i' as if they were more flags. Each case

@@ -73,16 +73,18 @@
 # literal text happens to read like a staging command, this can produce a
 # false denial (fail-closed, over-blocking); accepted, same
 # evadable-by-construction posture.
-# Separately, and more seriously: command_segments splits on a literal "\n"
-# without first joining backslash-newline shell continuations, so
-# `git \` + newline + `commit -m x` is split into two segments, neither of
-# which alone tokenizes as a git-commit invocation -- the whole command is
-# never recognized as git-shaped at all, and the gate no-ops for it
-# (fail-open bypass, not merely a missed check: the secret scan itself is
-# skipped). Accepted for the same reason as the wrapper-command gap below
-# (joining continuations correctly requires real shell parsing), but this one
-# is a bypass, not just a false positive -- do not describe it as symmetric
-# with the heredoc case above.
+# parse_command joins backslash-newline shell continuations (outside quotes)
+# into a single space before segmenting, so `git \` + newline + `commit -m x`
+# is recognized as one git-commit invocation rather than being split into two
+# segments that neither alone tokenize as one -- an earlier version of this
+# hook didn't join continuations, which no-op'ed the entire gate for a
+# continued command (fail-open bypass, not merely a missed check: the secret
+# scan itself was skipped). This closes the unquoted case only; a
+# continuation inside a quoted span is already collapsed to whitespace by
+# quote-stripping either way, so it doesn't matter there. Not attempted:
+# joining a continuation that falls inside a heredoc body (see above) --
+# that would require tracking heredoc state across the whole command, not a
+# one-line fix like the unquoted case was.
 # segment_subcommand recognizes "git" invoked directly, via a path
 # (/usr/bin/git, ./git), backslash-prefixed (\git, the standard alias-bypass
 # idiom), or paren-wrapped ("(git ..."), but a brace-grouped invocation
@@ -245,7 +247,10 @@ def parse_command(command):
     # Quote-strips and segments the raw command once, then finds each
     # segment's git subcommand (if any) -- a single source of truth shared by
     # the no-op decision and the compound-stage-and-commit check below.
-    stripped = strip_quotes(command)
+    # Backslash-newline continuations are joined to a space before anything
+    # else, so a continued command isn't split into fragments that
+    # individually fail to tokenize as git-shaped (see header).
+    stripped = strip_quotes(command.replace("\\\n", " "))
     parsed = []
     for seg in command_segments(stripped):
         tokens = seg.split()
