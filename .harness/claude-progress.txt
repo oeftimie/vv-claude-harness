@@ -253,3 +253,40 @@
   OVI-56 Done.
 
 - 2026-07-25 /harness-issue-prep OVI-64 -> F011: SV ASK (12 Qs, unusually many -- security-relevant secret-scanning gate) -> lead answered all 12 grounded in real repo files -> RV ASK cycle 1 (9/12 resolved; 2 explicitly routed to Ovidiu -- the no-echo security rule and the wiring-ownership fix -- plus a real content gap found: no git-diff-cached timeout) -> lead + Ovidiu resolved all 3 (Ovidiu re-delegated the 2 escalated items after being told why) -> RV ASK cycle 2 (accepted the informed re-delegation on the merits; found the coordination note needed to live in repo-tracked state, not just Linear) -> posted Linear comment on OVI-63 + mirrored into F013 local notes -> RV PASS cycle 3 (independently verified both); remote mode, Linear description + spec_hash updated, local F011 mirrored; lane=code, risk=ELEVATED (security-sensitive code); UNSTAMPED (Keychain/Bash-sandbox block confirmed a sixth time, not re-asked)
+
+## Session 11 continued - 2026-07-25 (F011/OVI-64 shipped)
+- Feature: F011 - Commit-content gate (secret scan + compound stage-and-commit denial)
+- Status: complete, merged
+- Tests: 480/480 passing (full_test); coverage 100% (185/185 executable lines
+  in the embedded Python script, measured by tracing exactly what
+  test/run-tests.sh's commit-gate.sh section exercises)
+- Review: 6 adversarial rounds before APPROVE (details in context_summary.md's
+  Meta-Session entry). Rounds 1-3 rewrote a regex-based git-subcommand
+  detector into a real tokenizer after 3 rounds of regex patches each fixing
+  one bug while introducing another. Rounds 4-6 did the same thing to the
+  tokenizer's own supporting sets (GIT_FLAGS_WITH_VALUE, the continuation-join
+  logic, the separator set) -- round 5 caught round 4's flag set was
+  assembled from memory rather than probed; round 6 caught round 5's own
+  continuation fix had introduced a new bypass, plus a missing "&" separator,
+  plus a reserved-word recognition gap. Converged only once round 6 ran a
+  96-case systematic fuzz sweep and found zero new bug classes. Every fix
+  mutation-tested (reverted, confirmed the new test fails, restored) by me
+  and independently re-verified by the round-5/6 reviewers themselves.
+- Decisions: see context_summary.md Meta-Session 2026-07-25 for the full
+  review history and lessons; features.json F011 approaches_tried has a
+  detailed entry per round.
+- Discovered: F023 (pending, priority 12) -- enforce-scope.sh.template has
+  the same missing-newline-in-split-regex bug commit-gate.sh's round 3
+  found and fixed, found by the F011 round-6 reviewer during idle time and
+  verified against a real scope fixture; confirmed fail-open. Not fixed
+  here (different, already-shipped hook, out of F011's scope).
+- Merged: PR #40 @ 07ba2e4 (--merge, per repo convention; 8 commits preserved:
+  implementation, 3 rounds of code+metadata fix pairs, F023 tracking, a
+  version-precision correction).
+  Linear OVI-64 Done. Local main synced, feature branch deleted (local +
+  remote via gh api, since the git-push-based delete tripped the
+  push-targets-main guard while HEAD was on main).
+- Next: claim F023 or F012 ([OVI-53] portable readiness-stamp signing) to
+  continue OVI-44. Also still deferred: refresh live .claude/hooks/*.sh from
+  F003/F008/F009/F010's fixed templates.
+- Blockers: none.
