@@ -2587,23 +2587,89 @@ assert_not_contains "$OUT" "permissionDecision" \
 # SECRET_PATTERN's prefix wildcard created polynomial-time backtracking on
 # adversarially repeated keyword-shaped text with no valid terminator. Assert
 # the scan completes well under the hook's own ~1s design budget even on a
-# long adversarial line, proving the fix (keyword-anchored pattern + a hard
-# length cap in find_secret) bounds worst-case time regardless of input.
+# long adversarial line. `date +%s` (1-second granularity) would silently
+# pass a regression up to 2.9s slower than intended; time via python3 instead
+# for sub-second precision.
 DIR_CG_REDOS="$WORK/commit-gate-redos-guard"
 make_fixture "$DIR_CG_REDOS"
 install_hooks "$DIR_CG_REDOS"
 python3 -c "print('key' * 3000)" > "$DIR_CG_REDOS/adversarial.txt"
 git -C "$DIR_CG_REDOS" add adversarial.txt
-CG_REDOS_START=$(date +%s)
+CG_REDOS_START=$(python3 -c "import time; print(time.monotonic())")
 OUT=$(run_commit_gate "$DIR_CG_REDOS" 'git commit -m "test"')
 RC=$?
-CG_REDOS_ELAPSED=$(( $(date +%s) - CG_REDOS_START ))
+CG_REDOS_ELAPSED=$(python3 -c "import time; print(time.monotonic() - $CG_REDOS_START)")
 assert_rc0 "$RC" "cg: an adversarial keyword-repeated line exits 0"
-if [ "$CG_REDOS_ELAPSED" -le 3 ]; then
-  pass "cg: adversarial-input scan completes in bounded time (${CG_REDOS_ELAPSED}s)"
+if python3 -c "import sys; sys.exit(0 if $CG_REDOS_ELAPSED <= 1.0 else 1)"; then
+  pass "cg: single adversarial line scan completes in bounded time (${CG_REDOS_ELAPSED}s)"
 else
-  fail "cg: adversarial-input scan took ${CG_REDOS_ELAPSED}s, exceeding the bound"
+  fail "cg: single adversarial line scan took ${CG_REDOS_ELAPSED}s, exceeding the bound"
 fi
+
+# The per-line cap alone doesn't bound TOTAL scan time across many adversarial
+# lines. Assert the aggregate SCAN_TIME_BUDGET_SECONDS circuit breaker holds
+# even when many lines would each individually pass the per-line cap.
+DIR_CG_REDOS_MANY="$WORK/commit-gate-redos-many-lines"
+make_fixture "$DIR_CG_REDOS_MANY"
+install_hooks "$DIR_CG_REDOS_MANY"
+python3 -c "
+line = 'key' * 700
+print('\n'.join([line] * 1500))
+" > "$DIR_CG_REDOS_MANY/adversarial_many.txt"
+git -C "$DIR_CG_REDOS_MANY" add adversarial_many.txt
+CG_REDOS_MANY_START=$(python3 -c "import time; print(time.monotonic())")
+OUT=$(run_commit_gate "$DIR_CG_REDOS_MANY" 'git commit -m "test"')
+RC=$?
+CG_REDOS_MANY_ELAPSED=$(python3 -c "import time; print(time.monotonic() - $CG_REDOS_MANY_START)")
+assert_rc0 "$RC" "cg: many adversarial lines still exits 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: many-adversarial-lines scan fails open (budget exceeded, no deny)"
+if python3 -c "import sys; sys.exit(0 if $CG_REDOS_MANY_ELAPSED <= 5.0 else 1)"; then
+  pass "cg: many-adversarial-lines scan completes in bounded time (${CG_REDOS_MANY_ELAPSED}s)"
+else
+  fail "cg: many-adversarial-lines scan took ${CG_REDOS_MANY_ELAPSED}s, exceeding the bound"
+fi
+
+# Round-3 review: a multi-line command (e.g. a heredoc'd commit message body,
+# or two commands separated by a literal newline rather than ;/&&) must not
+# let a token on one line pair with an unrelated token on another line.
+DIR_CG_MULTILINE="$WORK/commit-gate-multiline-command"
+make_fixture "$DIR_CG_MULTILINE"
+install_hooks "$DIR_CG_MULTILINE"
+OUT=$(run_commit_gate "$DIR_CG_MULTILINE" 'git commit -m "wip"
+cargo add serde')
+RC=$?
+assert_rc0 "$RC" "cg: a newline-separated unrelated 'add' command exits 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: multi-line command false positive has no deny fields"
+
+# Round-3 review: a command separator with no surrounding whitespace
+# (";","&&","|") must not bypass segmentation and let a genuine compound
+# stage-and-commit through as an unrecognized single blob.
+DIR_CG_NOSPACE="$WORK/commit-gate-no-space-separators"
+make_fixture "$DIR_CG_NOSPACE"
+install_hooks "$DIR_CG_NOSPACE"
+OUT=$(run_commit_gate "$DIR_CG_NOSPACE" 'git add .;git commit;git push')
+RC=$?
+assert_rc0 "$RC" "cg: compound form with no-space separators exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: no-space-separator compound denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: no-space-separator compound denial names the finding class"
+
+# The other direction of the multi-line requirement: a GENUINE compound
+# command spread across a bare newline (no && or ; at all) must still be
+# recognized and denied, not accidentally merged into a single segment where
+# only the first subcommand token is ever inspected.
+DIR_CG_NEWLINE_COMPOUND="$WORK/commit-gate-newline-compound"
+make_fixture "$DIR_CG_NEWLINE_COMPOUND"
+install_hooks "$DIR_CG_NEWLINE_COMPOUND"
+OUT=$(run_commit_gate "$DIR_CG_NEWLINE_COMPOUND" 'git add newfile.txt
+git commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: compound form spread across a bare newline exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: newline-separated compound denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: newline-separated compound denial names the finding class"
 
 echo ""
 echo "== agent frontmatter =="
