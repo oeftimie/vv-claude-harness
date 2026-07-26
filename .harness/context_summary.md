@@ -5,8 +5,12 @@ This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
 - F011/OVI-64 shipped: PR #40 merged @ 07ba2e4 after 6 adversarial review rounds (unusually many, warranted by risk=ELEVATED); Linear OVI-64 Done.
-- F023 opened (pending, priority 12, discovered_via F011): enforce-scope.sh.template's segments_of() is missing a literal newline in its split regex (the same bug class F011's own round-3 review found and fixed in commit-gate.sh) -- CONFIRMED fail-open via a real scope fixture by the F011 round-6 reviewer. Out of F011's scope, not fixed; needs its own session.
-- Next up: claim F023 or the next priority feature (F012, [OVI-53] portable readiness-stamp signing) to continue the OVI-44 epic. Also refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates (still deferred, carried across many sessions now).
+- F023 shipped: PR #42 merged @ 1e8e30f after 3 adversarial review rounds, fixing enforce-scope.sh.template's missing-separator masking bug. Not tied to a Linear issue (locally discovered, matching F022's precedent for bugs found during another feature's review).
+- Three MORE features discovered and filed during F023's own review (a chain: reviewing one hook's fix surfaced bugs in sibling/already-shipped hooks), none fixed yet:
+  - F024 (priority 13, pending): enforce-scope.sh's write_target()/redirect_target() only ever return the LAST target in a segment, so multi-target writes (`rm a b`, `tee`/`sed -i` given 2 files) mask an out-of-scope earlier target; `cp -t`/`mv -t` destinations aren't recognized at all.
+  - F025 (priority 11, pending, ELEVATED severity): commit-gate.sh.template (already shipped, F011) has the SAME root-cause bug as F023's critical round-2 finding -- strip_quotes() erases the "commit" subcommand token if it's ever quoted (`git "commit" -m x`), disabling the ENTIRE gate including the secret scan, on a real staged secret. Live bypass of shipped security infrastructure, not a pending change -- prioritize accordingly.
+  - F026 (priority 10, pending): enforce-scope.sh's normalize() never resolves ".." path traversal; a scope-escaping write via `../` was already allowed on main before F023, and F023's quote-erasure fix (unquote_token) incidentally exposed 2 more spellings of the same pre-existing gap.
+- Next up: F025 first (live security bypass in shipped infra), then F026, F024, or F012 ([OVI-53] portable readiness-stamp signing). Also still deferred: refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates.
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -568,3 +572,65 @@ This file is referenced in CLAUDE.md and loaded every session.
   was mutation-tested (by me, and independently re-verified by the round-5
   and round-6 reviewers reverting the fixes themselves in separate scratch
   copies) before being trusted.
+
+## Meta-Session 2026-07-26 (F023/enforce-scope.sh missing-separator fix)
+- Scope accuracy: scope held (2 files: the template + tests), but the review
+  cycle itself fanned out via a discovery chain rather than staying contained
+  -- reviewing F023's fix surfaced F024 (a different pre-existing bug in the
+  same function), F025 (the same root-cause bug in a DIFFERENT already-shipped
+  hook, found during the reviewer's own idle time), and F026 (yet another
+  pre-existing gap, exposed under 2 new spellings by F023's own fix). None of
+  these were fixed here -- each was filed and left for its own session, which
+  is the right call (matches F023's own origin as a discovery from F011's
+  review), but four features from one two-file fix is worth noting as a
+  pattern: fixing one hook's bug class tends to surface the same class
+  elsewhere, and a reviewer given room to look (idle time, or "not a blocker
+  but worth flagging") will find it.
+- Model calibration: single-session; correction_cycles 3 (3 review rounds,
+  each finding a genuine regression the PREVIOUS round's fix introduced --
+  same pattern as F011's 6-round marathon, at smaller scale). Round 1's fix
+  (add \n and & to the split) introduced a continuation-handling regression
+  and a quoted-& false positive, both from copying commit-gate.sh's
+  prerequisites incompletely. Round 2's fix for THAT (porting strip_quotes
+  verbatim) introduced a CRITICAL regression of its own: this hook's write
+  target is routinely quoted (unlike commit-gate's, where quotes only ever
+  wrap non-target text), so erasing quoted spans erased the target itself,
+  disabling enforcement for the ordinary case of writing a quoted path --
+  worse than the bug F023 existed to fix. The fix for THAT (mask-then-slice,
+  quoting content preserved through segmentation, unquoted only at
+  extraction) held through round 3's final confirming pass.
+- Discovery lineage: F024/F025/F026 all discovered_via F023, mirroring F023's
+  own discovered_via F011. This is now a recurring shape across 3 features in
+  a row (F011 -> F023 -> {F024, F025, F026}) -- worth watching whether the
+  chain continues when F025 (same bug class, different hook) is eventually
+  fixed; it likely will surface more of the same in whatever hook comes next
+  with similar segmentation logic, if any.
+- Approach patterns that worked: (1) verifying a reviewer's own claim against
+  REAL bash execution, not just re-reading the diff or trusting the hook's
+  verdict change -- this went both ways twice: I confirmed the reviewer's
+  "quote-erasure disables enforcement" finding was real by literally running
+  the redirect in bash and checking which file got created, AND separately
+  disproved the reviewer's own "apostrophe-pairing hazard" finding the same
+  way (the flagged command never actually writes to the "forbidden" path in
+  real bash -- it's swallowed into a single-quoted literal). The reviewer
+  independently ran the same real-bash check on their own finding afterward,
+  confirmed my correction, and retracted it -- a case of a peer catching and
+  fixing their OWN error once prompted to verify against ground truth rather
+  than trust a hook's before/after verdict change. (2) Testing each ported
+  fix's mutation INDEPENDENTLY (not just the combined revert) to confirm
+  orthogonality -- e.g. reverting only join_continuations broke exactly the
+  continuation tests and nothing else, reverting only strip_quotes/mask_quotes
+  broke exactly the quoting tests -- this is stronger evidence than a single
+  combined mutation test, since it rules out one fix silently doing the work
+  of both. (3) When a peer reviewer's fix RECOMMENDATION turns out to be
+  correct in direction but the reviewer's OWN prior claim about a related
+  case is wrong, correct it explicitly and specifically rather than silently
+  accepting or silently ignoring it -- this surfaced the reviewer's error
+  fast (one message round-trip) instead of it lingering.
+- Review value: very high, same conclusion as F011's retrospective a session
+  ago -- for a security-relevant hook, treat the FIRST fix as a hypothesis,
+  not a conclusion, and keep reviewing until a round produces a genuine
+  fuzz/mutation NEGATIVE result (nothing new found) rather than stopping at
+  the first "looks good." Round 3 here was exactly that: independent
+  reconfirmation of everything, a corrected error, and only new findings that
+  were explicitly out-of-scope follow-ups, not blockers.
