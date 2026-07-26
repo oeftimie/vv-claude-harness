@@ -11,12 +11,26 @@
 # unreadable, or the tool-input JSON can't be parsed, the action is ALLOWED, not
 # blocked. Residual: a broken environment silently disables enforcement rather than
 # blocking everything. Bash coverage is pattern-based and evadable by construction
-# (compound commands, quoting, subshells, and a write hidden inside a heredoc body fed
-# to a nested interpreter are known false-negative surfaces) -- the goal is stopping
-# accidental drift, not defeating an adversarial teammate. Known false-positive
-# residual: redirect-target extraction takes the LAST >/>> on the line, so a bare
-# string comparison like [[ "$v" > "1.0" ]] (no real redirect) can still be
-# mistaken for one; quote-stripping to fix this was judged disproportionate.
+# (compound commands, command substitution/subshells, and a write hidden inside a
+# heredoc body fed to a nested interpreter are known false-negative surfaces) --
+# the goal is stopping accidental drift, not defeating an adversarial teammate.
+# Straightforward single/double/ANSI-C quoting of a separator or a write target is
+# handled (see mask_quotes()/unquote_token()); nested or otherwise unusual quoting
+# is not attempted. Known false-positive residual: redirect-target extraction
+# takes the LAST >/>> on the line, so a bare comparison like [[ "$v" > "1.0" ]]
+# (no real redirect) can still be mistaken for one even with quotes correctly
+# preserved and stripped from the captured group -- the regex has no way to tell
+# a real redirect from a test-bracket comparison operator; distinguishing them
+# would need real shell parsing, judged disproportionate for this hook.
+# Known false-negative residual (pre-existing, not introduced by the F023
+# separator fix): write_target()/redirect_target() only ever return the LAST
+# target in a segment, so a command with multiple real write targets in one
+# segment (`rm src/forbidden/a.txt src/allowed/b.txt`, `tee` or `sed -i` given
+# two files) is checked only against its last target -- an out-of-scope
+# target earlier in the same segment is not caught. `cp -t DIR`/`mv -t DIR`
+# (GNU-only; not present on BSD/macOS cp) put the real destination in a flag
+# argument, which write_target() doesn't look for either. Tracked as F024
+# (found by adversarial review of PR #42, F023 round 1); out of scope here.
 # verified live 2026-07-24 on Claude Code 2.1.218
 
 # Read hook input from stdin
@@ -137,9 +151,99 @@ def strip_heredoc_bodies(command):
     return "\n".join(kept)
 
 
+def join_continuations(command):
+    # Joins a backslash-newline shell continuation to a space, but only when
+    # the backslash immediately before the newline is itself unescaped: an
+    # ODD run of backslashes right before a newline means the last one
+    # escapes the newline (a real continuation); an EVEN run (including
+    # zero) means the newline is a real command separator and the
+    # backslashes are literal characters, which must be left alone. Ported
+    # from commit-gate.sh.template (F011/OVI-64, round 6), which needed this
+    # as soon as it started splitting on a literal newline -- without it, a
+    # continued command like `sed \` + newline + `-i 's/a/b/' file` splits
+    # into two fragments, neither of which alone carries the `-i` flag next
+    # to `sed`, so sed_inplace_target() never recognizes it (found by
+    # adversarial review of PR #42, F023 round 1).
+    def repl(m):
+        backslashes = m.group(1)
+        if len(backslashes) % 2 == 1:
+            return backslashes[:-1] + " "
+        return backslashes + "\n"
+
+    return re.sub(r"(\\*)\n", repl, command)
+
+
+QUOTE_SPAN_PATTERN = re.compile(r"\$'(?:[^'\\]|\\.)*'|'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+
+
+def mask_quotes(command):
+    # Replaces each quoted span (single, double, ANSI-C $'...') with a same-
+    # LENGTH run of NUL placeholder characters -- never a real separator or
+    # target character -- so that a real "&"/"|"/";" INSIDE a quoted string
+    # (sed's 's/foo/[&]/' whole-match idiom, a filename like "a & b.txt")
+    # doesn't get mistaken for a shell control operator when segments_of()
+    # below scans this masked copy for split positions. Unlike deleting the
+    # quoted span (an earlier version of this fix did that, via a function
+    # named strip_quotes, ported from commit-gate.sh.template verbatim),
+    # preserving length means split positions found in the masked copy line
+    # up character-for-character with the ORIGINAL command, so segments_of()
+    # can slice the real, still-quoted text for each segment -- the quoted
+    # write target itself must survive segmentation intact, unlike in
+    # commit-gate.sh where quotes only ever wrap non-target text (a commit
+    # message) and erasing them is harmless. Deleting the span instead of
+    # masking it erased the write target whenever it was quoted at all
+    # (`echo x > "src/forbidden/a.txt"`, `rm "src/forbidden/a.txt"`, and the
+    # lead-owned-state-file guard the same way) -- a much bigger bypass than
+    # the one this hook exists to close, since quoting a path is the
+    # ordinary way to write one, not an adversarial evasion (found by
+    # adversarial review of PR #42, F023 round 2).
+    def repl(m):
+        return "\0" * len(m.group(0))
+
+    return QUOTE_SPAN_PATTERN.sub(repl, command)
+
+
+def unquote_token(token):
+    # Strips quote characters from a single ALREADY-EXTRACTED target token --
+    # never used to re-segment or re-tokenize, only to normalize a target
+    # string (which may be fully quoted, "foo"/'foo'/$'foo', or partially
+    # quoted, foo/"bar".txt) before comparing it against scope patterns. Safe
+    # here specifically because segments_of() has already correctly resolved
+    # segment boundaries using mask_quotes(); this function never looks at
+    # separators.
+    token = re.sub(r"\$'((?:[^'\\]|\\.)*)'", r"\1", token)
+    return token.replace("'", "").replace('"', "")
+
+
 def segments_of(command):
+    # Splits on shell control operators. An earlier version omitted a literal
+    # newline and "&" (background execution, and the leading half of "|&"):
+    # without them, two separately-written commands glue into one segment,
+    # and redirect_target() below returns only the LAST >/>> match on that
+    # merged segment -- so an in-scope write later in the command masks an
+    # out-of-scope write earlier in it, and the whole thing is wrongly
+    # ALLOWED. The identical bug (missing newline) was found and fixed in
+    # commit-gate.sh.template (F011/OVI-64, round 3); this hook never got the
+    # same fix (found by adversarial review of PR #40, reported as F023).
+    # Adding the newline split required join_continuations() as a
+    # prerequisite, exactly as it did in commit-gate.sh (found by
+    # adversarial review of PR #42, F023 round 1). Split positions are found
+    # in a quote-MASKED copy (see mask_quotes) but sliced from the ORIGINAL,
+    # still-quoted text, so a segment's real write target survives intact
+    # for write_target()/redirect_target() to extract -- deleting quotes
+    # outright (as round 1's first attempt did) erased the target whenever
+    # it was quoted, a much bigger bypass than the one being fixed (found by
+    # adversarial review of PR #42, F023 round 2).
     sanitized = strip_heredoc_bodies(command)
-    return [s.strip() for s in re.split(r"\|\||&&|[|;]", sanitized) if s.strip()]
+    joined = join_continuations(sanitized)
+    masked = mask_quotes(joined)
+    segments = []
+    start = 0
+    for m in re.finditer(r"[|;\n&]", masked):
+        segments.append(joined[start:m.start()])
+        start = m.end()
+    segments.append(joined[start:])
+    return [s.strip() for s in segments if s.strip()]
 
 
 def last_flagless_token(tokens):
@@ -171,11 +275,12 @@ def write_target(segment):
     if not tokens:
         return None
     target = redirect_target(segment)
-    if target:
-        return target
-    if tokens[0] in WRITE_COMMANDS:
-        return last_flagless_token(tokens[1:])
-    return sed_inplace_target(tokens)
+    if not target:
+        if tokens[0] in WRITE_COMMANDS:
+            target = last_flagless_token(tokens[1:])
+        else:
+            target = sed_inplace_target(tokens)
+    return unquote_token(target) if target else None
 
 
 def normalize(path, project_root):

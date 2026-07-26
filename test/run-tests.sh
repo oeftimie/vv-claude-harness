@@ -1118,6 +1118,180 @@ RC=$?
 assert_rc0 "$RC" "hs2: lead context (no scope file) allows an unscoped Bash tee"
 assert_not_contains "$OUT" "permissionDecision" "hs2: lead-context tee has no deny fields"
 
+# F023: segments_of() split on \|\||&&|[|;] -- missing a literal newline and "&".
+# commit-gate.sh.template hit exactly this bug (F011/OVI-64, round 3) and fixed
+# it; enforce-scope.sh never did. Both missing separators let two writes glue
+# into one segment; redirect_target() then returns only the LAST >/>> match on
+# that merged segment, so an in-scope write masks an out-of-scope write earlier
+# in the same command and the whole thing is wrongly ALLOWED.
+NEWLINE_MASKED_CMD=$(printf 'echo bad > src/other/a.txt\necho good > src/parser/ok.txt')
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$NEWLINE_MASKED_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: newline-separated out-of-scope write is still scanned (JSON deny), not masked"
+assert_deny_json "$OUT" "hs2: newline-masked write denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" "hs2: newline-masked denial names the actual out-of-scope target"
+
+AMPERSAND_MASKED_CMD='echo bad > src/other/a.txt & echo good > src/parser/ok.txt'
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$AMPERSAND_MASKED_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: '&'-separated out-of-scope write is still scanned (JSON deny), not masked"
+assert_deny_json "$OUT" "hs2: '&'-masked write denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" "hs2: '&'-masked denial names the actual out-of-scope target"
+
+# Plain sanity check, not a distinguishing regression test: unlike
+# commit-gate.sh (where && vs a lone "&" affects which token segment_subcommand
+# sees as the leading token), this hook's redirect_target() scans the WHOLE
+# segment for a write target regardless of position, so && and back-to-back
+# lone "&" characters segment identically here (verified: deleting the
+# distinction changes no test outcome). This just confirms a && compound is
+# still denied after simplifying the split to a single character class.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/ok.txt && echo y > src/other/bad.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a genuine && compound out-of-scope write still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: && compound denial uses JSON deny form"
+
+# No new false positive: an in-scope write with an unrelated "&"-backgrounded
+# command elsewhere in the same line must still pass.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/ok.txt & echo done')")
+RC=$?
+assert_rc0 "$RC" "hs2: in-scope write with an unrelated backgrounded command passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: in-scope write with a trailing '&' has no deny fields"
+
+# F023 round 1 review: adding the newline split without joining backslash-
+# newline continuations first split "sed \" + newline + "-i ..." into two
+# fragments, neither of which alone carries "-i" next to "sed" --
+# sed_inplace_target() never recognized it, silently allowing an
+# out-of-scope sed -i edit.
+CONT_SED_CMD=$(printf 'sed \\\n-i s/a/b/ src/other/a.txt')
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$CONT_SED_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: a continuation-split 'sed -i' out-of-scope write still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: continuation-split sed -i denial uses JSON deny form"
+
+# Same review: the newline-join fix must not introduce a NEW false positive
+# for cp/mv/rm split across a continuation, all writing in-scope.
+for CONT_CMD_TEMPLATE in \
+  'cp \\\nsrc/parser/s.txt src/parser/ok.txt' \
+  'mv \\\nsrc/parser/s.txt src/parser/ok2.txt' \
+  'rm \\\nsrc/parser/tmp.txt'
+do
+  CONT_CMD=$(printf "$CONT_CMD_TEMPLATE")
+  OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$CONT_CMD")")
+  RC=$?
+  assert_rc0 "$RC" "hs2: continuation-split in-scope write ('$CONT_CMD_TEMPLATE') passes, rc 0"
+  assert_not_contains "$OUT" "permissionDecision" \
+    "hs2: continuation-split in-scope write ('$CONT_CMD_TEMPLATE') has no deny fields"
+done
+
+# F023 round 1 review: adding "&" to the split without stripping quotes first
+# would deny a legitimate in-scope sed 's/foo/[&]/' whole-match idiom, or a
+# filename containing "&", by treating the quoted "&" as a separator.
+SED_AMP_CMD="sed -i 's/foo/[&]/' src/parser/f.txt"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$SED_AMP_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: sed's quoted '&' whole-match idiom (in-scope) passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: sed's quoted '&' whole-match idiom has no deny fields"
+
+CP_AMP_CMD='cp "a & b.txt" src/parser/dest.txt'
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$CP_AMP_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: a quoted '&' inside a filename (in-scope) passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: quoted '&' filename has no deny fields"
+
+# F023 round 2 review: erasing quoted spans (rather than masking them) fed
+# quote-erased text into TARGET EXTRACTION, not just segmentation -- so a
+# quoted write target (the ordinary way to write a path, not adversarial
+# evasion) was erased entirely before redirect_target()/last_flagless_token()
+# ran, silently ALLOWING every one of these. Fixed by masking quoted spans
+# (same length, so split positions still line up) only to find separator
+# positions, then slicing the ORIGINAL text so segments keep their real
+# quoted content; a target is unquoted only after extraction.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > "src/other/a.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2: a double-quoted out-of-scope redirect target still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: double-quoted redirect denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" "hs2: double-quoted redirect denial names the real target, unquoted"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "echo x > 'src/other/a.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2: a single-quoted out-of-scope redirect target still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: single-quoted redirect denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm "src/other/a.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2: a double-quoted out-of-scope rm target still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: double-quoted rm denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm -rf "src/other/"')")
+RC=$?
+assert_rc0 "$RC" "hs2: a double-quoted out-of-scope 'rm -rf' target still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: double-quoted 'rm -rf' denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x | tee "src/other/a.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2: a double-quoted out-of-scope tee target still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: double-quoted tee denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "sed -i 's/a/b/' \"src/other/a.txt\"")")
+RC=$?
+assert_rc0 "$RC" "hs2: a double-quoted out-of-scope 'sed -i' target still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: double-quoted 'sed -i' denial uses JSON deny form"
+
+# Same erasure bug also defeated the lead-owned state-file guard, a separate
+# invariant, not part of F023 -- quoting one of the three protected paths
+# was enough to erase it before the LEAD_OWNED membership check ran.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > ".harness/features.json"')")
+RC=$?
+assert_rc0 "$RC" "hs2: a double-quoted lead-owned redirect still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: double-quoted lead-owned redirect denial uses JSON deny form"
+assert_contains "$OUT" "lead-owned" \
+  "hs2: double-quoted lead-owned redirect denial names the invariant"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "echo x >> '.harness/features.json'")")
+RC=$?
+assert_rc0 "$RC" "hs2: a single-quoted lead-owned append still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: single-quoted lead-owned append denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm ".harness/context_summary.md"')")
+RC=$?
+assert_rc0 "$RC" "hs2: a double-quoted lead-owned rm still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: double-quoted lead-owned rm denial uses JSON deny form"
+
+# cp/mv with a quoted DESTINATION must be checked against the destination,
+# not fall through to the source argument once the quoted text is erased.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/source.txt "src/other/dest.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2: cp with a quoted out-of-scope destination still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: cp quoted-destination denial uses JSON deny form"
+assert_contains "$OUT" "src/other/dest.txt" \
+  "hs2: cp quoted-destination denial names the destination, not the source"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv src/parser/source.txt "src/other/dest.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2: mv with a quoted out-of-scope destination still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: mv quoted-destination denial uses JSON deny form"
+assert_contains "$OUT" "src/other/dest.txt" \
+  "hs2: mv quoted-destination denial names the destination, not the source"
+
+# Bonus fix: an in-scope quoted path containing a real "&" (e.g. "R&D") was a
+# PRE-EXISTING false positive even before F023 -- the quote characters were
+# never stripped from the comparison, so the target's leading '"' broke the
+# scope-prefix match. Masking-then-unquoting (rather than erasing) repairs it.
+mkdir -p "$DIR_HS/src/parser/R&D"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv f.txt "src/parser/R&D/"')")
+RC=$?
+assert_rc0 "$RC" "hs2: a quoted in-scope path containing a real '&' passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: quoted in-scope '&' path has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
