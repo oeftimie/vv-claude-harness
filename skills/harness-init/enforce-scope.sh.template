@@ -138,8 +138,20 @@ def strip_heredoc_bodies(command):
 
 
 def segments_of(command):
+    # Splits on shell control operators. An earlier version omitted a literal
+    # newline and "&" (background execution, and the leading half of "|&"):
+    # without them, two separately-written commands glue into one segment,
+    # and redirect_target() below returns only the LAST >/>> match on that
+    # merged segment -- so an in-scope write later in the command masks an
+    # out-of-scope write earlier in it, and the whole thing is wrongly
+    # ALLOWED. The identical bug (missing newline) was found and fixed in
+    # commit-gate.sh.template (F011/OVI-64, round 3); this hook never got the
+    # same fix (found by adversarial review of PR #40, reported as F023).
+    # "&&" is listed as its own alternative before the single-character
+    # class, so it is still consumed whole and never mistaken for two lone
+    # "&" separators.
     sanitized = strip_heredoc_bodies(command)
-    return [s.strip() for s in re.split(r"\|\||&&|[|;]", sanitized) if s.strip()]
+    return [s.strip() for s in re.split(r"\|\||&&|[|;\n&]", sanitized) if s.strip()]
 
 
 def last_flagless_token(tokens):

@@ -1118,6 +1118,42 @@ RC=$?
 assert_rc0 "$RC" "hs2: lead context (no scope file) allows an unscoped Bash tee"
 assert_not_contains "$OUT" "permissionDecision" "hs2: lead-context tee has no deny fields"
 
+# F023: segments_of() split on \|\||&&|[|;] -- missing a literal newline and "&".
+# commit-gate.sh.template hit exactly this bug (F011/OVI-64, round 3) and fixed
+# it; enforce-scope.sh never did. Both missing separators let two writes glue
+# into one segment; redirect_target() then returns only the LAST >/>> match on
+# that merged segment, so an in-scope write masks an out-of-scope write earlier
+# in the same command and the whole thing is wrongly ALLOWED.
+NEWLINE_MASKED_CMD=$(printf 'echo bad > src/other/a.txt\necho good > src/parser/ok.txt')
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$NEWLINE_MASKED_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: newline-separated out-of-scope write is still scanned (JSON deny), not masked"
+assert_deny_json "$OUT" "hs2: newline-masked write denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" "hs2: newline-masked denial names the actual out-of-scope target"
+
+AMPERSAND_MASKED_CMD='echo bad > src/other/a.txt & echo good > src/parser/ok.txt'
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$AMPERSAND_MASKED_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: '&'-separated out-of-scope write is still scanned (JSON deny), not masked"
+assert_deny_json "$OUT" "hs2: '&'-masked write denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" "hs2: '&'-masked denial names the actual out-of-scope target"
+
+# "&&" must still be consumed as its own operator, not split into two lone "&".
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/ok.txt && echo y > src/other/bad.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a genuine && compound out-of-scope write still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: && compound denial uses JSON deny form"
+
+# No new false positive: an in-scope write with an unrelated "&"-backgrounded
+# command elsewhere in the same line must still pass.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/ok.txt & echo done')")
+RC=$?
+assert_rc0 "$RC" "hs2: in-scope write with an unrelated backgrounded command passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: in-scope write with a trailing '&' has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
