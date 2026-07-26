@@ -821,6 +821,27 @@
       "failure_reason": null,
       "discovered_via": "F023",
       "spec": null
+    },
+    {
+      "id": "F025",
+      "description": "skills/harness-init/commit-gate.sh.template's strip_quotes() deletes quoted spans (replacing them with a single space) before parse_command() tokenizes the command to find its git subcommand. Since the secret scan itself reads the real staged git diff (staged_diff()), not the quote-stripped command string, Check 1 (secret-assignment/url-credential) is unaffected by this bug in isolation -- but subcommand DETECTION runs on the quote-stripped text, and quoting any part of the 'git'/'commit' tokens erases them before parse_command() ever sees a 'commit' subcommand. main() then returns before EITHER the compound-stage-and-commit check OR the secret scan run at all. CONFIRMED end-to-end with a real staged secret: `git commit -m x` correctly denies (secret-assignment); `git \"commit\" -m x` is silently ALLOWED with the identical staged secret -- one quote character around the word 'commit' disables the entire gate, including the secret scan it exists to run. Same confirmed for `git 'commit' -m x`, `\"git\" commit -m x`, and `git com\"mit\" -m x` (all real, working git-commit invocations per bash tokenization). Same root cause as F023's round-2 finding in a different hook (enforce-scope.sh.template): strip_quotes() deletes content that is load-bearing for the gate's decision -- there it erased the write target, here it erases the subcommand token. Lower severity than F023's case in one sense (needs someone to deliberately quote a command token, unusual, vs. quoting a path, which is the ordinary case) but higher in consequence (fully disables secret scanning, not just one masked target) and it is ALREADY SHIPPED, actively-relied-upon security infrastructure, not a pending PR.",
+      "priority": 11,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/commit-gate.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by F023's round-1 reviewer while idle, verifying its own earlier claim that commit-gate.sh's strip_quotes() is safe (it isn't, for subcommand detection, though the secret scan itself is unaffected since it reads the real git diff, not the quote-stripped command string). Independently re-verified end-to-end with a real staged secret before filing. Elevated priority given it's a live bypass of already-shipped security infrastructure, not a pending change. Likely fix: the same mask-then-slice approach used to fix F023 in enforce-scope.sh.template -- segment on quote-masked text to find boundaries, but keep the ORIGINAL quoted text for subcommand token comparison, stripping only the quote characters (not content) from each token before comparing to 'git'/'commit'/flag names. Worth hoisting the shared mask/unquote helpers into one place if fixed the same way a third time, per the reviewer's own suggestion.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F023",
+      "spec": null
     }
   ]
 }
