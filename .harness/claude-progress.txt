@@ -290,3 +290,46 @@
   continue OVI-44. Also still deferred: refresh live .claude/hooks/*.sh from
   F003/F008/F009/F010's fixed templates.
 - Blockers: none.
+
+## Session 12 - 2026-07-26 (F023/enforce-scope.sh shipped)
+- Feature: F023 - enforce-scope.sh.template missing-separator masking fix
+- Status: complete, merged
+- Tests: 530/530 passing (full_test); no coverage tooling for this shell suite
+- Review: 3 adversarial rounds before APPROVE (details in context_summary.md's
+  Meta-Session entry). Round 1's fix (add \n and & to segments_of's split)
+  introduced a continuation-handling regression and a quoted-& false
+  positive; both fixed by porting commit-gate.sh's join_continuations() and
+  strip_quotes(). Round 2 found THAT fix (verbatim strip_quotes) was itself
+  a critical regression: this hook's write target is routinely quoted
+  (unlike commit-gate's, where quotes only wrap non-target text), so
+  erasing quoted spans erased the target, disabling enforcement for the
+  ordinary case of writing a quoted path -- worse than the bug F023 set
+  out to fix. Fixed with a mask-then-slice redesign (mask_quotes finds
+  separator positions in a placeholder-masked copy; segments are sliced
+  from the ORIGINAL quoted text; a target is unquoted only after
+  extraction via unquote_token). Round 3: independent reconfirmation of
+  everything, one self-correction (the reviewer retracted their own
+  "apostrophe-pairing hazard" finding after verifying it against real bash
+  and finding it wasn't a real bug), APPROVE.
+- Discovered: three more features filed during review, none fixed here:
+  - F024 (priority 13): multi-target masking (rm/tee/sed -i with 2+ files;
+    cp -t/mv -t destinations not recognized).
+  - F025 (priority 11, ELEVATED severity): commit-gate.sh.template
+    (already shipped, F011) has the SAME strip_quotes-erasure root cause
+    as F023's round-2 finding -- quoting the "commit" token
+    (`git "commit" -m x`) disables the ENTIRE gate including the secret
+    scan. Verified end-to-end with a real staged secret. This is a live
+    bypass of shipped security infrastructure, not a pending change --
+    should be next priority.
+  - F026 (priority 10): enforce-scope.sh's normalize() never resolves
+    ".." path traversal; pre-existing on main before F023 (verified in
+    real bash), F023's fix incidentally exposed 2 more spellings of it.
+- Merged: PR #42 @ 1e8e30f. Not tied to a Linear issue (locally discovered
+  bug, matching F022's precedent). Local main synced, feature branch
+  deleted (local + remote via gh api).
+- Next: F025 first (live security bypass in shipped infra, highest
+  severity of the three new filings), then F026, F024, or F012
+  ([OVI-53] portable readiness-stamp signing). Also still deferred:
+  refresh live .claude/hooks/*.sh from F003/F008/F009/F010's fixed
+  templates.
+- Blockers: none.
