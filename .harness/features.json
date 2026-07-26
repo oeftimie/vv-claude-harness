@@ -780,19 +780,21 @@
       "id": "F023",
       "description": "skills/harness-init/enforce-scope.sh.template's segments_of() (line ~142) splits commands on `\\|\\||&&|[|;]` -- missing a literal newline. commit-gate.sh.template hit exactly this bug in F011's round-3 review and fixed it (its split includes \\n); enforce-scope.sh never did. CONFIRMED FAIL-OPEN: a two-line command with an out-of-scope write on line 1 and an in-scope write on line 2 collapses into one segment; redirect_target() returns only the LAST '>' match on that merged segment, so the in-scope write on line 2 masks the out-of-scope write on line 1 and the whole command is ALLOWED. Verified end-to-end against a real scope fixture (.claude/teammate-scope.txt = 'src/allowed/'): baseline out-of-scope write denies, baseline in-scope write allows, the ';'-separated case denies correctly, but 'echo x > src/forbidden/a.txt\\necho y > src/allowed/ok.txt' (real newline, not ';') is wrongly ALLOWED. Note the bug is narrower than commit-gate's equivalent: '&' does NOT bypass enforce-scope (redirect_target regexes over the whole merged segment rather than depending on the segment's leading token), only the missing newline split does. Likely fix is the same shape as commit-gate's (add \\n, probably & too for consistency), but this hook has its own heredoc handling (strip_heredoc_bodies) and its own test surface, so it needs a real review, not a copied one-liner.",
       "priority": 12,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 490/490 is the gate)",
       "notes": "Discovered by F011/OVI-64's round-6 reviewer while idle, via one grep for the same bug class it had just spent that round on, then verified with a real fixture before reporting -- not fixed there since it's a different, already-shipped hook, out of F011's scope. Explicitly flagged as its own issue rather than folded into PR #40.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Fixed by mirroring commit-gate.sh's round-3 fix exactly: added a literal newline and '&' to segments_of()'s split character class (unchanged: '&&' is still matched by its own earlier alternative first, so it isn't mistaken for two lone '&' separators). Before implementing, independently verified the reporting reviewer's own characterization rather than trusting it: they reported '& does NOT bypass enforce-scope' based on a single-write-target test case (true & echo x > forbidden), which is correct for that shape but doesn't exercise the actual masking mechanism (redirect_target() returning only the LAST >/>> match on a merged segment). Built a real scope fixture and confirmed the masking bug DOES reproduce for '&' once a command has two write targets glued together ('echo bad > forbidden & echo good > allowed' was wrongly ALLOWED, identical to the already-confirmed newline case) -- so '&' needed the fix, not just the newline. Wrote regression tests first (TDD red phase: confirmed both new tests fail against the pre-fix code, plus confirmed the && and no-new-false-positive cases already passed, proving the tests aren't tautological), then applied the fix, then mutation-tested it (reverted, confirmed both new tests fail, restored). Full suite: 490/490 (up from 480), no regressions. Kept the fix narrow (only the separator set, matching commit-gate's equivalent fix) rather than adding quote-stripping or other compound-detection machinery commit-gate has -- this hook's header already documents 'compound commands, quoting, subshells' as accepted evadable-by-construction surface, and this fix doesn't change that posture, just closes one concrete masking bug within it."
+      ],
       "failure_reason": null,
       "discovered_via": "F011",
       "spec": null
