@@ -17,6 +17,15 @@
 # residual: redirect-target extraction takes the LAST >/>> on the line, so a bare
 # string comparison like [[ "$v" > "1.0" ]] (no real redirect) can still be
 # mistaken for one; quote-stripping to fix this was judged disproportionate.
+# Known false-negative residual (pre-existing, not introduced by the F023
+# separator fix): write_target()/redirect_target() only ever return the LAST
+# target in a segment, so a command with multiple real write targets in one
+# segment (`rm src/forbidden/a.txt src/allowed/b.txt`, `tee` or `sed -i` given
+# two files) is checked only against its last target -- an out-of-scope
+# target earlier in the same segment is not caught. `cp -t DIR`/`mv -t DIR`
+# (GNU-only; not present on BSD/macOS cp) put the real destination in a flag
+# argument, which write_target() doesn't look for either. Tracked as F024
+# (found by adversarial review of PR #42, F023 round 1); out of scope here.
 # verified live 2026-07-24 on Claude Code 2.1.218
 
 # Read hook input from stdin
@@ -137,6 +146,40 @@ def strip_heredoc_bodies(command):
     return "\n".join(kept)
 
 
+def join_continuations(command):
+    # Joins a backslash-newline shell continuation to a space, but only when
+    # the backslash immediately before the newline is itself unescaped: an
+    # ODD run of backslashes right before a newline means the last one
+    # escapes the newline (a real continuation); an EVEN run (including
+    # zero) means the newline is a real command separator and the
+    # backslashes are literal characters, which must be left alone. Ported
+    # from commit-gate.sh.template (F011/OVI-64, round 6), which needed this
+    # as soon as it started splitting on a literal newline -- without it, a
+    # continued command like `sed \` + newline + `-i 's/a/b/' file` splits
+    # into two fragments, neither of which alone carries the `-i` flag next
+    # to `sed`, so sed_inplace_target() never recognizes it (found by
+    # adversarial review of PR #42, F023 round 1).
+    def repl(m):
+        backslashes = m.group(1)
+        if len(backslashes) % 2 == 1:
+            return backslashes[:-1] + " "
+        return backslashes + "\n"
+
+    return re.sub(r"(\\*)\n", repl, command)
+
+
+def strip_quotes(command):
+    # Removes single-quoted, double-quoted, and ANSI-C $'...' spans (including
+    # the quotes themselves), so a quoted "&" (e.g. sed's 's/foo/[&]/' whole-
+    # match idiom, or a filename like "a & b.txt") is not seen as a separator
+    # by segments_of() below. Ported from commit-gate.sh.template for the same
+    # reason it exists there: adding "&" to the split class without this
+    # would deny legitimate in-scope commands containing a quoted "&" (found
+    # by adversarial review of PR #42, F023 round 1).
+    pattern = re.compile(r"\$'(?:[^'\\]|\\.)*'|'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+    return pattern.sub(" ", command)
+
+
 def segments_of(command):
     # Splits on shell control operators. An earlier version omitted a literal
     # newline and "&" (background execution, and the leading half of "|&"):
@@ -147,11 +190,13 @@ def segments_of(command):
     # ALLOWED. The identical bug (missing newline) was found and fixed in
     # commit-gate.sh.template (F011/OVI-64, round 3); this hook never got the
     # same fix (found by adversarial review of PR #40, reported as F023).
-    # "&&" is listed as its own alternative before the single-character
-    # class, so it is still consumed whole and never mistaken for two lone
-    # "&" separators.
+    # Adding the newline split required join_continuations() and
+    # strip_quotes() as prerequisites, exactly as it did in commit-gate.sh
+    # (found by adversarial review of PR #42, F023 round 1, after the first
+    # attempt copied the split but not those prerequisites).
     sanitized = strip_heredoc_bodies(command)
-    return [s.strip() for s in re.split(r"\|\||&&|[|;\n&]", sanitized) if s.strip()]
+    sanitized = strip_quotes(join_continuations(sanitized))
+    return [s.strip() for s in re.split(r"[|;\n&]", sanitized) if s.strip()]
 
 
 def last_flagless_token(tokens):

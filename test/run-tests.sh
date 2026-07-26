@@ -1138,7 +1138,13 @@ assert_rc0 "$RC" "hs2: '&'-separated out-of-scope write is still scanned (JSON d
 assert_deny_json "$OUT" "hs2: '&'-masked write denial uses JSON deny form"
 assert_contains "$OUT" "src/other/a.txt" "hs2: '&'-masked denial names the actual out-of-scope target"
 
-# "&&" must still be consumed as its own operator, not split into two lone "&".
+# Plain sanity check, not a distinguishing regression test: unlike
+# commit-gate.sh (where && vs a lone "&" affects which token segment_subcommand
+# sees as the leading token), this hook's redirect_target() scans the WHOLE
+# segment for a write target regardless of position, so && and back-to-back
+# lone "&" characters segment identically here (verified: deleting the
+# distinction changes no test outcome). This just confirms a && compound is
+# still denied after simplifying the split to a single character class.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > src/parser/ok.txt && echo y > src/other/bad.txt')")
 RC=$?
@@ -1153,6 +1159,49 @@ RC=$?
 assert_rc0 "$RC" "hs2: in-scope write with an unrelated backgrounded command passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: in-scope write with a trailing '&' has no deny fields"
+
+# F023 round 1 review: adding the newline split without joining backslash-
+# newline continuations first split "sed \" + newline + "-i ..." into two
+# fragments, neither of which alone carries "-i" next to "sed" --
+# sed_inplace_target() never recognized it, silently allowing an
+# out-of-scope sed -i edit.
+CONT_SED_CMD=$(printf 'sed \\\n-i s/a/b/ src/other/a.txt')
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$CONT_SED_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: a continuation-split 'sed -i' out-of-scope write still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: continuation-split sed -i denial uses JSON deny form"
+
+# Same review: the newline-join fix must not introduce a NEW false positive
+# for cp/mv/rm split across a continuation, all writing in-scope.
+for CONT_CMD_TEMPLATE in \
+  'cp \\\nsrc/parser/s.txt src/parser/ok.txt' \
+  'mv \\\nsrc/parser/s.txt src/parser/ok2.txt' \
+  'rm \\\nsrc/parser/tmp.txt'
+do
+  CONT_CMD=$(printf "$CONT_CMD_TEMPLATE")
+  OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$CONT_CMD")")
+  RC=$?
+  assert_rc0 "$RC" "hs2: continuation-split in-scope write ('$CONT_CMD_TEMPLATE') passes, rc 0"
+  assert_not_contains "$OUT" "permissionDecision" \
+    "hs2: continuation-split in-scope write ('$CONT_CMD_TEMPLATE') has no deny fields"
+done
+
+# F023 round 1 review: adding "&" to the split without stripping quotes first
+# would deny a legitimate in-scope sed 's/foo/[&]/' whole-match idiom, or a
+# filename containing "&", by treating the quoted "&" as a separator.
+SED_AMP_CMD="sed -i 's/foo/[&]/' src/parser/f.txt"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$SED_AMP_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: sed's quoted '&' whole-match idiom (in-scope) passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: sed's quoted '&' whole-match idiom has no deny fields"
+
+CP_AMP_CMD='cp "a & b.txt" src/parser/dest.txt'
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$CP_AMP_CMD")")
+RC=$?
+assert_rc0 "$RC" "hs2: a quoted '&' inside a filename (in-scope) passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: quoted '&' filename has no deny fields"
 
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
