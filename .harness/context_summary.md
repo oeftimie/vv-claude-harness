@@ -5,12 +5,14 @@ This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
 - F011/OVI-64 shipped: PR #40 merged @ 07ba2e4 after 6 adversarial review rounds (unusually many, warranted by risk=ELEVATED); Linear OVI-64 Done.
-- F023 shipped: PR #42 merged @ 1e8e30f after 3 adversarial review rounds, fixing enforce-scope.sh.template's missing-separator masking bug. Not tied to a Linear issue (locally discovered, matching F022's precedent for bugs found during another feature's review).
-- Three MORE features discovered and filed during F023's own review (a chain: reviewing one hook's fix surfaced bugs in sibling/already-shipped hooks), none fixed yet:
+- F023 shipped: PR #42 merged @ 1e8e30f after 3 adversarial review rounds, fixing enforce-scope.sh.template's missing-separator masking bug.
+- F025 shipped: PR #44 merged @ 647eeb8 after 2 adversarial review rounds, fixing commit-gate.sh.template's quoted-subcommand-token bypass (the same strip_quotes-erasure root cause as F023, but in this hook it disabled the ENTIRE secret scan, not just one masked write target -- was a live bypass of shipped security infrastructure, not a pending change). Neither F023 nor F025 is tied to a Linear issue (locally discovered bugs, matching F022's precedent).
+- Four features remain open, all discovered during F023's/F025's own review cycles (a recurring chain: fixing one hook's bug surfaces the same class in a sibling or already-shipped hook, or a narrower pre-existing gap in the same function):
   - F024 (priority 13, pending): enforce-scope.sh's write_target()/redirect_target() only ever return the LAST target in a segment, so multi-target writes (`rm a b`, `tee`/`sed -i` given 2 files) mask an out-of-scope earlier target; `cp -t`/`mv -t` destinations aren't recognized at all.
-  - F025 (priority 11, pending, ELEVATED severity): commit-gate.sh.template (already shipped, F011) has the SAME root-cause bug as F023's critical round-2 finding -- strip_quotes() erases the "commit" subcommand token if it's ever quoted (`git "commit" -m x`), disabling the ENTIRE gate including the secret scan, on a real staged secret. Live bypass of shipped security infrastructure, not a pending change -- prioritize accordingly.
   - F026 (priority 10, pending): enforce-scope.sh's normalize() never resolves ".." path traversal; a scope-escaping write via `../` was already allowed on main before F023, and F023's quote-erasure fix (unquote_token) incidentally exposed 2 more spellings of the same pre-existing gap.
-- Next up: F025 first (live security bypass in shipped infra), then F026, F024, or F012 ([OVI-53] portable readiness-stamp signing). Also still deferred: refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates.
+  - F027 (priority 11, pending): commit-gate.sh's has_staging_flag() doesn't know a space-separated `-m`'s VALUE (as opposed to an attached one like `-mfix`) is a value, not a token to interpret -- surfaces as 3 shapes on the same root cause: a pre-existing false-negative (`git commit -m -- -a` wrongly allows on main and after F025 alike), a narrowed false-negative F025 introduced on one exact input shape (`git commit -m "--" -a`), and a false-positive F025 introduced on the mirror shape (`git commit -m "-a"` now wrongly denies a message that's ordinarily just text, verified against real git: nothing extra gets staged). One fix (skip -m's space-separated value token) should close all three together.
+  - F028 (priority 14, pending, low severity): enforce-scope.sh's redirect_target() truncates a quoted path at its first internal space (`echo x > "my file.txt"` extracts target 'my'); not currently exploitable (the only exact-match comparison, LEAD_OWNED, has no space-containing entries) but would become a real fail-open if one were ever added.
+- Next up: any of F024/F026/F027/F028 (all now well-scoped, none urgent-severity), or F012 ([OVI-53] portable readiness-stamp signing). Also still deferred: refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates.
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -634,3 +636,53 @@ This file is referenced in CLAUDE.md and loaded every session.
   the first "looks good." Round 3 here was exactly that: independent
   reconfirmation of everything, a corrected error, and only new findings that
   were explicitly out-of-scope follow-ups, not blockers.
+
+## Meta-Session 2026-07-27 (F025/commit-gate.sh quoted-token bypass fix)
+- Scope accuracy: scope held (2 files), but again fanned out via discovery
+  during review, same shape as F023: F027 (a 3-part residual in the same
+  function, has_staging_flag) and F028 (the analogous bug in the sibling
+  hook, enforce-scope.sh, low severity/not exploitable today). Neither fixed
+  here. The chain is now F011 -> F023 -> {F024, F025, F026} -> F025's own
+  review -> {F027, F028} -- five features deep from one original bug class
+  (quote-erasure deleting content load-bearing for a gate's decision).
+- Model calibration: single-session; correction_cycles 1 (2 review rounds:
+  round 1 found 2 regressions the fix itself introduced -- same "the fix for
+  the last bug introduces a new one" pattern as F011/F023, this time one
+  level DEEPER: F025's mask-then-slice fix was correct at the SEGMENT level
+  (command_segments) but left tokenization inside a segment naive (seg.split()),
+  which the OLD quote-deletion design had accidentally masked by deleting the
+  very message text those pseudo-tokens came from. Round 2 confirmed the
+  round-1 fix and found nothing new in the code itself, only a documentation
+  error IN THE REVIEWER'S OWN FIRST-PASS FILING of one of the residuals (F027
+  shape 3's polarity was backwards -- called a false-positive regression a
+  "genuine improvement"). The reviewer caught and corrected their own error
+  on a follow-up idle-time check against real git, unprompted, before I acted
+  on the wrong framing.
+- Discovery lineage: F027 and F028 both discovered_via F025. Same recurring
+  shape noted in F023's retrospective a session ago.
+- Approach patterns that worked: (1) When a fix touches a MULTI-LEVEL
+  structure (segments, then tokens within a segment), verify EACH LEVEL
+  independently for the same class of bug rather than assuming a fix at one
+  level generalizes -- F025's round-1 regressions were exactly this: the
+  segment-level mask-then-slice fix was right, but token-level splitting
+  inside a segment needed the identical treatment one level down
+  (split_tokens(), added in round 1's fix, mirrors command_segments()'s own
+  mask-then-slice discipline). (2) Before filing ANY "improvement" or
+  "regression" characterization of a behavior change, verify against the
+  REAL tool (real git, real bash) what the command actually DOES, not just
+  whether the hook's verdict changed -- both the F023 and F025 review cycles
+  had exactly one reviewer self-correction each, and both corrections came
+  from the SAME discipline: running the actual command and checking what got
+  staged/committed/written, not inferring intent from a before/after verdict
+  diff. (3) When told "no code change needed, just amend the ticket," treat
+  that ticket amendment with the SAME rigor as a code fix: verify the
+  reviewer's claim before writing it into features.json, since a bad
+  characterization in a filed ticket actively misleads whoever picks it up
+  next (exactly what happened here, and exactly why the follow-up correction
+  mattered enough to send unprompted).
+- Review value: consistent with F011/F023 -- for this class of hook (a
+  security-relevant Bash-command scanner built on regex/token pattern
+  matching, not a real shell parser), the first fix is a hypothesis. Two
+  rounds was enough to converge here specifically because round 2 found
+  nothing new IN THE CODE and only a documentation error, which is the same
+  "negative result" signal that ended F011's and F023's longer cycles.
