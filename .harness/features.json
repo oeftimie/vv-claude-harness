@@ -888,6 +888,27 @@
       "failure_reason": null,
       "discovered_via": "F025",
       "spec": null
+    },
+    {
+      "id": "F028",
+      "description": "skills/harness-init/enforce-scope.sh.template's redirect_target() regex (`>>?\\s*([^\\s<>|&;]+)`) truncates a quoted path at its first internal space, since the character class stops at whitespace regardless of quote context and the segment isn't tokenized with a quote-aware splitter (the way commit-gate.sh.template's split_tokens(), added in F025, is). CONFIRMED: `echo x > \"my file.txt\"` extracts target 'my', not the real path. NOT currently exploitable: the truncated value keeps its directory prefix, so the scope check (`norm.startswith(p)`, a directory-prefix pattern) reaches the same verdict as the full path would; the one place an exact-match check exists (`norm in LEAD_OWNED`) compares against a fixed 3-path set, none of which contains a space, so no reachable bypass exists today. A latent robustness gap that would become a real fail-open only if a lead-owned path containing a space were ever added.",
+      "priority": 14,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by F025's reviewer during idle time, checking whether F025's token-level root cause (naive whitespace splitting inside quoted content) also affects the sibling hook. Explicitly assessed as low-priority, not exploitable today, and out of scope for F025's PR (a different hook). Likely fix: a quote-aware tokenizer shared with commit-gate.sh's split_tokens()/mask_quotes()/unquote_token() -- the reviewer notes this would be the third independent implementation of the same mask-then-slice pattern across these two hooks (F023's enforce-scope fix, F025's commit-gate fix, and this one), worth hoisting into one shared place if fixed, per F025's own approaches_tried notes on the same point.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F025",
+      "spec": null
     }
   ]
 }
