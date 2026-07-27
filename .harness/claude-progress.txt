@@ -333,3 +333,36 @@
   refresh live .claude/hooks/*.sh from F003/F008/F009/F010's fixed
   templates.
 - Blockers: none.
+
+## Session 13 - 2026-07-27 (F025/commit-gate.sh shipped)
+- Feature: F025 - commit-gate.sh.template quoted-subcommand-token bypass fix
+- Status: complete, merged
+- Tests: 566/566 passing (full_test); no coverage tooling for this shell suite
+- Review: 2 adversarial rounds before APPROVE (details in context_summary.md's
+  Meta-Session entry). Round 1 found the fix's mask-then-slice design was
+  correct at the segment level but left tokenization inside a segment naive
+  (seg.split()), which the OLD quote-deletion design had accidentally masked
+  -- exposed a fail-open (a quoted "--" anywhere in a commit message could
+  shadow a real trailing staging flag) and a false positive (flag-shaped
+  words in a quoted message). Fixed with split_tokens(), the same mask-then-
+  slice discipline one level deeper. Round 2: independent reconfirmation,
+  no new code findings, one documentation error caught and self-corrected
+  by the reviewer (a ticket's polarity was backwards on first filing,
+  verified and fixed against real git before I acted on it).
+- Discovered: two more features filed during review, none fixed here:
+  - F027 (priority 11): commit-gate.sh's has_staging_flag() doesn't
+    account for a space-separated -m's value as opposed to an attached
+    one, surfacing as 3 shapes on the same root cause -- 1 pre-existing
+    false-negative, 1 false-negative F025 narrowed, 1 false-positive F025
+    introduced. One fix should close all three.
+  - F028 (priority 14, low severity): the analogous quoted-path-truncation
+    bug exists in enforce-scope.sh.template too, but isn't exploitable
+    today (no space-containing entries in the one exact-match set that
+    would be affected).
+- Merged: PR #44 @ 647eeb8. Not tied to a Linear issue (locally discovered
+  bug). Local main synced, feature branch deleted (local + remote via gh
+  api, since git-push-based delete trips the push-targets-main guard).
+- Next: F024, F026, F027, or F028 (all well-scoped, none urgent), or F012
+  ([OVI-53] portable readiness-stamp signing). Also still deferred: refresh
+  live .claude/hooks/*.sh from F003/F008/F009/F010's fixed templates.
+- Blockers: none.
