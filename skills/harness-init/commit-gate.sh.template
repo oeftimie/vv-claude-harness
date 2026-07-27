@@ -26,9 +26,11 @@
 #      `git commit -a`/`-i`/`--all`/`--include`, including combined short-flag
 #      clusters like `-am`). A pre-commit hook can only scan an index that already
 #      holds the content; newly staged content in the SAME command is invisible to
-#      Check 1's scan. Quoted spans (single, double, ANSI-C $'...') are stripped
-#      before segmenting, so a commit message like
-#      `git commit -m "run git add later"` does not false-trip.
+#      Check 1's scan. Quoted spans (single, double, ANSI-C $'...') are masked (not
+#      deleted -- see mask_quotes) when finding segment boundaries, so a commit
+#      message like `git commit -m "run git add later"` does not false-trip on the
+#      words "git"/"add" inside it, while the real tokens of a quoted invocation
+#      like `git "commit" -m x` still tokenize correctly (F025).
 #   1. secret-assignment / url-credential -- scans staged additions
 #      (`git diff --cached -U0`, `+` lines) for key/secret/password/token
 #      assignments >= 16 chars (keyword may appear as part of a larger identifier,
@@ -69,23 +71,26 @@
 # No automated latency test exists for any hook in this repo; design target
 # (undocumented elsewhere) is under 1 second for a typical commit's staged diff,
 # since this hook blocks an interactive PreToolUse Bash call synchronously.
-# Check 0's quote-stripping covers single/double/ANSI-C quoting only; recursive or
-# nested quoting is out of scope, consistent with this repo's existing
-# pattern-based-and-evadable-by-construction posture for Bash-command hooks.
-# A quoted span containing a heredoc body is not stripped correctly (the
-# quote-stripping regex doesn't cross heredoc syntax) -- if the heredoc body's
-# literal text happens to read like a staging command, this can produce a
-# false denial (fail-closed, over-blocking); accepted, same
-# evadable-by-construction posture.
+# Check 0's quote handling (mask_quotes/unquote_token) covers single/double/
+# ANSI-C quoting only; recursive or nested quoting is out of scope, consistent
+# with this repo's existing pattern-based-and-evadable-by-construction posture
+# for Bash-command hooks. A quoted span containing a heredoc body is not
+# masked correctly (the quote-matching regex doesn't cross heredoc syntax) --
+# if the heredoc body's literal text happens to read like a staging command,
+# this can produce a false denial (fail-closed, over-blocking); accepted,
+# same evadable-by-construction posture.
 # parse_command joins backslash-newline shell continuations (outside quotes)
 # into a single space before segmenting, so `git \` + newline + `commit -m x`
 # is recognized as one git-commit invocation rather than being split into two
 # segments that neither alone tokenize as one -- an earlier version of this
 # hook didn't join continuations, which no-op'ed the entire gate for a
 # continued command (fail-open bypass, not merely a missed check: the secret
-# scan itself was skipped). This closes the unquoted case only; a
-# continuation inside a quoted span is already collapsed to whitespace by
-# quote-stripping either way, so it doesn't matter there. Not attempted:
+# scan itself was skipped). join_continuations runs on the whole raw command
+# regardless of quote boundaries (it has no quote awareness of its own), so a
+# continuation that happens to fall inside a quoted commit message is joined
+# to a space there too -- a minor content change inside the message text, not
+# a detection gap, since quoted content is preserved (not erased) through
+# segmentation either way (see mask_quotes). Not attempted:
 # joining a continuation that falls inside a heredoc body (see above) --
 # that would require tracking heredoc state across the whole command, not a
 # one-line fix like the unquoted case was.
@@ -208,12 +213,43 @@ URL_CREDENTIAL_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]+:[^\s@
 EM_DASH_PATTERN = re.compile("\u2014")
 
 
-def strip_quotes(command):
-    # Removes single-quoted, double-quoted, and ANSI-C $'...' spans (including the
-    # quotes themselves) so a commit message mentioning "git add" or containing
-    # -a/-i/--all/--include as plain text does not false-trip Check 0.
-    pattern = re.compile(r"\$'(?:[^'\\]|\\.)*'|'[^']*'|\"(?:[^\"\\]|\\.)*\"")
-    return pattern.sub(" ", command)
+QUOTE_SPAN_PATTERN = re.compile(r"\$'(?:[^'\\]|\\.)*'|'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+
+
+def mask_quotes(command):
+    # Replaces each quoted span (single, double, ANSI-C $'...') with a same-
+    # LENGTH run of NUL placeholder characters -- never a real separator or
+    # token character -- so that a real control operator INSIDE a quoted
+    # string (a commit message like "git add later; do it now") doesn't get
+    # mistaken for a real one when command_segments() scans this masked copy
+    # for split positions. Unlike deleting the quoted span (an earlier
+    # version of this hook did that, via a function named strip_quotes),
+    # preserving length means split positions found in the masked copy line
+    # up character-for-character with the ORIGINAL command, so
+    # command_segments() can slice the real, still-quoted text for each
+    # segment -- deleting the span instead erased the "git"/"commit" tokens
+    # themselves whenever either was quoted (`git "commit" -m x`), silently
+    # disabling the entire gate including the secret scan on a real staged
+    # secret. Found by adversarial review of PR #42/F023 in a sibling hook
+    # (enforce-scope.sh.template, same root cause: quote-erasure deleting
+    # content load-bearing for the gate's decision), then independently
+    # confirmed in THIS hook and filed as F025.
+    def repl(m):
+        return "\0" * len(m.group(0))
+
+    return QUOTE_SPAN_PATTERN.sub(repl, command)
+
+
+def unquote_token(token):
+    # Strips quote characters from a single ALREADY-TOKENIZED word -- never
+    # used to re-segment or re-tokenize, only to normalize a token (which may
+    # be fully quoted, "commit"/'commit'/$'commit', or partially quoted,
+    # com"mit") before comparing it to "git", a subcommand name, or a flag
+    # string. Safe here specifically because command_segments() has already
+    # resolved segment boundaries using mask_quotes(); this function never
+    # looks at separators (found by adversarial review of PR #42/F025).
+    token = re.sub(r"\$'((?:[^'\\]|\\.)*)'", r"\1", token)
+    return token.replace("'", "").replace('"', "")
 
 
 def command_segments(command):
@@ -227,8 +263,19 @@ def command_segments(command):
     # segment's subcommand was ever seen (found by adversarial review of PR
     # #40, round 6). "&&" is listed as its own alternative before the
     # single-character class, so it is still consumed whole and never
-    # mistaken for two lone "&" separators.
-    return [s.strip() for s in re.split(r"\|\||&&|[|;\n&]", command) if s.strip()]
+    # mistaken for two lone "&" separators. Split positions are found in a
+    # quote-MASKED copy (see mask_quotes) but sliced from the ORIGINAL
+    # command text, so a segment's real "git"/"commit" tokens survive intact
+    # for tokenization even when quoted (see mask_quotes for why deleting
+    # them instead was a critical bug, F025).
+    masked = mask_quotes(command)
+    segments = []
+    start = 0
+    for m in re.finditer(r"\|\||&&|[|;\n&]", masked):
+        segments.append(command[start:m.start()])
+        start = m.end()
+    segments.append(command[start:])
+    return [s.strip() for s in segments if s.strip()]
 
 
 def is_git_token(tok):
@@ -302,18 +349,23 @@ def join_continuations(command):
 
 
 def parse_command(command):
-    # Quote-strips and segments the raw command once, then finds each
-    # segment's git subcommand (if any) -- a single source of truth shared by
-    # the no-op decision and the compound-stage-and-commit check below.
-    # Backslash-newline continuations are joined to a space before anything
-    # else, so a continued command isn't split into fragments that
-    # individually fail to tokenize as git-shaped (see header).
-    stripped = strip_quotes(join_continuations(command))
+    # Segments the raw command once, then finds each segment's git subcommand
+    # (if any) -- a single source of truth shared by the no-op decision and
+    # the compound-stage-and-commit check below. Backslash-newline
+    # continuations are joined to a space before anything else, so a
+    # continued command isn't split into fragments that individually fail to
+    # tokenize as git-shaped (see header). Tokens are whitespace-split from
+    # the still-quoted segment text (see command_segments) and THEN unquoted
+    # one at a time -- never the other way around -- so a quoted token like
+    # "commit" or com"mit" is still recognized as the word "commit" once
+    # tokenized, instead of being erased before tokenization ever saw it
+    # (F025).
+    joined = join_continuations(command)
     parsed = []
-    for seg in command_segments(stripped):
-        tokens = seg.split()
+    for seg in command_segments(joined):
+        tokens = [unquote_token(t) for t in seg.split()]
         sc, idx = segment_subcommand(tokens)
-        parsed.append((seg, sc, idx))
+        parsed.append((tokens, sc, idx))
     return parsed
 
 
@@ -346,8 +398,8 @@ def check_compound_stage_and_commit(parsed):
     commit_present = any(sc == "commit" for sc in subcommands)
     if has_stage and commit_present:
         return DENY_COMPOUND
-    for seg, sc, idx in parsed:
-        if sc == "commit" and has_staging_flag(seg.split()[idx + 1:]):
+    for tokens, sc, idx in parsed:
+        if sc == "commit" and has_staging_flag(tokens[idx + 1:]):
             return DENY_COMPOUND
     return None
 

@@ -3175,6 +3175,51 @@ assert_rc0 "$RC" "cg: corrupt harness.json with no secret in diff exits 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "cg: corrupt harness.json treats style gate as disabled, not denied"
 
+# F025: strip_quotes() deleted quoted spans before tokenization, so quoting
+# any part of the "git"/"commit" tokens erased them entirely -- parse_command
+# never saw a "commit" subcommand, and main() returned before EITHER the
+# compound-stage-and-commit check or the secret scan ran. Same root cause as
+# F023's round-2 finding in enforce-scope.sh.template: strip_quotes() deletes
+# content that is load-bearing for the gate's decision. Each case stages a
+# real secret and asserts a positive secret-assignment denial, proving the
+# quoted invocation is still recognized as git-shaped and scanned.
+DIR_CG_QUOTED_TOKEN="$WORK/commit-gate-quoted-subcommand-token"
+make_fixture "$DIR_CG_QUOTED_TOKEN"
+install_hooks "$DIR_CG_QUOTED_TOKEN"
+printf 'api_key = "abcdefghijklmnopqrstuvwx"\n' > "$DIR_CG_QUOTED_TOKEN/secret.py"
+git -C "$DIR_CG_QUOTED_TOKEN" add secret.py
+for CG_QUOTED_CMD in \
+  'git "commit" -m x' \
+  "git 'commit' -m x" \
+  '"git" commit -m x' \
+  'git com"mit" -m x'
+do
+  OUT=$(run_commit_gate "$DIR_CG_QUOTED_TOKEN" "$CG_QUOTED_CMD")
+  RC=$?
+  assert_rc0 "$RC" "cg: '$CG_QUOTED_CMD' still scans (JSON deny), not bypassed"
+  assert_deny_json "$OUT" "cg: '$CG_QUOTED_CMD' secret denial uses JSON deny form"
+  assert_contains "$OUT" "secret-assignment" \
+    "cg: '$CG_QUOTED_CMD' denial names secret-assignment"
+done
+
+# The same erasure bug also let a quoted staging flag bypass Check 0's
+# compound-stage-and-commit detection.
+OUT=$(run_commit_gate "$DIR_CG_QUOTED_TOKEN" 'git commit "-a" -m x')
+RC=$?
+assert_rc0 "$RC" "cg: a quoted staging flag still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: quoted staging flag denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: quoted staging flag denial names the finding class"
+
+# No new false positive: a commit message that happens to contain the word
+# "commit" or "git" in quotes must not itself trigger recognition of a
+# DIFFERENT segment, and quoting must not break a normal, already-correct
+# invocation.
+OUT=$(run_commit_gate "$DIR_CG_QUOTED_TOKEN" 'git commit -m "please git commit later"')
+RC=$?
+assert_rc0 "$RC" "cg: a quoted commit-message mentioning git/commit still scans normally"
+assert_deny_json "$OUT" "cg: quoted-message secret denial uses JSON deny form"
+
 echo ""
 echo "== agent frontmatter =="
 
