@@ -1535,6 +1535,60 @@ assert_rc0 "$RC" "hs2: all-in-scope cp with a no-space '>' passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: all-in-scope cp no-space-'>' has no deny fields"
 
+# F026: normalize() strips the project-root prefix but never resolves ".."
+# path traversal, so a write target that escapes the allowed directory via
+# traversal still matches the allowed prefix under a bare .startswith()
+# check. Verified in real bash: `echo x > src/parser/../other/x.txt`
+# actually writes to src/other/x.txt, outside the "src/parser/" scope.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/../other/x.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a '..'-traversal escaping scope exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2: traversal denial names the real, resolved out-of-scope path"
+
+# The same gap under quoting (unquote_token, added by F023, means these
+# spellings now reach the traversal unresolved rather than being
+# incidentally denied by un-stripped quote characters).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > "src/parser/"../other/x.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a quoted-prefix '..'-traversal exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: quoted-prefix traversal denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > "src/parser/../other/x.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2: a fully-quoted '..'-traversal exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: fully-quoted traversal denial uses JSON deny form"
+
+# No new false positive: a "." or ".." segment that resolves back INSIDE
+# the allowed scope must still pass (e.g. a round-trip through a
+# subdirectory, or a redundant "./").
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/sub/../ok.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a '..'-traversal that resolves back in-scope passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: an in-scope-resolving traversal has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/./ok.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a redundant './' segment resolving in-scope passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: a redundant './' segment has no deny fields"
+
+# The lead-owned state-file guard must also resolve traversal, not just the
+# scope-prefix check -- both read the same normalize() output.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/../../.harness/features.json')")
+RC=$?
+assert_rc0 "$RC" "hs2: a '..'-traversal into a lead-owned state file exits 0 (JSON deny)"
+assert_contains "$OUT" "lead-owned" \
+  "hs2: traversal-to-lead-owned denial names the invariant"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then

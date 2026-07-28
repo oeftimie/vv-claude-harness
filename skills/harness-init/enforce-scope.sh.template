@@ -130,6 +130,7 @@ if [ -n "$COMMAND" ]; then
     done < "$SCOPE_FILE"
 
     DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" "${SCOPE_PATTERNS[@]}" <<'PYEOF'
+import os
 import re
 import sys
 
@@ -449,9 +450,29 @@ def write_targets(segment):
 
 
 def normalize(path, project_root):
+    # Strips the project-root prefix, then resolves "."/".." segments so a
+    # write target that escapes an allowed directory via traversal
+    # (`src/allowed/../forbidden/x.txt`, which real bash resolves to
+    # src/forbidden/x.txt) no longer merely STARTS WITH the allowed prefix
+    # string -- an earlier version returned the path unresolved, so the
+    # scope-prefix check (a bare .startswith()) and the lead-owned exact-
+    # match check (both read this same return value) were both fooled by
+    # traversal. A path that resolves to something outside the project
+    # entirely (more ".." than real leading segments, e.g. "../../etc/x")
+    # is left with a leading ".." by os.path.normpath, which correctly
+    # never matches any scope pattern (found by adversarial review of PR
+    # #42/F023, reported as F026). os.path.normpath also strips a trailing
+    # "/", which this hook's directory-style scope patterns (and a `cp -t
+    # DIR/` destination) rely on for prefix matching -- restored if the
+    # pre-normalize path had one, so a destination that IS a scope
+    # directory (e.g. "src/parser/") still compares equal to the pattern
+    # itself, not just its own strict subdirectories.
     if path.startswith(project_root + "/"):
         path = path[len(project_root) + 1:]
-    return path
+    resolved = os.path.normpath(path)
+    if path.endswith("/") and not resolved.endswith("/"):
+        resolved += "/"
+    return resolved
 
 
 def main():
