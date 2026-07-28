@@ -402,11 +402,22 @@ def strip_redirects(segment):
     # PR #46, round 2 -- an earlier version's `>>?\s*[^\s<>|&;]+` pattern
     # left a bare digit token behind whenever the redirect had an explicit
     # fd prefix, which the command extractors then misread as a real write
-    # target).
+    # target). ONLY the optional digit run is anchored to a token boundary
+    # (as its own capture-free group), not the whole match -- an earlier
+    # version of this fix anchored the ENTIRE match, which made a BARE ">"
+    # (no fd prefix at all) fail to match unless it was ALSO preceded by
+    # whitespace, so a real redirect glued directly onto the end of a
+    # command argument with no separating space (`cp a b> log`, real bash:
+    # this writes to "log" and reads/copies from "a"/"b") was never stripped
+    # at all -- cp/mv's own destination detection then fell through to the
+    # UNSTRIPPED trailing text and picked the redirect's own in-scope target
+    # instead of the real, possibly out-of-scope destination, reintroducing
+    # the exact masking bug F024 exists to close (found by adversarial
+    # review of PR #46, round 3).
     masked = mask_quotes(segment)
     kept = []
     last = 0
-    for m in re.finditer(r"(?:^|(?<=\s))\d*>>?\s*[^\s<>|&;]+", masked):
+    for m in re.finditer(r"(?:(?:^|(?<=\s))\d+)?>>?\s*[^\s<>|&;]+", masked):
         kept.append(segment[last:m.start()])
         last = m.end()
     kept.append(segment[last:])

@@ -1478,25 +1478,58 @@ assert_not_contains "$OUT" "permissionDecision" \
   "hs2: fd-prefixed redirect (space form) does not leave a stray digit target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt src/parser/b.txt 2>/dev/null')")
+  "$(bash_command_json 'rm src/parser/a.txt 2>src/parser/err.log')")
 RC=$?
-assert_rc0 "$RC" "hs2: fd-prefixed redirect (no-space form) does not deny on the bare digit"
-assert_not_contains "$OUT" "'2'" \
-  "hs2: fd-prefixed redirect (no-space form) never names a bare digit as the target"
+assert_rc0 "$RC" "hs2: fd-prefixed redirect (no-space form) with all in-scope targets passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: fd-prefixed redirect (no-space form) does not leave a stray digit target"
 
 # Caution (per review): a naive digit-prefix strip must NOT truncate a real
-# argument that merely ENDS in a digit immediately before an unprefixed
-# redirect operator, no separating space (no fd semantics at all here --
-# "src/parser/version2" is one whole word, not "just digits", so per real
+# argument that merely ENDS in a digit immediately before an UNPREFIXED
+# redirect operator, with NO separating space -- no fd semantics at all here
+# ("src/parser/version2" is one whole word, not "just digits", so per real
 # bash it is NOT an fd number; `echo abc2> out` writes "abc2", not "abc").
 # The fd-prefix rule only applies when the digit run is its OWN complete
-# token (whitespace or start-of-segment immediately before it).
+# token (whitespace or start-of-segment immediately before it); this case
+# specifically has NO space before ">", so the discriminating shape is
+# actually exercised (a version with a space before "2>" doesn't test this
+# at all, since the digit and the operator would then be separate tokens).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm src/parser/version2 2> src/parser/err.log')")
+  "$(bash_command_json 'rm src/parser/version2> src/parser/err.log')")
 RC=$?
-assert_rc0 "$RC" "hs2: a real in-scope target ending in a digit, plus a real fd-redirect, passes"
+assert_rc0 "$RC" "hs2: a real in-scope target ending in a digit, no-space unprefixed redirect, passes"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: the digit at the end of a real filename is not mistaken for an fd prefix"
+
+# F024 round 3 review: anchoring the ENTIRE match (not just the optional
+# digit run) to a token boundary made a BARE ">" (no fd prefix at all) fail
+# to match unless it was ALSO preceded by whitespace -- so a redirect glued
+# directly onto a cp/mv destination with no separating space
+# (`cp a b> log`) was never stripped, and cp/mv's destination detection fell
+# through to the unstripped trailing text, picking the redirect's own target
+# instead of the real destination -- reintroducing F024's own masking bug.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/other/b.txt> src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: cp with a no-space '>' glued to an out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: cp no-space-'>' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/b.txt" \
+  "hs2: cp no-space-'>' denial names the real destination, not the redirect's target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv src/parser/a.txt src/other/b.txt> src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: mv with a no-space '>' glued to an out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: mv no-space-'>' denial uses JSON deny form"
+
+# No new false positive: the same no-space-'>' shape, all in scope, must
+# still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/parser/b.txt> src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: all-in-scope cp with a no-space '>' passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: all-in-scope cp no-space-'>' has no deny fields"
 
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
