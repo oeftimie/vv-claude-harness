@@ -1550,18 +1550,27 @@ assert_contains "$OUT" "src/other/x.txt" \
 
 # The same gap under quoting (unquote_token, added by F023, means these
 # spellings now reach the traversal unresolved rather than being
-# incidentally denied by un-stripped quote characters).
+# incidentally denied by un-stripped quote characters). Asserts the
+# resolved path specifically, not just any deny -- without this, a fully
+# broken unquote_token could still deny (for the wrong reason: un-stripped
+# quote characters breaking the prefix match, the exact "incidentally
+# denied" confusion this comment describes) and the assertion wouldn't
+# notice (found by adversarial review of PR #48, round 1).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > "src/parser/"../other/x.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2: a quoted-prefix '..'-traversal exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: quoted-prefix traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2: quoted-prefix traversal denial names the real, resolved path"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > "src/parser/../other/x.txt"')")
 RC=$?
 assert_rc0 "$RC" "hs2: a fully-quoted '..'-traversal exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: fully-quoted traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2: fully-quoted traversal denial names the real, resolved path"
 
 # No new false positive: a "." or ".." segment that resolves back INSIDE
 # the allowed scope must still pass (e.g. a round-trip through a
@@ -1588,6 +1597,34 @@ RC=$?
 assert_rc0 "$RC" "hs2: a '..'-traversal into a lead-owned state file exits 0 (JSON deny)"
 assert_contains "$OUT" "lead-owned" \
   "hs2: traversal-to-lead-owned denial names the invariant"
+
+# F026 round 1 review: the Edit/Write/MultiEdit legacy path (FILE_PATH,
+# handled entirely in bash before the Bash-command Python script ever
+# runs) has the SAME missing-traversal-resolution bug as normalize() did --
+# it strips the project-root prefix but never resolves ".."/"." segments,
+# and it is the MORE authoritative gate (Edit/Write tool calls, not the
+# best-effort Bash coverage). A teammate scoped to "src/parser/" could
+# traverse out via Edit even after the Bash-side fix (found by adversarial
+# review of PR #48).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(edit_json "$DIR_HS/src/parser/../other/y.py")")
+RC=$?
+assert_rc2 "$RC" "hs2: Edit with a '..'-traversal escaping scope is blocked (legacy exit 2)"
+assert_contains "$OUT" "src/other/y.py" \
+  "hs2: Edit traversal block message names the real, resolved out-of-scope file"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(edit_json "$DIR_HS/src/parser/../../.harness/features.json")")
+RC=$?
+assert_rc0 "$RC" "hs2: Edit with a '..'-traversal into a lead-owned file exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: Edit traversal-to-lead-owned denial uses JSON deny form"
+assert_contains "$OUT" "lead-owned" \
+  "hs2: Edit traversal-to-lead-owned denial names the invariant"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(edit_json "$DIR_HS/src/parser/sub/../ok.py")")
+RC=$?
+assert_rc0 "$RC" "hs2: Edit with a '..'-traversal that resolves back in-scope passes, rc 0"
 
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do

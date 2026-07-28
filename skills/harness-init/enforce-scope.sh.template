@@ -78,12 +78,32 @@ PYEOF
     exit 0
 }
 
-# Extract file path (Edit/Write/MultiEdit) and command (Bash) from tool input
+# Extract file path (Edit/Write/MultiEdit) and command (Bash) from tool input.
+# FILE_PATH is normalized here (project-root prefix stripped, then "."/".."
+# segments resolved) rather than with plain bash substring stripping, so a
+# traversal that escapes scope (`src/parser/../other/y.py`) or reaches a
+# lead-owned file (`src/parser/../../.harness/features.json`) can't survive
+# as a string that merely STARTS WITH the allowed prefix or fails the
+# lead-owned exact-match -- this is the SAME bug normalize() (used by the
+# Bash-command path below) had, in the MORE authoritative gate (Edit/Write/
+# MultiEdit tool calls are blocked outright; Bash coverage is only best-
+# effort). A trailing "/" is restored if the pre-resolve path had one, for
+# the same directory-style scope-pattern reason normalize() restores it
+# (found by adversarial review of PR #48, F026 round 1).
 FILE_PATH=$(echo "$INPUT" | python3 -c "
-import json, sys
+import json, os, sys
 data = json.load(sys.stdin)
-print(data.get('tool_input', {}).get('file_path', ''))
-" 2>/dev/null)
+path = data.get('tool_input', {}).get('file_path', '')
+project_root = sys.argv[1]
+if path:
+    if path.startswith(project_root + '/'):
+        path = path[len(project_root) + 1:]
+    resolved = os.path.normpath(path)
+    if path.endswith('/') and not resolved.endswith('/'):
+        resolved += '/'
+    path = resolved
+print(path)
+" "$PROJECT_ROOT" 2>/dev/null)
 
 COMMAND=$(echo "$INPUT" | python3 -c "
 import json, sys
@@ -92,12 +112,6 @@ print(data.get('tool_input', {}).get('command', ''))
 " 2>/dev/null)
 
 if [ -n "$FILE_PATH" ]; then
-    # Normalize absolute paths to relative (tool input uses absolute paths,
-    # scope patterns use relative paths like "src/auth/")
-    if [[ "$FILE_PATH" == "$PROJECT_ROOT/"* ]]; then
-        FILE_PATH="${FILE_PATH#$PROJECT_ROOT/}"
-    fi
-
     case "$FILE_PATH" in
         .harness/features.json|.harness/context_summary.md|.harness/claude-progress.txt)
             deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION"
@@ -466,7 +480,24 @@ def normalize(path, project_root):
     # DIR/` destination) rely on for prefix matching -- restored if the
     # pre-normalize path had one, so a destination that IS a scope
     # directory (e.g. "src/parser/") still compares equal to the pattern
-    # itself, not just its own strict subdirectories.
+    # itself, not just its own strict subdirectories. os.path.normpath is
+    # purely lexical (string manipulation only, no filesystem access) --
+    # if a scope directory contains a symlink, a target that traverses
+    # THROUGH it (e.g. "src/allowed/link/../escape.txt" where "link" points
+    # outside "src/allowed/") resolves lexically to "src/allowed/escape.txt"
+    # (in scope) while the real write, after the kernel follows the
+    # symlink, lands somewhere else entirely. Accepted: this hook has no
+    # filesystem access either (it only ever sees the command string), so
+    # resolving symlinks would need to run in a live checkout and still
+    # couldn't know what the symlink pointed to WHEN the write actually
+    # happens; not a regression versus the pre-F026 behavior, which had no
+    # traversal resolution at all (found by adversarial review of PR #48,
+    # round 1). Same for a backslash-escaped traversal segment
+    # (`src/allowed/\../forbidden/x.txt`): unquote_token() strips quote
+    # characters, never shell backslash-escapes, so `\..` still reads as a
+    # literal directory name, not `..` -- pre-existing, tracked separately
+    # (F031), same "not a full shell parser" posture as this hook's other
+    # documented residuals.
     if path.startswith(project_root + "/"):
         path = path[len(project_root) + 1:]
     resolved = os.path.normpath(path)
