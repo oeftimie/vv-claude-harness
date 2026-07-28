@@ -806,19 +806,21 @@
       "id": "F024",
       "description": "skills/harness-init/enforce-scope.sh.template's write_target()/redirect_target() only ever return the LAST write target found in a segment (a `>>?\\s*(...)` regex match via findall()[-1], or the last flagless token for tee/cp/mv/rm/sed -i). A command with MULTIPLE real write targets in one segment is checked only against its last target: `rm src/forbidden/a.txt src/allowed/b.txt` (verified: both files really deleted, only the last is scope-checked), `tee file1 file2` or `sed -i` given two files (same masking), all wrongly ALLOWED when the first target is out-of-scope and the last is in-scope. Separately, `cp -t DIR src...`/`mv -t DIR src...` (GNU-only; not present on BSD/macOS cp) put the real destination in a flag argument, which write_target() doesn't look for at all -- an out-of-scope -t destination is never checked. Neither shape is compound/quoted/subshell/heredoc, so the header's existing evadable-by-construction disclaimer doesn't cover them; they're a distinct residual, now documented in the header but not fixed.",
       "priority": 13,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 591/591 is the gate)",
       "notes": "Discovered by F023's round-1 reviewer while adversarially probing the missing-separator fix; explicitly flagged as pre-existing and not introduced by that PR, so not fixed there. Fixing likely requires write_target() to return ALL targets in a segment (checking each against scope, not just the last), plus recognizing -t/--target-directory as a destination-bearing flag for cp/mv.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Rewrote write_target()->write_targets() (plural) to return EVERY real write target in a segment rather than just one: redirect_targets() now returns all >/>> matches (not matches[-1]); rm/tee use all_flagless_tokens() (all non-flag tokens, not last_flagless_token()); cp_mv_targets() adds -t/--target-directory= recognition (destination is the flag's value, every OTHER flagless argument is a source, read not written) while falling back to the existing last-flagless-token behavior when neither form is present (cp/mv without -t only ever write to their destination argument, never their sources, so multi-target checking doesn't apply there); sed_inplace_targets() treats every flagless token AFTER the first as a file target (the first is the sed script/expression, not a file). main() now iterates every segment's every target instead of one. TDD: wrote 12 assertions first (3 multi-target-masking cases, 3 cp/mv -t recognition cases, 2 no-new-false-positive cases, 1 plain cp/mv destination-only regression check), confirmed all fail against the pre-fix code. Implementing the naive 'return all matches/tokens' version introduced 2 of its own regressions, caught by the EXISTING test suite, not new tests: (1) redirect_targets() matching every raw '>' in the segment text treated a '>' INSIDE a quoted string (echo \"a => b\" > file) as a second, fake redirect -- fixed by matching against a quote-MASKED copy (mask_quotes) to find real operator positions, then slicing the target text from the ORIGINAL segment at those same positions, so a legitimately quoted target's real text still comes through. (2) sed_inplace_targets() returning ALL flagless tokens wrongly included the sed SCRIPT argument itself as a 'target' -- fixed by skipping the first flagless token (documented residual: multiple -e expressions, whose own values are also flagless tokens, aren't specially recognized; only the common single-script form is covered). Removed the now-unused WRITE_COMMANDS constant. Mutation-tested all 3 fixes independently (multi-target rm/tee, cp/mv -t recognition, sed script-skip): each reverts to exactly its own expected failure set. Full suite: 591/591 (up from 566), no regressions."
+      ],
       "failure_reason": null,
       "discovered_via": "F023",
       "spec": null
