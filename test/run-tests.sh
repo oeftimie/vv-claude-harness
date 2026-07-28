@@ -1465,6 +1465,39 @@ assert_rc0 "$RC" "hs2: all-in-scope tee-plus-redirect passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: all-in-scope tee-plus-redirect has no deny fields"
 
+# F024 round 2 review: strip_redirects()'s >>?\s*[^\s<>|&;]+ regex removed
+# the operator and its target but not a preceding file-descriptor digit
+# (2>, 1>), leaving a stray digit token that the command extractors (which
+# now always run, per round 1's fix) misread as a real write target -- an
+# all-in-scope command was wrongly denied naming the bare digit.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/parser/a.txt 2> src/parser/err.log')")
+RC=$?
+assert_rc0 "$RC" "hs2: fd-prefixed redirect (space form) with all in-scope targets passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: fd-prefixed redirect (space form) does not leave a stray digit target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/parser/b.txt 2>/dev/null')")
+RC=$?
+assert_rc0 "$RC" "hs2: fd-prefixed redirect (no-space form) does not deny on the bare digit"
+assert_not_contains "$OUT" "'2'" \
+  "hs2: fd-prefixed redirect (no-space form) never names a bare digit as the target"
+
+# Caution (per review): a naive digit-prefix strip must NOT truncate a real
+# argument that merely ENDS in a digit immediately before an unprefixed
+# redirect operator, no separating space (no fd semantics at all here --
+# "src/parser/version2" is one whole word, not "just digits", so per real
+# bash it is NOT an fd number; `echo abc2> out` writes "abc2", not "abc").
+# The fd-prefix rule only applies when the digit run is its OWN complete
+# token (whitespace or start-of-segment immediately before it).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/parser/version2 2> src/parser/err.log')")
+RC=$?
+assert_rc0 "$RC" "hs2: a real in-scope target ending in a digit, plus a real fd-redirect, passes"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: the digit at the end of a real filename is not mistaken for an fd prefix"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then

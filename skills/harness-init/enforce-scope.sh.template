@@ -341,7 +341,16 @@ def sed_inplace_targets(tokens):
     # place, but a script provided this way means there is no POSITIONAL
     # script argument to skip either -- has_explicit_script tracks that so
     # the first real file isn't mistaken for an implicit script and dropped
-    # (found by adversarial review of PR #46).
+    # (found by adversarial review of PR #46). Documented residual: a bare
+    # "-i" followed by a NON-empty separate backup-suffix token (`sed -i
+    # '.bak' 's/a/b/' file`, as opposed to the far more common attached
+    # form `-i.bak` or the empty-suffix form `-i ''`) is not recognized --
+    # that token is misread as the implicit script, denying an in-scope
+    # command. Not fixed: EMPTY_STRING_TOKENS only matches a token that IS
+    # (quoted) emptiness, and widening it to "any token after a bare -i"
+    # would reintroduce the exact ambiguity this function exists to resolve
+    # (GNU's bare "-i" never takes a following value at all) (found by
+    # adversarial review of PR #46, round 2).
     if not tokens or tokens[0] != "sed":
         return []
     args = tokens[1:]
@@ -377,15 +386,27 @@ def sed_inplace_targets(tokens):
 
 
 def strip_redirects(segment):
-    # Removes every real (mask-aware) >/>> operator and its target from the
-    # segment, leaving only the command and its own arguments -- so cp/mv/
-    # tee/rm/sed-i target extraction below doesn't misread a trailing
-    # redirect's operator or target as one of the COMMAND's OWN arguments
-    # (found by adversarial review of PR #46).
+    # Removes every real (mask-aware) >/>> operator, its OPTIONAL leading
+    # file-descriptor digits, and its target from the segment, leaving only
+    # the command and its own arguments -- so cp/mv/tee/rm/sed-i target
+    # extraction below doesn't misread a trailing redirect's operator or
+    # target as one of the COMMAND's OWN arguments (found by adversarial
+    # review of PR #46, round 1). The fd digits (`2>`, `1>`) are matched
+    # ONLY when they form a complete token of their own (whitespace or
+    # start-of-segment immediately before them) -- a real bash fd prefix is
+    # a word consisting ENTIRELY of digits, so a real argument that merely
+    # ENDS in a digit right before an unprefixed redirect (`file2> out`,
+    # where "file2" is one whole word) must not have that trailing digit
+    # mistaken for an fd number and stripped off with it: `echo abc2> out`
+    # writes "abc2" in real bash, not "abc" (found by adversarial review of
+    # PR #46, round 2 -- an earlier version's `>>?\s*[^\s<>|&;]+` pattern
+    # left a bare digit token behind whenever the redirect had an explicit
+    # fd prefix, which the command extractors then misread as a real write
+    # target).
     masked = mask_quotes(segment)
     kept = []
     last = 0
-    for m in re.finditer(r">>?\s*[^\s<>|&;]+", masked):
+    for m in re.finditer(r"(?:^|(?<=\s))\d*>>?\s*[^\s<>|&;]+", masked):
         kept.append(segment[last:m.start()])
         last = m.end()
     kept.append(segment[last:])
