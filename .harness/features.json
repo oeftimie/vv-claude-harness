@@ -858,19 +858,21 @@
       "id": "F026",
       "description": "skills/harness-init/enforce-scope.sh.template's normalize() strips the project-root prefix from a target path but never resolves '..' path traversal, so a write target that leaves an allowed directory via traversal still matches the allowed prefix via a bare .startswith() check. CONFIRMED: with scope 'src/allowed/', `echo x > src/allowed/../forbidden/x.txt` writes to src/forbidden/x.txt in real bash (verified) but was ALLOWED even before F023 (pre-existing on main, not introduced by F023/PR #42). unquote_token (added to fix F023's round-2 quote-erasure bug) means two MORE spellings now reach the same pre-existing gap: `echo x > \"src/allowed/\"../forbidden/x.txt` and `echo x > \"src/allowed/../forbidden/x.txt\"` were incidentally denied on main (only because the un-stripped quote characters broke the .startswith() match, not because traversal was detected), and now reach the same ALLOW as the unquoted form once quotes are correctly stripped from the extracted target. Same family as F024 (multi-target masking) and F025 (commit-gate.sh quoted-token erasure) -- rated above F024 in severity since '..' is the classic scope-escape primitive and needs no multi-target trick, just an ordinary-looking relative path.",
       "priority": 10,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 640/640 is the gate)",
       "notes": "Discovered by F023's round-3 (final) reviewer while confirming the quote-erasure fix; explicitly framed as pre-existing on main (not a regression from F023/PR #42) and not a blocker to that PR's approval. Likely fix: normalize() should resolve '..'/'.' segments (e.g. via os.path.normpath on the target joined to project_root, then re-deriving the relative path) before the scope-prefix comparison, so a traversal that escapes the allowed directory is caught regardless of how the path was spelled or quoted.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Fixed normalize() to resolve '.'/'..' segments via os.path.normpath after stripping the project-root prefix, so a write target that escapes an allowed directory via traversal no longer merely STARTS WITH the allowed prefix string -- both the scope-prefix check and the lead-owned exact-match check read the same normalize() output, so one fix closes both. A path resolving outside the project entirely (more '..' than real leading segments) is left with a leading '..' by normpath, which correctly never matches any scope pattern, so no special-case handling was needed for that case. Implementing the naive fix (bare os.path.normpath, nothing else) introduced its own regression, caught by 3 EXISTING (pre-F026) tests, not new ones: normpath strips a trailing '/', which this hook's directory-style scope patterns and a `cp -t DIR/` destination rely on for exact-directory-match comparisons -- an in-scope `cp -t src/parser/ ...` (destination IS the scope directory itself) was wrongly denied once the trailing slash disappeared. Fixed by restoring a trailing slash when the pre-normalize path had one. TDD: wrote 6 new assertions first (3 denial cases: unquoted/quoted-prefix/fully-quoted traversal, identical scope-escape target; 2 no-false-positive cases: a traversal that resolves back in-scope, a redundant './'; 1 traversal into a lead-owned file), confirmed all 5 discriminating ones fail against the pre-fix code (the resolves-in-scope case already passed, since it doesn't involve any bug). Mutation-tested both the traversal-resolution fix and the trailing-slash preservation fix independently -- each reverts to exactly its own expected failure set (5 assertions for traversal-resolution, the 3 pre-existing cp -t assertions for trailing-slash). Full suite: 640/640 (up from 627), no regressions."
+      ],
       "failure_reason": null,
       "discovered_via": "F023",
       "spec": null
