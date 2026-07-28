@@ -7,12 +7,14 @@ This file is referenced in CLAUDE.md and loaded every session.
 - F011/OVI-64 shipped: PR #40 merged @ 07ba2e4 after 6 adversarial review rounds (unusually many, warranted by risk=ELEVATED); Linear OVI-64 Done.
 - F023 shipped: PR #42 merged @ 1e8e30f after 3 adversarial review rounds, fixing enforce-scope.sh.template's missing-separator masking bug.
 - F025 shipped: PR #44 merged @ 647eeb8 after 2 adversarial review rounds, fixing commit-gate.sh.template's quoted-subcommand-token bypass (the same strip_quotes-erasure root cause as F023, but in this hook it disabled the ENTIRE secret scan, not just one masked write target -- was a live bypass of shipped security infrastructure, not a pending change). Neither F023 nor F025 is tied to a Linear issue (locally discovered bugs, matching F022's precedent).
-- Four features remain open, all discovered during F023's/F025's own review cycles (a recurring chain: fixing one hook's bug surfaces the same class in a sibling or already-shipped hook, or a narrower pre-existing gap in the same function):
-  - F024 (priority 13, pending): enforce-scope.sh's write_target()/redirect_target() only ever return the LAST target in a segment, so multi-target writes (`rm a b`, `tee`/`sed -i` given 2 files) mask an out-of-scope earlier target; `cp -t`/`mv -t` destinations aren't recognized at all.
+- F024 shipped: PR #46 merged @ ce8dcc8 after 4 adversarial review rounds -- the longest cycle since F011's original 6, all self-contained within this one feature (unlike F011/F023/F025's fixes-across-PRs pattern). Fixed enforce-scope.sh's multi-target masking (write_target -> write_targets, checking every real target in a segment) plus cp -t/mv -t destination recognition. Rounds 1-3 each found the previous round's fix breaking a new untested dimension (sed script-vs-file ambiguity across 3 shapes; a cross-extractor redirect-vs-command masking gap; an fd-digit-leftover regression; an over-anchored fix to THAT regression); round 4 was the first negative result (no new regression), confirmed APPROVE.
+- Three features remain open, all discovered during review cycles (a recurring chain: fixing one hook's bug surfaces the same class in a sibling or already-shipped hook, or a narrower pre-existing gap in the same function). F024/F025's own reviews added F027/F029/F030 to the pile:
   - F026 (priority 10, pending): enforce-scope.sh's normalize() never resolves ".." path traversal; a scope-escaping write via `../` was already allowed on main before F023, and F023's quote-erasure fix (unquote_token) incidentally exposed 2 more spellings of the same pre-existing gap.
   - F027 (priority 11, pending): commit-gate.sh's has_staging_flag() doesn't know a space-separated `-m`'s VALUE (as opposed to an attached one like `-mfix`) is a value, not a token to interpret -- surfaces as 3 shapes on the same root cause: a pre-existing false-negative (`git commit -m -- -a` wrongly allows on main and after F025 alike), a narrowed false-negative F025 introduced on one exact input shape (`git commit -m "--" -a`), and a false-positive F025 introduced on the mirror shape (`git commit -m "-a"` now wrongly denies a message that's ordinarily just text, verified against real git: nothing extra gets staged). One fix (skip -m's space-separated value token) should close all three together.
   - F028 (priority 14, pending, low severity): enforce-scope.sh's redirect_target() truncates a quoted path at its first internal space (`echo x > "my file.txt"` extracts target 'my'); not currently exploitable (the only exact-match comparison, LEAD_OWNED, has no space-containing entries) but would become a real fail-open if one were ever added.
-- Next up: any of F024/F026/F027/F028 (all now well-scoped, none urgent-severity), or F012 ([OVI-53] portable readiness-stamp signing). Also still deferred: refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates.
+  - F029 (priority 15, pending): enforce-scope.sh's all_flagless_tokens() doesn't recognize "--" as a pathspec separator the way commit-gate.sh does; `rm -- -a.txt` (a real filename) is misread and the command is wrongly allowed with no target detected at all.
+  - F030 (priority 16, pending): enforce-scope.sh denies any command containing `2>/dev/null` or `2>&1` (both extremely common idioms) as an out-of-scope write, since neither matches a scope pattern and there's no special-case exemption; confirmed pre-existing on main, unrelated to F024/F025.
+- Next up: F026, F027, F028, F029, or F030 (all well-scoped, none urgent), or F012 ([OVI-53] portable readiness-stamp signing). Also still deferred: refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates.
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -686,3 +688,51 @@ This file is referenced in CLAUDE.md and loaded every session.
   rounds was enough to converge here specifically because round 2 found
   nothing new IN THE CODE and only a documentation error, which is the same
   "negative result" signal that ended F011's and F023's longer cycles.
+
+## Meta-Session 2026-07-28 (F024/enforce-scope.sh multi-target masking fix)
+- Scope accuracy: scope held (2 files), but review again fanned out via
+  discovery: F029 (a -- pathspec gap in the exact function being rewritten)
+  and F030 (a pre-existing /dev/null and 2>&1 denial issue) both surfaced.
+  Now 6 open features (F026-F030) tracing back to the F011/F023/F025 chain,
+  all in the same 2-hook family (enforce-scope.sh, commit-gate.sh).
+- Model calibration: single-session; correction_cycles 3 (4 review rounds,
+  the longest single-PR cycle since F011's original 6, and the first one
+  in this whole chain where every regression was found and fixed WITHIN
+  one PR rather than spilling into a follow-up PR). Round 1 found the
+  initial fix's sed script-detection heuristic broke on 3 real shapes
+  (BSD `-i ''`, multi `-e`, long-form `--expression=`/`--file=`) plus a
+  cross-extractor masking gap (a real write command with an unrelated
+  trailing redirect only had the redirect checked). Round 2 found the
+  round-1 fix for the redirect-stripping side left a stray file-descriptor
+  digit behind, misread as a bogus write target. Round 3 found the round-2
+  fix over-corrected: anchoring the ENTIRE match (not just the optional
+  digit) to a token boundary broke plain `>` redirects with no digit at
+  all when glued directly to an argument with no space. Round 4 found
+  nothing new in the code -- only a test that couldn't actually
+  discriminate a truncating regex from a correct one, since it used an
+  all-in-scope target where both the correct and truncated names were
+  still in scope.
+- Discovery lineage: F029, F030 discovered_via F024, matching the by-now-
+  established pattern (F011 -> F023 -> {F024,F025,F026} -> F025's own
+  review -> {F027,F028} -> F024's own review -> {F029,F030}).
+- Approach patterns that worked, consistent with the whole chain's lessons:
+  (1) A reviewer's OWN suggested fix ("anchor the digit run") still needs
+  independent verification of exactly what gets anchored -- the fix's
+  DIRECTION was right but its SCOPE (whole match vs. just the digit group)
+  was wrong, and only surfaced by testing the fix against cases the
+  ORIGINAL bug report never covered (a bare, un-prefixed redirect glued to
+  an argument with no space). (2) When a reviewer flags a test as
+  "doesn't discriminate," the fix is to run the OLD (buggy) code against
+  the test and confirm it now fails for the right reason -- round 4's own
+  test-quality nit was verified by mutation-testing against the naive
+  regex before accepting the reviewer's diagnosis. (3) Building a small,
+  precise verification matrix (5-9 concrete before/after cases run through
+  the actual function directly, not just through the hook end-to-end) was
+  faster and more conclusive than reasoning about regex behavior
+  abstractly -- used in every round of this cycle.
+- Review value: this is now the THIRD feature in a row (F011, F023, F025,
+  F024) where the terminating signal was the same: a review round that
+  finds nothing new in the code, only in the test suite or documentation.
+  Worth treating as a general heuristic for this class of hook (regex/
+  token-pattern-based Bash-command scanners): don't stop at "looks right,"
+  stop at "a dedicated adversarial round found nothing new to fix."
