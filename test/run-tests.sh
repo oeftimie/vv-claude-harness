@@ -1487,19 +1487,23 @@ assert_not_contains "$OUT" "permissionDecision" \
 # Caution (per review): a naive digit-prefix strip must NOT truncate a real
 # argument that merely ENDS in a digit immediately before an UNPREFIXED
 # redirect operator, with NO separating space -- no fd semantics at all here
-# ("src/parser/version2" is one whole word, not "just digits", so per real
+# ("src/other/version2" is one whole word, not "just digits", so per real
 # bash it is NOT an fd number; `echo abc2> out` writes "abc2", not "abc").
 # The fd-prefix rule only applies when the digit run is its OWN complete
-# token (whitespace or start-of-segment immediately before it); this case
-# specifically has NO space before ">", so the discriminating shape is
-# actually exercised (a version with a space before "2>" doesn't test this
-# at all, since the digit and the operator would then be separate tokens).
+# token (whitespace or start-of-segment immediately before it). Uses an
+# OUT-OF-SCOPE target specifically so truncation is observable in the
+# denial message: an all-in-scope version can't discriminate, since a
+# naively truncated "version" is still in scope right alongside the correct
+# "version2" (found by adversarial review of PR #46, round 4 -- the
+# round-3 version of this test used an all-in-scope target and could not
+# actually tell a truncating regex apart from a correct one).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm src/parser/version2> src/parser/err.log')")
+  "$(bash_command_json 'rm src/other/version2> src/parser/log.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: a real in-scope target ending in a digit, no-space unprefixed redirect, passes"
-assert_not_contains "$OUT" "permissionDecision" \
-  "hs2: the digit at the end of a real filename is not mistaken for an fd prefix"
+assert_rc0 "$RC" "hs2: an out-of-scope target ending in a digit, no-space unprefixed redirect, denies"
+assert_deny_json "$OUT" "hs2: out-of-scope digit-ending-target denial uses JSON deny form"
+assert_contains "$OUT" "src/other/version2" \
+  "hs2: the digit at the end of the real filename is not truncated off"
 
 # F024 round 3 review: anchoring the ENTIRE match (not just the optional
 # digit run) to a token boundary made a BARE ">" (no fd prefix at all) fail
