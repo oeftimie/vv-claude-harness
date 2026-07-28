@@ -1292,6 +1292,249 @@ assert_rc0 "$RC" "hs2: a quoted in-scope path containing a real '&' passes, rc 0
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: quoted in-scope '&' path has no deny fields"
 
+# F024: write_target()/redirect_target() only ever returned the LAST target
+# in a segment, so a command with multiple real write targets was checked
+# only against its last one -- an out-of-scope target earlier in the same
+# segment was never caught. Each case below has an out-of-scope target FIRST
+# and an in-scope target LAST, so the old "last match wins" logic would mask
+# the out-of-scope one.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/other/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: multi-target rm with an out-of-scope FIRST target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: multi-target rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: multi-target rm denial names the actual out-of-scope target, not masked"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'tee src/other/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: multi-target tee with an out-of-scope FIRST target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: multi-target tee denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: multi-target tee denial names the actual out-of-scope target, not masked"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -i s/a/b/ src/other/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: multi-target 'sed -i' with an out-of-scope FIRST target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: multi-target 'sed -i' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: multi-target 'sed -i' denial names the actual out-of-scope target, not masked"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/other/a.txt 2> src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: multiple redirects in one segment, out-of-scope FIRST, exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: multi-redirect denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: multi-redirect denial names the actual out-of-scope target, not masked"
+
+# cp -t DIR / mv -t DIR (and the --target-directory= form) put the real
+# destination in a flag argument, which the old write_target() didn't look
+# for at all -- an out-of-scope -t destination was never checked, even
+# though every source argument is only READ, never written.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp -t src/other/ src/parser/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'cp -t' out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: 'cp -t' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" "hs2: 'cp -t' denial names the destination, not a source"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv -t src/other/ src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'mv -t' out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: 'mv -t' denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --target-directory=src/other/ src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'cp --target-directory=' out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: 'cp --target-directory=' denial uses JSON deny form"
+
+# No new false positive: all-in-scope multi-target commands, and a -t
+# destination that IS in scope, must still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/parser/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: all-in-scope multi-target rm passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: all-in-scope multi-target rm has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'cp -t' with an in-scope destination passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: in-scope 'cp -t' has no deny fields"
+
+# Regression: normal cp/mv (no -t) must still check only the DESTINATION
+# (the last flagless argument), not the source arguments -- a source read
+# from outside scope is not a write and must not be denied.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/other/source.txt src/parser/dest.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: plain cp with an out-of-scope SOURCE and in-scope dest passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: plain cp only checks the destination, not the source"
+
+# F024 round 1 review: the sed script-skip fix (round-1 fix) broke the
+# macOS/BSD sed -i idiom, which REQUIRES a backup-suffix argument (commonly
+# the empty string): `sed -i '' 's/.../ ' file` is in-scope, ordinary work on
+# this repo's own platform, but the round-1 fix's "skip exactly one leading
+# flagless token" heuristic skipped the empty-string suffix and misread the
+# real script as the file target, denying legitimate work.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i '' 's/a/b/' src/parser/a.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2: BSD-style 'sed -i ''' with an in-scope target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: BSD-style 'sed -i ''' does not misread the script as the file"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i '' 's/a/b/' src/other/a.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2: BSD-style 'sed -i ''' with an out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: BSD-style 'sed -i ''' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: BSD-style 'sed -i ''' denial names the real file, not the script"
+
+# Multiple -e expressions: each one's value must be skipped, not misread as
+# a file target.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i -e 's/a/b/' -e 's/c/d/' src/parser/a.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2: multi -e 'sed -i' with an in-scope target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: multi -e 'sed -i' does not misread a later -e value as the file"
+
+# Long-form attached script flags (--expression=/--file=): the script never
+# appears as a separate flagless token at all, so there is no implicit
+# script token to skip -- the sole flagless token is the real file and must
+# not be dropped.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i --expression='s/a/b/' src/other/a.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2: 'sed -i --expression=' with an out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: 'sed -i --expression=' denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -i --file=script.sed src/other/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'sed -i --file=' with an out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: 'sed -i --file=' denial uses JSON deny form"
+
+# F024 round 1 review: write_targets() only checked ONE extractor category
+# per segment (redirect targets OR command-type targets, whichever fired
+# first), so a segment with BOTH a real write command and an unrelated
+# trailing redirect only ever had its redirect target checked -- the
+# command's own real target (out of scope) went uncaught, the exact
+# multi-target-masking shape F024 exists to close, just across extractor
+# categories instead of within one.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'tee src/other/a.txt > src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: tee target masked by a trailing redirect still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: tee-plus-redirect denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: tee-plus-redirect denial names the tee target, not just the redirect"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/other/a.txt > src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: rm target masked by a trailing redirect still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: rm-plus-redirect denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: rm-plus-redirect denial names the rm target, not just the redirect"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp -t src/other/ src/parser/a.txt > src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'cp -t' destination masked by a trailing redirect still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: 'cp -t'-plus-redirect denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" \
+  "hs2: 'cp -t'-plus-redirect denial names the -t destination, not just the redirect"
+
+# No new false positive: a write command plus an in-scope trailing redirect,
+# both in scope, must still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'tee src/parser/a.txt > src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: all-in-scope tee-plus-redirect passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: all-in-scope tee-plus-redirect has no deny fields"
+
+# F024 round 2 review: strip_redirects()'s >>?\s*[^\s<>|&;]+ regex removed
+# the operator and its target but not a preceding file-descriptor digit
+# (2>, 1>), leaving a stray digit token that the command extractors (which
+# now always run, per round 1's fix) misread as a real write target -- an
+# all-in-scope command was wrongly denied naming the bare digit.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/parser/a.txt 2> src/parser/err.log')")
+RC=$?
+assert_rc0 "$RC" "hs2: fd-prefixed redirect (space form) with all in-scope targets passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: fd-prefixed redirect (space form) does not leave a stray digit target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/parser/a.txt 2>src/parser/err.log')")
+RC=$?
+assert_rc0 "$RC" "hs2: fd-prefixed redirect (no-space form) with all in-scope targets passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: fd-prefixed redirect (no-space form) does not leave a stray digit target"
+
+# Caution (per review): a naive digit-prefix strip must NOT truncate a real
+# argument that merely ENDS in a digit immediately before an UNPREFIXED
+# redirect operator, with NO separating space -- no fd semantics at all here
+# ("src/other/version2" is one whole word, not "just digits", so per real
+# bash it is NOT an fd number; `echo abc2> out` writes "abc2", not "abc").
+# The fd-prefix rule only applies when the digit run is its OWN complete
+# token (whitespace or start-of-segment immediately before it). Uses an
+# OUT-OF-SCOPE target specifically so truncation is observable in the
+# denial message: an all-in-scope version can't discriminate, since a
+# naively truncated "version" is still in scope right alongside the correct
+# "version2" (found by adversarial review of PR #46, round 4 -- the
+# round-3 version of this test used an all-in-scope target and could not
+# actually tell a truncating regex apart from a correct one).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/other/version2> src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: an out-of-scope target ending in a digit, no-space unprefixed redirect, denies"
+assert_deny_json "$OUT" "hs2: out-of-scope digit-ending-target denial uses JSON deny form"
+assert_contains "$OUT" "src/other/version2" \
+  "hs2: the digit at the end of the real filename is not truncated off"
+
+# F024 round 3 review: anchoring the ENTIRE match (not just the optional
+# digit run) to a token boundary made a BARE ">" (no fd prefix at all) fail
+# to match unless it was ALSO preceded by whitespace -- so a redirect glued
+# directly onto a cp/mv destination with no separating space
+# (`cp a b> log`) was never stripped, and cp/mv's destination detection fell
+# through to the unstripped trailing text, picking the redirect's own target
+# instead of the real destination -- reintroducing F024's own masking bug.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/other/b.txt> src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: cp with a no-space '>' glued to an out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: cp no-space-'>' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/b.txt" \
+  "hs2: cp no-space-'>' denial names the real destination, not the redirect's target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv src/parser/a.txt src/other/b.txt> src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: mv with a no-space '>' glued to an out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: mv no-space-'>' denial uses JSON deny form"
+
+# No new false positive: the same no-space-'>' shape, all in scope, must
+# still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/parser/b.txt> src/parser/log.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: all-in-scope cp with a no-space '>' passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: all-in-scope cp no-space-'>' has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then

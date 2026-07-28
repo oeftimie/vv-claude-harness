@@ -17,20 +17,34 @@
 # Straightforward single/double/ANSI-C quoting of a separator or a write target is
 # handled (see mask_quotes()/unquote_token()); nested or otherwise unusual quoting
 # is not attempted. Known false-positive residual: redirect-target extraction
-# takes the LAST >/>> on the line, so a bare comparison like [[ "$v" > "1.0" ]]
+# matches every >/>> on the line, so a bare comparison like [[ "$v" > "1.0" ]]
 # (no real redirect) can still be mistaken for one even with quotes correctly
 # preserved and stripped from the captured group -- the regex has no way to tell
 # a real redirect from a test-bracket comparison operator; distinguishing them
-# would need real shell parsing, judged disproportionate for this hook.
-# Known false-negative residual (pre-existing, not introduced by the F023
-# separator fix): write_target()/redirect_target() only ever return the LAST
-# target in a segment, so a command with multiple real write targets in one
-# segment (`rm src/forbidden/a.txt src/allowed/b.txt`, `tee` or `sed -i` given
-# two files) is checked only against its last target -- an out-of-scope
-# target earlier in the same segment is not caught. `cp -t DIR`/`mv -t DIR`
-# (GNU-only; not present on BSD/macOS cp) put the real destination in a flag
-# argument, which write_target() doesn't look for either. Tracked as F024
-# (found by adversarial review of PR #42, F023 round 1); out of scope here.
+# would need real shell parsing, judged disproportionate for this hook. Since
+# write_targets() now checks every target it finds (F024) and denies on the
+# FIRST out-of-scope one, a bogus match like this can deny a command before a
+# real, later, genuinely in-scope redirect is ever reached -- broader than
+# when only the last match was checked, but still the same underlying
+# trade-off, not a new one.
+# write_targets()/redirect_targets() return EVERY write target in a segment,
+# not just one: a command with multiple real write targets (`rm a b`, `tee`
+# or `sed -i` given two files, multiple redirects like `> f1 2> f2`, or a
+# real write command followed by an unrelated trailing redirect like
+# `tee f1 > f2`) is checked against ALL of them, not just whichever one an
+# earlier version happened to find first -- an out-of-scope target elsewhere
+# in the segment went uncaught otherwise (found by adversarial review of PR
+# #42/F023 and PR #46, reported as F024). `cp -t DIR`/`-tDIR`/`mv -t DIR` and
+# `--target-directory=DIR` (GNU-only; not present on BSD/macOS cp) put the
+# real destination in a flag argument instead of the last positional one;
+# cp_mv_targets() recognizes all three forms, treating every other flagless
+# argument as a source (read, not written) once any is present -- clustered
+# short flags (`-rt DIR`, combining -r and -t) are not recognized, a
+# documented residual. `--` as a pathspec separator (e.g. `rm -- -a.txt`,
+# where -a.txt is a real filename, not a flag) is not recognized by
+# all_flagless_tokens() the way commit-gate.sh.template handles the same
+# shape -- a pre-existing asymmetry between the two hooks, tracked
+# separately (F029), not introduced by F024.
 # verified live 2026-07-24 on Claude Code 2.1.218
 
 # Read hook input from stdin
@@ -124,7 +138,6 @@ LEAD_OWNED = {
     ".harness/context_summary.md",
     ".harness/claude-progress.txt",
 }
-WRITE_COMMANDS = ("tee", "cp", "mv", "rm")
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
 
 
@@ -162,7 +175,7 @@ def join_continuations(command):
     # as soon as it started splitting on a literal newline -- without it, a
     # continued command like `sed \` + newline + `-i 's/a/b/' file` splits
     # into two fragments, neither of which alone carries the `-i` flag next
-    # to `sed`, so sed_inplace_target() never recognizes it (found by
+    # to `sed`, so sed_inplace_targets() never recognizes it (found by
     # adversarial review of PR #42, F023 round 1).
     def repl(m):
         backslashes = m.group(1)
@@ -218,19 +231,24 @@ def unquote_token(token):
 def segments_of(command):
     # Splits on shell control operators. An earlier version omitted a literal
     # newline and "&" (background execution, and the leading half of "|&"):
-    # without them, two separately-written commands glue into one segment,
-    # and redirect_target() below returns only the LAST >/>> match on that
-    # merged segment -- so an in-scope write later in the command masks an
-    # out-of-scope write earlier in it, and the whole thing is wrongly
-    # ALLOWED. The identical bug (missing newline) was found and fixed in
-    # commit-gate.sh.template (F011/OVI-64, round 3); this hook never got the
-    # same fix (found by adversarial review of PR #40, reported as F023).
-    # Adding the newline split required join_continuations() as a
-    # prerequisite, exactly as it did in commit-gate.sh (found by
-    # adversarial review of PR #42, F023 round 1). Split positions are found
-    # in a quote-MASKED copy (see mask_quotes) but sliced from the ORIGINAL,
-    # still-quoted text, so a segment's real write target survives intact
-    # for write_target()/redirect_target() to extract -- deleting quotes
+    # without them, two separately-written commands glue into one segment.
+    # At the time this was fixed, write_target()/redirect_target() (singular)
+    # only ever checked the LAST target found across the whole (possibly
+    # merged) segment, so an in-scope write later in the command masked an
+    # out-of-scope write earlier in it. write_targets()/redirect_targets()
+    # (plural, F024) now check every target in a segment, which independently
+    # bounds that specific consequence, but correct segmentation still
+    # matters for its own sake (a target belongs to a specific logical
+    # command, not an accidental merge of two). The identical missing-
+    # newline bug was found and fixed in commit-gate.sh.template (F011/
+    # OVI-64, round 3); this hook never got the same fix (found by
+    # adversarial review of PR #40, reported as F023). Adding the newline
+    # split required join_continuations() as a prerequisite, exactly as it
+    # did in commit-gate.sh (found by adversarial review of PR #42, F023
+    # round 1). Split positions are found in a quote-MASKED copy (see
+    # mask_quotes) but sliced from the ORIGINAL, still-quoted text, so a
+    # segment's real write target survives intact for
+    # write_targets()/redirect_targets() to extract -- deleting quotes
     # outright (as round 1's first attempt did) erased the target whenever
     # it was quoted, a much bigger bypass than the one being fixed (found by
     # adversarial review of PR #42, F023 round 2).
@@ -253,34 +271,181 @@ def last_flagless_token(tokens):
     return None
 
 
-def redirect_target(segment):
-    # Finds the token after the LAST >/>> on the line (an earlier one may be inside
-    # a quoted string, e.g. echo "a => b" > file -- the real redirect is the last
-    # occurrence), regardless of other operators (e.g. <<EOF) on the same line, so a
-    # heredoc-into-redirect line is still caught.
-    matches = re.findall(r">>?\s*([^\s<>|&;]+)", segment)
-    return matches[-1] if matches else None
+def all_flagless_tokens(tokens):
+    return [tok for tok in tokens if tok and not tok.startswith("-")]
 
 
-def sed_inplace_target(tokens):
+def redirect_targets(segment):
+    # Finds the token after EVERY REAL >/>> on the line, regardless of other
+    # operators (e.g. <<EOF) on the same line, so a heredoc-into-redirect
+    # line is still caught. An earlier version returned only the LAST match,
+    # so `echo x > out-of-scope 2> in-scope` in one segment checked only the
+    # in-scope target and masked the out-of-scope one -- found by
+    # adversarial review of PR #42/F023, reported as F024. Matching runs
+    # against a quote-MASKED copy (so a ">" INSIDE a quoted string, e.g.
+    # echo "a => b" > file, is masked to a NUL run and can't match) but each
+    # match's target text is sliced from the ORIGINAL segment at the same
+    # position, so a legitimately quoted target still returns its real
+    # (still-quoted) text for write_targets()/unquote_token() to normalize --
+    # matching directly against the unmasked segment, as an earlier version
+    # of the F024 fix did, treated every quoted ">" as a real redirect too.
+    masked = mask_quotes(segment)
+    return [
+        segment[m.start(1):m.end(1)]
+        for m in re.finditer(r">>?\s*([^\s<>|&;]+)", masked)
+    ]
+
+
+TARGET_DIRECTORY_FLAGS = ("-t", "--target-directory")
+
+
+def cp_mv_targets(tokens):
+    # cp/mv normally write to only the LAST flagless argument (the
+    # destination); every earlier flagless argument is a SOURCE, read not
+    # written. `-t DIR`/`-tDIR`/`--target-directory=DIR` name the destination
+    # explicitly instead, in which case EVERY flagless argument is a source
+    # and DIR is the sole write target -- an earlier version didn't look for
+    # any of these forms at all, so an out-of-scope -t destination was never
+    # checked (found by adversarial review of PR #42/F023, reported as
+    # F024). Clustered short flags (`-rt DIR`, -r and -t combined) are not
+    # recognized, a documented residual (see header).
+    for i, tok in enumerate(tokens):
+        if tok in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
+            return [tokens[i + 1]]
+        if tok.startswith("--target-directory="):
+            return [tok.split("=", 1)[1]]
+        if tok.startswith("-t") and not tok.startswith("--") and len(tok) > 2:
+            return [tok[2:]]
+    last = last_flagless_token(tokens)
+    return [last] if last else []
+
+
+SED_SCRIPT_VALUE_FLAGS = ("-e", "-f", "--expression", "--file")
+EMPTY_STRING_TOKENS = ("''", '""')
+
+
+def sed_inplace_targets(tokens):
+    # Walks sed's own arguments token by token (mirroring commit-gate.sh's
+    # segment_subcommand flag-walking loop) instead of assuming a fixed
+    # position is "the script": -e/-f/--expression/--file each consume
+    # their OWN following value as a script fragment, not a file (closing a
+    # false denial the first version had for `sed -i -e '...' -e '...'
+    # file`, since each -e's value is itself a flagless token); a bare "-i"
+    # immediately followed by an empty-quote token ("''"/'""') is the
+    # mandatory-backup-suffix BSD/macOS idiom (`sed -i '' 's/a/b/' file`) --
+    # that empty-suffix token is consumed too, never mistaken for the script
+    # or a file (the first version denied this ordinary, in-scope command on
+    # this repo's own platform). GNU's `--expression=value`/`--file=value`
+    # attached forms need no special skip logic: the value is part of the
+    # same token as the flag, so it's never a flagless token in the first
+    # place, but a script provided this way means there is no POSITIONAL
+    # script argument to skip either -- has_explicit_script tracks that so
+    # the first real file isn't mistaken for an implicit script and dropped
+    # (found by adversarial review of PR #46). Documented residual: a bare
+    # "-i" followed by a NON-empty separate backup-suffix token (`sed -i
+    # '.bak' 's/a/b/' file`, as opposed to the far more common attached
+    # form `-i.bak` or the empty-suffix form `-i ''`) is not recognized --
+    # that token is misread as the implicit script, denying an in-scope
+    # command. Not fixed: EMPTY_STRING_TOKENS only matches a token that IS
+    # (quoted) emptiness, and widening it to "any token after a bare -i"
+    # would reintroduce the exact ambiguity this function exists to resolve
+    # (GNU's bare "-i" never takes a following value at all) (found by
+    # adversarial review of PR #46, round 2).
     if not tokens or tokens[0] != "sed":
-        return None
-    if not any(t == "-i" or t.startswith("-i") or t == "--in-place" for t in tokens[1:]):
-        return None
-    return last_flagless_token(tokens[1:])
+        return []
+    args = tokens[1:]
+    if not any(t == "-i" or t.startswith("-i") or t == "--in-place" for t in args):
+        return []
+    has_explicit_script = any(
+        t in SED_SCRIPT_VALUE_FLAGS
+        or t.startswith("--expression=")
+        or t.startswith("--file=")
+        for t in args
+    )
+    targets = []
+    consumed_implicit_script = has_explicit_script
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        if tok in SED_SCRIPT_VALUE_FLAGS:
+            i += 2
+            continue
+        if tok == "-i" and i + 1 < len(args) and args[i + 1] in EMPTY_STRING_TOKENS:
+            i += 2
+            continue
+        if tok.startswith("-"):
+            i += 1
+            continue
+        if not consumed_implicit_script:
+            consumed_implicit_script = True
+            i += 1
+            continue
+        targets.append(tok)
+        i += 1
+    return targets
 
 
-def write_target(segment):
-    tokens = segment.split()
-    if not tokens:
-        return None
-    target = redirect_target(segment)
-    if not target:
-        if tokens[0] in WRITE_COMMANDS:
-            target = last_flagless_token(tokens[1:])
+def strip_redirects(segment):
+    # Removes every real (mask-aware) >/>> operator, its OPTIONAL leading
+    # file-descriptor digits, and its target from the segment, leaving only
+    # the command and its own arguments -- so cp/mv/tee/rm/sed-i target
+    # extraction below doesn't misread a trailing redirect's operator or
+    # target as one of the COMMAND's OWN arguments (found by adversarial
+    # review of PR #46, round 1). The fd digits (`2>`, `1>`) are matched
+    # ONLY when they form a complete token of their own (whitespace or
+    # start-of-segment immediately before them) -- a real bash fd prefix is
+    # a word consisting ENTIRELY of digits, so a real argument that merely
+    # ENDS in a digit right before an unprefixed redirect (`file2> out`,
+    # where "file2" is one whole word) must not have that trailing digit
+    # mistaken for an fd number and stripped off with it: `echo abc2> out`
+    # writes "abc2" in real bash, not "abc" (found by adversarial review of
+    # PR #46, round 2 -- an earlier version's `>>?\s*[^\s<>|&;]+` pattern
+    # left a bare digit token behind whenever the redirect had an explicit
+    # fd prefix, which the command extractors then misread as a real write
+    # target). ONLY the optional digit run is anchored to a token boundary
+    # (as its own capture-free group), not the whole match -- an earlier
+    # version of this fix anchored the ENTIRE match, which made a BARE ">"
+    # (no fd prefix at all) fail to match unless it was ALSO preceded by
+    # whitespace, so a real redirect glued directly onto the end of a
+    # command argument with no separating space (`cp a b> log`, real bash:
+    # this writes to "log" and reads/copies from "a"/"b") was never stripped
+    # at all -- cp/mv's own destination detection then fell through to the
+    # UNSTRIPPED trailing text and picked the redirect's own in-scope target
+    # instead of the real, possibly out-of-scope destination, reintroducing
+    # the exact masking bug F024 exists to close (found by adversarial
+    # review of PR #46, round 3).
+    masked = mask_quotes(segment)
+    kept = []
+    last = 0
+    for m in re.finditer(r"(?:(?:^|(?<=\s))\d+)?>>?\s*[^\s<>|&;]+", masked):
+        kept.append(segment[last:m.start()])
+        last = m.end()
+    kept.append(segment[last:])
+    return "".join(kept)
+
+
+def write_targets(segment):
+    # Returns EVERY real write target in a segment, not just one -- a command
+    # can write to multiple targets at once (`rm a b`, `tee f1 f2`, `sed -i`
+    # given multiple files, or multiple redirects on one line), and checking
+    # only one (an earlier version checked only the last) let an out-of-scope
+    # target earlier in the segment go unchecked (F024). Redirect targets and
+    # command-type targets (cp/mv/tee/rm/sed -i) are BOTH collected, not
+    # treated as alternatives -- an earlier version only checked command-type
+    # targets when the segment had NO redirect at all, so a real write
+    # command followed by an unrelated trailing redirect (`tee out-of-scope >
+    # in-scope-log`) only ever had the redirect's target checked, masking the
+    # command's own real target (found by adversarial review of PR #46).
+    targets = redirect_targets(segment)
+    command_tokens = strip_redirects(segment).split()
+    if command_tokens:
+        if command_tokens[0] in ("cp", "mv"):
+            targets = targets + cp_mv_targets(command_tokens[1:])
+        elif command_tokens[0] in ("tee", "rm"):
+            targets = targets + all_flagless_tokens(command_tokens[1:])
         else:
-            target = sed_inplace_target(tokens)
-    return unquote_token(target) if target else None
+            targets = targets + sed_inplace_targets(command_tokens)
+    return [unquote_token(t) for t in targets]
 
 
 def normalize(path, project_root):
@@ -294,20 +459,18 @@ def main():
     project_root = sys.argv[2]
     patterns = sys.argv[3:]
     for segment in segments_of(command):
-        target = write_target(segment)
-        if not target:
-            continue
-        norm = normalize(target, project_root)
-        if norm in LEAD_OWNED:
-            print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
-            return
-        if not any(norm.startswith(p) for p in patterns):
-            print(
-                f"Bash write to '{norm}' is outside your assigned scope "
-                f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
-                f"{ANNOTATION}"
-            )
-            return
+        for target in write_targets(segment):
+            norm = normalize(target, project_root)
+            if norm in LEAD_OWNED:
+                print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
+                return
+            if not any(norm.startswith(p) for p in patterns):
+                print(
+                    f"Bash write to '{norm}' is outside your assigned scope "
+                    f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
+                    f"{ANNOTATION}"
+                )
+                return
 
 
 main()
