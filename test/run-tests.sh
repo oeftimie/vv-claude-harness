@@ -1626,6 +1626,22 @@ OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
 RC=$?
 assert_rc0 "$RC" "hs2: Edit with a '..'-traversal that resolves back in-scope passes, rc 0"
 
+# F026 round 2 review: routing FILE_PATH's prefix-strip through Python's
+# literal str.startswith() (rather than the old bash `${FILE_PATH#$PROJECT_ROOT/}`,
+# which used UNQUOTED $PROJECT_ROOT in bash pattern-match position) fixed an
+# unadvertised pre-existing false positive: a project root whose path
+# contains a shell glob metacharacter (e.g. "[1]") broke the old bash
+# substring-stripping, wrongly blocking an in-scope edit. Locking it in with
+# a dedicated fixture whose path contains such a character.
+DIR_HS_GLOBROOT="$WORK/ht-scope-root[1]"
+make_fixture "$DIR_HS_GLOBROOT"
+install_hooks "$DIR_HS_GLOBROOT"
+printf 'src/parser/\n' > "$DIR_HS_GLOBROOT/.claude/teammate-scope.txt"
+OUT=$(run_hook "$DIR_HS_GLOBROOT" enforce-scope.sh \
+  "$(edit_json "$DIR_HS_GLOBROOT/src/parser/x.py")")
+RC=$?
+assert_rc0 "$RC" "hs2: an in-scope edit under a glob-metacharacter project root passes, rc 0"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then

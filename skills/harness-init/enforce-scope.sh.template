@@ -45,6 +45,13 @@
 # all_flagless_tokens() the way commit-gate.sh.template handles the same
 # shape -- a pre-existing asymmetry between the two hooks, tracked
 # separately (F029), not introduced by F024.
+# normalize()/FILE_PATH resolve "."/".." path traversal (F026), but two
+# related gaps remain, both documented in full where the relevant code
+# lives (normalize()'s own comment): the resolution is purely lexical, so
+# a symlink inside a scope directory can make the real write land
+# somewhere normpath can't see; and a backslash-escaped traversal segment
+# (`\..`) still bypasses, since unquote_token() only strips quote
+# characters, never shell backslash-escapes (tracked separately, F031).
 # verified live 2026-07-24 on Claude Code 2.1.218
 
 # Read hook input from stdin
@@ -87,9 +94,17 @@ PYEOF
 # lead-owned exact-match -- this is the SAME bug normalize() (used by the
 # Bash-command path below) had, in the MORE authoritative gate (Edit/Write/
 # MultiEdit tool calls are blocked outright; Bash coverage is only best-
-# effort). A trailing "/" is restored if the pre-resolve path had one, for
-# the same directory-style scope-pattern reason normalize() restores it
-# (found by adversarial review of PR #48, F026 round 1).
+# effort). Unlike normalize(), no trailing-"/" restore is needed here: an
+# Edit/Write/MultiEdit file_path is always a file, never a directory, so
+# there's no directory-style scope-pattern case to preserve -- confirmed
+# dead code by mutation-testing (removing it changed zero assertions),
+# consistent with this project's "no error handling for impossible states"
+# standard (found by adversarial review of PR #48, F026 round 2). Literal
+# `path.startswith(...)` (not a bash glob pattern) also means a project
+# root containing shell metacharacters (e.g. "root[1]") can't break this
+# the way the OLD bash-side `${FILE_PATH#$PROJECT_ROOT/}` could (unquoted
+# $PROJECT_ROOT in pattern position; a documented, unadvertised side
+# benefit found in the same round).
 FILE_PATH=$(echo "$INPUT" | python3 -c "
 import json, os, sys
 data = json.load(sys.stdin)
@@ -98,10 +113,7 @@ project_root = sys.argv[1]
 if path:
     if path.startswith(project_root + '/'):
         path = path[len(project_root) + 1:]
-    resolved = os.path.normpath(path)
-    if path.endswith('/') and not resolved.endswith('/'):
-        resolved += '/'
-    path = resolved
+    path = os.path.normpath(path)
 print(path)
 " "$PROJECT_ROOT" 2>/dev/null)
 
