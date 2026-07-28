@@ -45,6 +45,13 @@
 # all_flagless_tokens() the way commit-gate.sh.template handles the same
 # shape -- a pre-existing asymmetry between the two hooks, tracked
 # separately (F029), not introduced by F024.
+# normalize()/FILE_PATH resolve "."/".." path traversal (F026), but two
+# related gaps remain, both documented in full where the relevant code
+# lives (normalize()'s own comment): the resolution is purely lexical, so
+# a symlink inside a scope directory can make the real write land
+# somewhere normpath can't see; and a backslash-escaped traversal segment
+# (`\..`) still bypasses, since unquote_token() only strips quote
+# characters, never shell backslash-escapes (tracked separately, F031).
 # verified live 2026-07-24 on Claude Code 2.1.218
 
 # Read hook input from stdin
@@ -78,12 +85,37 @@ PYEOF
     exit 0
 }
 
-# Extract file path (Edit/Write/MultiEdit) and command (Bash) from tool input
+# Extract file path (Edit/Write/MultiEdit) and command (Bash) from tool input.
+# FILE_PATH is normalized here (project-root prefix stripped, then "."/".."
+# segments resolved) rather than with plain bash substring stripping, so a
+# traversal that escapes scope (`src/parser/../other/y.py`) or reaches a
+# lead-owned file (`src/parser/../../.harness/features.json`) can't survive
+# as a string that merely STARTS WITH the allowed prefix or fails the
+# lead-owned exact-match -- this is the SAME bug normalize() (used by the
+# Bash-command path below) had, in the MORE authoritative gate (Edit/Write/
+# MultiEdit tool calls are blocked outright; Bash coverage is only best-
+# effort). Unlike normalize(), no trailing-"/" restore is needed here: an
+# Edit/Write/MultiEdit file_path is always a file, never a directory, so
+# there's no directory-style scope-pattern case to preserve -- confirmed
+# dead code by mutation-testing (removing it changed zero assertions),
+# consistent with this project's "no error handling for impossible states"
+# standard (found by adversarial review of PR #48, F026 round 2). Literal
+# `path.startswith(...)` (not a bash glob pattern) also means a project
+# root containing shell metacharacters (e.g. "root[1]") can't break this
+# the way the OLD bash-side `${FILE_PATH#$PROJECT_ROOT/}` could (unquoted
+# $PROJECT_ROOT in pattern position; a documented, unadvertised side
+# benefit found in the same round).
 FILE_PATH=$(echo "$INPUT" | python3 -c "
-import json, sys
+import json, os, sys
 data = json.load(sys.stdin)
-print(data.get('tool_input', {}).get('file_path', ''))
-" 2>/dev/null)
+path = data.get('tool_input', {}).get('file_path', '')
+project_root = sys.argv[1]
+if path:
+    if path.startswith(project_root + '/'):
+        path = path[len(project_root) + 1:]
+    path = os.path.normpath(path)
+print(path)
+" "$PROJECT_ROOT" 2>/dev/null)
 
 COMMAND=$(echo "$INPUT" | python3 -c "
 import json, sys
@@ -92,12 +124,6 @@ print(data.get('tool_input', {}).get('command', ''))
 " 2>/dev/null)
 
 if [ -n "$FILE_PATH" ]; then
-    # Normalize absolute paths to relative (tool input uses absolute paths,
-    # scope patterns use relative paths like "src/auth/")
-    if [[ "$FILE_PATH" == "$PROJECT_ROOT/"* ]]; then
-        FILE_PATH="${FILE_PATH#$PROJECT_ROOT/}"
-    fi
-
     case "$FILE_PATH" in
         .harness/features.json|.harness/context_summary.md|.harness/claude-progress.txt)
             deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION"
@@ -130,6 +156,7 @@ if [ -n "$COMMAND" ]; then
     done < "$SCOPE_FILE"
 
     DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" "${SCOPE_PATTERNS[@]}" <<'PYEOF'
+import os
 import re
 import sys
 
@@ -449,9 +476,46 @@ def write_targets(segment):
 
 
 def normalize(path, project_root):
+    # Strips the project-root prefix, then resolves "."/".." segments so a
+    # write target that escapes an allowed directory via traversal
+    # (`src/allowed/../forbidden/x.txt`, which real bash resolves to
+    # src/forbidden/x.txt) no longer merely STARTS WITH the allowed prefix
+    # string -- an earlier version returned the path unresolved, so the
+    # scope-prefix check (a bare .startswith()) and the lead-owned exact-
+    # match check (both read this same return value) were both fooled by
+    # traversal. A path that resolves to something outside the project
+    # entirely (more ".." than real leading segments, e.g. "../../etc/x")
+    # is left with a leading ".." by os.path.normpath, which correctly
+    # never matches any scope pattern (found by adversarial review of PR
+    # #42/F023, reported as F026). os.path.normpath also strips a trailing
+    # "/", which this hook's directory-style scope patterns (and a `cp -t
+    # DIR/` destination) rely on for prefix matching -- restored if the
+    # pre-normalize path had one, so a destination that IS a scope
+    # directory (e.g. "src/parser/") still compares equal to the pattern
+    # itself, not just its own strict subdirectories. os.path.normpath is
+    # purely lexical (string manipulation only, no filesystem access) --
+    # if a scope directory contains a symlink, a target that traverses
+    # THROUGH it (e.g. "src/allowed/link/../escape.txt" where "link" points
+    # outside "src/allowed/") resolves lexically to "src/allowed/escape.txt"
+    # (in scope) while the real write, after the kernel follows the
+    # symlink, lands somewhere else entirely. Accepted: this hook has no
+    # filesystem access either (it only ever sees the command string), so
+    # resolving symlinks would need to run in a live checkout and still
+    # couldn't know what the symlink pointed to WHEN the write actually
+    # happens; not a regression versus the pre-F026 behavior, which had no
+    # traversal resolution at all (found by adversarial review of PR #48,
+    # round 1). Same for a backslash-escaped traversal segment
+    # (`src/allowed/\../forbidden/x.txt`): unquote_token() strips quote
+    # characters, never shell backslash-escapes, so `\..` still reads as a
+    # literal directory name, not `..` -- pre-existing, tracked separately
+    # (F031), same "not a full shell parser" posture as this hook's other
+    # documented residuals.
     if path.startswith(project_root + "/"):
         path = path[len(project_root) + 1:]
-    return path
+    resolved = os.path.normpath(path)
+    if path.endswith("/") and not resolved.endswith("/"):
+        resolved += "/"
+    return resolved
 
 
 def main():

@@ -1535,6 +1535,113 @@ assert_rc0 "$RC" "hs2: all-in-scope cp with a no-space '>' passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: all-in-scope cp no-space-'>' has no deny fields"
 
+# F026: normalize() strips the project-root prefix but never resolves ".."
+# path traversal, so a write target that escapes the allowed directory via
+# traversal still matches the allowed prefix under a bare .startswith()
+# check. Verified in real bash: `echo x > src/parser/../other/x.txt`
+# actually writes to src/other/x.txt, outside the "src/parser/" scope.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/../other/x.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a '..'-traversal escaping scope exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2: traversal denial names the real, resolved out-of-scope path"
+
+# The same gap under quoting (unquote_token, added by F023, means these
+# spellings now reach the traversal unresolved rather than being
+# incidentally denied by un-stripped quote characters). Asserts the
+# resolved path specifically, not just any deny -- without this, a fully
+# broken unquote_token could still deny (for the wrong reason: un-stripped
+# quote characters breaking the prefix match, the exact "incidentally
+# denied" confusion this comment describes) and the assertion wouldn't
+# notice (found by adversarial review of PR #48, round 1).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > "src/parser/"../other/x.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a quoted-prefix '..'-traversal exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: quoted-prefix traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2: quoted-prefix traversal denial names the real, resolved path"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > "src/parser/../other/x.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2: a fully-quoted '..'-traversal exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: fully-quoted traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2: fully-quoted traversal denial names the real, resolved path"
+
+# No new false positive: a "." or ".." segment that resolves back INSIDE
+# the allowed scope must still pass (e.g. a round-trip through a
+# subdirectory, or a redundant "./").
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/sub/../ok.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a '..'-traversal that resolves back in-scope passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: an in-scope-resolving traversal has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/./ok.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a redundant './' segment resolving in-scope passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: a redundant './' segment has no deny fields"
+
+# The lead-owned state-file guard must also resolve traversal, not just the
+# scope-prefix check -- both read the same normalize() output.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/../../.harness/features.json')")
+RC=$?
+assert_rc0 "$RC" "hs2: a '..'-traversal into a lead-owned state file exits 0 (JSON deny)"
+assert_contains "$OUT" "lead-owned" \
+  "hs2: traversal-to-lead-owned denial names the invariant"
+
+# F026 round 1 review: the Edit/Write/MultiEdit legacy path (FILE_PATH,
+# handled entirely in bash before the Bash-command Python script ever
+# runs) has the SAME missing-traversal-resolution bug as normalize() did --
+# it strips the project-root prefix but never resolves ".."/"." segments,
+# and it is the MORE authoritative gate (Edit/Write tool calls, not the
+# best-effort Bash coverage). A teammate scoped to "src/parser/" could
+# traverse out via Edit even after the Bash-side fix (found by adversarial
+# review of PR #48).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(edit_json "$DIR_HS/src/parser/../other/y.py")")
+RC=$?
+assert_rc2 "$RC" "hs2: Edit with a '..'-traversal escaping scope is blocked (legacy exit 2)"
+assert_contains "$OUT" "src/other/y.py" \
+  "hs2: Edit traversal block message names the real, resolved out-of-scope file"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(edit_json "$DIR_HS/src/parser/../../.harness/features.json")")
+RC=$?
+assert_rc0 "$RC" "hs2: Edit with a '..'-traversal into a lead-owned file exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: Edit traversal-to-lead-owned denial uses JSON deny form"
+assert_contains "$OUT" "lead-owned" \
+  "hs2: Edit traversal-to-lead-owned denial names the invariant"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(edit_json "$DIR_HS/src/parser/sub/../ok.py")")
+RC=$?
+assert_rc0 "$RC" "hs2: Edit with a '..'-traversal that resolves back in-scope passes, rc 0"
+
+# F026 round 2 review: routing FILE_PATH's prefix-strip through Python's
+# literal str.startswith() (rather than the old bash `${FILE_PATH#$PROJECT_ROOT/}`,
+# which used UNQUOTED $PROJECT_ROOT in bash pattern-match position) fixed an
+# unadvertised pre-existing false positive: a project root whose path
+# contains a shell glob metacharacter (e.g. "[1]") broke the old bash
+# substring-stripping, wrongly blocking an in-scope edit. Locking it in with
+# a dedicated fixture whose path contains such a character.
+DIR_HS_GLOBROOT="$WORK/ht-scope-root[1]"
+make_fixture "$DIR_HS_GLOBROOT"
+install_hooks "$DIR_HS_GLOBROOT"
+printf 'src/parser/\n' > "$DIR_HS_GLOBROOT/.claude/teammate-scope.txt"
+OUT=$(run_hook "$DIR_HS_GLOBROOT" enforce-scope.sh \
+  "$(edit_json "$DIR_HS_GLOBROOT/src/parser/x.py")")
+RC=$?
+assert_rc0 "$RC" "hs2: an in-scope edit under a glob-metacharacter project root passes, rc 0"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
