@@ -366,3 +366,28 @@
   ([OVI-53] portable readiness-stamp signing). Also still deferred: refresh
   live .claude/hooks/*.sh from F003/F008/F009/F010's fixed templates.
 - Blockers: none.
+
+## Session 14 - 2026-07-28 (F024/enforce-scope.sh shipped)
+- Feature: F024 - enforce-scope.sh.template multi-target masking fix
+- Status: complete, merged
+- Tests: 627/627 passing (full_test); no coverage tooling for this shell suite
+- Review: 4 adversarial rounds before APPROVE (details in context_summary.md's
+  Meta-Session entry) -- the longest single-PR cycle since F011's original 6,
+  but the first one in this chain fully self-contained within one PR. Round 1
+  found the sed script-detection heuristic broke on 3 real shapes (BSD
+  `-i ''`, multi `-e`, long-form `--expression=`/`--file=`) plus a cross-
+  extractor masking gap. Round 2 found a stray file-descriptor digit left
+  behind by the redirect-stripping fix, misread as a bogus target. Round 3
+  found the round-2 fix over-anchored (broke plain `>` with no digit glued
+  to an argument with no space). Round 4: no new code regression, only a
+  test-quality nit (fixed and mutation-verified), APPROVE.
+- Discovered: two more features filed during review, plus one finding
+  folded into an existing ticket:
+  - F029 (priority 15): enforce-scope.sh doesn't recognize "--" as a
+    pathspec separator the way commit-gate.sh does.
+  - F030 (priority 16): enforce-scope.sh denies `2>/dev/null` and `2>&1`
+    (both common idioms) as out-of-scope writes; confirmed pre-existing,
+    unrelated to F024/F025.
+- Merged: PR #46 @ ce8dcc8. Local main synced, feature branch deleted.
+- Next (per "take them in order"): F026, then F027, F028, F029, F030.
+- Blockers: none.
