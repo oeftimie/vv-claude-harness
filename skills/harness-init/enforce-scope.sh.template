@@ -17,20 +17,22 @@
 # Straightforward single/double/ANSI-C quoting of a separator or a write target is
 # handled (see mask_quotes()/unquote_token()); nested or otherwise unusual quoting
 # is not attempted. Known false-positive residual: redirect-target extraction
-# takes the LAST >/>> on the line, so a bare comparison like [[ "$v" > "1.0" ]]
+# matches every >/>> on the line, so a bare comparison like [[ "$v" > "1.0" ]]
 # (no real redirect) can still be mistaken for one even with quotes correctly
 # preserved and stripped from the captured group -- the regex has no way to tell
 # a real redirect from a test-bracket comparison operator; distinguishing them
 # would need real shell parsing, judged disproportionate for this hook.
-# Known false-negative residual (pre-existing, not introduced by the F023
-# separator fix): write_target()/redirect_target() only ever return the LAST
-# target in a segment, so a command with multiple real write targets in one
-# segment (`rm src/forbidden/a.txt src/allowed/b.txt`, `tee` or `sed -i` given
-# two files) is checked only against its last target -- an out-of-scope
-# target earlier in the same segment is not caught. `cp -t DIR`/`mv -t DIR`
-# (GNU-only; not present on BSD/macOS cp) put the real destination in a flag
-# argument, which write_target() doesn't look for either. Tracked as F024
-# (found by adversarial review of PR #42, F023 round 1); out of scope here.
+# write_targets()/redirect_targets() return EVERY write target in a segment,
+# not just one: a command with multiple real write targets (`rm a b`, `tee`
+# or `sed -i` given two files, multiple redirects like `> f1 2> f2`) is
+# checked against ALL of them, not just the last -- an earlier version
+# checked only the last, so an out-of-scope target earlier in the segment
+# went uncaught (found by adversarial review of PR #42/F023, reported as
+# F024). `cp -t DIR`/`mv -t DIR` and `--target-directory=DIR` (GNU-only; not
+# present on BSD/macOS cp) put the real destination in a flag argument
+# instead of the last positional one; cp_mv_targets() recognizes both forms,
+# treating every other flagless argument as a source (read, not written)
+# once either is present.
 # verified live 2026-07-24 on Claude Code 2.1.218
 
 # Read hook input from stdin
@@ -124,7 +126,6 @@ LEAD_OWNED = {
     ".harness/context_summary.md",
     ".harness/claude-progress.txt",
 }
-WRITE_COMMANDS = ("tee", "cp", "mv", "rm")
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
 
 
@@ -253,34 +254,83 @@ def last_flagless_token(tokens):
     return None
 
 
-def redirect_target(segment):
-    # Finds the token after the LAST >/>> on the line (an earlier one may be inside
-    # a quoted string, e.g. echo "a => b" > file -- the real redirect is the last
-    # occurrence), regardless of other operators (e.g. <<EOF) on the same line, so a
-    # heredoc-into-redirect line is still caught.
-    matches = re.findall(r">>?\s*([^\s<>|&;]+)", segment)
-    return matches[-1] if matches else None
+def all_flagless_tokens(tokens):
+    return [tok for tok in tokens if tok and not tok.startswith("-")]
 
 
-def sed_inplace_target(tokens):
+def redirect_targets(segment):
+    # Finds the token after EVERY REAL >/>> on the line, regardless of other
+    # operators (e.g. <<EOF) on the same line, so a heredoc-into-redirect
+    # line is still caught. An earlier version returned only the LAST match,
+    # so `echo x > out-of-scope 2> in-scope` in one segment checked only the
+    # in-scope target and masked the out-of-scope one -- found by
+    # adversarial review of PR #42/F023, reported as F024. Matching runs
+    # against a quote-MASKED copy (so a ">" INSIDE a quoted string, e.g.
+    # echo "a => b" > file, is masked to a NUL run and can't match) but each
+    # match's target text is sliced from the ORIGINAL segment at the same
+    # position, so a legitimately quoted target still returns its real
+    # (still-quoted) text for write_targets()/unquote_token() to normalize --
+    # matching directly against the unmasked segment, as an earlier version
+    # of the F024 fix did, treated every quoted ">" as a real redirect too.
+    masked = mask_quotes(segment)
+    return [
+        segment[m.start(1):m.end(1)]
+        for m in re.finditer(r">>?\s*([^\s<>|&;]+)", masked)
+    ]
+
+
+TARGET_DIRECTORY_FLAGS = ("-t", "--target-directory")
+
+
+def cp_mv_targets(tokens):
+    # cp/mv normally write to only the LAST flagless argument (the
+    # destination); every earlier flagless argument is a SOURCE, read not
+    # written. `-t DIR`/`--target-directory=DIR` names the destination
+    # explicitly instead, in which case EVERY flagless argument is a source
+    # and DIR is the sole write target -- an earlier version didn't look for
+    # either form at all, so an out-of-scope -t destination was never
+    # checked (found by adversarial review of PR #42/F023, reported as F024).
+    for i, tok in enumerate(tokens):
+        if tok in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
+            return [tokens[i + 1]]
+        if tok.startswith("--target-directory="):
+            return [tok.split("=", 1)[1]]
+    last = last_flagless_token(tokens)
+    return [last] if last else []
+
+
+def sed_inplace_targets(tokens):
+    # The first flagless argument after -i is the sed SCRIPT/expression
+    # (e.g. 's/a/b/'), not a file -- only flagless arguments AFTER it are
+    # real edit-in-place targets. Multiple -e expressions (whose own
+    # space-separated values are also flagless tokens) are not specially
+    # recognized; this heuristic only covers the common single-script form,
+    # consistent with this hook's pattern-based, not-a-full-parser posture.
     if not tokens or tokens[0] != "sed":
-        return None
+        return []
     if not any(t == "-i" or t.startswith("-i") or t == "--in-place" for t in tokens[1:]):
-        return None
-    return last_flagless_token(tokens[1:])
+        return []
+    return all_flagless_tokens(tokens[1:])[1:]
 
 
-def write_target(segment):
+def write_targets(segment):
+    # Returns EVERY real write target in a segment, not just one -- a command
+    # can write to multiple targets at once (`rm a b`, `tee f1 f2`, `sed -i`
+    # given multiple files, or multiple redirects on one line), and checking
+    # only one (an earlier version checked only the last) let an out-of-scope
+    # target earlier in the segment go unchecked (F024).
     tokens = segment.split()
     if not tokens:
-        return None
-    target = redirect_target(segment)
-    if not target:
-        if tokens[0] in WRITE_COMMANDS:
-            target = last_flagless_token(tokens[1:])
+        return []
+    targets = redirect_targets(segment)
+    if not targets:
+        if tokens[0] in ("cp", "mv"):
+            targets = cp_mv_targets(tokens[1:])
+        elif tokens[0] in ("tee", "rm"):
+            targets = all_flagless_tokens(tokens[1:])
         else:
-            target = sed_inplace_target(tokens)
-    return unquote_token(target) if target else None
+            targets = sed_inplace_targets(tokens)
+    return [unquote_token(t) for t in targets]
 
 
 def normalize(path, project_root):
@@ -294,20 +344,18 @@ def main():
     project_root = sys.argv[2]
     patterns = sys.argv[3:]
     for segment in segments_of(command):
-        target = write_target(segment)
-        if not target:
-            continue
-        norm = normalize(target, project_root)
-        if norm in LEAD_OWNED:
-            print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
-            return
-        if not any(norm.startswith(p) for p in patterns):
-            print(
-                f"Bash write to '{norm}' is outside your assigned scope "
-                f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
-                f"{ANNOTATION}"
-            )
-            return
+        for target in write_targets(segment):
+            norm = normalize(target, project_root)
+            if norm in LEAD_OWNED:
+                print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
+                return
+            if not any(norm.startswith(p) for p in patterns):
+                print(
+                    f"Bash write to '{norm}' is outside your assigned scope "
+                    f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
+                    f"{ANNOTATION}"
+                )
+                return
 
 
 main()

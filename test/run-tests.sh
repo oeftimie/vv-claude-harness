@@ -1292,6 +1292,93 @@ assert_rc0 "$RC" "hs2: a quoted in-scope path containing a real '&' passes, rc 0
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: quoted in-scope '&' path has no deny fields"
 
+# F024: write_target()/redirect_target() only ever returned the LAST target
+# in a segment, so a command with multiple real write targets was checked
+# only against its last one -- an out-of-scope target earlier in the same
+# segment was never caught. Each case below has an out-of-scope target FIRST
+# and an in-scope target LAST, so the old "last match wins" logic would mask
+# the out-of-scope one.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/other/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: multi-target rm with an out-of-scope FIRST target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: multi-target rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: multi-target rm denial names the actual out-of-scope target, not masked"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'tee src/other/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: multi-target tee with an out-of-scope FIRST target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: multi-target tee denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: multi-target tee denial names the actual out-of-scope target, not masked"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -i s/a/b/ src/other/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: multi-target 'sed -i' with an out-of-scope FIRST target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: multi-target 'sed -i' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: multi-target 'sed -i' denial names the actual out-of-scope target, not masked"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/other/a.txt 2> src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: multiple redirects in one segment, out-of-scope FIRST, exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: multi-redirect denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2: multi-redirect denial names the actual out-of-scope target, not masked"
+
+# cp -t DIR / mv -t DIR (and the --target-directory= form) put the real
+# destination in a flag argument, which the old write_target() didn't look
+# for at all -- an out-of-scope -t destination was never checked, even
+# though every source argument is only READ, never written.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp -t src/other/ src/parser/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'cp -t' out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: 'cp -t' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" "hs2: 'cp -t' denial names the destination, not a source"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv -t src/other/ src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'mv -t' out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: 'mv -t' denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --target-directory=src/other/ src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'cp --target-directory=' out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: 'cp --target-directory=' denial uses JSON deny form"
+
+# No new false positive: all-in-scope multi-target commands, and a -t
+# destination that IS in scope, must still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/parser/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: all-in-scope multi-target rm passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: all-in-scope multi-target rm has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: 'cp -t' with an in-scope destination passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: in-scope 'cp -t' has no deny fields"
+
+# Regression: normal cp/mv (no -t) must still check only the DESTINATION
+# (the last flagless argument), not the source arguments -- a source read
+# from outside scope is not a write and must not be denied.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/other/source.txt src/parser/dest.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: plain cp with an out-of-scope SOURCE and in-scope dest passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: plain cp only checks the destination, not the source"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
