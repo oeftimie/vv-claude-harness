@@ -1803,14 +1803,16 @@ assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F030): /dev/fd/N has no deny fields"
 
 # A /dev/../ traversal spelling resolves to a real out-of-scope path and is
-# denied -- not because ordering vs. the exemption check matters (the
-# exemption is exact-set/pattern membership, not a prefix match, so this
-# path was never going to match either way), but as a plain regression pin
-# on normalize()'s own traversal resolution (F026), applied to an absolute
-# path outside the project root.
+# denied. This does NOT pin normalize()'s traversal resolution on its own
+# (disabling normpath leaves this assertion passing, since both spellings
+# are out of scope anyway) -- it pins the CONJUNCTION that keeps the
+# exemption unlaunderable: exact-set/pattern membership AND normalize-
+# before-exemption ordering. Reverting either one alone leaves it green;
+# reverting both together fails it (found by adversarial review of PR #53,
+# round 3, correcting round 2's own comment on this same test).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > /dev/../etc/passwd')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F030): a /dev/../ traversal resolves and is denied (JSON deny)"
+assert_rc0 "$RC" "hs2 (F030): a /dev/../ traversal cannot launder a path into the /dev exemption, rc 0"
 assert_deny_json "$OUT" "hs2 (F030): /dev/../ traversal denial uses JSON deny form"
 
 # The exemption is an exact/pattern match, not a string-prefix match -- a

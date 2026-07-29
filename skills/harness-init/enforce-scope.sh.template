@@ -600,7 +600,7 @@ def main():
         for target in write_targets(segment):
             norm = normalize(target, project_root)
             # normalize() runs before this check so equivalent spellings of
-            # an exempt path (`/dev//null`, `/dev/./null`, `/dev/fd/../null`)
+            # an exempt path (`/dev//null`, `/dev/./null`)
             # are recognized as the same exact string is_dev_exempt() checks
             # against -- NOT to prevent traversal from laundering a real
             # out-of-scope path INTO looking exempt: is_dev_exempt() is
