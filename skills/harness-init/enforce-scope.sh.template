@@ -167,6 +167,24 @@ LEAD_OWNED = {
 }
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
 
+# A narrow, enumerated allowlist of ordinary character-device sinks (never
+# part of the project tree, so a write to one of these is never a real scope
+# violation) -- deliberately NOT the whole /dev/* namespace. An earlier
+# version of this exemption matched any path starting with "/dev/", which
+# also silently allowed /dev/shm/* (a real writable tmpfs on Linux, where
+# this template runs in CI) and bash's /dev/tcp/HOST/PORT network-redirect
+# extension (confirmed live: bash attempts a real TCP connect for this path,
+# not a "no such file" error -- a live egress channel, not a device node) --
+# found by adversarial review of PR #53, round 1. /dev/fd/N (bash's
+# process-substitution/fd-as-path idiom) is matched by pattern, not the
+# fixed set, since N is unbounded.
+DEV_EXEMPT_EXACT = {"/dev/null", "/dev/zero", "/dev/stdout", "/dev/stderr", "/dev/tty"}
+DEV_FD_PATTERN = re.compile(r"^/dev/fd/\d+$")
+
+
+def is_dev_exempt(norm):
+    return norm in DEV_EXEMPT_EXACT or DEV_FD_PATTERN.match(norm) is not None
+
 
 def strip_heredoc_bodies(command):
     # Heredoc bodies are excluded from matching entirely (not split, not scanned)
@@ -449,13 +467,21 @@ def strip_redirects(segment):
     # instead of the real, possibly out-of-scope destination, reintroducing
     # the exact masking bug F024 exists to close (found by adversarial
     # review of PR #46, round 3). A leading alternative strips the
-    # fd-duplication form `[n]>&word` (`2>&1`, `>&2`, `2>&-`) too: real bash
-    # never writes to a file for this form (it duplicates one fd onto
-    # another, or closes one), so it can never be a real write target, but
-    # left unstripped it survived into command_tokens as a bogus flagless
-    # "target" once segments_of() stopped fragmenting it (F030) -- its own
-    # `[^\s<>|&;]+` target-char class already excludes "&", so this form
-    # never matched the plain-redirect alternative either.
+    # fd-duplication form `[n]>&<digits-or-dash>` (`2>&1`, `>&2`, `2>&-`)
+    # too: real bash never writes to a file for THIS specific, digit-or-
+    # dash-only form (it duplicates one fd onto another, or closes one), so
+    # it can never be a real write target, but left unstripped it survived
+    # into command_tokens as a bogus flagless "target" once segments_of()
+    # stopped fragmenting it (F030) -- its own `[^\s<>|&;]+` target-char
+    # class already excludes "&", so this form never matched the plain-
+    # redirect alternative either. Deliberately narrower than `>&word` for
+    # any word: bash's `>&word` with a NON-numeric, non-"-" word (e.g.
+    # `>&outfile.txt`) is `&>word`, an ordinary FILE redirect, not fd
+    # duplication -- confirmed against real bash (`echo HELLO >&outfile.txt`
+    # creates outfile.txt) -- so widening this alternative's `(?:\d+|-)` to
+    # match any word would silently create a NEW unstripped-redirect gap,
+    # the opposite of this fix's purpose (found by adversarial review of
+    # PR #53, round 1).
     masked = mask_quotes(segment)
     kept = []
     last = 0
@@ -542,15 +568,11 @@ def main():
     for segment in segments_of(command):
         for target in write_targets(segment):
             norm = normalize(target, project_root)
-            # An absolute /dev/* path (/dev/null, /dev/stdout, /dev/stderr,
-            # ...) is never part of the project tree, so it can never match
-            # a teammate scope pattern -- the extremely common `2>/dev/null`
-            # idiom was denied on every teammate command that used it, even
-            # when every real target was in scope (F030). Exempting the
-            # whole /dev/* namespace, rather than an enumerated list of
-            # specific device names, avoids that list needing to grow every
-            # time a new idiom (/dev/stdout, /dev/tty, ...) shows up.
-            if norm.startswith("/dev/"):
+            # normalize() runs BEFORE this check, so a traversal spelling
+            # (`/dev/../etc/passwd`) can't launder a real project-relative
+            # or absolute-outside-/dev/ path into looking like a /dev/*
+            # write -- ordering here is load-bearing.
+            if is_dev_exempt(norm):
                 continue
             if norm in LEAD_OWNED:
                 print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
