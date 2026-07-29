@@ -632,6 +632,17 @@ RC=0
 python3 "$VALIDATE_SCRIPT" "$FIXTURE_SRC/.harness/features.json" >/dev/null 2>&1 || RC=$?
 assert_rc0 "$RC" "fsv: validator passes on the shared test fixture (pre-v3.3 fields absent)"
 
+# The validator was previously only ever run against the shared FIXTURE
+# above, never against this repo's OWN live .harness/features.json -- a
+# duplicate-ID corruption (two "F034" entries, introduced by a merge
+# conflict resolution) shipped through CI undetected as a result, since
+# nothing in this suite actually re-validated the real file after each
+# merge (found by adversarial review of PR #58, round 3). This closes that
+# gap: every test run now also validates the live file.
+RC=0
+python3 "$VALIDATE_SCRIPT" "$REPO_ROOT/.harness/features.json" >/dev/null 2>&1 || RC=$?
+assert_rc0 "$RC" "fsv: validator passes on this repo's own live .harness/features.json"
+
 fsv_mutate() {
   # $1: output filename under $FSV_DIR, $2: python snippet mutating dict `d` in place
   python3 - "$FIXTURE_SRC/.harness/features.json" "$FSV_DIR/$1" <<PYEOF
