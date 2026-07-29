@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 35,
-  "passing": 20,
+  "passing": 21,
   "features": [
     {
       "id": "F001",
@@ -1047,19 +1047,25 @@
       "id": "F035",
       "description": "skills/harness-init/enforce-scope.sh.template's cp_mv_targets() and sed_inplace_targets() compare flag tokens RAW (e.g. `tok in TARGET_DIRECTORY_FLAGS`, `tok.startswith(\"-t\")`, `tok in SED_SCRIPT_VALUE_FLAGS`), so quoting a flag evades flag recognition entirely: `cp \"-t\" \"src/other/d/\" src/parser/a` and `cp '-t' src/other/d/ src/parser/a` are both wrongly ALLOWED (real bash writes to src/other/d/, an out-of-scope destination named via -t, but the quoted '-t' token never matches TARGET_DIRECTORY_FLAGS so cp_mv_targets() falls through to last_flagless_token() and picks the wrong argument as the destination). Same shape for `cp \"--target-directory=src/other/d/\" src/parser/a` and `sed \"-i\" \"\" -e \"s/a/b/\" src/other/f.txt` (real sed writes src/other/f.txt). Same vulnerability family as F023/F024/F025/F028 -- a shell-level transformation (here, quote removal on a FLAG token, not a target token) that these two extractors don't replicate before comparing against their flag sets.",
       "priority": 19,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 739/739 is the gate)",
       "notes": "Discovered by adversarial review of PR #51, round 2 (F028's split_tokens() fix). Explicitly filed as a separate, pre-existing bug (identical on main and the F028 branch), not a regression from that PR. Likely fix, per the reviewer: the sibling hook commit-gate.sh.template already solved this (commit-gate.sh.template:389, `tokens = [unquote_token(t) for t in split_tokens(seg)]`, with a comment explicitly stating tokens must be split then unquoted one at a time, never the reverse -- F025). IMPORTANT TRAP flagged by the same reviewer: the obvious one-line port of that fix would be WRONG here, because unquote_token() is not idempotent since F031 added backslash-stripping (e.g. 'src/other/a\\\\b.txt' unquoted once is 'src/other/a\\b.txt', unquoted TWICE becomes 'src/other/ab.txt'). write_targets() already maps unquote_token over its final target list, and redirect_targets() output bypasses split_tokens() entirely -- so unquoting at split time would double-unquote command-token targets while single-unquoting redirect targets, silently undoing F031's traversal defense. Safe shape (per the reviewer): derive an unquoted VIEW of each token for flag detection only (cp_mv_targets()/sed_inplace_targets()' own comparisons), keep the raw quoted tokens for target extraction, and leave the existing single unquote_token map in write_targets() untouched.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Added _flag_view(tok) = unquote_token(tok), used ONLY for flag-recognition comparisons in cp_mv_targets() and sed_inplace_targets() -- never returned or stored as the target/token itself, which stays raw so write_targets()'s existing single unquote_token() pass at the very end still unquotes it exactly once. This avoids the double-unquote trap the F028-round-2 reviewer flagged (unquote_token() is not idempotent since F031's backslash-stripping).",
+        "For cp_mv_targets(): the bare \"-t DIR\"/\"--target-directory DIR\" forms return the RAW next token (tokens[i+1], completely untouched -- safe by construction). The attached \"--target-directory=DIR\"/\"-tDIR\" forms extract their value from the VIEW instead, a documented, narrower residual: a literal backslash inside DIR in these two specific attached forms could be double-processed later. The \"--\" check itself stays on the raw token, matching all_flagless_tokens()'s own convention (F029) -- a quoted \"--\" is a separate, undocumented residual, not part of this fix.",
+        "For sed_inplace_targets(): every flag comparison (the two any() guards, and the loop's SED_SCRIPT_VALUE_FLAGS/-i/generic dash checks) now compares against the view. Also had to fix _separator_index() to use the SAME view-based comparison for its own SED_SCRIPT_VALUE_FLAGS check -- otherwise a quoted \"-e\"/\"-f\" would make the guards and the separator-finding walk disagree about where flag parsing ends, reintroducing the exact guard-vs-loop mismatch class F029 round 3 already fixed for a different trigger (a value-consumed \"--\" there; a quoted flag here).",
+        "Caught and fixed one bug of my own during implementation: the \"-i ''\" BSD empty-suffix check originally compared the VIEW against EMPTY_STRING_TOKENS (\"''\"/'\"\"'), but those two literal strings are exactly what unquote_token() strips AWAY (a view of \"''\" is the empty string \"\", never equal to the 2-char marker). Fixed by checking `_flag_view(next_token) == \"\"` directly -- a strictly more general check that also handles any other empty-string spelling (e.g. $''''), and removed the now-dead EMPTY_STRING_TOKENS constant.",
+        "Mutation-tested both fixes independently: reverting cp_mv_targets() to raw comparisons fails exactly its 6 new assertions; reverting sed_inplace_targets()'s two any() guards to raw comparisons fails exactly its 2 new assertions. Restored and re-verified 739/739 green after each."
+      ],
       "failure_reason": null,
       "discovered_via": "F028",
       "spec": null
