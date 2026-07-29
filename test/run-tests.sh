@@ -3620,6 +3620,37 @@ do
     "cg: '$CG_FLAGWORD_MSG_CMD' is not wrongly denied as compound"
 done
 
+# F027: has_staging_flag() didn't know a space-separated value-taking short
+# flag's VALUE token (e.g. -m's next token) is opaque data, never a flag or a
+# "--" pathspec separator itself. Three shapes, one root cause:
+#   (a) `-m -- -a`  : "--" (unquoted, -m's value) wrongly read as a real
+#       pathspec separator, so the REAL -a flag after it was never reached --
+#       a pre-existing false-negative, present before F025 too.
+#   (b) `-m "--" -a`: same false negative, quoted form.
+#   (c) `-m "-a"`   : -m's value is literally the text "-a" -- nothing else
+#       is staged (verified against real git), but the old code read the
+#       value token itself as if it were the -a flag -- a false positive.
+DIR_CG_MVALUE="$WORK/commit-gate-m-value-token"
+make_fixture "$DIR_CG_MVALUE"
+install_hooks "$DIR_CG_MVALUE"
+for CG_MVALUE_DENY_CMD in \
+  'git commit -m -- -a' \
+  'git commit -m "--" -a'
+do
+  OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_MVALUE_DENY_CMD")
+  RC=$?
+  assert_rc0 "$RC" "cg: '$CG_MVALUE_DENY_CMD' exits 0 (JSON deny)"
+  assert_deny_json "$OUT" "cg: '$CG_MVALUE_DENY_CMD' -a after -m's value is still denied"
+  assert_contains "$OUT" "compound-stage-and-commit" \
+    "cg: '$CG_MVALUE_DENY_CMD' denial names compound-stage-and-commit"
+done
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -m "-a"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -m \"-a\"' exits 0, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: -m's own value '-a' is not misread as the -a staging flag"
+
 echo ""
 echo "== agent frontmatter =="
 

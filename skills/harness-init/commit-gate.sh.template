@@ -400,18 +400,40 @@ def parse_command(command):
 VALUE_TAKING_SHORT_FLAGS = set("mFtSCcu")
 
 
+# Returns (is_staging_flag, took_bare_value) for a single "-xyz"-shaped
+# cluster token: is_staging_flag is True if -a/-i appears anywhere in the
+# cluster; took_bare_value is True if the cluster ends on a value-taking
+# short flag with nothing attached (so its value is the NEXT token, not part
+# of this one).
+def _scan_short_flag_cluster(tok):
+    for c in tok[1:]:
+        if c in ("a", "i"):
+            return True, False
+        if c in VALUE_TAKING_SHORT_FLAGS:
+            return False, True
+    return False, False
+
+
 def has_staging_flag(tokens):
-    for tok in tokens:
+    i = 0
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
         if tok == "--":
             break  # everything after this is a pathspec, never a flag
         if tok in STAGING_FLAGS:
             return True
         if tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
-            for c in tok[1:]:
-                if c in ("a", "i"):
-                    return True
-                if c in VALUE_TAKING_SHORT_FLAGS:
-                    break
+            is_staging, took_bare_value = _scan_short_flag_cluster(tok)
+            if is_staging:
+                return True
+            # A bare value-taking flag (e.g. "-m", no attached value) takes
+            # its value from the NEXT token, whatever that token's own
+            # content looks like -- it is opaque data, never itself a flag
+            # or the "--" pathspec separator (F027).
+            if took_bare_value and len(tok) == 2:
+                i += 1
+        i += 1
     return False
 
 
