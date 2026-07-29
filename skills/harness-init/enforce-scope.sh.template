@@ -45,13 +45,13 @@
 # all_flagless_tokens() the way commit-gate.sh.template handles the same
 # shape -- a pre-existing asymmetry between the two hooks, tracked
 # separately (F029), not introduced by F024.
-# normalize()/FILE_PATH resolve "."/".." path traversal (F026), but two
-# related gaps remain, both documented in full where the relevant code
-# lives (normalize()'s own comment): the resolution is purely lexical, so
-# a symlink inside a scope directory can make the real write land
-# somewhere normpath can't see; and a backslash-escaped traversal segment
-# (`\..`) still bypasses, since unquote_token() only strips quote
-# characters, never shell backslash-escapes (tracked separately, F031).
+# normalize()/FILE_PATH resolve "."/".." path traversal (F026). A backslash-
+# escaped traversal segment (`\..`) is also resolved (F031): unquote_token()
+# strips shell backslash-escapes, not just quote characters, before
+# normalize() ever sees the token. One related gap remains, documented in
+# full where the code lives (normalize()'s own comment): the resolution is
+# purely lexical, so a symlink inside a scope directory can make the real
+# write land somewhere normpath can't see.
 # verified live 2026-07-24 on Claude Code 2.1.218
 
 # Read hook input from stdin
@@ -252,7 +252,18 @@ def unquote_token(token):
     # segment boundaries using mask_quotes(); this function never looks at
     # separators.
     token = re.sub(r"\$'((?:[^'\\]|\\.)*)'", r"\1", token)
-    return token.replace("'", "").replace('"', "")
+    token = token.replace("'", "").replace('"', "")
+    # Outside quotes, real bash strips a backslash and makes the next
+    # character literal -- e.g. "\.." really means "..", letting a traversal
+    # segment hide from normalize()'s os.path.normpath() resolution, which
+    # only recognizes the exact string ".." (F031). Applied uniformly after
+    # quote-stripping since this function no longer tracks which spans were
+    # originally quoted (where bash treats a backslash as ordinary,
+    # non-special text, true of both single- and double-quoted spans) --
+    # an accepted, documented residual, same as the rest of this
+    # pattern-based, evadable-by-construction hook: a real literal
+    # backslash in a quoted filename is normalized away too.
+    return re.sub(r"\\(.)", r"\1", token)
 
 
 def segments_of(command):
@@ -504,12 +515,7 @@ def normalize(path, project_root):
     # couldn't know what the symlink pointed to WHEN the write actually
     # happens; not a regression versus the pre-F026 behavior, which had no
     # traversal resolution at all (found by adversarial review of PR #48,
-    # round 1). Same for a backslash-escaped traversal segment
-    # (`src/allowed/\../forbidden/x.txt`): unquote_token() strips quote
-    # characters, never shell backslash-escapes, so `\..` still reads as a
-    # literal directory name, not `..` -- pre-existing, tracked separately
-    # (F031), same "not a full shell parser" posture as this hook's other
-    # documented residuals.
+    # round 1).
     if path.startswith(project_root + "/"):
         path = path[len(project_root) + 1:]
     resolved = os.path.normpath(path)
