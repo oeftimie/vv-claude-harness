@@ -2051,10 +2051,16 @@ assert_rc0 "$RC" "hs2 (F033): a hex-escaped ordinary character in an in-scope \$
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F033): hex-escaped ordinary character has no deny fields"
 
-# An unrecognized escape inside $'...' must be left as a literal backslash
-# plus the character, matching real bash (verified: \$'a\\qb' -> "a\qb"),
-# not silently dropped or mis-decoded into something that could itself
-# look like a traversal segment.
+# An unrecognized escape inside $'...' is left as a literal backslash plus
+# the character by ANSI_C_ESCAPE_PATTERN's own decoder, matching real bash
+# (verified: \$'a\\qb' -> "a\qb"), not silently dropped or mis-decoded into
+# something that could itself look like a traversal segment. This test only
+# pins the FINAL allowed/denied outcome (F031's later backslash-strip pass
+# still runs on the decoder's output and removes that backslash before
+# normalize() ever sees the token) -- it does not by itself discriminate
+# "decoded to something harmless" from "decoded to almost anything else
+# non-traversal", since either would still ALLOW here (found by adversarial
+# review of PR #57).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "echo x > \$'src/parser/\q.txt'")")
 RC=$?
