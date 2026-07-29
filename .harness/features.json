@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 35,
-  "passing": 20,
+  "total_features": 37,
+  "passing": 21,
   "features": [
     {
       "id": "F001",
@@ -960,19 +960,23 @@
       "id": "F030",
       "description": "skills/harness-init/enforce-scope.sh.template denies any command containing a redirect to /dev/null (e.g. `cmd 2>/dev/null`, an extremely common idiom for discarding stderr) as an out-of-scope write, since /dev/null doesn't match any teammate scope pattern and there's no special-case exemption for it (unlike `.env.example`-style path exemptions used elsewhere in this repo's hooks). CONFIRMED PRE-EXISTING on main (not introduced by F024): `cp src/parser/a.txt src/parser/b.txt 2>/dev/null`, with every other real target in scope, is denied naming '/dev/null' on both main and after F024. A real usability problem: this idiom is common enough that it will likely trigger frequently in normal teammate work. A related, pre-existing shape (confirmed unchanged across every round of F024/PR #46, from main through the final merge): `rm <in-scope-file> 2>&1` is denied naming '2>' as the write target. Cause: segments_of() splits on a literal '&' (needed for other separator cases), which slices '2>&1' into 'rm <file> 2>' + '1' as two pieces of the same segment boundary set -- the dangling '2>' fragment has no target text after it for strip_redirects() to recognize as a real redirect, so nothing strips it, and it survives into the command tokens as a bogus flagless 'target'. Only affects cp/mv/tee/rm/sed (an unprefixed `> f 2>&1` is fine, since 'echo'/similar aren't in the command-type extractor set). `2>&1` is common enough (redirecting stderr to stdout) to be a real usability problem alongside `2>/dev/null`.",
       "priority": 16,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by F024's round-2 reviewer while verifying the fd-digit fix; explicitly confirmed pre-existing on main and unrelated to F024, recommended as a separate ticket rather than folding into that PR. Likely fix: exempt /dev/null (and possibly other /dev/* special files, e.g. /dev/stdout, /dev/stderr) from the scope check the same way *.env.example paths are already exempted, since writing to them is never a real scope violation. Also confirmed by F024's round-4 reviewer as unchanged across every round of that PR, suggested folding into this same ticket rather than filing separately.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 751/751 is the gate)",
+      "notes": "Discovered by F024's round-2 reviewer while verifying the fd-digit fix; explicitly confirmed pre-existing on main and unrelated to F024, recommended as a separate ticket rather than folding into that PR. Likely fix: exempt /dev/null (and possibly other /dev/* special files, e.g. /dev/stdout, /dev/stderr) from the scope check the same way *.env.example paths are already exempted, since writing to them is never a real scope violation. Also confirmed by F024's round-4 reviewer as unchanged across every round of that PR, suggested folding into this same ticket rather than filing separately. Fixed: /dev/* write targets are now exempted from the scope check entirely; the 2>&1 idiom is fixed by two coordinated changes (segments_of() no longer fragments \">&\", and strip_redirects() now recognizes and strips the fd-duplication form itself). ROUND 2 (adversarial review of PR #53): the original /dev/* exemption matched any path starting with '/dev/', which silently allowed two real writes: /dev/shm/* (a writable tmpfs on Linux, where this template runs in CI) and bash's /dev/tcp network-redirect extension (a live egress channel, not a device node). Narrowed to an enumerated allowlist (DEV_EXEMPT_EXACT: null/zero/stdout/stderr/tty) plus a /dev/fd/N pattern match. Also corrected strip_redirects()'s fd-dup comment, which overstated the stripped form as any '[n]>&word' -- real bash's >&word with a non-numeric word is an ordinary FILE redirect (&>word), not fd duplication; the CODE was already correctly restricted to digits/'-', only the comment was wrong. Filed F034 for the identical &-splitting bug in the sibling hook commit-gate.sh.template, where it is a REAL gate bypass (not just a false positive) -- deliberately not fixed in this PR (different file). ROUND 3 (adversarial review of PR #53): a comment claiming normalize()-before-exemption ordering was 'load-bearing' against traversal laundering was itself wrong once the exemption narrowed to exact-set/pattern membership (round 2) -- /dev/../etc/passwd was never going to match is_dev_exempt() regardless of ordering, since it resolves to /etc/passwd, not a member of the exempt set. Confirmed by mutation-testing the ordering claim itself: moving the check before normalize() changed zero assertions. Corrected the comment to describe the real reason normalize() runs first (recognizing equivalent spellings like /dev//null), and renamed the traversal test to describe what it actually pins (a plain F026 traversal-resolution regression, not an ordering dependency). Filed F036 for a third, unrelated pre-existing gap found in the same review: `>&word` (fd omitted, non-numeric word) is a real bash FILE redirect this hook's regex never recognizes at all, so the write target is never checked. ROUND 4 (adversarial review of PR #53): round 3's replacement comment/test-name for the /dev/../etc/passwd test still overstated what it pins -- disabling normalize()'s traversal resolution alone leaves it green, since both spellings are out of scope either way. The test actually pins the CONJUNCTION of exact-set membership and normalize-before-exemption ordering (reverting either alone leaves it green; reverting both together fails it). Corrected the comment and renamed the assertion to 'a /dev/../ traversal cannot launder a path into the /dev exemption'. Also dropped a platform-ambiguous example (/dev/fd/../null -- real devfs on macOS, but /dev/fd is a symlink to /proc/self/fd on Linux) from the equivalent-spellings comment, and folded two more real bypass forms found in the same review into F036's description (the space-separated `>& /etc/passwd` and quoted `>&'file'` forms).",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Two independent root causes, fixed together since both were needed to close the ticket's confirmed shapes: (1) /dev/null exemption -- main() now skips any write target whose normalized path starts with \"/dev/\", exempting the whole /dev/* namespace rather than an enumerated device list. (2) 2>&1 fd-duplication idiom -- two changes were both required: segments_of() no longer splits on a literal \"&\" when it immediately follows \">\" (real bash lexes \">&\" as one operator, not a redirect followed by a background \"&\"), and strip_redirects() gained a new leading regex alternative recognizing and stripping the \"[n]>&word\" form itself (fd duplication never writes to a file, so it can never be a real target) -- the segmentation fix alone was insufficient, since the un-fragmented \"2>&1\" would otherwise still leak into command_tokens as a bogus flagless target.",
+        "Mutation-tested each of the three independent code changes separately (reverting one at a time): each reversion fails exactly the assertions specific to that fix and nothing else (/dev/null exemption -> 3 failures; segmentation lookbehind alone -> 2 failures; strip_redirects fd-dup alternative alone -> the same 2 failures, confirming both changes are independently necessary for the 2>&1 case). Restored and re-verified 666/666 green after each.",
+        "Round 2: replaced the norm.startswith('/dev/') blanket exemption with an exact-set plus regex check (is_dev_exempt()), keeping normalize() running before the check so a /dev/../ traversal spelling can't launder a real out-of-scope path through it. Mutation-tested by reverting to the blanket startswith check: fails exactly the 2 new /dev/shm and /dev/tcp assertions."
+      ],
       "failure_reason": null,
       "discovered_via": "F024",
       "spec": null
@@ -1044,6 +1048,27 @@
       "spec": null
     },
     {
+      "id": "F034",
+      "description": "skills/harness-init/commit-gate.sh.template's command_segments() splits on any literal '&' (re.finditer(r\"\\|\\||&&|[|;\\n&]\", masked)), including the one glued to '>' in the fd-duplication idiom '2>&1' -- the identical bug F030 fixed in the SIBLING hook (enforce-scope.sh.template's segments_of()), but here it is a REAL gate bypass, not just a usability false-positive. CONFIRMED: 'git commit 2>&1 -am \"x\"' splits into segments ['git commit 2>', '1 -am \"x\"'] -- the '-am' staging flag lands in the SECOND segment, whose first token is '1', not 'git'/'commit', so segment_subcommand() never recognizes it as a git-commit segment at all and has_staging_flag() never runs on it. check_compound_stage_and_commit() returns ALLOW on a command that genuinely stages and commits in one step in real bash (confirmed: 'echo 2>&1 -am \"x\"' really does print '-am x' to stdout, proving the remaining arguments reach the command after the mid-command redirect, exactly as real bash parses it). The same one-character lookbehind fix F030 applied to enforce-scope.sh's segments_of() (change the split regex's bare '&' alternative to '(?<!>)&', so '&' is only a separator when NOT immediately preceded by '>') closes this too. CONFIRMED (round-2 review of PR #53): the separated form 'git commit 2>&1 -a -m \"x\"' bypasses identically to the '-am' cluster form -- not limited to the clustered flag shape.",
+      "priority": 9,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/commit-gate.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #53 (F030), which fixed the identical bug in the sibling hook enforce-scope.sh.template and found the same root cause here too, but classified as a real gate bypass rather than a usability false-positive since this hook's whole purpose is to deny compound stage-and-commit commands. Deliberately not fixed inside PR #53 (different file, would have been scope creep on that PR). Given the severity (a live bypass of shipped security infrastructure, same class as F025), prioritize above the other pending internally-discovered features.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F030",
+      "spec": null
+    },
+    {
       "id": "F035",
       "description": "skills/harness-init/enforce-scope.sh.template's cp_mv_targets() and sed_inplace_targets() compare flag tokens RAW (e.g. `tok in TARGET_DIRECTORY_FLAGS`, `tok.startswith(\"-t\")`, `tok in SED_SCRIPT_VALUE_FLAGS`), so quoting a flag evades flag recognition entirely: `cp \"-t\" \"src/other/d/\" src/parser/a` and `cp '-t' src/other/d/ src/parser/a` are both wrongly ALLOWED (real bash writes to src/other/d/, an out-of-scope destination named via -t, but the quoted '-t' token never matches TARGET_DIRECTORY_FLAGS so cp_mv_targets() falls through to last_flagless_token() and picks the wrong argument as the destination). Same shape for `cp \"--target-directory=src/other/d/\" src/parser/a` and `sed \"-i\" \"\" -e \"s/a/b/\" src/other/f.txt` (real sed writes src/other/f.txt). Same vulnerability family as F023/F024/F025/F028 -- a shell-level transformation (here, quote removal on a FLAG token, not a target token) that these two extractors don't replicate before comparing against their flag sets.",
       "priority": 19,
@@ -1062,6 +1087,27 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F028",
+      "spec": null
+    },
+    {
+      "id": "F036",
+      "description": "skills/harness-init/enforce-scope.sh.template's redirect_targets()/strip_redirects() only recognize `>`/`>>` (file redirect) and `[n]>&(digits|-)` (fd duplication) as real redirect operators. Real bash also has `>&word` for a NON-numeric, non-'-' word (fd omitted) -- this is `&>word`, an ordinary FILE redirect, not fd duplication. CONFIRMED: `echo HELLO >&/etc/passwd` genuinely creates/overwrites /etc/passwd in real bash (bash 3.2.57), but this hook's regex never matches `>&` followed by a non-digit/non-'-' word at all, so the write target is never extracted and the command is wrongly ALLOWED -- confirmed identical on origin/main and after F030's fix (pre-existing, not a regression). Widening strip_redirects()'s existing `>&(?:\\d+|-)` alternative to match any word would be WRONG (that alternative exists specifically to STRIP the fd-dup form without creating a bogus target, per F030's own comment); the real fix belongs in redirect_targets(), which needs a new alternative recognizing `>&word` (word not purely digits or '-') as a real file-redirect target, mirroring the existing `>>?` alternative. CONFIRMED by adversarial review of PR #53, round 3: two related forms also genuinely write a real file and also bypass this hook, unchanged on both main and the F030 branch -- the space-separated `>& /etc/passwd` (whitespace between `>&` and the word) and the quoted `>&'file'` form. Any fix for this feature must allow intervening whitespace/quoting between `>&` and the word, not just the bare-adjacent form the original description named, or it will miss both.",
+      "priority": 20,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #53, round 2 (F030's narrowed /dev/* exemption and strip_redirects() comment fix). Confirmed pre-existing on main, unrelated to F030's own changes; lower severity than F034 (this hook's Bash coverage is explicitly documented as best-effort/pattern-based, not adversarial-proof, and this is an unusual redirect shape), so not urgent enough to block F030's merge.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F030",
       "spec": null
     },
     {

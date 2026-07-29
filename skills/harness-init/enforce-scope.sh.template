@@ -171,6 +171,24 @@ LEAD_OWNED = {
 }
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
 
+# A narrow, enumerated allowlist of ordinary character-device sinks (never
+# part of the project tree, so a write to one of these is never a real scope
+# violation) -- deliberately NOT the whole /dev/* namespace. An earlier
+# version of this exemption matched any path starting with "/dev/", which
+# also silently allowed /dev/shm/* (a real writable tmpfs on Linux, where
+# this template runs in CI) and bash's /dev/tcp/HOST/PORT network-redirect
+# extension (confirmed live: bash attempts a real TCP connect for this path,
+# not a "no such file" error -- a live egress channel, not a device node) --
+# found by adversarial review of PR #53, round 1. /dev/fd/N (bash's
+# process-substitution/fd-as-path idiom) is matched by pattern, not the
+# fixed set, since N is unbounded.
+DEV_EXEMPT_EXACT = {"/dev/null", "/dev/zero", "/dev/stdout", "/dev/stderr", "/dev/tty"}
+DEV_FD_PATTERN = re.compile(r"^/dev/fd/\d+$")
+
+
+def is_dev_exempt(norm):
+    return norm in DEV_EXEMPT_EXACT or DEV_FD_PATTERN.match(norm) is not None
+
 
 def strip_heredoc_bodies(command):
     # Heredoc bodies are excluded from matching entirely (not split, not scanned)
@@ -293,13 +311,21 @@ def segments_of(command):
     # write_targets()/redirect_targets() to extract -- deleting quotes
     # outright (as round 1's first attempt did) erased the target whenever
     # it was quoted, a much bigger bypass than the one being fixed (found by
-    # adversarial review of PR #42, F023 round 2).
+    # adversarial review of PR #42, F023 round 2). A "&" is NOT a segment
+    # separator when it immediately follows a ">": real bash lexes ">&" as
+    # one fd-duplication operator (`2>&1`, `>&2`), not a redirect
+    # immediately followed by a background/AND "&" -- splitting there
+    # fragmented the redirect, leaving a dangling ">" with no target after
+    # it for strip_redirects()/redirect_targets() to recognize, so it
+    # survived into rm/tee's own target extraction as a bogus write target
+    # (F030). A bare "&" anywhere else (background, "&&", or the leading
+    # half of `&> file`) is unaffected and still splits as before.
     sanitized = strip_heredoc_bodies(command)
     joined = join_continuations(sanitized)
     masked = mask_quotes(joined)
     segments = []
     start = 0
-    for m in re.finditer(r"[|;\n&]", masked):
+    for m in re.finditer(r"[|;\n]|(?<!>)&", masked):
         segments.append(joined[start:m.start()])
         start = m.end()
     segments.append(joined[start:])
@@ -544,11 +570,28 @@ def strip_redirects(segment):
     # UNSTRIPPED trailing text and picked the redirect's own in-scope target
     # instead of the real, possibly out-of-scope destination, reintroducing
     # the exact masking bug F024 exists to close (found by adversarial
-    # review of PR #46, round 3).
+    # review of PR #46, round 3). A leading alternative strips the
+    # fd-duplication form `[n]>&<digits-or-dash>` (`2>&1`, `>&2`, `2>&-`)
+    # too: real bash never writes to a file for THIS specific, digit-or-
+    # dash-only form (it duplicates one fd onto another, or closes one), so
+    # it can never be a real write target, but left unstripped it survived
+    # into command_tokens as a bogus flagless "target" once segments_of()
+    # stopped fragmenting it (F030) -- its own `[^\s<>|&;]+` target-char
+    # class already excludes "&", so this form never matched the plain-
+    # redirect alternative either. Deliberately narrower than `>&word` for
+    # any word: bash's `>&word` with a NON-numeric, non-"-" word (e.g.
+    # `>&outfile.txt`) is `&>word`, an ordinary FILE redirect, not fd
+    # duplication -- confirmed against real bash (`echo HELLO >&outfile.txt`
+    # creates outfile.txt) -- so widening this alternative's `(?:\d+|-)` to
+    # match any word would silently create a NEW unstripped-redirect gap,
+    # the opposite of this fix's purpose (found by adversarial review of
+    # PR #53, round 1).
     masked = mask_quotes(segment)
     kept = []
     last = 0
-    for m in re.finditer(r"(?:(?:^|(?<=\s))\d+)?>>?\s*[^\s<>|&;]+", masked):
+    FD_PREFIX = r"(?:(?:^|(?<=\s))\d+)?"
+    pattern = FD_PREFIX + r">&(?:\d+|-)|" + FD_PREFIX + r">>?\s*[^\s<>|&;]+"
+    for m in re.finditer(pattern, masked):
         kept.append(segment[last:m.start()])
         last = m.end()
     kept.append(segment[last:])
@@ -649,6 +692,25 @@ def main():
     for segment in segments_of(command):
         for target in write_targets(segment):
             norm = normalize(target, project_root)
+            # normalize() runs before this check so equivalent spellings of
+            # an exempt path (`/dev//null`, `/dev/./null`)
+            # are recognized as the same exact string is_dev_exempt() checks
+            # against -- NOT to prevent traversal from laundering a real
+            # out-of-scope path INTO looking exempt: is_dev_exempt() is
+            # exact-set/pattern membership, not a prefix match, so
+            # `/dev/../etc/passwd` (which resolves to `/etc/passwd`) was
+            # never going to match regardless of ordering -- confirmed by
+            # mutation-testing this ordering claim itself (moving the check
+            # before normalize() changed zero assertions). An earlier
+            # version of this comment claimed the ordering was load-bearing
+            # against traversal laundering; that was true of round 1's
+            # broad `startswith("/dev/")` prefix check, but became false
+            # once this round narrowed the check to exact membership --
+            # found by adversarial review of PR #53, round 2. Ordering WOULD
+            # become load-bearing again if DEV_EXEMPT_EXACT/DEV_FD_PATTERN
+            # were ever widened back to a prefix-style match.
+            if is_dev_exempt(norm):
+                continue
             if norm in LEAD_OWNED:
                 print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
                 return
