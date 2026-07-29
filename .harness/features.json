@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 40,
+  "total_features": 39,
   "passing": 23,
   "features": [
     {
@@ -1052,27 +1052,6 @@
       "spec": null
     },
     {
-      "id": "F034",
-      "description": "skills/harness-init/commit-gate.sh.template's command_segments() splits on any literal '&' (re.finditer(r\"\\|\\||&&|[|;\\n&]\", masked)), including the one glued to '>' in the fd-duplication idiom '2>&1' -- the identical bug F030 fixed in the SIBLING hook (enforce-scope.sh.template's segments_of()), but here it is a REAL gate bypass, not just a usability false-positive. CONFIRMED: 'git commit 2>&1 -am \"x\"' splits into segments ['git commit 2>', '1 -am \"x\"'] -- the '-am' staging flag lands in the SECOND segment, whose first token is '1', not 'git'/'commit', so segment_subcommand() never recognizes it as a git-commit segment at all and has_staging_flag() never runs on it. check_compound_stage_and_commit() returns ALLOW on a command that genuinely stages and commits in one step in real bash (confirmed: 'echo 2>&1 -am \"x\"' really does print '-am x' to stdout, proving the remaining arguments reach the command after the mid-command redirect, exactly as real bash parses it). The same one-character lookbehind fix F030 applied to enforce-scope.sh's segments_of() (change the split regex's bare '&' alternative to '(?<!>)&', so '&' is only a separator when NOT immediately preceded by '>') closes this too. CONFIRMED (round-2 review of PR #53): the separated form 'git commit 2>&1 -a -m \"x\"' bypasses identically to the '-am' cluster form -- not limited to the clustered flag shape.",
-      "priority": 9,
-      "status": "pending",
-      "scope": [
-        "skills/harness-init/commit-gate.sh.template",
-        "test/run-tests.sh"
-      ],
-      "depends_on": [],
-      "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #53 (F030), which fixed the identical bug in the sibling hook enforce-scope.sh.template and found the same root cause here too, but classified as a real gate bypass rather than a usability false-positive since this hook's whole purpose is to deny compound stage-and-commit commands. Deliberately not fixed inside PR #53 (different file, would have been scope creep on that PR). Given the severity (a live bypass of shipped security infrastructure, same class as F025), prioritize above the other pending internally-discovered features.",
-      "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
-      "failure_reason": null,
-      "discovered_via": "F030",
-      "spec": null
-    },
-    {
       "id": "F035",
       "description": "skills/harness-init/enforce-scope.sh.template's cp_mv_targets() and sed_inplace_targets() compare flag tokens RAW (e.g. `tok in TARGET_DIRECTORY_FLAGS`, `tok.startswith(\"-t\")`, `tok in SED_SCRIPT_VALUE_FLAGS`), so quoting a flag evades flag recognition entirely: `cp \"-t\" \"src/other/d/\" src/parser/a` and `cp '-t' src/other/d/ src/parser/a` are both wrongly ALLOWED (real bash writes to src/other/d/, an out-of-scope destination named via -t, but the quoted '-t' token never matches TARGET_DIRECTORY_FLAGS so cp_mv_targets() falls through to last_flagless_token() and picks the wrong argument as the destination). Same shape for `cp \"--target-directory=src/other/d/\" src/parser/a` and `sed \"-i\" \"\" -e \"s/a/b/\" src/other/f.txt` (real sed writes src/other/f.txt). Same vulnerability family as F023/F024/F025/F028 -- a shell-level transformation (here, quote removal on a FLAG token, not a target token) that these two extractors don't replicate before comparing against their flag sets.",
       "priority": 19,
@@ -1147,14 +1126,14 @@
       "depends_on": [],
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
-      "coverage": "n/a (shell suite, no coverage tooling; full_test 734/734 is the gate)",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 773/773 is the gate)",
       "notes": "Discovered by adversarial review of PR #53 (F030), which fixed the identical bug in the sibling hook enforce-scope.sh.template and found the same root cause here too, but classified as a real gate bypass rather than a usability false-positive since this hook's whole purpose is to deny compound stage-and-commit commands. Deliberately not fixed inside PR #53 (different file, would have been scope creep on that PR). Given the severity (a live bypass of shipped security infrastructure, same class as F025), prioritized above the other pending internally-discovered features. ROUND 2 CORRECTION: round 1's claim that a leftover redirect token is fully 'inert' to has_staging_flag() was wrong -- it can be silently consumed as a value-taking short flag's value (e.g. -m), shifting the token-position-dependent scan and causing a narrow, NEW false deny (`git commit -m 2>&1 -a`, which real git does not stage-and-commit, since bash's own redirect-stripping makes '-a' the message text, not a flag). Accepted as a documented residual (fail-closed, low severity) rather than building additional machinery to strip redirect fragments from the token stream before flag-scanning runs.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [
         "Applied the identical one-character lookbehind fix F030 used in enforce-scope.sh.template's segments_of(): changed command_segments()'s split regex from a bare '&' inside the character class to a separate '(?<!>)&' alternative, so '&' is only a separator when NOT immediately preceded by '>'.",
         "ROUND 2 (adversarial review of PR #58): round 1's claim that no second fix was needed, unlike F030, was PARTIALLY wrong. Two real issues found: (1) the mirror shape '&>'/'&>>' (bash's combined stdout+stderr redirect) was still a live, identical bypass -- `git commit &> out.log -a -m \"x\"` split into a segment starting with '>', never recognized as a git-commit segment. Fixed by making the lookaround symmetric: '(?<!>)&(?!>)'. (2) The 'inert leftover token' claim was also false: a leftover redirect fragment like '2>&1' CAN be consumed as a value-taking short flag's value (e.g. `git commit -m 2>&1 -a` treats '2>&1' as -m's value, then reads the real '-a' as a flag and DENIES) -- but real git, since bash also strips the redirect, sees `git commit -m -a` where '-a' becomes the MESSAGE TEXT, not a flag, so nothing stages and ALLOW is the correct verdict. This is a NEW, narrow FALSE DENY (fail-closed, not a bypass) introduced by round 1's own fix, accepted as a documented residual rather than building a full strip_redirects()-equivalent for commit-gate.sh: the severity is low (an inconvenience, never a security bypass) and this hook's own posture already accepts pattern-based, evadable-by-construction coverage for the same trade-off reasons enforce-scope.sh does.",
-        "Mutation-tested the &>/&>> fix: reverting the symmetric lookaround back to '(?<!>)&' alone fails exactly the 2 new assertions. Restored and re-verified 734/734 green."
+        "Mutation-tested the &>/&>> fix: reverting the symmetric lookaround back to '(?<!>)&' alone fails exactly the 2 new assertions. Restored and re-verified 734/734 green at the time (post-merge count is 773/773; the assertion count grows as sibling branches merge)."
       ],
       "failure_reason": null,
       "discovered_via": "F030",
