@@ -1896,6 +1896,55 @@ assert_rc0 "$RC" "hs2: an escaped-but-ordinary path segment resolves to its in-s
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: escaped-but-ordinary path segment has no deny fields"
 
+# F033: unquote_token() stripped the $'...' ANSI-C-quote wrapper but never
+# decoded the escapes inside it, so a traversal segment spelled with a
+# hex/octal escape survived intact. Verified against real bash:
+# $'src/parser/\x2e\x2e/other/x.txt' really writes to src/other/x.txt
+# (\x2e decodes to "." twice, giving ".."), a different mechanism from
+# F031 (escape DECODING inside $'...', not escape REMOVAL outside quotes).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/\x2e\x2e/other/x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F033): a hex-escaped '..'-traversal inside \$'...' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F033): hex-escaped traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2 (F033): hex-escaped traversal denial names the real, resolved out-of-scope path"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/\056\056/other/x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F033): an octal-escaped '..'-traversal inside \$'...' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F033): octal-escaped traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2 (F033): octal-escaped traversal denial names the real, resolved out-of-scope path"
+
+# No new false positive: an ordinary $'...' in-scope path (no escapes, or
+# an escape that decodes to an ordinary character) must still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/my file.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F033): an ordinary \$'...' in-scope path with a space passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F033): ordinary \$'...' in-scope path has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/caf\x65.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F033): a hex-escaped ordinary character in an in-scope \$'...' path passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F033): hex-escaped ordinary character has no deny fields"
+
+# An unrecognized escape inside $'...' must be left as a literal backslash
+# plus the character, matching real bash (verified: \$'a\\qb' -> "a\qb"),
+# not silently dropped or mis-decoded into something that could itself
+# look like a traversal segment.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/\q.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F033): an unrecognized \$'...' escape passes through literally, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F033): unrecognized \$'...' escape has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then

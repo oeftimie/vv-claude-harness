@@ -247,6 +247,33 @@ def mask_quotes(command):
     return QUOTE_SPAN_PATTERN.sub(repl, command)
 
 
+ANSI_C_SIMPLE_ESCAPES = {
+    "\\": "\\", "'": "'", '"': '"',
+    "a": "\a", "b": "\b", "e": "\x1b", "f": "\f",
+    "n": "\n", "r": "\r", "t": "\t", "v": "\v",
+}
+ANSI_C_ESCAPE_PATTERN = re.compile(r"\\(?:x([0-9A-Fa-f]{1,2})|([0-7]{1,3})|(.))")
+
+
+def _decode_ansi_c_escape(m):
+    # One match alternative fires per call, per ANSI_C_ESCAPE_PATTERN's own
+    # three groups (hex, octal, single-char) -- verified against real bash
+    # 3.2.57 (`printf '%s' $'a\x2eb'`, `$'a\056b'`, `$'a\eb'`, `$'a\qb'`,
+    # `$'a\8b'`, `$'a\xzb'`): \xHH (1-2 hex digits, case-insensitive) and
+    # \nnn (1-3 octal digits) decode to that byte; \\, \', \", \a, \b, \e,
+    # \f, \n, \r, \t, \v decode to their usual meaning; any OTHER backslash
+    # escape (including \8/\9, not valid octal, and \x with no hex digit
+    # following) is left as a literal backslash followed by that character,
+    # UNCHANGED -- bash does not drop the backslash for an escape it
+    # doesn't recognize inside $'...'.
+    hexdigits, octdigits, other = m.group(1), m.group(2), m.group(3)
+    if hexdigits is not None:
+        return chr(int(hexdigits, 16))
+    if octdigits is not None:
+        return chr(int(octdigits, 8) & 0xFF)
+    return ANSI_C_SIMPLE_ESCAPES.get(other, "\\" + other)
+
+
 def unquote_token(token):
     # Strips quote characters from a single ALREADY-EXTRACTED target token --
     # never used to re-segment or re-tokenize, only to normalize a target
@@ -254,8 +281,24 @@ def unquote_token(token):
     # quoted, foo/"bar".txt) before comparing it against scope patterns. Safe
     # here specifically because segments_of() has already correctly resolved
     # segment boundaries using mask_quotes(); this function never looks at
-    # separators.
-    token = re.sub(r"\$'((?:[^'\\]|\\.)*)'", r"\1", token)
+    # separators. A $'...' span's inner text is decoded per bash's ANSI-C
+    # quoting grammar (F033) in this SAME substitution -- not left for the
+    # generic backslash-unescape pass below to mangle, and not merely
+    # stripped of its wrapper unresolved: before this, `$'src/parser/
+    # \x2e\x2e/other/x.txt'` genuinely resolves to src/other/x.txt in real
+    # bash (\x2e decodes to "."), but the hook never decoded the escape, so
+    # normalize() never saw a real ".." to resolve and the traversal was
+    # wrongly ALLOWED (found by adversarial review of PR #50, F031, filed
+    # separately as F033: a different mechanism from F031 -- escape
+    # DECODING inside an already-recognized $'...' span, not escape
+    # REMOVAL outside quotes). \cX (control-char), \uHHHH, and \UHHHHHHHH
+    # escapes are NOT decoded -- a documented residual, same "not a full
+    # shell parser" posture as the rest of this hook; tracked separately.
+    token = re.sub(
+        r"\$'((?:[^'\\]|\\.)*)'",
+        lambda m: ANSI_C_ESCAPE_PATTERN.sub(_decode_ansi_c_escape, m.group(1)),
+        token,
+    )
     token = token.replace("'", "").replace('"', "")
     # Outside quotes, real bash strips a backslash and makes the next
     # character literal -- e.g. "\.." really means "..", letting a traversal
