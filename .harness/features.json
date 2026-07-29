@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 22,
-  "passing": 12,
+  "total_features": 31,
+  "passing": 17,
   "features": [
     {
       "id": "F001",
@@ -925,19 +925,22 @@
       "id": "F029",
       "description": "skills/harness-init/enforce-scope.sh.template's all_flagless_tokens() (used by rm/tee target extraction and cp_mv_targets()' fallback) treats any token starting with '-' as a flag, unconditionally, with no awareness of '--' as the POSIX pathspec separator. A real command like `rm -- -a.txt` (where -a.txt is a literal filename, not a flag, because -- ends flag parsing) is misread: '--' and '-a.txt' are BOTH excluded as flag-shaped, so no target is identified at all and the command is wrongly ALLOWED even when -a.txt is out of scope. Sibling hook commit-gate.sh.template handles this exact shape explicitly (has_staging_flag's `if tok == \"--\": break` plus its own test case for `git commit -- -a.txt`) -- this hook never got the equivalent treatment. Pre-existing, not introduced by F024; confirmed still present after F024's rewrite.",
       "priority": 15,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by F024's round-1 reviewer while stress-testing the all_flagless_tokens()/cp_mv_targets() rewrite; explicitly confirmed pre-existing (not introduced by F024) and out of scope for that PR. Likely fix: recognize a literal '--' token as ending flag parsing for the rest of a segment's tokens (every subsequent token is a pathspec, never a flag, even if it starts with '-'), mirroring commit-gate.sh.template's has_staging_flag().",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 659/659 is the gate)",
+      "notes": "Discovered by F024's round-1 reviewer while stress-testing the all_flagless_tokens()/cp_mv_targets() rewrite; explicitly confirmed pre-existing (not introduced by F024) and out of scope for that PR. Likely fix: recognize a literal '--' token as ending flag parsing for the rest of a segment's tokens (every subsequent token is a pathspec, never a flag, even if it starts with '-'), mirroring commit-gate.sh.template's has_staging_flag(). Fixed by making all_flagless_tokens() --aware and rewriting last_flagless_token() as a thin wrapper over it, eliminating the duplicate flag-detection logic the two functions previously carried independently.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Made all_flagless_tokens() the single source of truth for -- separator handling: the first literal \"--\" token ends flag parsing, every token after it is kept regardless of a leading \"-\" (mirrors commit-gate.sh.template has_staging_flag()'s \"if tok == '--': break\"). Rewrote last_flagless_token() as a one-line wrapper (flagless[-1] if flagless else None) instead of its own separate reversed-scan loop, removing a second, now-redundant implementation of the same flag-detection rule.",
+        "Mutation-tested by reverting to the pre-fix versions of both functions: the same 5 new assertions failed (and only those 5), confirming the tests actually catch the bug; restored and re-verified 659/659 green."
+      ],
       "failure_reason": null,
       "discovered_via": "F024",
       "spec": null
