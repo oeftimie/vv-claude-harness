@@ -1626,6 +1626,117 @@ assert_rc0 "$RC" "hs2 (F035): a quoted in-scope '-i' sed target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F035): quoted in-scope '-i' sed target has no deny fields"
 
+# Round-1 review of PR #59: a quoted "--" is not a "pre-existing residual"
+# left unfixed on purpose -- it was a NEW fail-open this feature's own
+# round-1 fix introduced, since flags became view-aware while "--" itself
+# stayed a raw comparison. A quoted "--" is just as real a separator to the
+# receiving command as an unquoted one (the shell strips quotes before argv
+# is built), so treating it as inert let the real destination past it go
+# unchecked entirely -- confirmed against real bash/cp/sed semantics.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp "--" "-t" src/parser/d/ src/other/x')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a quoted '--' cp destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035): quoted '--' cp denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x" \
+  "hs2 (F035): quoted '--' cp denial names the real destination, not a bogus flag slice"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -i "--" -i src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a quoted '--' sed target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035): quoted '--' sed denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f.txt" \
+  "hs2 (F035): quoted '--' sed denial names the real target after the quoted separator"
+
+# The above two tests exercise cp_mv_targets()'s/sed_inplace_targets()'s OWN
+# "--" recognition, but that alone can mask a bug still present in
+# all_flagless_tokens() itself (rm/tee's target extractor), since
+# cp_mv_targets()'s fallback to last_flagless_token() only matters when its
+# own scan doesn't already find a destination first. This isolates
+# all_flagless_tokens() directly: a quoted "--" must make past_separator
+# True so the REAL literal-dash filename after it ("-a.txt", genuinely
+# out of scope) is recognized as a target, not excluded as if it looked
+# like a flag.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm "--" -a.txt src/other/x.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): 'rm \"--\" -a.txt ...' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035): 'rm \"--\" -a.txt ...' denial uses JSON deny form"
+assert_contains "$OUT" "write to '-a.txt'" \
+  "hs2 (F035): 'rm \"--\" -a.txt ...' denial names the real out-of-scope file, not a bogus '--' token"
+
+# Isolates _separator_index()'s OWN "--" recognition specifically (distinct
+# from the token-walking loop's, which the two tests above already cover):
+# a quoted "--" as the VERY FIRST argument means real sed has NO real -i
+# flag at all -- "-i" becomes the (positional) SCRIPT, and sed with no -i
+# writes its transformed output to stdout, not back to the file, so
+# src/other/f.txt is never modified. If _separator_index() doesn't
+# recognize the quoted "--", the two any() guards (which rely on it to
+# know where flag-parsing ends) wrongly see a "real" -i flag before that
+# point and pass, even though the token-walking loop (unaffected by this
+# specific mutation) correctly treats "-i" as the script -- a false DENY
+# caused purely by the guards and the loop disagreeing about the
+# separator's position (the same disagreement class F029 round 3 already
+# fixed for a different trigger).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed "--" -i src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): 'sed \"--\" -i FILE' (no real -i flag) passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F035): 'sed \"--\" -i FILE' has no deny fields (nothing is actually written)"
+
+# Isolates the BSD "-i ''" empty-suffix check's own view-awareness: uses
+# $'' (ANSI-C empty string) rather than the literal 2-char "''"/'""'
+# tokens, so its RAW text ("$''", 3 chars) never equals either marker --
+# only comparing its UNQUOTED VIEW (empty string) against emptiness
+# recognizes it as the mandatory backup-suffix idiom. Without this, the
+# empty-suffix token is misread as the implicit script, silently denying
+# an ordinary in-scope command.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i \$'' -e \"s/a/b/\" src/parser/f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): BSD empty-suffix idiom spelled as ANSI-C \$'' passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F035): ANSI-C empty-suffix in-scope target has no deny fields"
+
+# Isolates the token-walking loop's own SED_SCRIPT_VALUE_FLAGS check
+# specifically: a quoted "-e" must still consume the NEXT token (its
+# script value) as opaque data, not fall through and be misread as a
+# bogus target itself (which, along with the script text right after it,
+# would then spuriously deny an otherwise-in-scope command).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i \"-e\" \"s/a/b/\" src/parser/f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a quoted '-e' still consumes its script value, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F035): quoted '-e' with an in-scope target has no deny fields"
+
+# Isolates the loop's GENERIC dash-prefixed-flag check (distinct from the
+# specific SED_SCRIPT_VALUE_FLAGS/-i checks above): a quoted, otherwise-
+# unrecognized sed flag like "-n" must still be skipped as SOME kind of
+# flag, not fall through and be misread as a bogus target itself.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i \"-n\" -e \"s/a/b/\" src/parser/f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a quoted generic dash-flag ('-n') is still skipped, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F035): quoted generic dash-flag with an in-scope target has no deny fields"
+
+# Isolates cp_mv_targets()'s ATTACHED "-tDIR" form specifically (distinct
+# from the bare "-t DIR" and "--target-directory=" forms already covered
+# above): the WHOLE token quoted as one unit, e.g. "-tsrc/other/d/". A
+# genuine fail-open, not just a misnamed denial: without view-awareness
+# here, the loop finds nothing, falls through to last_flagless_token(),
+# and the real (out-of-scope) destination is never checked at all.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp "-tsrc/other/d/" src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a fully-quoted attached '-tDIR' cp form exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035): quoted attached '-tDIR' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/d/" \
+  "hs2 (F035): quoted attached '-tDIR' denial names the real destination, not the in-scope source"
+
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")
 RC=$?

@@ -315,16 +315,30 @@ def all_flagless_tokens(tokens):
     # dropped and no target was found at all -- an out-of-scope -a.txt was
     # then silently ALLOWED, not merely misnamed (F029). Only the FIRST
     # "--" is a separator; any later one is already past it, so it's just
-    # ordinary token text, kept like any other post-separator token.
+    # ordinary token text, kept like any other post-separator token. The
+    # separator check and the "starts with -" flag check both run against
+    # _flag_view(tok), not the raw token -- a quoted "--" (e.g. `cp "--"
+    # "-t" src/parser/d/ src/other/x`) is just as real a separator to the
+    # RECEIVING command as an unquoted one, since the shell strips quotes
+    # before the program ever sees its argv. Comparing only the flag
+    # checks against the view while leaving THIS "--" check on the raw
+    # token (an earlier version of the F035 fix did exactly that) created a
+    # NEW asymmetry: quoted flags were recognized but a quoted "--" was
+    # not, so `past_separator` never became True for it, silently
+    # swallowing the real (possibly out-of-scope) destination that follows
+    # -- found by adversarial review of PR #59, F035, the same
+    # guard-vs-check asymmetry class F029 round 3 already fixed once for a
+    # different trigger (a value-consumed "--" there; a quoted "--" here).
     result = []
     past_separator = False
     for tok in tokens:
         if not tok:
             continue
-        if tok == "--" and not past_separator:
+        view = _flag_view(tok)
+        if view == "--" and not past_separator:
             past_separator = True
             continue
-        if past_separator or not tok.startswith("-"):
+        if past_separator or not view.startswith("-"):
             result.append(tok)
     return result
 
@@ -395,23 +409,31 @@ def cp_mv_targets(tokens):
     # fallback, never reached because this loop already returned) went
     # unchecked -- the exact failure mode F029 exists to close, just in this
     # sibling function instead of all_flagless_tokens() (found by
-    # adversarial review of PR #52, F029). The "--" check stays on the RAW
-    # token (matching all_flagless_tokens()/last_flagless_token()'s own
-    # convention, F029) -- a quoted "--" is not part of F035's reported
-    # shape and is left as the same residual those functions already have.
-    # Every FLAG comparison below runs against _flag_view(tok) instead, so
-    # a quoted flag can't evade it (F035); the bare `-t DIR`/
-    # `--target-directory DIR` forms return the RAW next token (tokens[i+1],
-    # untouched, unquoted exactly once later by write_targets()); the
-    # attached `--target-directory=DIR`/`-tDIR` forms extract their value
-    # from the VIEW instead, a documented, narrower residual (see header):
-    # a legitimate literal backslash inside DIR in these two attached forms
-    # specifically could be double-processed by write_targets()'s later
-    # unquote_token() pass, unlike every other path in this function.
+    # adversarial review of PR #52, F029). The "--" check and every FLAG
+    # comparison below run against _flag_view(tok), not the raw token, so a
+    # quoted flag OR a quoted "--" can't evade recognition (F035): a quoted
+    # "--" (e.g. `cp "--" "-t" src/parser/d/ src/other/x`) is just as real a
+    # separator to the receiving command as an unquoted one, since the
+    # shell strips quotes before the program's argv is built. An earlier
+    # version of this fix left the "--" check on the raw token, reasoning
+    # it matched all_flagless_tokens()'s own then-current convention and
+    # was out of F035's reported shape -- that was wrong on both counts: it
+    # created a NEW asymmetry (flags view-aware, "--" not) that let a
+    # quoted "--" swallow the real destination that follows, and
+    # all_flagless_tokens() itself needed the identical correction for the
+    # identical reason (found by adversarial review of PR #59, F035). The
+    # bare `-t DIR`/`--target-directory DIR` forms return the RAW next
+    # token (tokens[i+1], untouched, unquoted exactly once later by
+    # write_targets()); the attached `--target-directory=DIR`/`-tDIR` forms
+    # extract their value from the VIEW instead, a documented, narrower
+    # residual (see header): a legitimate literal backslash inside DIR in
+    # these two attached forms specifically could be double-processed by
+    # write_targets()'s later unquote_token() pass, unlike every other path
+    # in this function.
     for i, tok in enumerate(tokens):
-        if tok == "--":
-            break
         view = _flag_view(tok)
+        if view == "--":
+            break
         if view in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
             return [tokens[i + 1]]
         if view.startswith("--target-directory="):
@@ -450,7 +472,7 @@ def _separator_index(args):
     # just triggered by quoting instead of a value-consumed "--".
     i = 0
     while i < len(args):
-        if args[i] == "--":
+        if _flag_view(args[i]) == "--":
             return i
         i += 2 if _flag_view(args[i]) in SED_SCRIPT_VALUE_FLAGS else 1
     return len(args)
@@ -513,13 +535,20 @@ def sed_inplace_targets(tokens):
     # effects) so the guards and the loop always agree on where flag
     # parsing actually ends.
     # Every FLAG comparison in this function (the two any() guards above and
-    # the loop below) runs against _flag_view(tok), not the raw token, so a
-    # quoted flag can't evade recognition -- e.g. `sed "-i" "" -e "s/a/b/"
-    # src/other/f.txt` was wrongly ALLOWED before this, since a quoted "-i"
-    # never matched the bare-"-i" guard (found by adversarial review of
-    # PR #51, F028, filed as F035). "--" itself stays a RAW comparison
-    # (matching all_flagless_tokens()'s own convention, F029); a quoted
-    # "--" is not part of F035's reported shape, left as the same residual.
+    # the loop below), AND the "--" check itself, run against _flag_view(tok),
+    # not the raw token, so a quoted flag OR a quoted "--" can't evade
+    # recognition -- e.g. `sed "-i" "" -e "s/a/b/" src/other/f.txt` was
+    # wrongly ALLOWED before this, since a quoted "-i" never matched the
+    # bare-"-i" guard (found by adversarial review of PR #51, F028, filed
+    # as F035). An earlier version of this fix left the "--" check raw,
+    # reasoning it matched all_flagless_tokens()'s then-current convention
+    # -- that reasoning, and the convention itself, were both wrong: a
+    # quoted "--" (e.g. `sed -i "--" -i src/other/f.txt`, where the real
+    # script becomes the literal text "-i" and the real target is
+    # src/other/f.txt) is just as real a separator to the receiving sed as
+    # an unquoted one, and leaving it raw while flags were view-aware
+    # silently swallowed the real destination that follows (found by
+    # adversarial review of PR #59, F035).
     if not tokens or tokens[0] != "sed":
         return []
     args = tokens[1:]
@@ -541,12 +570,12 @@ def sed_inplace_targets(tokens):
     i = 0
     while i < len(args):
         tok = args[i]
-        if tok == "--" and not past_separator:
+        view = _flag_view(tok)
+        if view == "--" and not past_separator:
             past_separator = True
             i += 1
             continue
         if not past_separator:
-            view = _flag_view(tok)
             if view in SED_SCRIPT_VALUE_FLAGS:
                 i += 2
                 continue
