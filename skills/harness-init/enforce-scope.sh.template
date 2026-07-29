@@ -278,13 +278,21 @@ def segments_of(command):
     # write_targets()/redirect_targets() to extract -- deleting quotes
     # outright (as round 1's first attempt did) erased the target whenever
     # it was quoted, a much bigger bypass than the one being fixed (found by
-    # adversarial review of PR #42, F023 round 2).
+    # adversarial review of PR #42, F023 round 2). A "&" is NOT a segment
+    # separator when it immediately follows a ">": real bash lexes ">&" as
+    # one fd-duplication operator (`2>&1`, `>&2`), not a redirect
+    # immediately followed by a background/AND "&" -- splitting there
+    # fragmented the redirect, leaving a dangling ">" with no target after
+    # it for strip_redirects()/redirect_targets() to recognize, so it
+    # survived into rm/tee's own target extraction as a bogus write target
+    # (F030). A bare "&" anywhere else (background, "&&", or the leading
+    # half of `&> file`) is unaffected and still splits as before.
     sanitized = strip_heredoc_bodies(command)
     joined = join_continuations(sanitized)
     masked = mask_quotes(joined)
     segments = []
     start = 0
-    for m in re.finditer(r"[|;\n&]", masked):
+    for m in re.finditer(r"[|;\n]|(?<!>)&", masked):
         segments.append(joined[start:m.start()])
         start = m.end()
     segments.append(joined[start:])
@@ -440,11 +448,20 @@ def strip_redirects(segment):
     # UNSTRIPPED trailing text and picked the redirect's own in-scope target
     # instead of the real, possibly out-of-scope destination, reintroducing
     # the exact masking bug F024 exists to close (found by adversarial
-    # review of PR #46, round 3).
+    # review of PR #46, round 3). A leading alternative strips the
+    # fd-duplication form `[n]>&word` (`2>&1`, `>&2`, `2>&-`) too: real bash
+    # never writes to a file for this form (it duplicates one fd onto
+    # another, or closes one), so it can never be a real write target, but
+    # left unstripped it survived into command_tokens as a bogus flagless
+    # "target" once segments_of() stopped fragmenting it (F030) -- its own
+    # `[^\s<>|&;]+` target-char class already excludes "&", so this form
+    # never matched the plain-redirect alternative either.
     masked = mask_quotes(segment)
     kept = []
     last = 0
-    for m in re.finditer(r"(?:(?:^|(?<=\s))\d+)?>>?\s*[^\s<>|&;]+", masked):
+    FD_PREFIX = r"(?:(?:^|(?<=\s))\d+)?"
+    pattern = FD_PREFIX + r">&(?:\d+|-)|" + FD_PREFIX + r">>?\s*[^\s<>|&;]+"
+    for m in re.finditer(pattern, masked):
         kept.append(segment[last:m.start()])
         last = m.end()
     kept.append(segment[last:])
@@ -525,6 +542,16 @@ def main():
     for segment in segments_of(command):
         for target in write_targets(segment):
             norm = normalize(target, project_root)
+            # An absolute /dev/* path (/dev/null, /dev/stdout, /dev/stderr,
+            # ...) is never part of the project tree, so it can never match
+            # a teammate scope pattern -- the extremely common `2>/dev/null`
+            # idiom was denied on every teammate command that used it, even
+            # when every real target was in scope (F030). Exempting the
+            # whole /dev/* namespace, rather than an enumerated list of
+            # specific device names, avoids that list needing to grow every
+            # time a new idiom (/dev/stdout, /dev/tty, ...) shows up.
+            if norm.startswith("/dev/"):
+                continue
             if norm in LEAD_OWNED:
                 print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
                 return

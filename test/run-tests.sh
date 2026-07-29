@@ -1642,6 +1642,78 @@ OUT=$(run_hook "$DIR_HS_GLOBROOT" enforce-scope.sh \
 RC=$?
 assert_rc0 "$RC" "hs2: an in-scope edit under a glob-metacharacter project root passes, rc 0"
 
+# F030: /dev/null (and other /dev/* special files) never matches any
+# teammate scope pattern, so the extremely common `cmd 2>/dev/null` idiom
+# was denied naming '/dev/null' as an out-of-scope write, even when every
+# real target in the command was in scope. Confirmed pre-existing on main.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/parser/b.txt 2>/dev/null')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): an all-in-scope cp with a 2>/dev/null redirect passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F030): 2>/dev/null redirect has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/parser/a.txt 2>/dev/null')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): an all-in-scope rm with a 2>/dev/null redirect passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F030): rm with 2>/dev/null has no deny fields"
+
+# An out-of-scope target elsewhere in the same command must still be caught
+# -- the /dev/null exemption must not become a blanket pass for the whole
+# segment.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/other/a.txt 2>/dev/null')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): an out-of-scope rm target is still caught alongside 2>/dev/null (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F030): out-of-scope-plus-devnull denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2 (F030): out-of-scope-plus-devnull denial names the real target, not /dev/null"
+
+# F030 (second, unrelated root cause): segments_of() splits on any literal
+# '&', including the one glued to '>' in the fd-duplication idiom `2>&1`
+# (redirect stderr to stdout) -- real bash lexes ">&" as one operator, not
+# a redirect immediately followed by a background/AND '&'. The split left
+# a dangling "2>" fragment with no target after it, which strip_redirects()
+# then couldn't recognize as a real redirect either, so it survived into
+# rm/tee's own flagless-token target extraction as a bogus write target
+# named "2>" (or "2>&1", once the raw '&' is no longer wrongly split on).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/parser/a.txt 2>&1')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): an all-in-scope rm with a 2>&1 redirect passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F030): rm with 2>&1 has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/parser/b.txt 2>&1')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): an all-in-scope cp with a 2>&1 redirect passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F030): cp with 2>&1 has no deny fields"
+
+# The '2>&1' idiom must not become a way to smuggle a real out-of-scope
+# target past detection -- a genuine out-of-scope target elsewhere in the
+# same command must still be caught.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/other/a.txt 2>&1')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): an out-of-scope rm target is still caught alongside 2>&1 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F030): out-of-scope-plus-2>&1 denial uses JSON deny form"
+assert_contains "$OUT" "src/other/a.txt" \
+  "hs2 (F030): out-of-scope-plus-2>&1 denial names the real target, not a redirect fragment"
+
+# A real background/AND '&' NOT glued to a '>' must still act as a segment
+# separator, unchanged from before.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm src/parser/a.txt & rm src/other/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F030): a real background '&' still separates segments (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F030): background-separated out-of-scope target still denied"
+assert_contains "$OUT" "src/other/b.txt" \
+  "hs2 (F030): background-separated denial names the real out-of-scope target"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
