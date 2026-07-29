@@ -41,10 +41,11 @@
 # argument as a source (read, not written) once any is present -- clustered
 # short flags (`-rt DIR`, combining -r and -t) are not recognized, a
 # documented residual. `--` as a pathspec separator (e.g. `rm -- -a.txt`,
-# where -a.txt is a real filename, not a flag) is not recognized by
-# all_flagless_tokens() the way commit-gate.sh.template handles the same
-# shape -- a pre-existing asymmetry between the two hooks, tracked
-# separately (F029), not introduced by F024.
+# where -a.txt is a real filename, not a flag) is recognized by
+# all_flagless_tokens()/last_flagless_token() the same way commit-gate.sh
+# .template's has_staging_flag() handles the same shape (F029): the first
+# "--" ends flag parsing, so every later token is kept as a real pathspec
+# even if it starts with "-".
 # normalize()/FILE_PATH resolve "."/".." path traversal (F026), but two
 # related gaps remain, both documented in full where the relevant code
 # lives (normalize()'s own comment): the resolution is purely lexical, so
@@ -291,15 +292,32 @@ def segments_of(command):
     return [s.strip() for s in segments if s.strip()]
 
 
-def last_flagless_token(tokens):
-    for tok in reversed(tokens):
-        if tok and not tok.startswith("-"):
-            return tok
-    return None
-
-
 def all_flagless_tokens(tokens):
-    return [tok for tok in tokens if tok and not tok.startswith("-")]
+    # A literal "--" ends flag parsing for the rest of THIS token list, same
+    # as commit-gate.sh.template's has_staging_flag(): every token after it
+    # is a real pathspec, never a flag, even if it starts with "-" (e.g. the
+    # real filename in `rm -- -a.txt`). Before this, a token starting with
+    # "-" was excluded unconditionally, so "--" and "-a.txt" were BOTH
+    # dropped and no target was found at all -- an out-of-scope -a.txt was
+    # then silently ALLOWED, not merely misnamed (F029). Only the FIRST
+    # "--" is a separator; any later one is already past it, so it's just
+    # ordinary token text, kept like any other post-separator token.
+    result = []
+    past_separator = False
+    for tok in tokens:
+        if not tok:
+            continue
+        if tok == "--" and not past_separator:
+            past_separator = True
+            continue
+        if past_separator or not tok.startswith("-"):
+            result.append(tok)
+    return result
+
+
+def last_flagless_token(tokens):
+    flagless = all_flagless_tokens(tokens)
+    return flagless[-1] if flagless else None
 
 
 def redirect_targets(segment):
