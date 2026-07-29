@@ -1126,7 +1126,7 @@
       "depends_on": [],
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
-      "coverage": "n/a (shell suite, no coverage tooling; full_test 773/773 is the gate)",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
       "notes": "Discovered by adversarial review of PR #53 (F030), which fixed the identical bug in the sibling hook enforce-scope.sh.template and found the same root cause here too, but classified as a real gate bypass rather than a usability false-positive since this hook's whole purpose is to deny compound stage-and-commit commands. Deliberately not fixed inside PR #53 (different file, would have been scope creep on that PR). Given the severity (a live bypass of shipped security infrastructure, same class as F025), prioritized above the other pending internally-discovered features. ROUND 2 CORRECTION: round 1's claim that a leftover redirect token is fully 'inert' to has_staging_flag() was wrong -- it can be silently consumed as a value-taking short flag's value (e.g. -m), shifting the token-position-dependent scan and causing a narrow, NEW false deny (`git commit -m 2>&1 -a`, which real git does not stage-and-commit, since bash's own redirect-stripping makes '-a' the message text, not a flag). Accepted as a documented residual (fail-closed, low severity) rather than building additional machinery to strip redirect fragments from the token stream before flag-scanning runs.",
       "correction_cycles": 0,
       "scope_expansions": [],
