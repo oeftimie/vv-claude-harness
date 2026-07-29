@@ -1574,6 +1574,58 @@ assert_deny_json "$OUT" "hs2 (F029): 'sed -f -- -i FILE' denial uses JSON deny f
 assert_contains "$OUT" "src/other/f.txt" \
   "hs2 (F029): 'sed -f -- -i FILE' denial names the real out-of-scope target"
 
+# F035: cp_mv_targets()/sed_inplace_targets() compared flag tokens RAW, so
+# quoting a flag evaded recognition entirely. Verified against real bash:
+# `cp "-t" "src/other/d/" src/parser/a` writes to src/other/d/ (an
+# out-of-scope destination named via -t), but the quoted "-t" token never
+# matched TARGET_DIRECTORY_FLAGS, so cp_mv_targets() fell through to
+# last_flagless_token() and picked the wrong (in-scope-looking) argument.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp "-t" "src/other/d/" src/parser/a')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a double-quoted '-t' flag exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035): double-quoted '-t' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/d/" \
+  "hs2 (F035): double-quoted '-t' denial names the real -t destination"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "cp '-t' src/other/d/ src/parser/a")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a single-quoted '-t' flag exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035): single-quoted '-t' denial uses JSON deny form"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp "--target-directory=src/other/d/" src/parser/a')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a quoted whole '--target-directory=' flag exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035): quoted '--target-directory=' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/d/" \
+  "hs2 (F035): quoted '--target-directory=' denial names the real destination"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed \"-i\" \"\" -e \"s/a/b/\" src/other/f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a double-quoted '-i' sed flag exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035): double-quoted '-i' sed denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f.txt" \
+  "hs2 (F035): double-quoted '-i' sed denial names the real target"
+
+# No new false positive: a quoted -t/-i flag that's genuinely in scope
+# must still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp "-t" src/parser/ a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a quoted in-scope '-t' destination passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F035): quoted in-scope '-t' destination has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed \"-i\" \"\" -e \"s/a/b/\" src/parser/f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035): a quoted in-scope '-i' sed target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F035): quoted in-scope '-i' sed target has no deny fields"
+
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")
 RC=$?

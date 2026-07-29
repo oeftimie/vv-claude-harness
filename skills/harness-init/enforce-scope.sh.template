@@ -358,6 +358,26 @@ def redirect_targets(segment):
 TARGET_DIRECTORY_FLAGS = ("-t", "--target-directory")
 
 
+def _flag_view(tok):
+    # Unquoted view of a token for FLAG RECOGNITION only (cp_mv_targets()/
+    # sed_inplace_targets()' own comparisons against known flag strings) --
+    # never returned or stored as a target/token itself. A raw, still-
+    # quoted token is always what gets returned to write_targets(), which
+    # applies its OWN single unquote_token() pass over the final target
+    # list -- calling unquote_token() a SECOND time on an already-unquoted
+    # string would silently undo F031's backslash-escape traversal defense
+    # (unquote_token() is not idempotent: e.g. "a\\\\b.txt" unquoted once is
+    # "a\\b.txt", unquoted TWICE becomes "ab.txt"). Before this, cp_mv_targets()
+    # and sed_inplace_targets() compared flag tokens RAW, so quoting a flag
+    # evaded recognition entirely: `cp "-t" "src/other/d/" src/parser/a`
+    # was wrongly ALLOWED (real bash writes to src/other/d/ via -t, but the
+    # quoted "-t" token never matched TARGET_DIRECTORY_FLAGS, so
+    # cp_mv_targets() fell through to last_flagless_token() and picked the
+    # wrong argument) -- found by adversarial review of PR #51, F028,
+    # filed as F035.
+    return unquote_token(tok)
+
+
 def cp_mv_targets(tokens):
     # cp/mv normally write to only the LAST flagless argument (the
     # destination); every earlier flagless argument is a SOURCE, read not
@@ -375,22 +395,34 @@ def cp_mv_targets(tokens):
     # fallback, never reached because this loop already returned) went
     # unchecked -- the exact failure mode F029 exists to close, just in this
     # sibling function instead of all_flagless_tokens() (found by
-    # adversarial review of PR #52, F029).
+    # adversarial review of PR #52, F029). The "--" check stays on the RAW
+    # token (matching all_flagless_tokens()/last_flagless_token()'s own
+    # convention, F029) -- a quoted "--" is not part of F035's reported
+    # shape and is left as the same residual those functions already have.
+    # Every FLAG comparison below runs against _flag_view(tok) instead, so
+    # a quoted flag can't evade it (F035); the bare `-t DIR`/
+    # `--target-directory DIR` forms return the RAW next token (tokens[i+1],
+    # untouched, unquoted exactly once later by write_targets()); the
+    # attached `--target-directory=DIR`/`-tDIR` forms extract their value
+    # from the VIEW instead, a documented, narrower residual (see header):
+    # a legitimate literal backslash inside DIR in these two attached forms
+    # specifically could be double-processed by write_targets()'s later
+    # unquote_token() pass, unlike every other path in this function.
     for i, tok in enumerate(tokens):
         if tok == "--":
             break
-        if tok in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
+        view = _flag_view(tok)
+        if view in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
             return [tokens[i + 1]]
-        if tok.startswith("--target-directory="):
-            return [tok.split("=", 1)[1]]
-        if tok.startswith("-t") and not tok.startswith("--") and len(tok) > 2:
-            return [tok[2:]]
+        if view.startswith("--target-directory="):
+            return [view.split("=", 1)[1]]
+        if view.startswith("-t") and not view.startswith("--") and len(view) > 2:
+            return [view[2:]]
     last = last_flagless_token(tokens)
     return [last] if last else []
 
 
 SED_SCRIPT_VALUE_FLAGS = ("-e", "-f", "--expression", "--file")
-EMPTY_STRING_TOKENS = ("''", '""')
 
 
 def _separator_index(args):
@@ -403,17 +435,24 @@ def _separator_index(args):
     # agree with the loop that actually walks past that point -- a naive
     # `args.index("--")` could disagree and truncate one token too early
     # (found by adversarial review of PR #52, round 3). Does not replicate
-    # the loop's `-i ''` two-token skip: that skip is gated on
-    # EMPTY_STRING_TOKENS ("''"/'""'), neither of which can ever equal "--",
-    # so it cannot change where the real separator is and is safely omitted
+    # the loop's `-i ''` two-token skip: that skip is gated on the NEXT
+    # token's unquoted view being empty, which can never equal "--" (a
+    # real "--" always has a non-empty view), so it cannot change where
+    # the real separator is and is safely omitted
     # here (verified by adversarial review of PR #52, round 4: brute-forced
     # every arg sequence up to length 4 over this function's own alphabet,
-    # zero disagreements with the full loop).
+    # zero disagreements with the full loop). Compares _flag_view(args[i]),
+    # not the raw token, against SED_SCRIPT_VALUE_FLAGS -- so a quoted
+    # "-e"/"-f" is recognized as consuming the next token too, keeping this
+    # in agreement with sed_inplace_targets()'s own now-view-aware checks
+    # (F035); using the raw token here instead would silently reintroduce
+    # the exact guard-vs-loop disagreement bug class F029 round 3 fixed,
+    # just triggered by quoting instead of a value-consumed "--".
     i = 0
     while i < len(args):
         if args[i] == "--":
             return i
-        i += 2 if args[i] in SED_SCRIPT_VALUE_FLAGS else 1
+        i += 2 if _flag_view(args[i]) in SED_SCRIPT_VALUE_FLAGS else 1
     return len(args)
 
 
@@ -439,8 +478,8 @@ def sed_inplace_targets(tokens):
     # '.bak' 's/a/b/' file`, as opposed to the far more common attached
     # form `-i.bak` or the empty-suffix form `-i ''`) is not recognized --
     # that token is misread as the implicit script, denying an in-scope
-    # command. Not fixed: EMPTY_STRING_TOKENS only matches a token that IS
-    # (quoted) emptiness, and widening it to "any token after a bare -i"
+    # command. Not fixed: the check only matches a token whose unquoted
+    # view IS empty, and widening it to "any token after a bare -i"
     # would reintroduce the exact ambiguity this function exists to resolve
     # (GNU's bare "-i" never takes a following value at all) (found by
     # adversarial review of PR #46, round 2). Same "--" gap as
@@ -473,18 +512,27 @@ def sed_inplace_targets(tokens):
     # keep it a plain boundary lookup with no target-collection side
     # effects) so the guards and the loop always agree on where flag
     # parsing actually ends.
+    # Every FLAG comparison in this function (the two any() guards above and
+    # the loop below) runs against _flag_view(tok), not the raw token, so a
+    # quoted flag can't evade recognition -- e.g. `sed "-i" "" -e "s/a/b/"
+    # src/other/f.txt` was wrongly ALLOWED before this, since a quoted "-i"
+    # never matched the bare-"-i" guard (found by adversarial review of
+    # PR #51, F028, filed as F035). "--" itself stays a RAW comparison
+    # (matching all_flagless_tokens()'s own convention, F029); a quoted
+    # "--" is not part of F035's reported shape, left as the same residual.
     if not tokens or tokens[0] != "sed":
         return []
     args = tokens[1:]
     pre_separator_args = args[: _separator_index(args)]
     if not any(
-        t == "-i" or t.startswith("-i") or t == "--in-place" for t in pre_separator_args
+        _flag_view(t) == "-i" or _flag_view(t).startswith("-i") or _flag_view(t) == "--in-place"
+        for t in pre_separator_args
     ):
         return []
     has_explicit_script = any(
-        t in SED_SCRIPT_VALUE_FLAGS
-        or t.startswith("--expression=")
-        or t.startswith("--file=")
+        _flag_view(t) in SED_SCRIPT_VALUE_FLAGS
+        or _flag_view(t).startswith("--expression=")
+        or _flag_view(t).startswith("--file=")
         for t in pre_separator_args
     )
     targets = []
@@ -498,13 +546,14 @@ def sed_inplace_targets(tokens):
             i += 1
             continue
         if not past_separator:
-            if tok in SED_SCRIPT_VALUE_FLAGS:
+            view = _flag_view(tok)
+            if view in SED_SCRIPT_VALUE_FLAGS:
                 i += 2
                 continue
-            if tok == "-i" and i + 1 < len(args) and args[i + 1] in EMPTY_STRING_TOKENS:
+            if view == "-i" and i + 1 < len(args) and _flag_view(args[i + 1]) == "":
                 i += 2
                 continue
-            if tok.startswith("-"):
+            if view.startswith("-"):
                 i += 1
                 continue
         if not consumed_implicit_script:
