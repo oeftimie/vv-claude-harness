@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 22,
-  "passing": 12,
+  "total_features": 32,
+  "passing": 17,
   "features": [
     {
       "id": "F001",
@@ -967,6 +967,30 @@
       "id": "F031",
       "description": "skills/harness-init/enforce-scope.sh.template's unquote_token() strips quote characters ('/\"/$'...') from an already-tokenized word but never removes shell backslash-escapes, so a backslash-escaped traversal segment still reads as a literal directory name rather than a real '..': with scope 'src/parser/', `echo x > src/parser/\\../other/x.txt` writes to src/other/x.txt in real bash (CONFIRMED: `bash -c \"echo content > src/parser/\\\\../other/x.txt\"` creates the file at src/other/x.txt, outside the scope directory) but the hook ALLOWS it -- F026's os.path.normpath() resolution never runs on a genuine '..' token because the literal characters seen by write_targets()/normalize() are 'src/parser/\\..' (backslash included), not 'src/parser/..'. Same vulnerability class as F026 (path-traversal scope escape), different root cause (escape-character handling, not path resolution) -- one character added to a real, already-confirmed bypass.",
       "priority": 12,
+      "status": "passing",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 656/656 is the gate)",
+      "notes": "Discovered by F026's round-1 reviewer while stress-testing the traversal-resolution fix; explicitly flagged as pre-existing (not introduced by F026) and a different root cause, defensible as a follow-up rather than blocking F026's merge. Independently re-verified against real bash before filing (bash -c, not zsh, to get accurate shell semantics). Likely fix: strip backslash-escapes from a token (or from the whole segment before tokenizing) the same way quote characters are stripped, consistent with commit-gate.sh.template's existing posture on shell metacharacter handling.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Confirmed the fix scope narrowly: the Edit/Write/MultiEdit legacy path receives file_path as a literal JSON string parameter, never shell-parsed, so backslash-escape semantics don't apply there -- only the Bash-command path (which reads shell command strings through segments_of()/unquote_token()) needed the fix. Caught this by tracing an initially-drafted Edit-path test case by hand before implementing, not after.",
+        "Applied backslash-unescaping (\\X -> X) uniformly after quote-stripping in unquote_token(), accepting a documented residual (a real single-quoted literal backslash in a filename gets normalized away too) consistent with this hook's existing pattern-based, evadable-by-construction philosophy -- matches how other residuals in this same file are handled and documented."
+      ],
+      "failure_reason": null,
+      "discovered_via": "F026",
+      "spec": null
+    },
+    {
+      "id": "F033",
+      "description": "skills/harness-init/enforce-scope.sh.template's unquote_token() strips the $'...' ANSI-C-quote wrapper (via a regex capturing its inner content) but never decodes the ANSI-C backslash escapes inside it, so a traversal segment spelled with a hex/octal escape survives intact. CONFIRMED against real bash: $'src/parser/\\x2e\\x2e/other/x.txt' really writes to src/other/x.txt (bash decodes \\x2e to the literal character \".\", twice, giving \"..\"), but the hook still sees the literal 8-character string \\x2e\\x2e as one path segment, which normalize() correctly does not recognize as \"..\", so it never resolves the traversal and the write is wrongly ALLOWED. Same vulnerability class and same consequence as F031 (a shell-level string-literal transformation the hook does not replicate, letting a traversal spelling evade normalize()'s exact \"..\" check), but a different mechanism: F031 was escape REMOVAL (\\.. -> ..); this is escape DECODING (\\x2e -> .) inside an already-recognized ANSI-C quote span. Pre-existing on main; NOT introduced or fixed by F031's PR (unquote_token's $' handling and its backslash-unescape pass are applied as two independent steps; the second never re-examines the already-extracted $'...' inner text for its own escape syntax).",
+      "priority": 18,
       "status": "pending",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
@@ -976,12 +1000,12 @@
       "assigned_to": null,
       "test_file": null,
       "coverage": null,
-      "notes": "Discovered by F026's round-1 reviewer while stress-testing the traversal-resolution fix; explicitly flagged as pre-existing (not introduced by F026) and a different root cause, defensible as a follow-up rather than blocking F026's merge. Independently re-verified against real bash before filing (bash -c, not zsh, to get accurate shell semantics). Likely fix: strip backslash-escapes from a token (or from the whole segment before tokenizing) the same way quote characters are stripped, consistent with commit-gate.sh.template's existing posture on shell metacharacter handling.",
+      "notes": "Discovered by adversarial review of PR #50 (F031), explicitly filed as out-of-scope for that PR (a live bypass, unchanged by F031's fix, not a regression it introduced). Likely fix: after $'...' extraction, decode ANSI-C backslash escapes (\\xHH, \\NNN octal, \\n, \\t, etc. per bash's $'' grammar) before the existing plain-backslash unescape pass runs, or before normalize() sees the token -- scope this carefully, since decoding the wrong set of escapes could itself introduce a new gap.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
       "failure_reason": null,
-      "discovered_via": "F026",
+      "discovered_via": "F031",
       "spec": null
     }
   ]
