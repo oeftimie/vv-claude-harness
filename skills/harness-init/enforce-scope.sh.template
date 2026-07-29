@@ -398,11 +398,17 @@ def _separator_index(args):
     # separator, skipping any "--" consumed as an -e/-f/--expression/--file
     # VALUE (e.g. `sed -f -- 's/a/b/'`, where "--" is a script file's own
     # name, not the pathspec separator). Mirrors sed_inplace_targets()'s own
-    # token-walking loop exactly, so callers that need to know "where does
-    # flag parsing end" (the two any() guards) agree with the loop that
-    # actually walks past that point -- a naive `args.index("--")` could
-    # disagree and truncate one token too early (found by adversarial
-    # review of PR #52, round 3).
+    # token-walking loop for separator-finding purposes, so callers that
+    # need to know "where does flag parsing end" (the two any() guards)
+    # agree with the loop that actually walks past that point -- a naive
+    # `args.index("--")` could disagree and truncate one token too early
+    # (found by adversarial review of PR #52, round 3). Does not replicate
+    # the loop's `-i ''` two-token skip: that skip is gated on
+    # EMPTY_STRING_TOKENS ("''"/'""'), neither of which can ever equal "--",
+    # so it cannot change where the real separator is and is safely omitted
+    # here (verified by adversarial review of PR #52, round 4: brute-forced
+    # every arg sequence up to length 4 over this function's own alphabet,
+    # zero disagreements with the full loop).
     i = 0
     while i < len(args):
         if args[i] == "--":
