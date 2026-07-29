@@ -41,10 +41,14 @@
 # argument as a source (read, not written) once any is present -- clustered
 # short flags (`-rt DIR`, combining -r and -t) are not recognized, a
 # documented residual. `--` as a pathspec separator (e.g. `rm -- -a.txt`,
-# where -a.txt is a real filename, not a flag) is not recognized by
-# all_flagless_tokens() the way commit-gate.sh.template handles the same
-# shape -- a pre-existing asymmetry between the two hooks, tracked
-# separately (F029), not introduced by F024.
+# where -a.txt is a real filename, not a flag) is recognized by
+# all_flagless_tokens()/last_flagless_token() the same way commit-gate.sh
+# .template's has_staging_flag() handles the same shape (F029): the first
+# "--" ends flag parsing, so every later token is kept as a real pathspec
+# even if it starts with "-". cp_mv_targets()'s own -t/--target-directory=
+# scan and sed_inplace_targets()'s flag-detection (including its two
+# any()-based guards, not just its token-walking loop) are "--"-aware the
+# same way (F029 rounds 2-3).
 # normalize()/FILE_PATH resolve "."/".." path traversal (F026). A backslash-
 # escaped traversal segment (`\..`) is also resolved (F031): unquote_token()
 # strips shell backslash-escapes, not just quote characters, before
@@ -302,15 +306,32 @@ def segments_of(command):
     return [s.strip() for s in segments if s.strip()]
 
 
-def last_flagless_token(tokens):
-    for tok in reversed(tokens):
-        if tok and not tok.startswith("-"):
-            return tok
-    return None
-
-
 def all_flagless_tokens(tokens):
-    return [tok for tok in tokens if tok and not tok.startswith("-")]
+    # A literal "--" ends flag parsing for the rest of THIS token list, same
+    # as commit-gate.sh.template's has_staging_flag(): every token after it
+    # is a real pathspec, never a flag, even if it starts with "-" (e.g. the
+    # real filename in `rm -- -a.txt`). Before this, a token starting with
+    # "-" was excluded unconditionally, so "--" and "-a.txt" were BOTH
+    # dropped and no target was found at all -- an out-of-scope -a.txt was
+    # then silently ALLOWED, not merely misnamed (F029). Only the FIRST
+    # "--" is a separator; any later one is already past it, so it's just
+    # ordinary token text, kept like any other post-separator token.
+    result = []
+    past_separator = False
+    for tok in tokens:
+        if not tok:
+            continue
+        if tok == "--" and not past_separator:
+            past_separator = True
+            continue
+        if past_separator or not tok.startswith("-"):
+            result.append(tok)
+    return result
+
+
+def last_flagless_token(tokens):
+    flagless = all_flagless_tokens(tokens)
+    return flagless[-1] if flagless else None
 
 
 def redirect_targets(segment):
@@ -346,8 +367,18 @@ def cp_mv_targets(tokens):
     # any of these forms at all, so an out-of-scope -t destination was never
     # checked (found by adversarial review of PR #42/F023, reported as
     # F024). Clustered short flags (`-rt DIR`, -r and -t combined) are not
-    # recognized, a documented residual (see header).
+    # recognized, a documented residual (see header). The scan stops at a
+    # literal "--" (end of flag parsing): without this, a real filename that
+    # happens to start with "-t" after "--" (e.g. `mv -- -t.txt dest.txt`)
+    # was misread as the -t flag itself, string-sliced into a bogus target
+    # ".txt", and the REAL destination (dest.txt, via the last_flagless_token
+    # fallback, never reached because this loop already returned) went
+    # unchecked -- the exact failure mode F029 exists to close, just in this
+    # sibling function instead of all_flagless_tokens() (found by
+    # adversarial review of PR #52, F029).
     for i, tok in enumerate(tokens):
+        if tok == "--":
+            break
         if tok in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
             return [tokens[i + 1]]
         if tok.startswith("--target-directory="):
@@ -360,6 +391,24 @@ def cp_mv_targets(tokens):
 
 SED_SCRIPT_VALUE_FLAGS = ("-e", "-f", "--expression", "--file")
 EMPTY_STRING_TOKENS = ("''", '""')
+
+
+def _separator_index(args):
+    # Returns the index of the first literal "--" that acts as a REAL
+    # separator, skipping any "--" consumed as an -e/-f/--expression/--file
+    # VALUE (e.g. `sed -f -- 's/a/b/'`, where "--" is a script file's own
+    # name, not the pathspec separator). Mirrors sed_inplace_targets()'s own
+    # token-walking loop exactly, so callers that need to know "where does
+    # flag parsing end" (the two any() guards) agree with the loop that
+    # actually walks past that point -- a naive `args.index("--")` could
+    # disagree and truncate one token too early (found by adversarial
+    # review of PR #52, round 3).
+    i = 0
+    while i < len(args):
+        if args[i] == "--":
+            return i
+        i += 2 if args[i] in SED_SCRIPT_VALUE_FLAGS else 1
+    return len(args)
 
 
 def sed_inplace_targets(tokens):
@@ -388,32 +437,70 @@ def sed_inplace_targets(tokens):
     # (quoted) emptiness, and widening it to "any token after a bare -i"
     # would reintroduce the exact ambiguity this function exists to resolve
     # (GNU's bare "-i" never takes a following value at all) (found by
-    # adversarial review of PR #46, round 2).
+    # adversarial review of PR #46, round 2). Same "--" gap as
+    # cp_mv_targets()/all_flagless_tokens() (F029): before this, EVERY token
+    # starting with "-" was skipped as a flag unconditionally, including a
+    # literal "--" itself and a real filename after it (e.g. `sed -i -- -a
+    # .txt`), so a real out-of-scope file target following "--" was never
+    # recognized and went unchecked (found by adversarial review of PR #52,
+    # F029). Once "--" is seen, EVERY flag-detection scan in this function --
+    # the `-i`/`--in-place` presence check and the has_explicit_script check
+    # immediately below, not just the token-walking loop further down --
+    # stops looking at flags for the rest of the arguments; every later
+    # token falls through to the same implicit-script-then-target logic as
+    # an ordinary flagless token. Missing this for the two `any()` checks
+    # (round 1 of PR #52 only fixed the loop) both under- and over-denies: a
+    # real out-of-scope FILE target that happens to start with "-i" (e.g.
+    # `sed 's/a/b/' -- -input.txt`, no actual -i flag at all) would wrongly
+    # trigger the in-place guard, and a real target literally named "-e" or
+    # "-f" after "--" would wrongly trigger has_explicit_script -- both
+    # found by adversarial review of PR #52, round 2). Round 2's fix used a
+    # NAIVE first-literal-"--" index for the two any() guards, but the
+    # token-walking loop below uses a FLAG-AWARE walk that skips a "--"
+    # consumed as an -e/-f/--expression/--file VALUE (e.g. `sed -f -- ...`,
+    # a script FILE literally named "--"). When a "--" is consumed as a
+    # value, the naive index and the flag-aware walk disagree about where
+    # the real separator is, so the guards could truncate one token too
+    # early and miss a genuine -i flag positioned after the value-consumed
+    # "--" (found by adversarial review of PR #52, round 3). _separator_index()
+    # duplicates the loop's own flag-aware walk (not the loop itself, to
+    # keep it a plain boundary lookup with no target-collection side
+    # effects) so the guards and the loop always agree on where flag
+    # parsing actually ends.
     if not tokens or tokens[0] != "sed":
         return []
     args = tokens[1:]
-    if not any(t == "-i" or t.startswith("-i") or t == "--in-place" for t in args):
+    pre_separator_args = args[: _separator_index(args)]
+    if not any(
+        t == "-i" or t.startswith("-i") or t == "--in-place" for t in pre_separator_args
+    ):
         return []
     has_explicit_script = any(
         t in SED_SCRIPT_VALUE_FLAGS
         or t.startswith("--expression=")
         or t.startswith("--file=")
-        for t in args
+        for t in pre_separator_args
     )
     targets = []
     consumed_implicit_script = has_explicit_script
+    past_separator = False
     i = 0
     while i < len(args):
         tok = args[i]
-        if tok in SED_SCRIPT_VALUE_FLAGS:
-            i += 2
-            continue
-        if tok == "-i" and i + 1 < len(args) and args[i + 1] in EMPTY_STRING_TOKENS:
-            i += 2
-            continue
-        if tok.startswith("-"):
+        if tok == "--" and not past_separator:
+            past_separator = True
             i += 1
             continue
+        if not past_separator:
+            if tok in SED_SCRIPT_VALUE_FLAGS:
+                i += 2
+                continue
+            if tok == "-i" and i + 1 < len(args) and args[i + 1] in EMPTY_STRING_TOKENS:
+                i += 2
+                continue
+            if tok.startswith("-"):
+                i += 1
+                continue
         if not consumed_implicit_script:
             consumed_implicit_script = True
             i += 1
