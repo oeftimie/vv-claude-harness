@@ -1642,6 +1642,35 @@ OUT=$(run_hook "$DIR_HS_GLOBROOT" enforce-scope.sh \
 RC=$?
 assert_rc0 "$RC" "hs2: an in-scope edit under a glob-metacharacter project root passes, rc 0"
 
+# F031: unquote_token() strips quote characters from an extracted target but
+# never removes shell backslash-escapes, so a backslash-escaped ".." segment
+# reads as a literal directory name ("\..") rather than a real traversal
+# segment -- normalize()'s os.path.normpath() only collapses the exact
+# string "..", not "\..", so the scope-prefix check is fooled even though
+# real bash strips the backslash and genuinely traverses out. Filed during
+# F026's review.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/\../other/x.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a backslash-escaped '..'-traversal exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: backslash-escaped traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2: backslash-escaped traversal denial names the real, resolved out-of-scope path"
+
+# Not applicable to the Edit/Write/MultiEdit legacy path: file_path arrives as
+# a literal JSON string parameter, never shell-parsed, so a backslash
+# character in it is just part of the filename -- there is no shell to strip
+# it, unlike a Bash tool_input command string.
+
+# A backslash before an ordinary character elsewhere in an in-scope path
+# must not itself trigger a false denial -- only ".." segments matter.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/\ok.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a backslash-escaped ordinary character in an in-scope path passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: backslash-escaped ordinary character has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
