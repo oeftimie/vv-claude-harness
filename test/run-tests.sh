@@ -1227,6 +1227,70 @@ RC=$?
 assert_rc0 "$RC" "hs2: a double-quoted out-of-scope rm target still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: double-quoted rm denial uses JSON deny form"
 
+# F028: a naive redirect_target() regex ([^\s<>|&;]+) would stop at the first
+# internal space regardless of quote context, truncating a quoted path with a
+# space in it ("my file.txt" -> "my"). Filed as a latent gap while F024's
+# multi-target masking fix (redirect_target() -> redirect_targets(), matching
+# against a mask_quotes() copy so the NUL-masked quoted span never contains a
+# real whitespace character) was mid-flight; by the time this feature was
+# picked up, F024 had already landed and closed it as an unintended side
+# effect -- confirmed here by locking in the full, unquoted, un-truncated
+# target on both sides of the scope boundary, not by fixing anything.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > "src/other/my file.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F028): quoted out-of-scope target with an internal space exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F028): quoted-space-target denial uses JSON deny form"
+assert_contains "$OUT" "src/other/my file.txt" \
+  "hs2 (F028): quoted-space-target denial names the full path, not truncated at the space"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > "src/parser/my file.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F028): quoted in-scope target with an internal space passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F028): quoted in-scope space-target has no deny fields"
+
+# Round-2 review of PR #51: F028's own description named a SECOND, still-open
+# root cause -- write_targets()'s naive `.split()` (not quote-aware) shatters
+# a quoted target containing a space into two pseudo-tokens BEFORE cp/mv/rm/
+# sed-i target extraction ever runs. This produces both a false deny (an
+# in-scope filename with a space, denied naming a path the user never typed)
+# and a reachable fail-open (a real out-of-scope destination's tail fragment
+# looks in-scope on its own, and cp/mv's last-flagless-token logic picks it)
+# -- found by adversarial review of PR #51, F028.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm "src/parser/my file.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F028): rm on an in-scope quoted target with a space passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F028): rm quoted-space in-scope target has no deny fields (no false deny)"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp a.txt "src/other/evil src/parser/ok.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F028): cp with a split-prone out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F028): split-prone cp destination denial uses JSON deny form"
+assert_contains "$OUT" "src/other/evil src/parser/ok.txt" \
+  "hs2 (F028): split-prone cp destination denial names the real, whole path (no fail-open)"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv a.txt "src/other/evil src/parser/ok.txt"')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F028): mv with a split-prone out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F028): split-prone mv destination denial uses JSON deny form"
+
+# An explicit -e script (rather than relying on the implicit-script slot) so
+# the split-prone quoted string is unambiguously the FILE target, not
+# consumed as the script itself.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i '' -e 's/a/b/' \"src/other/evil src/parser/ok.txt\"")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F028): sed -i with a split-prone out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F028): split-prone sed -i target denial uses JSON deny form"
+assert_contains "$OUT" "src/other/evil src/parser/ok.txt" \
+  "hs2 (F028): split-prone sed -i denial names the real, whole path, not a mangled fragment"
+
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm -rf "src/other/"')")
 RC=$?
 assert_rc0 "$RC" "hs2: a double-quoted out-of-scope 'rm -rf' target still exits 0 (JSON deny)"
