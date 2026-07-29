@@ -55,6 +55,28 @@ else
   rm -f "$H/SESSION_INCOMPLETE" 2>/dev/null
 fi
 
+# MLD discipline note: informational only, never written to SESSION_INCOMPLETE (not a
+# gap) -- newer and softer than the Meta-Session retrospective check above, reviewed on
+# its own cadence (rules/mld-review.md) rather than gated every session.
+MLD_DIR="$H/mld"
+MLD_TODAY=$(date -u +%Y-%m-%d)
+MLD_TODAY_LOCAL=$(date +%Y-%m-%d)
+MLD_FOUND=""
+if [ -d "$MLD_DIR" ]; then
+  if find "$MLD_DIR" -maxdepth 1 -name "${MLD_TODAY}-*.md" -print -quit 2>/dev/null \
+      | grep -q .; then
+    MLD_FOUND=1
+  elif [ "$MLD_TODAY_LOCAL" != "$MLD_TODAY" ] \
+      && find "$MLD_DIR" -maxdepth 1 -name "${MLD_TODAY_LOCAL}-*.md" -print -quit \
+        2>/dev/null | grep -q .; then
+    MLD_FOUND=1
+  fi
+fi
+if [ -z "$MLD_FOUND" ]; then
+  printf 'Discipline note (informational, not blocking): no .harness/mld/ entry found\n'
+  printf 'for today (%s) -- see rules/mld-review.md for the write step.\n' "$MLD_TODAY"
+fi
+
 # Proof discipline note: informational only, never written to SESSION_INCOMPLETE
 # (not a gap) -- a passing feature with no proof recorded is worth surfacing, not
 # blocking the next session over.

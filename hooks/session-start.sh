@@ -16,6 +16,14 @@ except Exception:
     pass
 ' 2>/dev/null || true)
 
+SESSION_ID=$(printf '%s' "$STDIN_JSON" | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("session_id", ""))
+except Exception:
+    pass
+' 2>/dev/null || true)
+
 if [ "$SOURCE" = "compact" ]; then
   echo "## Compaction recovery"
   echo "Context was just compacted. Re-read the Active Context section of"
@@ -24,6 +32,8 @@ if [ "$SOURCE" = "compact" ]; then
 fi
 
 echo "## Harness orientation (auto-injected)"
+
+[ -n "$SESSION_ID" ] && echo "Session: $SESSION_ID"
 
 if [ -f "$H/SESSION_INCOMPLETE" ]; then
   echo ""
