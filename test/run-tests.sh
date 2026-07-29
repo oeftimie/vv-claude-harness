@@ -1671,6 +1671,19 @@ assert_rc0 "$RC" "hs2: a backslash-escaped ordinary character in an in-scope pat
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: backslash-escaped ordinary character has no deny fields"
 
+# A more discriminating case than the one above: this must ALLOW under the
+# correct fix (unescaping "\p" -> "p" yields "src/parser/ok.txt", in scope)
+# but DENY under both no-fix (the literal "\parser" segment never matches
+# the "src/parser/" prefix) and an over-broad delete-the-character mutant
+# (which would yield "src/arser/ok.txt", also out of scope) -- so, unlike
+# the case above, this one actually fails without the real fix.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/\parser/ok.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: an escaped-but-ordinary path segment resolves to its in-scope form, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: escaped-but-ordinary path segment has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then

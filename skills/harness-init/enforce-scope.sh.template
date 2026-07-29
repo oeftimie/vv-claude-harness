@@ -258,10 +258,11 @@ def unquote_token(token):
     # segment hide from normalize()'s os.path.normpath() resolution, which
     # only recognizes the exact string ".." (F031). Applied uniformly after
     # quote-stripping since this function no longer tracks which spans were
-    # originally single-quoted (where bash treats backslash as ordinary,
-    # non-special text) -- an accepted, documented residual, same as the
-    # rest of this pattern-based, evadable-by-construction hook: a real
-    # single-quoted literal backslash in a filename is normalized away too.
+    # originally quoted (where bash treats a backslash as ordinary,
+    # non-special text, true of both single- and double-quoted spans) --
+    # an accepted, documented residual, same as the rest of this
+    # pattern-based, evadable-by-construction hook: a real literal
+    # backslash in a quoted filename is normalized away too.
     return re.sub(r"\\(.)", r"\1", token)
 
 
@@ -514,12 +515,7 @@ def normalize(path, project_root):
     # couldn't know what the symlink pointed to WHEN the write actually
     # happens; not a regression versus the pre-F026 behavior, which had no
     # traversal resolution at all (found by adversarial review of PR #48,
-    # round 1). Same for a backslash-escaped traversal segment
-    # (`src/allowed/\../forbidden/x.txt`): unquote_token() strips quote
-    # characters, never shell backslash-escapes, so `\..` still reads as a
-    # literal directory name, not `..` -- pre-existing, tracked separately
-    # (F031), same "not a full shell parser" posture as this hook's other
-    # documented residuals.
+    # round 1).
     if path.startswith(project_root + "/"):
         path = path[len(project_root) + 1:]
     resolved = os.path.normpath(path)
