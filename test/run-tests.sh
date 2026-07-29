@@ -1706,6 +1706,48 @@ OUT=$(run_hook "$DIR_HS_GLOBROOT" enforce-scope.sh \
 RC=$?
 assert_rc0 "$RC" "hs2: an in-scope edit under a glob-metacharacter project root passes, rc 0"
 
+# F031: unquote_token() strips quote characters from an extracted target but
+# never removes shell backslash-escapes, so a backslash-escaped ".." segment
+# reads as a literal directory name ("\..") rather than a real traversal
+# segment -- normalize()'s os.path.normpath() only collapses the exact
+# string "..", not "\..", so the scope-prefix check is fooled even though
+# real bash strips the backslash and genuinely traverses out. Filed during
+# F026's review.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/\../other/x.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a backslash-escaped '..'-traversal exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: backslash-escaped traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2: backslash-escaped traversal denial names the real, resolved out-of-scope path"
+
+# Not applicable to the Edit/Write/MultiEdit legacy path: file_path arrives as
+# a literal JSON string parameter, never shell-parsed, so a backslash
+# character in it is just part of the filename -- there is no shell to strip
+# it, unlike a Bash tool_input command string.
+
+# A backslash before an ordinary character elsewhere in an in-scope path
+# must not itself trigger a false denial -- only ".." segments matter.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/parser/\ok.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: a backslash-escaped ordinary character in an in-scope path passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: backslash-escaped ordinary character has no deny fields"
+
+# A more discriminating case than the one above: this must ALLOW under the
+# correct fix (unescaping "\p" -> "p" yields "src/parser/ok.txt", in scope)
+# but DENY under both no-fix (the literal "\parser" segment never matches
+# the "src/parser/" prefix) and an over-broad delete-the-character mutant
+# (which would yield "src/arser/ok.txt", also out of scope) -- so, unlike
+# the case above, this one actually fails without the real fix.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo x > src/\parser/ok.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2: an escaped-but-ordinary path segment resolves to its in-scope form, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: escaped-but-ordinary path segment has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
@@ -3683,6 +3725,83 @@ do
   assert_not_contains "$OUT" "permissionDecision" \
     "cg: '$CG_FLAGWORD_MSG_CMD' is not wrongly denied as compound"
 done
+
+# F027: has_staging_flag() didn't know a space-separated value-taking short
+# flag's VALUE token (e.g. -m's next token) is opaque data, never a flag or a
+# "--" pathspec separator itself. Three shapes, one root cause:
+#   (a) `-m -- -a`  : "--" (unquoted, -m's value) wrongly read as a real
+#       pathspec separator, so the REAL -a flag after it was never reached --
+#       a pre-existing false-negative, present before F025 too.
+#   (b) `-m "--" -a`: same false negative, quoted form.
+#   (c) `-m "-a"`   : -m's value is literally the text "-a" -- nothing else
+#       is staged (verified against real git), but the old code read the
+#       value token itself as if it were the -a flag -- a false positive.
+DIR_CG_MVALUE="$WORK/commit-gate-m-value-token"
+make_fixture "$DIR_CG_MVALUE"
+install_hooks "$DIR_CG_MVALUE"
+for CG_MVALUE_DENY_CMD in \
+  'git commit -m -- -a' \
+  'git commit -m "--" -a'
+do
+  OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_MVALUE_DENY_CMD")
+  RC=$?
+  assert_rc0 "$RC" "cg: '$CG_MVALUE_DENY_CMD' exits 0 (JSON deny)"
+  assert_deny_json "$OUT" "cg: '$CG_MVALUE_DENY_CMD' -a after -m's value is still denied"
+  assert_contains "$OUT" "compound-stage-and-commit" \
+    "cg: '$CG_MVALUE_DENY_CMD' denial names compound-stage-and-commit"
+done
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -m "-a"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -m \"-a\"' exits 0, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: -m's own value '-a' is not misread as the -a staging flag"
+
+# F027 round-1 review: a first pass only skipped the value token for a BARE
+# 2-character flag ("-m" alone), missing every multi-letter cluster ending
+# on a value-taking flag, e.g. "-sm" (sign-off + message). Same 2 shapes,
+# cluster form. Verified against real git: `git commit -sm -- -a` both
+# signs off AND stages (via the real trailing -a), and `git commit -sm "-a"`
+# stages nothing extra (-a is just message text).
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -sm -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -sm -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: cluster-form -sm's value doesn't shadow a real trailing -a"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: 'git commit -sm -- -a' denial names compound-stage-and-commit"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -sm "-a"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -sm \"-a\"' exits 0, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: cluster-form -sm's own value '-a' is not misread as the -a staging flag"
+
+# Round-2 review: the round-1 fix made -S/-u position-aware TOO, treating a
+# bare/clustered -S or -u as consuming the next token as its value like -m
+# does. Real git parses -S/-u as optargs (PARSE_OPT_OPTARG): a BARE -S/-u
+# uses its default and does NOT consume the next token, so `-u -a`/`-S -a`
+# (and clustered `-nu -a`/`-vS -a`) are genuine stage-and-commit shapes that
+# `main` already denied and the round-1 fix wrongly allowed -- found by
+# adversarial review of PR #49, round 2, confirmed against real git 2.52.0.
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -u -a -m x')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -u -a -m x' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare -u does not swallow a real trailing -a"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -S -a -m x')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -S -a -m x' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare -S does not swallow a real trailing -a"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -nu -a -m x')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -nu -a -m x' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: clustered -nu does not swallow a real trailing -a"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -vS -a -m x')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -vS -a -m x' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: clustered -vS does not swallow a real trailing -a"
 
 echo ""
 echo "== agent frontmatter =="
