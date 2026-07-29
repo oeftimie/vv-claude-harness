@@ -451,6 +451,31 @@ def strip_redirects(segment):
     return "".join(kept)
 
 
+def split_tokens(segment):
+    # Splits a command segment into whitespace-delimited tokens, but
+    # whitespace INSIDE a quoted span is not a token boundary (exactly like
+    # the shell): \S+ runs are found in a quote-MASKED copy (so masked-out
+    # quoted whitespace can't match \S, keeping a quoted multi-word string
+    # as one run) but sliced from the ORIGINAL segment -- the same
+    # mask-then-slice discipline segments_of()/redirect_targets() already
+    # use one level up, ported from commit-gate.sh.template's split_tokens()
+    # (F011/OVI-64). Before this, write_targets() fed command_tokens a plain
+    # `.split()`, which shattered a quoted target containing a space into
+    # TWO pseudo-tokens: `rm "my file.txt"` was wrongly DENIED naming just
+    # "file.txt" (the quotes stripped from each half independently, no
+    # single real path ever reconstructed), and worse, `cp a "out-of-scope
+    # in-scope-looking-tail"` was wrongly ALLOWED, since cp/mv's own
+    # last-flagless-token destination logic picked the tail fragment -- a
+    # reachable fail-open, not just a cosmetic misnaming (found by
+    # adversarial review of PR #51, F028; F028 was originally filed
+    # against a DIFFERENT function, redirect_target()'s own regex, which
+    # F024 closed as a side effect before this feature was picked up --
+    # this second, still-open root cause is the one F028's own "Likely fix"
+    # note already named).
+    masked = mask_quotes(segment)
+    return [segment[m.start():m.end()] for m in re.finditer(r"\S+", masked)]
+
+
 def write_targets(segment):
     # Returns EVERY real write target in a segment, not just one -- a command
     # can write to multiple targets at once (`rm a b`, `tee f1 f2`, `sed -i`
@@ -464,7 +489,7 @@ def write_targets(segment):
     # in-scope-log`) only ever had the redirect's target checked, masking the
     # command's own real target (found by adversarial review of PR #46).
     targets = redirect_targets(segment)
-    command_tokens = strip_redirects(segment).split()
+    command_tokens = split_tokens(strip_redirects(segment))
     if command_tokens:
         if command_tokens[0] in ("cp", "mv"):
             targets = targets + cp_mv_targets(command_tokens[1:])
