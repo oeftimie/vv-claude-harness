@@ -117,6 +117,16 @@
 # somewhere in that range; not pinned closer), so it was dropped from the
 # set per the 2.52 probe; this is a narrow regression on git older than
 # roughly 2.42, not a general bypass on any currently supported git.
+# GIT_COMMIT_LONG_OPTIONS/VALUE_TAKING_LONG_FLAGS (F032) is a second
+# git-version-pinned table with the identical drift exposure: last
+# verified against git 2.52.0, mechanically re-derived from git's own
+# option-parsing errors (not assembled from memory). If a future git
+# version adds, removes, or renames a `git commit` long option -- changing
+# which prefixes are ambiguous with which -- this table needs
+# re-verification against that version; a stale table's failure mode is a
+# missed abbreviation (an over-cautious deny of a real command, never a
+# bypass, since _resolve_long_flag() only ever narrows what it recognizes,
+# it does not invent new matches).
 
 INPUT=$(cat)
 
@@ -168,6 +178,83 @@ REPAIR_STAGED = (
 REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
 
 STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
+
+# The set of long options `git commit` recognizes, used as the
+# disambiguation universe for _resolve_long_flag(): real git accepts any
+# UNAMBIGUOUS prefix of a long option (`git commit --mess ...` resolves to
+# `--message`), so a fixed VALUE_TAKING_LONG_FLAGS exact-string set alone,
+# however complete, is still bypassable via abbreviation (confirmed
+# against real git 2.52.0: `--mess`, `--messa`, `--trail` etc. all resolve
+# and genuinely stage a dirty file via a trailing `-- -a`, found by
+# adversarial review of PR #56, round 1). Built from TWO sources, not
+# memory or `-h` output alone: `git commit --git-completion-helper` (the
+# baseline), THEN a systematic probe of every 2- and 3-letter `--xx`/`--xyz`
+# prefix against real git, collecting every option name mentioned in the
+# resulting "ambiguous option: ... (could be A or B)" error messages --
+# this second pass is what surfaced --allow-empty/--allow-empty-message
+# and their --no- forms, which --git-completion-helper's own suggestion
+# list omits entirely (confirmed: `git commit --al` genuinely errors
+# "ambiguous option: al (could be --allow-empty or --allow-empty-message)"
+# in real git, a 3-way ambiguity with --all that neither source alone
+# would have revealed). NOT included: git's further "--no-no-X" double-
+# negation forms (e.g. --no-no-verify, git's auto-negation of its own
+# --no-verify) -- confirmed real but not resolved by this function, an
+# accepted, narrow residual (this deep a double-negation abbreviation is
+# not a realistic attack shape). The `--no-`-prefixed entries are real,
+# independently abbreviation-eligible strings in git's own resolver even
+# though none of them are in VALUE_TAKING_LONG_FLAGS below.
+GIT_COMMIT_LONG_OPTIONS = (
+    "--quiet", "--verbose", "--file", "--author", "--date", "--message",
+    "--reedit-message", "--reuse-message", "--fixup", "--squash",
+    "--reset-author", "--trailer", "--signoff", "--template", "--edit",
+    "--cleanup", "--status", "--gpg-sign", "--all", "--include",
+    "--interactive", "--patch", "--unified", "--inter-hunk-context",
+    "--only", "--no-verify", "--dry-run", "--short", "--branch",
+    "--ahead-behind", "--porcelain", "--long", "--null", "--amend",
+    "--no-post-rewrite", "--untracked-files", "--pathspec-from-file",
+    "--pathspec-file-nul", "--verify", "--post-rewrite",
+    "--allow-empty", "--allow-empty-message",
+    "--no-allow-empty", "--no-allow-empty-message",
+)
+
+# Long `git commit` flags that take a bare (space-separated) value, e.g.
+# `git commit --message foo`. Unlike VALUE_TAKING_SHORT_FLAGS/
+# REQUIRED_VALUE_SHORT_FLAGS (F027), no split into an "attached-only" vs
+# "required" subset is needed here: verified against `git commit -h` that
+# all 14 are genuinely required-value (shown as `<value>`, never the
+# bracketed `[=<mode>]` optarg syntax `-u[<mode>]`/`-S[<keyid>]` use), so
+# every bare occurrence unconditionally consumes the next token as its
+# value. The attached "--message=foo" form is a single token that never
+# equals any string in this set, so it's never mistaken for the bare form
+# and needs no special handling. Before this, has_staging_flag() only
+# recognized this space-separated-value pattern for SHORT flags (F027),
+# then only 8 of these 14 long flags (round 1 of F032, missing --trailer,
+# --reedit-message, --cleanup, --unified, --inter-hunk-context, and
+# --pathspec-from-file -- found by the same PR #56 round-1 review that
+# caught the abbreviation gap).
+VALUE_TAKING_LONG_FLAGS = {
+    "--message", "--file", "--author", "--date", "--template",
+    "--fixup", "--squash", "--reuse-message", "--trailer",
+    "--reedit-message", "--cleanup", "--unified", "--inter-hunk-context",
+    "--pathspec-from-file",
+}
+
+
+def _resolve_long_flag(view):
+    # Real git accepts any prefix of a long option that uniquely identifies
+    # it among ALL options the subcommand recognizes -- not just among the
+    # value-taking ones -- so resolution must check against the FULL
+    # GIT_COMMIT_LONG_OPTIONS universe, not just VALUE_TAKING_LONG_FLAGS,
+    # to correctly mirror real git's own ambiguity rule. Returns the
+    # resolved full flag name, or None if `view` doesn't uniquely resolve
+    # (no match, or an ambiguous prefix of 2+ options) -- in the ambiguous
+    # case, real git itself errors out and nothing runs, so treating it as
+    # "not a recognized flag" here is always safe, never a bypass.
+    if view in GIT_COMMIT_LONG_OPTIONS:
+        return view
+    matches = [o for o in GIT_COMMIT_LONG_OPTIONS if o.startswith(view)]
+    return matches[0] if len(matches) == 1 else None
+
 # Global git flags that consume a following argument in their space-separated
 # form (the "=value" form, e.g. --git-dir=.git, is already handled -- it's a
 # single token with no following argument to skip). This set was probed
@@ -482,7 +569,25 @@ def has_staging_flag(tokens):
             break  # everything after this is a pathspec, never a flag
         if tok in STAGING_FLAGS:
             return True
-        if tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
+        if tok.startswith("--") and len(tok) > 2 and "=" not in tok:
+            # Resolves an EXACT long flag too (in which case this is just a
+            # slower path to the same answer the old exact-match check
+            # gave), but also a real, unambiguous ABBREVIATION of one --
+            # `git commit --mess -- -a` staging+committing in real git,
+            # exactly like the fully-spelled form, is why this branch
+            # exists at all (found by adversarial review of PR #56). Same
+            # abbreviation resolution also catches a real staging flag
+            # abbreviated (`--inc` -> --include), a related gap the fixed
+            # exact-match STAGING_FLAGS check above never covered either.
+            resolved = _resolve_long_flag(tok)
+            if resolved in STAGING_FLAGS:
+                return True
+            if resolved in VALUE_TAKING_LONG_FLAGS:
+                # Same "opaque next-token value" rule as the short-flag
+                # case below, for a bare (possibly abbreviated) long
+                # flag's space-separated value (F032).
+                i += 1
+        elif tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
             is_staging, took_bare_value = _scan_short_flag_cluster(tok)
             if is_staging:
                 return True
