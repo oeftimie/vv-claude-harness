@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 37,
-  "passing": 21,
+  "total_features": 39,
+  "passing": 22,
   "features": [
     {
       "id": "F001",
@@ -1009,19 +1009,23 @@
       "id": "F033",
       "description": "skills/harness-init/enforce-scope.sh.template's unquote_token() strips the $'...' ANSI-C-quote wrapper (via a regex capturing its inner content) but never decodes the ANSI-C backslash escapes inside it, so a traversal segment spelled with a hex/octal escape survives intact. CONFIRMED against real bash: $'src/parser/\\x2e\\x2e/other/x.txt' really writes to src/other/x.txt (bash decodes \\x2e to the literal character \".\", twice, giving \"..\"), but the hook still sees the literal 8-character string \\x2e\\x2e as one path segment, which normalize() correctly does not recognize as \"..\", so it never resolves the traversal and the write is wrongly ALLOWED. Same vulnerability class and same consequence as F031 (a shell-level string-literal transformation the hook does not replicate, letting a traversal spelling evade normalize()'s exact \"..\" check), but a different mechanism: F031 was escape REMOVAL (\\.. -> ..); this is escape DECODING (\\x2e -> .) inside an already-recognized ANSI-C quote span. Pre-existing on main; NOT introduced or fixed by F031's PR (unquote_token's $' handling and its backslash-unescape pass are applied as two independent steps; the second never re-examines the already-extracted $'...' inner text for its own escape syntax).",
       "priority": 18,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #50 (F031), explicitly filed as out-of-scope for that PR (a live bypass, unchanged by F031's fix, not a regression it introduced). Likely fix: after $'...' extraction, decode ANSI-C backslash escapes (\\xHH, \\NNN octal, \\n, \\t, etc. per bash's $'' grammar) before the existing plain-backslash unescape pass runs, or before normalize() sees the token -- scope this carefully, since decoding the wrong set of escapes could itself introduce a new gap.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 736/736 is the gate)",
+      "notes": "Discovered by adversarial review of PR #50 (F031), explicitly filed as out-of-scope for that PR (a live bypass, unchanged by F031's fix, not a regression it introduced). Likely fix: after $'...' extraction, decode ANSI-C backslash escapes (\\xHH, \\NNN octal, \\n, \\t, etc. per bash's $'' grammar) before the existing plain-backslash unescape pass runs, or before normalize() sees the token -- scope this carefully, since decoding the wrong set of escapes could itself introduce a new gap. Fixed by decoding ANSI-C escapes in the same regex substitution that extracts the $'...' span. \\cX (control-char), \\uHHHH, and \\UHHHHHHHH escapes are deliberately NOT decoded -- filed separately as F038 (same vulnerability class, narrower/rarer).",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Verified bash's actual $'...' escape-decoding rules empirically (bash 3.2.57) before implementing, rather than from memory: \\xHH (1-2 hex digits, case-insensitive) and \\nnn (1-3 octal digits) decode to that byte; \\\\, \\', \\\", \\a, \\b, \\e, \\f, \\n, \\r, \\t, \\v decode to their usual meaning; any OTHER backslash escape (including \\8/\\9, invalid octal, or \\x with no hex digit following) is left as a literal backslash plus that character UNCHANGED -- bash does not drop the backslash for an unrecognized escape inside $'...'.",
+        "Implemented _decode_ansi_c_escape() and wired it into unquote_token()'s existing $'...' extraction regex via a substitution callback, so decoding happens in the SAME pass that identifies the $'...' span -- not left for the generic outside-quotes backslash-unescape pass (F031) to run on undecoded escape text, which would have mangled it differently (e.g. turning \\x2e into the wrong string x2e) rather than leaving the real vulnerability unaddressed.",
+        "Mutation-tested by reverting to the old plain-strip regex: exactly the 4 new DENY-path assertions fail (the two rc0-only assertions pass either way, since ALLOW also exits rc 0 -- matching the exact bug shape, a silent fail-open, not a crash). Restored and re-verified 736/736 green."
+      ],
       "failure_reason": null,
       "discovered_via": "F031",
       "spec": null
@@ -1129,6 +1133,48 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F029",
+      "spec": null
+    },
+    {
+      "id": "F038",
+      "description": "skills/harness-init/enforce-scope.sh.template's ANSI_C_ESCAPE_PATTERN (F033) decodes \\xHH and \\nnn escapes inside a $'...' span but does not recognize \\cX (control-char, e.g. \\cA -> 0x01), \\uHHHH (4-hex-digit Unicode codepoint), or \\UHHHHHHHH (8-hex-digit Unicode codepoint) -- all three are real bash $'...' escape forms. A traversal segment spelled via one of these (e.g. \\u002e\\u002e for '..') would be left as literal, undecoded text by the current decoder (since it's treated as an 'unrecognized escape', matching the same 'leave backslash+char literal' fallback used for genuinely unknown escapes), so normalize() never sees a real '..' to resolve, while real bash WOULD decode it and genuinely escape scope -- the exact same vulnerability class as F033, just a narrower/rarer set of escape spellings. VERIFIED against this repo's actual bash (3.2.57): \\u002e and \\U0000002e are NOT decoded at all here (both left as literal backslash-plus-text, e.g. `$'a\\u002eb'` prints literally `a\\u002eb`) -- so \\u/\\U are not a live concern in THIS environment's bash version specifically, though the gap in this hook's own decoder remains real for any bash new enough to support them (believed added around bash 4.2, per documentation; UNVERIFIED in this environment, since no bash newer than 3.2.57 was available to test against directly -- found by adversarial review of PR #57). \\cX (control-char) IS decoded by this bash (`$'a\\cAb'` -> 0x01), but \\cX escapes only ever produce non-printable control bytes (0x00-0x1F), which can never spell '.' (0x2e) or '/' (0x2f) -- so \\cX's own gap in this hook's decoder, while real, is NOT independently traversal-exploitable the way \\u/\\U could be on a newer bash. Net: on THIS repo's bash, none of \\c/\\u/\\U currently reaches a live bypass; the residual is worth closing for portability (a newer bash elsewhere) and completeness, not because it's exploitable here today.",
+      "priority": 22,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered while implementing F033 (same feature, deliberately scoped out to keep that fix narrow and match the description's own confirmed exploit shapes). Likely fix: extend ANSI_C_ESCAPE_PATTERN with \\c., \\u{4 hex}, \\U{8 hex} alternatives and their decode logic in _decode_ansi_c_escape(), verifying each against whatever bash version is available first (this repo's bash 3.2.57 may predate \\u/\\U support, added in a later bash version -- confirm before assuming the vulnerability is live here).",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F033",
+      "spec": null
+    },
+    {
+      "id": "F039",
+      "description": "skills/harness-init/enforce-scope.sh.template's target-extraction pipeline does not truncate a token at an embedded NUL byte the way real bash truncates a word at its first NUL when building argv. CONFIRMED: `echo x > $'src/other/bad.txt\\x00/../../parser/ok.txt'` -- real bash decodes \\x00 to a genuine NUL byte and truncates the argument there, so the real write target is 'src/other/bad.txt' (OUT of scope), but this hook's normalize()/scope-check pipeline processes the WHOLE string (NUL and all), resolving the '..' segments after the NUL and landing on 'src/parser/ok.txt' (IN scope) -- wrongly ALLOWED. CONFIRMED as pre-existing on origin/main BEFORE F033 too (not a regression from F033's own fix); F033 makes this specific route more direct since \\x00 now genuinely decodes to a real NUL byte inside a $'...' span, where previously the literal 4-character string '\\x00' just stayed as inert text. Likely fix: truncate the token at the first NUL character (if any) immediately after unquote_token() finishes decoding, before normalize() or the scope-prefix comparison ever see it.",
+      "priority": 23,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #57 (F033), explicitly confirmed as a pre-existing bypass unchanged by that PR (verified ALLOW on both origin/main before F033 and the F033 branch) -- filed alongside F038 per the reviewer's own recommendation, same general vulnerability class (a shell-level string transformation this hook's pipeline doesn't replicate before the scope check runs).",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F033",
       "spec": null
     }
   ]
