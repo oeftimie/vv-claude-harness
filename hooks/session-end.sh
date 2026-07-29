@@ -74,7 +74,8 @@ if [ -d "$MLD_DIR" ]; then
 fi
 if [ -z "$MLD_FOUND" ]; then
   printf 'Discipline note (informational, not blocking): no .harness/mld/ entry found\n'
-  printf 'for today (%s) -- see rules/mld-review.md for the write step.\n' "$MLD_TODAY"
+  printf 'for today (%s) -- see /harness-continue'"'"'s Session End step to write one.\n' \
+    "$MLD_TODAY"
 fi
 
 # Proof discipline note: informational only, never written to SESSION_INCOMPLETE

@@ -181,7 +181,7 @@ Active Context and the task list. Follow it — it's your recovery path.
 1. Run full test suite one final time
 2. **Pre-commit features.json audit**: Diff `features.json` against the actual work done this session. If any code was changed that relates to a tracked feature, that feature's metadata must be updated (status, test_file, coverage). If work was done that doesn't map to any existing feature, create a new feature entry with `discovered_via` pointing to the trigger. This check is a gate before `git commit`, not an afterthought.
 3. **Retrospective (mandatory)**: Run the retrospective regardless of session type. For single-session work, it can be shorter (3-5 bullets), but it must exist. Minimum viable retrospective: (1) what was the session's actual scope vs planned scope? (2) what was discovered that wasn't anticipated? (3) what pattern or gotcha should transfer to future sessions? Write to `context_summary.md` under `## Meta-Session [DATE]` before the final commit. Skip only if this is the project's very first session.
-4. **MLD telemetry (lead-only, mandatory)**: Append `.harness/mld/YYYY-MM-DD-<session-id>.md` (the session id is the one the SessionStart orientation printed as `Session: <id>` at the top of this session; if it never printed — a non-harness startup path, or a pre-upgrade plugin copy — use a short label instead) with three sections:
+4. **MLD telemetry (lead-only, mandatory)**: Write `.harness/mld/YYYY-MM-DD-<session-id>.md` (the session id is the one the SessionStart orientation printed as `Session: <id>` at the top of this session; if it never printed — a non-harness startup path, or a pre-upgrade plugin copy — use a short label instead) with three sections:
    ```markdown
    ## Mistakes
    - [what went wrong this session, if anything — an empty list is a valid, honest entry]
@@ -382,7 +382,7 @@ Write findings to `## Meta-Patterns` for insights that generalize beyond this se
 
 Do NOT write domain-specific decisions here — those go in the Domain sections. Meta-Patterns are coordination insights: when to use Opus, how to scope, when to require plan approval.
 
-**MLD telemetry (lead-only, mandatory)**: the lead — never a teammate — appends `.harness/mld/YYYY-MM-DD-<session-id>.md` with `## Mistakes` / `## Learnings` / `## Desires` sections before Phase 5 teardown. Same format and rationale as Step 5a's Session End procedure; see `${CLAUDE_PLUGIN_ROOT}/rules/mld-review.md`.
+**MLD telemetry (lead-only, mandatory)**: the lead — never a teammate — writes `.harness/mld/YYYY-MM-DD-<session-id>.md` with `## Mistakes` / `## Learnings` / `## Desires` sections before Phase 5 teardown. Same format and rationale as Step 5a's Session End procedure; see `${CLAUDE_PLUGIN_ROOT}/rules/mld-review.md`.
 
 ### Phase 5: Teardown
 
