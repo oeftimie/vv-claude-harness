@@ -391,3 +391,72 @@
 - Merged: PR #46 @ ce8dcc8. Local main synced, feature branch deleted.
 - Next (per "take them in order"): F026, then F027, F028, F029, F030.
 - Blockers: none.
+
+## Sessions 15-18 - 2026-07-28/29/30 (F026, F027, F028, F029, F031, F030, F033, F034, F032 shipped)
+- Worked the local-bug backlog in roughly priority order, each through the
+  standard loop (TDD, mutation-tested fixes, adversarial review to APPROVE,
+  merge --merge, features.json update). All nine features now `passing`:
+  - F026 (PR #48): enforce-scope.sh normalize() now resolves ".." path
+    traversal instead of leaving it unresolved after root-prefix stripping.
+  - F027 (PR #49): commit-gate.sh has_staging_flag() now skips a
+    space-separated value-taking short flag's OWN value token instead of
+    misreading it as `--` or a flag; closed 3 related shapes at once.
+  - F028 (PR #51): enforce-scope.sh redirect_target() no longer truncates a
+    quoted path at its first internal space.
+  - F029 (PR #52, 4 rounds): enforce-scope.sh's all_flagless_tokens() now
+    recognizes "--" as a pathspec separator like commit-gate.sh does.
+  - F031 (PR #50): enforce-scope.sh unquote_token() now decodes shell
+    backslash-escapes, closing a path-traversal-via-escaped-slash gap.
+  - F030 (PR #53, round 4 merge): enforce-scope.sh no longer denies the
+    `2>/dev/null` / `2>&1` idioms as out-of-scope writes.
+  - F033 (PR #57): enforce-scope.sh unquote_token() now decodes bash's real
+    ANSI-C ($'...') backslash-escape grammar instead of leaving it raw.
+  - F034 (PR #58, round-4 notes-only follow-up in PR #60): commit-gate.sh's
+    command_segments() no longer splits on the "&" inside `2>&1`/`&>`/`&>>`
+    fd-duplication idioms, closing a real compound-stage-and-commit bypass
+    (not just a usability false-positive, unlike enforce-scope's F030).
+  - F032 (PR #56, 2 rounds): commit-gate.sh has_staging_flag() now
+    recognizes space-separated long-flag VALUES (--message, --file,
+    --trailer, etc. -- grew from 8 to 14 value-taking long flags) and
+    resolves abbreviated long flags via git's own unambiguous-prefix rule
+    (_resolve_long_flag()), closing both a live `--trailer`-shaped bypass
+    and an abbreviation bypass (`--mess`, `--trail`, etc. all genuinely
+    stage+commit in real git).
+  - Recurring pattern across this whole arc: fixing one hook's bug
+    routinely surfaced the same bug class in a sibling hook, or a narrower
+    residual in the same function -- each review round's own findings fed
+    the next feature's filing (F035-F040, see below).
+- Tests: 823/823 passing on main as of this entry (full_test is the gate;
+  no coverage tool for this shell suite).
+- Discovered, still open (all internally discovered, no Linear issue,
+  status "pending" in features.json):
+  - F035 (priority 19, discovered_via F028): enforce-scope.sh's
+    cp_mv_targets()/sed_inplace_targets() don't recognize a QUOTED "--" or
+    quoted flag the way an unquoted one is recognized. Fix implemented and
+    pushed as PR #59 (2 rounds so far: round 1 fixed 2 of 4 "--"-recognition
+    call sites, round 2 closed the other 2 plus 8 mutation-coverage gaps a
+    reviewer found, plus filed F040 below). Round-2 review verdict not yet
+    received as of this entry -- reviewer agent pinged, awaiting response.
+  - F036 (priority 20, discovered_via F030): enforce-scope.sh's
+    redirect_targets()/strip_redirects() gap on `>&word`-shaped redirects.
+  - F037 (priority 21, discovered_via F029): sed_inplace_targets() doesn't
+    recognize GNU/BSD `-i`'s clustered or long-form (`--in-place=`) spellings.
+  - F038 (priority 22, discovered_via F033): ANSI_C_ESCAPE_PATTERN doesn't
+    decode `\c`/`\u`/`\U` escapes (confirmed non-exploitable: produces
+    non-printable bytes only, never `.`/`/`).
+  - F039 (priority 23, discovered_via F033): enforce-scope.sh's
+    target-extraction pipeline doesn't truncate on an embedded NUL the way
+    real argv parsing would.
+  - F040 (discovered_via F035, filed on the F035 branch, not yet in main's
+    features.json): write_targets() compares command_tokens[0] raw against
+    the cp/mv/tee/rm/sed name sets, so `\rm`, `"rm"`, `'rm'` all evade
+    recognition entirely.
+- Blocked, unchanged since session 11: F012/OVI-53 and F013/OVI-63 both
+  await Ovidiu's answers to open spec-verification questions from an
+  earlier session; no Linear-tracked work possible until he responds.
+  F014-F021 not yet started.
+- Next: resolve PR #59 (F035) once its round-2 verdict lands, then pick up
+  F036-F040 in the same loop. Still deferred: refresh live .claude/hooks/*.sh
+  from F003's/F008's/F009's/F010's fixed templates; draft CHANGELOG catch-up
+  once a version bump is confirmed with Ovidiu.
+- Blockers: F012/F013 only (see above); no blockers on the local-bug loop.
