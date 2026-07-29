@@ -1362,6 +1362,51 @@ assert_rc0 "$RC" "hs2: all-in-scope multi-target rm passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: all-in-scope multi-target rm has no deny fields"
 
+# F029: all_flagless_tokens()/last_flagless_token() treated ANY token
+# starting with "-" as a flag, unconditionally, with no awareness of "--" as
+# the POSIX pathspec separator. `rm -- -a.txt` (a real, literal filename
+# because "--" ends flag parsing) was misread: "--" and "-a.txt" were BOTH
+# excluded as flag-shaped, so no target was identified at all and the
+# command was wrongly ALLOWED even when -a.txt was out of scope. Sibling
+# hook commit-gate.sh.template already recognizes "--" this way
+# (has_staging_flag's `if tok == "--": break`); this hook never got the
+# equivalent treatment until now.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm -- -a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F029): 'rm -- -a.txt' out-of-scope literal-dash target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F029): 'rm -- -a.txt' denial uses JSON deny form"
+assert_contains "$OUT" "-a.txt" \
+  "hs2 (F029): 'rm -- -a.txt' denial names the real target, not silently allowed"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'tee -- -a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F029): 'tee -- -a.txt' out-of-scope literal-dash target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F029): 'tee -- -a.txt' denial uses JSON deny form"
+
+# last_flagless_token() (cp/mv's no-flag-destination fallback) has the same
+# gap: a destination that is itself a literal dash-prefixed filename after
+# "--" must still be recognized as the real, checkable destination, not
+# skipped in favor of the (in-scope) source argument before it.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv src/parser/a.txt -- -out.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F029): 'mv ... -- -out.txt' out-of-scope literal-dash destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F029): 'mv ... -- -out.txt' denial uses JSON deny form"
+assert_contains "$OUT" "-out.txt" \
+  "hs2 (F029): 'mv ... -- -out.txt' denial names the destination, not the in-scope source"
+
+# No new false positive: an in-scope literal-dash filename after "--" must
+# still pass cleanly.
+mkdir -p "$DIR_HS/src/parser"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'rm -- src/parser/-a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F029): 'rm -- src/parser/-a.txt' in-scope literal-dash target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F029): in-scope literal-dash target after '--' has no deny fields"
+
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")
 RC=$?
