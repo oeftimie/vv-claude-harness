@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 39,
-  "passing": 24,
+  "passing": 25,
   "features": [
     {
       "id": "F001",
@@ -497,7 +497,7 @@
       "id": "F014",
       "description": "[OVI-54] P3.1: MLD builder telemetry (.harness/mld/) with a hard non-injection guarantee \u2014 Add lead-only MLD telemetry: at session end append .harness/mld/YYYY-MM-DD-<id>.md with Mistakes/Learnings/Desires sections, with a hard guarantee that session-start never reads mld/ (tested across all SessionStart sources). Add rules/mld-review.md defining the review cadence and disposition, and document committing mld/ by default.",
       "priority": 14,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "rules/task-completion.md",
         "skills/harness-continue/SKILL.md",
@@ -512,12 +512,15 @@
         "F003"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-54. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 844/844 is the gate)",
+      "notes": "Linear: OVI-54. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation. Implemented as: (1) hooks/session-start.sh prints the session_id from its stdin payload as `Session: <id>` so the lead has a stable name for its mld filename, without ever referencing .harness/mld/ itself; (2) hooks/session-end.sh adds an informational (non-blocking) discipline note when no .harness/mld/<today>-*.md exists, mirroring the existing proof-note pattern rather than the hard-blocking Meta-Session gap, since the spec only calls the session-start non-read guarantee \"hard\" -- the write step is a softer, reviewed-on-its-own-cadence discipline; (3) skills/harness-continue/SKILL.md documents the MLD write step (lead-only) in both Step 5a (single-session) and Phase 5.5 (Agent Teams) Session End procedures; (4) rules/mld-review.md (new) defines the review cadence and four-way disposition (promote/escalate/action/discard) plus the commit-by-default note; (5) rules/task-completion.md gets a matching checklist item. The \"hard\" non-injection guarantee is enforced two ways: F006's pre-existing doctor.py check_mld_non_injection already static-greps the plugin's session-start.sh for the literal substring \"mld\" (built ahead of this feature); this feature adds (a) a permanent regression test asserting the real shipped session-start.sh source never contains that substring, and (b) a dynamic test running the real hook across all 4 SessionStart matcher sources (startup/resume/clear/compact, per hooks/hooks.json) with .harness/mld/ populated with a marker file, asserting the marker never leaks into stdout under any of them. Both were mutation-tested: (a) reverting the session_id print and forcing the discipline-note's MLD_FOUND flag true each failed only their own targeted assertions; (b) editing a throwaway copy of session-start.sh to `cat` .harness/mld/*.md caused all 4 dynamic-source assertions plus the static regression test to fail together, confirming both catch a real non-injection regression. Not touched (out of scope per the verified spec): README.md's project directory tree doesn't yet list .harness/mld/ as a scaffolded entry -- left as a documentation follow-up rather than expanding this feature's scope.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Considered having the SessionEnd hook itself author the MLD file content -- rejected: SessionEnd fires when the session actually terminates, after the model's last turn, so it cannot produce reflective prose; the lead must write it during the conversation (mirroring how the Meta-Session retrospective is lead-authored into context_summary.md, with the hook only auditing presence).",
+        "Considered making the missing-mld-entry note a hard SESSION_INCOMPLETE gap like the Meta-Session check -- rejected: the spec calls only the session-start non-read guarantee \"hard\"; MLD's own review cadence (rules/mld-review.md) is explicitly NOT per-session, so gating every session on it would be a heavier bar than the feature asked for."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {
