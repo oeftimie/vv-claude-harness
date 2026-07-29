@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 33,
-  "passing": 19,
+  "total_features": 35,
+  "passing": 20,
   "features": [
     {
       "id": "F001",
@@ -906,21 +906,25 @@
     },
     {
       "id": "F028",
-      "description": "skills/harness-init/enforce-scope.sh.template's redirect_target() regex (`>>?\\s*([^\\s<>|&;]+)`) truncates a quoted path at its first internal space, since the character class stops at whitespace regardless of quote context and the segment isn't tokenized with a quote-aware splitter (the way commit-gate.sh.template's split_tokens(), added in F025, is). CONFIRMED: `echo x > \"my file.txt\"` extracts target 'my', not the real path. NOT currently exploitable: the truncated value keeps its directory prefix, so the scope check (`norm.startswith(p)`, a directory-prefix pattern) reaches the same verdict as the full path would; the one place an exact-match check exists (`norm in LEAD_OWNED`) compares against a fixed 3-path set, none of which contains a space, so no reachable bypass exists today. A latent robustness gap that would become a real fail-open only if a lead-owned path containing a space were ever added.",
+      "description": "skills/harness-init/enforce-scope.sh.template's redirect_target() regex (`>>?\\s*([^\\s<>|&;]+)`) truncates a quoted path at its first internal space, since the character class stops at whitespace regardless of quote context and the segment isn't tokenized with a quote-aware splitter (the way commit-gate.sh.template's split_tokens(), added in F025, is). CONFIRMED: `echo x > \"my file.txt\"` extracts target 'my', not the real path. NOT currently exploitable: the truncated value keeps its directory prefix, so the scope check (`norm.startswith(p)`, a directory-prefix pattern) reaches the same verdict as the full path would; the one place an exact-match check exists (`norm in LEAD_OWNED`) compares against a fixed 3-path set, none of which contains a space, so no reachable bypass exists today. A latent robustness gap that would become a real fail-open only if a lead-owned path containing a space were ever added. CORRECTION (round-2 review of PR #51): this 'not currently exploitable' claim was WRONG for the second root cause named earlier in this same description (the missing quote-aware tokenizer) -- true only for the single-target redirect path that F024 incidentally closed. write_targets()'s own command_tokens extraction used a plain `.split()`, which shatters a quoted target containing a space into two pseudo-tokens BEFORE cp/mv/rm/sed-i extraction runs. This produced a reachable fail-open: `cp a.txt \"src/other/evil src/parser/ok.txt\"` was wrongly ALLOWED, since cp/mv's last-flagless-token destination logic picked only the in-scope-looking tail fragment, never seeing the real (out-of-scope) whole path. It also produced a non-adversarial false deny (`rm \"src/parser/my file.txt\"` denied naming a path -- 'file.txt' -- the user never typed).",
       "priority": 14,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by F025's reviewer during idle time, checking whether F025's token-level root cause (naive whitespace splitting inside quoted content) also affects the sibling hook. Explicitly assessed as low-priority, not exploitable today, and out of scope for F025's PR (a different hook). Likely fix: a quote-aware tokenizer shared with commit-gate.sh's split_tokens()/mask_quotes()/unquote_token() -- the reviewer notes this would be the third independent implementation of the same mask-then-slice pattern across these two hooks (F023's enforce-scope fix, F025's commit-gate fix, and this one), worth hoisting into one shared place if fixed, per F025's own approaches_tried notes on the same point.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 692/692 is the gate)",
+      "notes": "Discovered by F025's reviewer during idle time, checking whether F025's token-level root cause (naive whitespace splitting inside quoted content) also affects the sibling hook. Explicitly assessed as low-priority, not exploitable today, and out of scope for F025's PR (a different hook). Likely fix: a quote-aware tokenizer shared with commit-gate.sh's split_tokens()/mask_quotes()/unquote_token() -- the reviewer notes this would be the third independent implementation of the same mask-then-slice pattern across these two hooks (F023's enforce-scope fix, F025's commit-gate fix, and this one), worth hoisting into one shared place if fixed, per F025's own approaches_tried notes on the same point. RESOLVED AS A SIDE EFFECT OF F024: by the time this feature was picked up, F024's mask_quotes()-based redirect_targets() rewrite had already landed and closed this gap incidentally (the NUL-masked quoted span contains no real whitespace, so the character class no longer stops mid-quote). No code change was needed; 2 regression tests were added instead to lock the correct behavior in. ROUND 2 (adversarial review of PR #51): confirmed the redirect_target() half was genuinely resolved by F024, but the write_targets() naive .split() half named in this feature's own 'Likely fix' note was still live -- a reachable scope-bypass fail-open (cp/mv) plus a false-deny (rm), not just a cosmetic gap. Fixed by adding split_tokens() (ported from commit-gate.sh.template's own split_tokens(), the third independent implementation of the same mask-then-slice pattern this feature's own notes already flagged as worth hoisting) and routing command_tokens through it instead of a bare .split(). Mutation-tested: reverting to the bare .split() fails exactly the 5 new round-2 assertions, including the genuine cp/mv fail-open (denial disappears entirely, not just misnamed) and the sed mangled-name case.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Confirmed the bug as originally filed (naive char-class regex truncating a quoted target at its first internal space) no longer reproduces on current main: F024 (merged after this feature was filed) rewrote redirect_target() into redirect_targets(), matching against a mask_quotes() copy where a quoted span -- space included -- is replaced by a same-length NUL run, so the whitespace-stopping character class never sees a real space inside quotes. Verified directly by re-deriving the exact live functions and tracing echo x > \"my file.txt\" end to end: the full quoted span is captured, then unquote_token() strips the quote chars, yielding the untruncated target.",
+        "Added 2 regression tests locking in the correct behavior (out-of-scope quoted-space target denied and named in full; in-scope quoted-space target allowed) rather than changing any code, since no reproducible bug remains to fix.",
+        "Round 2: ported commit-gate.sh.template's split_tokens() (mask_quotes()-based, same mask-then-slice discipline as this file's own segments_of()/redirect_targets()) into enforce-scope.sh.template, and changed write_targets() to route strip_redirects(segment) through it instead of Python's bare .split(). Verified the genuine fail-open (cp/mv picking an in-scope-looking tail fragment as 'the' destination, never seeing the real out-of-scope whole path) by hand-tracing the old code, then confirmed the fix by mutation-testing: reverting to the bare .split() reproduces both the false deny and the fail-open, restoring the fix fixes both."
+      ],
       "failure_reason": null,
       "discovered_via": "F025",
       "spec": null
@@ -1036,6 +1040,48 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F027",
+      "spec": null
+    },
+    {
+      "id": "F035",
+      "description": "skills/harness-init/enforce-scope.sh.template's cp_mv_targets() and sed_inplace_targets() compare flag tokens RAW (e.g. `tok in TARGET_DIRECTORY_FLAGS`, `tok.startswith(\"-t\")`, `tok in SED_SCRIPT_VALUE_FLAGS`), so quoting a flag evades flag recognition entirely: `cp \"-t\" \"src/other/d/\" src/parser/a` and `cp '-t' src/other/d/ src/parser/a` are both wrongly ALLOWED (real bash writes to src/other/d/, an out-of-scope destination named via -t, but the quoted '-t' token never matches TARGET_DIRECTORY_FLAGS so cp_mv_targets() falls through to last_flagless_token() and picks the wrong argument as the destination). Same shape for `cp \"--target-directory=src/other/d/\" src/parser/a` and `sed \"-i\" \"\" -e \"s/a/b/\" src/other/f.txt` (real sed writes src/other/f.txt). Same vulnerability family as F023/F024/F025/F028 -- a shell-level transformation (here, quote removal on a FLAG token, not a target token) that these two extractors don't replicate before comparing against their flag sets.",
+      "priority": 19,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #51, round 2 (F028's split_tokens() fix). Explicitly filed as a separate, pre-existing bug (identical on main and the F028 branch), not a regression from that PR. Likely fix, per the reviewer: the sibling hook commit-gate.sh.template already solved this (commit-gate.sh.template:389, `tokens = [unquote_token(t) for t in split_tokens(seg)]`, with a comment explicitly stating tokens must be split then unquoted one at a time, never the reverse -- F025). IMPORTANT TRAP flagged by the same reviewer: the obvious one-line port of that fix would be WRONG here, because unquote_token() is not idempotent since F031 added backslash-stripping (e.g. 'src/other/a\\\\b.txt' unquoted once is 'src/other/a\\b.txt', unquoted TWICE becomes 'src/other/ab.txt'). write_targets() already maps unquote_token over its final target list, and redirect_targets() output bypasses split_tokens() entirely -- so unquoting at split time would double-unquote command-token targets while single-unquoting redirect targets, silently undoing F031's traversal defense. Safe shape (per the reviewer): derive an unquoted VIEW of each token for flag detection only (cp_mv_targets()/sed_inplace_targets()' own comparisons), keep the raw quoted tokens for target extraction, and leave the existing single unquote_token map in write_targets() untouched.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F028",
+      "spec": null
+    },
+    {
+      "id": "F037",
+      "description": "skills/harness-init/enforce-scope.sh.template's sed_inplace_targets() recognizes GNU/BSD in-place editing only via a bare `-i`, an attached short-flag suffix (`t.startswith(\"-i\")` on an UNCLUSTERED token, e.g. `-i.bak`), or `--in-place` exactly. Two real, ordinary invocation shapes are missed entirely: (1) CLUSTERED short flags, e.g. `sed -ri 's/a/b/' file` or `sed -ni 's/a/b/' file` (GNU allows combining -r/-n with -i in one token) -- `t.startswith(\"-i\")` is false for `-ri`/`-ni` (the string starts with '-r'/'-n', not '-i'), so the whole in-place-presence guard misses it and sed_inplace_targets() returns [] unconditionally, wrongly ALLOWING an in-place edit of an out-of-scope file; (2) GNU's attached long-form suffix `--in-place=.bak` -- matches neither `t == \"--in-place\"` (exact match only) nor `t.startswith(\"-i\")` (the token starts with `--`, not `-i`), same wrong-ALLOW outcome. CONFIRMED more reachable in ordinary usage than anything F029 itself fixed (no unusual quoting or '--' needed, just a common flag-combining habit).",
+      "priority": 21,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #52, round 3 (F029's sed_inplace_targets() separator-index fix). Confirmed pre-existing on main, unrelated to F029's own '--' work -- a different bug class (clustered/long-form flag recognition, not '--' awareness). The existing header comment documents a clustered-flag residual for cp/mv (-rt DIR) only; sed has no equivalent note today, which this feature's fix should also add once landed. Likely fix: recognize any short-flag cluster containing 'i' as specifying in-place mode (mirroring commit-gate.sh's own cluster-scanning approach, F027), and recognize `--in-place=` as an attached-value prefix alongside the exact `--in-place` match.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F029",
       "spec": null
     }
   ]
