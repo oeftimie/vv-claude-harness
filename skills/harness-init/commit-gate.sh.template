@@ -422,10 +422,12 @@ REQUIRED_VALUE_SHORT_FLAGS = set("mFtCc")
 # cluster; took_bare_value is True only if a REQUIRED-value short flag
 # (REQUIRED_VALUE_SHORT_FLAGS, not merely VALUE_TAKING_SHORT_FLAGS) is the
 # LAST character in the cluster (so its value is the NEXT token, not part of
-# this one) -- e.g. "-m" or "-sm", but not "-mfix" or "-sm foo" (attached
-# value), "-ma" (a real staging flag follows in the SAME cluster, checked
-# and returned first via is_staging above), or "-S"/"-u" bare (optarg, no
-# next-token value at all). A first pass checked only `len(tok) == 2` (bare
+# this one) -- e.g. "-m" or "-sm", but not "-mfix" or "-ma" (same reasoning
+# as "-mfix": "m" isn't the LAST char in the cluster, so everything after it
+# -- "fix", or "a" -- is its attached value, not a further flag letter; real
+# git confirms "-ma" reads as message "a" with nothing staged, so that "a"
+# is never a staging flag here), or "-S"/"-u" bare (optarg, no next-token
+# value at all). A first pass checked only `len(tok) == 2` (bare
 # "-m" alone), missing every multi-letter cluster ending on a value-taking
 # flag like "-sm" or "-nm" -- found by adversarial review of PR #49 (F027),
 # confirmed against real git: `git commit -sm -- -a` both signs off AND
