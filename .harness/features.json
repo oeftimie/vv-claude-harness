@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 31,
-  "passing": 17,
+  "total_features": 33,
+  "passing": 19,
   "features": [
     {
       "id": "F001",
@@ -883,19 +883,23 @@
       "id": "F027",
       "description": "skills/harness-init/commit-gate.sh.template's has_staging_flag() does not distinguish a bare '--' token that is the ARGUMENT VALUE of a preceding space-separated value-taking short flag (e.g. `-m --`) from a real '--' pathspec separator. VALUE_TAKING_SHORT_FLAGS only handles the ATTACHED-value form (`-mfix`, one token); a space-separated value (`-m`, `--` as two tokens) is not recognized as belonging to `-m` at all, so has_staging_flag's per-token loop treats the following '--' as if it were a real pathspec separator and stops scanning -- missing a REAL staging flag later in the same segment. This is the general root cause; it surfaces in 3 related but distinct shapes, ALL false-positive/false-negative errors caused by the SAME missing behavior (has_staging_flag not knowing that -m's space-separated value is a value, not a token to interpret): (1) PRE-EXISTING, unaffected by F025: `git commit -m -- -a` (no quoting at all) is wrongly ALLOWED on main and on F025's fix alike, even though -a is a real, working staging flag -- a FALSE NEGATIVE, since this command genuinely does stage and commit in one step. (2) NARROWED BY F025 (round-2 review, not a wide bypass, one specific input shape): `git commit -m \"--\" -a` -- a quoted commit message whose ENTIRE content is exactly '--' -- was correctly DENIED on main (the old strip_quotes design deleted the quoted content, so has_staging_flag never saw a '--' pseudo-token there at all and reached the real trailing -a) but is wrongly ALLOWED after F025's fix -- also a FALSE NEGATIVE, same as shape (1): -a is a real staging flag here too. (3) NEW FALSE POSITIVE introduced by F025 (round-2 correction: the initial filing of this shape had the polarity backwards -- corrected here): `git commit -m \"-a\"` / \"-i\" / \"--all\" / \"--include\" -- a quoted commit message whose ENTIRE content is exactly a staging-flag string -- is wrongly DENIED as compound-stage-and-commit after F025's fix. VERIFIED against real git: this command stages nothing extra -- `-a` becomes the commit message text (log subject '-a'), only already-staged content is committed, and an unstaged working-tree edit plus an untracked file both survive untouched. main correctly ALLOWED this (an ordinary commit of already-staged content, not a stage-and-commit-in-one-step operation); F025's fix wrongly denies it because split_tokens()/unquote_token() reduce the quoted message to exactly the string '-a', indistinguishable from a real flag by has_staging_flag's exact-token comparison. This is a REGRESSION versus main, not an improvement -- the fix for shapes (1)/(2) must not special-case this shape to preserve the current (wrong) DENY; the correct fix makes it ALLOW again, matching main. All three shapes require the ENTIRE quoted message to be exactly a flag token or '--' with nothing else in it; the common case (flag-shaped words among other words, e.g. \"fix: handle -a and -i staging flags\") is already correct in both directions after F025 and is not part of this ticket.",
       "priority": 11,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/commit-gate.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by F025's round-1 reviewer while verifying the quoted-'--' regression fix; confirmed pre-existing (case 1) on main. Round 2 found cases 2 and 3 on the same root cause; round-2's OWN first pass at filing case 3 had its polarity backwards (called the new DENY a 'genuine improvement' when it's actually a false-positive regression vs main) -- caught and corrected by the same reviewer on a follow-up idle-time check against real git, before anyone acted on the wrong framing. Recommended merging F025 despite case 2/3 (a wide, live secret-scan bypass closed vs. two narrow pinholes on one already-ticketed root cause) and fixing all three shapes together here. Likely fix: has_staging_flag needs to skip the token immediately following a bare (no attached value) value-taking short flag like -m, since that next token is the flag's value, not a token to interpret as '--'/a further flag/a pathspec -- this single fix should correct all three shapes together (cases 1/2 currently false-negative -> correctly DENY; case 3 currently false-positive -> correctly ALLOW).",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate)",
+      "notes": "Discovered by F025's round-1 reviewer while verifying the quoted-'--' regression fix; confirmed pre-existing (case 1) on main. Round 2 found cases 2 and 3 on the same root cause. No Linear issue (internal, same precedent as F022-F026). Adversarial review of PR #49 round 1 found the initial fix's `len(tok) == 2` guard missed multi-letter short-flag clusters ending on a value-taking flag (e.g. '-sm'), not just a bare 2-char token -- fixed by making _scan_short_flag_cluster position-aware (value-taking flag must be the LAST char in the cluster) instead of guarding on token length. Round 2 then found that fix itself wrongly applied the position-aware bare-value-consumption rule to -S and -u, which real git parses as optargs (PARSE_OPT_OPTARG): a BARE -S/-u does NOT consume the next token, unlike -m/-F/-t/-C/-c. Split VALUE_TAKING_SHORT_FLAGS (all 7 letters, for recognizing an ATTACHED value like -uall/-Skeyid so it isn't misread as further flag letters) from REQUIRED_VALUE_SHORT_FLAGS (mFtCc only, for the bare/next-token-consuming case). Scoped to SHORT flags only; the identical gap for LONG flags (--message, --file, etc.) is pre-existing on main and filed separately as F032, not folded into this fix, to keep this PR's diff focused on what it already covers.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Traced all 3 shapes by hand against has_staging_flag()'s token loop before writing any fix, confirming the unifying root cause matched the feature's own filed diagnosis: the loop never recognized that a bare (unattached) value-taking short flag's NEXT token is opaque value data, not something to interpret as a flag or the '--' separator. Rewrote the loop as index-based (while + manual i+=1) so it can skip exactly one token after such a flag.",
+        "Extracted _scan_short_flag_cluster() as a small helper returning (is_staging_flag, took_bare_value) to keep has_staging_flag's own cyclomatic complexity comfortably under this project's hard limit of 8, rather than risk a borderline count in a single larger function.",
+        "Round 2 (adversarial review of PR #49): the round-1 fix's position-aware took_bare_value applied uniformly to all 7 letters in VALUE_TAKING_SHORT_FLAGS, but real git's -S/-u are optargs whose BARE form does not consume the next token (confirmed against git 2.52.0: `git commit -u -a -m x` and `git commit -S -a -m x` both genuinely stage and commit, matching plain no-value flags like -n/-s, not -m/-F/-t/-C/-c). Split out REQUIRED_VALUE_SHORT_FLAGS (mFtCc) as the subset that also consumes a bare/next-token value; -S/-u stay in VALUE_TAKING_SHORT_FLAGS only for their attached-value form. Mutation-tested by reverting to the round-1 (non-split) version: exactly the 4 new -S/-u regression tests fail, confirming they catch it; restored and re-verified 670/670 green."
+      ],
       "failure_reason": null,
       "discovered_via": "F025",
       "spec": null
@@ -971,6 +975,30 @@
       "id": "F031",
       "description": "skills/harness-init/enforce-scope.sh.template's unquote_token() strips quote characters ('/\"/$'...') from an already-tokenized word but never removes shell backslash-escapes, so a backslash-escaped traversal segment still reads as a literal directory name rather than a real '..': with scope 'src/parser/', `echo x > src/parser/\\../other/x.txt` writes to src/other/x.txt in real bash (CONFIRMED: `bash -c \"echo content > src/parser/\\\\../other/x.txt\"` creates the file at src/other/x.txt, outside the scope directory) but the hook ALLOWS it -- F026's os.path.normpath() resolution never runs on a genuine '..' token because the literal characters seen by write_targets()/normalize() are 'src/parser/\\..' (backslash included), not 'src/parser/..'. Same vulnerability class as F026 (path-traversal scope escape), different root cause (escape-character handling, not path resolution) -- one character added to a real, already-confirmed bypass.",
       "priority": 12,
+      "status": "passing",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 656/656 is the gate)",
+      "notes": "Discovered by F026's round-1 reviewer while stress-testing the traversal-resolution fix; explicitly flagged as pre-existing (not introduced by F026) and a different root cause, defensible as a follow-up rather than blocking F026's merge. Independently re-verified against real bash before filing (bash -c, not zsh, to get accurate shell semantics). Likely fix: strip backslash-escapes from a token (or from the whole segment before tokenizing) the same way quote characters are stripped, consistent with commit-gate.sh.template's existing posture on shell metacharacter handling.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Confirmed the fix scope narrowly: the Edit/Write/MultiEdit legacy path receives file_path as a literal JSON string parameter, never shell-parsed, so backslash-escape semantics don't apply there -- only the Bash-command path (which reads shell command strings through segments_of()/unquote_token()) needed the fix. Caught this by tracing an initially-drafted Edit-path test case by hand before implementing, not after.",
+        "Applied backslash-unescaping (\\X -> X) uniformly after quote-stripping in unquote_token(), accepting a documented residual (a real single-quoted literal backslash in a filename gets normalized away too) consistent with this hook's existing pattern-based, evadable-by-construction philosophy -- matches how other residuals in this same file are handled and documented."
+      ],
+      "failure_reason": null,
+      "discovered_via": "F026",
+      "spec": null
+    },
+    {
+      "id": "F033",
+      "description": "skills/harness-init/enforce-scope.sh.template's unquote_token() strips the $'...' ANSI-C-quote wrapper (via a regex capturing its inner content) but never decodes the ANSI-C backslash escapes inside it, so a traversal segment spelled with a hex/octal escape survives intact. CONFIRMED against real bash: $'src/parser/\\x2e\\x2e/other/x.txt' really writes to src/other/x.txt (bash decodes \\x2e to the literal character \".\", twice, giving \"..\"), but the hook still sees the literal 8-character string \\x2e\\x2e as one path segment, which normalize() correctly does not recognize as \"..\", so it never resolves the traversal and the write is wrongly ALLOWED. Same vulnerability class and same consequence as F031 (a shell-level string-literal transformation the hook does not replicate, letting a traversal spelling evade normalize()'s exact \"..\" check), but a different mechanism: F031 was escape REMOVAL (\\.. -> ..); this is escape DECODING (\\x2e -> .) inside an already-recognized ANSI-C quote span. Pre-existing on main; NOT introduced or fixed by F031's PR (unquote_token's $' handling and its backslash-unescape pass are applied as two independent steps; the second never re-examines the already-extracted $'...' inner text for its own escape syntax).",
+      "priority": 18,
       "status": "pending",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
@@ -980,12 +1008,33 @@
       "assigned_to": null,
       "test_file": null,
       "coverage": null,
-      "notes": "Discovered by F026's round-1 reviewer while stress-testing the traversal-resolution fix; explicitly flagged as pre-existing (not introduced by F026) and a different root cause, defensible as a follow-up rather than blocking F026's merge. Independently re-verified against real bash before filing (bash -c, not zsh, to get accurate shell semantics). Likely fix: strip backslash-escapes from a token (or from the whole segment before tokenizing) the same way quote characters are stripped, consistent with commit-gate.sh.template's existing posture on shell metacharacter handling.",
+      "notes": "Discovered by adversarial review of PR #50 (F031), explicitly filed as out-of-scope for that PR (a live bypass, unchanged by F031's fix, not a regression it introduced). Likely fix: after $'...' extraction, decode ANSI-C backslash escapes (\\xHH, \\NNN octal, \\n, \\t, etc. per bash's $'' grammar) before the existing plain-backslash unescape pass runs, or before normalize() sees the token -- scope this carefully, since decoding the wrong set of escapes could itself introduce a new gap.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
       "failure_reason": null,
-      "discovered_via": "F026",
+      "discovered_via": "F031",
+      "spec": null
+    },
+    {
+      "id": "F032",
+      "description": "skills/harness-init/commit-gate.sh.template's has_staging_flag() only recognizes value-taking SHORT flags that REQUIRE a value (-m, -F, -t, -C, -c; NOT -S/-u, which real git treats as optargs whose bare form takes no value at all -- corrected here after F027 round 2 found the opposite claim was itself a bug) as consuming the following space-separated token as their value (F027). Long flags that take a space-separated value -- --message, --file, --author, --date, --template, --fixup, --squash, --reuse-message -- are not recognized at all, so the same bug class F027 fixed for short flags is still present for long flags. CONFIRMED against real git: `git commit --message -- -a` commits with subject '--' AND stages a dirty tracked file via the real trailing -a (a genuine stage-and-commit-in-one-step that the gate currently ALLOWS); `git commit --message -a` stages nothing extra (message text is literally '-a'), but the gate currently DENIES it as a false positive. Pre-existing on main, not introduced by F027 -- found during F027's PR #49 adversarial review, which scoped F027 itself to short-flag forms only rather than expanding that PR's diff to cover this too. Likely fix: a VALUE_TAKING_LONG_FLAGS set checked (as an exact-token match, not a per-character scan) before has_staging_flag's `tok.startswith(\"-\") and not tok.startswith(\"--\")` branch, mirroring the short-flag fix's skip-the-next-token approach -- and, per F027 round 2's finding, verify each long flag's actual git semantics (required-value vs. optarg) individually rather than assuming uniform behavior across the whole set.",
+      "priority": 17,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/commit-gate.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #49 (F027). No Linear issue -- same precedent as F022-F031, internally discovered during review. ADDITIONAL ITEM (round-3 review of PR #49): -U/--unified <n> is a required-value short flag in neither VALUE_TAKING_SHORT_FLAGS nor REQUIRED_VALUE_SHORT_FLAGS, so `git commit -U -- -a` is technically misread the same way -m once was. Confirmed NOT currently exploitable: real git rejects a bare -U outright (\"switch `U' expects an integer value\"), so nothing stages regardless of the gate's verdict. Folded in here as a completeness item for whenever F032 is implemented, not urgent enough to fix on its own.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F027",
       "spec": null
     }
   ]
