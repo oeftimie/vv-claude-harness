@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 35,
-  "passing": 20,
+  "passing": 21,
   "features": [
     {
       "id": "F001",
@@ -1026,19 +1026,22 @@
       "id": "F032",
       "description": "skills/harness-init/commit-gate.sh.template's has_staging_flag() only recognizes value-taking SHORT flags that REQUIRE a value (-m, -F, -t, -C, -c; NOT -S/-u, which real git treats as optargs whose bare form takes no value at all -- corrected here after F027 round 2 found the opposite claim was itself a bug) as consuming the following space-separated token as their value (F027). Long flags that take a space-separated value -- --message, --file, --author, --date, --template, --fixup, --squash, --reuse-message -- are not recognized at all, so the same bug class F027 fixed for short flags is still present for long flags. CONFIRMED against real git: `git commit --message -- -a` commits with subject '--' AND stages a dirty tracked file via the real trailing -a (a genuine stage-and-commit-in-one-step that the gate currently ALLOWS); `git commit --message -a` stages nothing extra (message text is literally '-a'), but the gate currently DENIES it as a false positive. Pre-existing on main, not introduced by F027 -- found during F027's PR #49 adversarial review, which scoped F027 itself to short-flag forms only rather than expanding that PR's diff to cover this too. Likely fix: a VALUE_TAKING_LONG_FLAGS set checked (as an exact-token match, not a per-character scan) before has_staging_flag's `tok.startswith(\"-\") and not tok.startswith(\"--\")` branch, mirroring the short-flag fix's skip-the-next-token approach -- and, per F027 round 2's finding, verify each long flag's actual git semantics (required-value vs. optarg) individually rather than assuming uniform behavior across the whole set.",
       "priority": 17,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/commit-gate.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 745/745 is the gate)",
       "notes": "Discovered by adversarial review of PR #49 (F027). No Linear issue -- same precedent as F022-F031, internally discovered during review. ADDITIONAL ITEM (round-3 review of PR #49): -U/--unified <n> is a required-value short flag in neither VALUE_TAKING_SHORT_FLAGS nor REQUIRED_VALUE_SHORT_FLAGS, so `git commit -U -- -a` is technically misread the same way -m once was. Confirmed NOT currently exploitable: real git rejects a bare -U outright (\"switch `U' expects an integer value\"), so nothing stages regardless of the gate's verdict. Folded in here as a completeness item for whenever F032 is implemented, not urgent enough to fix on its own.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Verified each of the 8 named long flags against `git commit -h` before implementing: all shown as required-value (`<value>`), none using the bracketed optarg syntax `--untracked-files[=<mode>]` uses -- so, unlike F027's -S/-u split, no attached-vs-required distinction was needed here. Added VALUE_TAKING_LONG_FLAGS as an exact-token-match set and one new branch in has_staging_flag()'s existing loop: a bare match consumes the next token as an opaque value, mirroring the short-flag mechanism exactly. The attached \"--message=foo\" form is a distinct string that never matches the exact-token check, so it needed no special-casing.",
+        "Mutation-tested by removing the new branch: exactly the 10 new assertions fail (9 DENY cases plus the --message \"-a\" false-positive fix), confirming they catch the bug. Restored and re-verified 745/745 green."
+      ],
       "failure_reason": null,
       "discovered_via": "F027",
       "spec": null
