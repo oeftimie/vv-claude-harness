@@ -632,6 +632,17 @@ RC=0
 python3 "$VALIDATE_SCRIPT" "$FIXTURE_SRC/.harness/features.json" >/dev/null 2>&1 || RC=$?
 assert_rc0 "$RC" "fsv: validator passes on the shared test fixture (pre-v3.3 fields absent)"
 
+# The validator was previously only ever run against the shared FIXTURE
+# above, never against this repo's OWN live .harness/features.json -- a
+# duplicate-ID corruption (two "F034" entries, introduced by a merge
+# conflict resolution) shipped through CI undetected as a result, since
+# nothing in this suite actually re-validated the real file after each
+# merge (found by adversarial review of PR #58, round 3). This closes that
+# gap: every test run now also validates the live file.
+RC=0
+python3 "$VALIDATE_SCRIPT" "$REPO_ROOT/.harness/features.json" >/dev/null 2>&1 || RC=$?
+assert_rc0 "$RC" "fsv: validator passes on this repo's own live .harness/features.json"
+
 fsv_mutate() {
   # $1: output filename under $FSV_DIR, $2: python snippet mutating dict `d` in place
   python3 - "$FIXTURE_SRC/.harness/features.json" "$FSV_DIR/$1" <<PYEOF
@@ -4190,6 +4201,27 @@ RC=$?
 assert_rc0 "$RC" "cg: 'git commit --message=see -a' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: attached --message=value does not shadow a real trailing -a"
 
+# Round-2 review of PR #56: the 5 flags added purely for defense-in-depth
+# consistency (--reedit-message, --cleanup, --unified, --inter-hunk-context,
+# --pathspec-from-file) had zero test coverage -- dropping them from
+# VALUE_TAKING_LONG_FLAGS left the suite fully green, since none is
+# exploitable via a trailing "-- -a" (git rejects "--" as their value).
+# Pinned here via the OTHER direction instead: each genuinely consumes a
+# bare "-a" as its own value in real git (confirmed: all 5 error out before
+# ever staging anything, e.g. `--cleanup -a` -> "fatal: Invalid cleanup
+# mode -a"), so a command shaped this way must ALLOW -- if any of the 5
+# were ever dropped from the set, the gate would misread that same "-a" as
+# a real staging flag and wrongly DENY.
+for CG_DEFENSE_FLAG in \
+  reedit-message cleanup unified inter-hunk-context pathspec-from-file
+do
+  OUT=$(run_commit_gate "$DIR_CG_MVALUE" "git commit --$CG_DEFENSE_FLAG -a")
+  RC=$?
+  assert_rc0 "$RC" "cg: 'git commit --$CG_DEFENSE_FLAG -a' exits 0, rc 0"
+  assert_not_contains "$OUT" "permissionDecision" \
+    "cg: --$CG_DEFENSE_FLAG's own value '-a' is not misread as the -a staging flag"
+done
+
 # Round-1 review of PR #56: --trailer was missing entirely (a live bypass,
 # identical shape to --message), and exact-token matching missed git's own
 # prefix-abbreviation feature, defeating the fix even for --message itself
@@ -4245,6 +4277,57 @@ OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --inc -m "x"')
 RC=$?
 assert_rc0 "$RC" "cg: 'git commit --inc -m \"x\"' (abbreviated --include) exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: abbreviated --include denial uses JSON deny form"
+
+# F034: command_segments() split on any literal "&", including the one
+# glued to ">" in the fd-duplication idiom "2>&1" -- the identical bug
+# F030 fixed in the sibling hook enforce-scope.sh.template, but here it
+# was a REAL gate bypass, not a usability false-positive: the split put
+# the real trailing staging flag in a SECOND segment whose first token
+# isn't "git"/"commit", so segment_subcommand() never even recognized it
+# as a git-commit segment at all, and has_staging_flag() never ran on it.
+# Verified against real bash: `git commit 2>&1 -am "x"` genuinely stages
+# and commits in one step (the remaining arguments reach the command
+# after the mid-command redirect, exactly as real bash parses it).
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit 2>&1 -am "x"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit 2>&1 -am \"x\"' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: mid-command 2>&1 does not shadow a real trailing -am cluster"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit 2>&1 -a -m "x"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit 2>&1 -a -m \"x\"' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: mid-command 2>&1 does not shadow real separated -a -m flags"
+
+# Round-1 review of PR #58: the mirror shape needs the same treatment --
+# "&>"/"&>>" (bash's combined stdout+stderr redirect, one operator) split
+# into a segment starting with ">" that has_staging_flag() never even
+# recognized as a git-commit segment, an identical bypass to 2>&1. Verified
+# against real git: `git commit &> out.log -a -m "bypass"` genuinely stages
+# and commits. This hook does static text analysis, not execution, so it
+# must deny the text regardless of whether THIS environment's own shell can
+# run it -- `&>>` specifically needs bash 4.0+ (a syntax error on this
+# repo's bash 3.2.57) but was confirmed to execute and genuinely bypass
+# under zsh 5.9, the shell this environment's own tools actually invoke
+# (round-3 review of PR #58).
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit &> out.log -a -m "x"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit &> out.log -a -m \"x\"' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: mid-command '&>' does not shadow a real trailing -a -m"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit &>> out.log -am "x"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit &>> out.log -am \"x\"' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: mid-command '&>>' does not shadow a real trailing -am cluster"
+
+# No new false positive on an ordinary clean commit followed by a real
+# background "&" -- the separator property itself (that a real background
+# "&" NOT glued to ">" still splits) is already pinned by an earlier '-am'
+# cluster test in this file, not by this one.
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -m "x" & echo done')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -m \"x\" & echo done' passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: a real background '&' after a clean commit has no deny fields"
 
 echo ""
 echo "== agent frontmatter =="

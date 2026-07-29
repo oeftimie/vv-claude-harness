@@ -117,6 +117,16 @@
 # somewhere in that range; not pinned closer), so it was dropped from the
 # set per the 2.52 probe; this is a narrow regression on git older than
 # roughly 2.42, not a general bypass on any currently supported git.
+# GIT_COMMIT_LONG_OPTIONS/VALUE_TAKING_LONG_FLAGS (F032) is a second
+# git-version-pinned table with the identical drift exposure: last
+# verified against git 2.52.0, mechanically re-derived from git's own
+# option-parsing errors (not assembled from memory). If a future git
+# version adds, removes, or renames a `git commit` long option -- changing
+# which prefixes are ambiguous with which -- this table needs
+# re-verification against that version; a stale table's failure mode is a
+# missed abbreviation (an over-cautious deny of a real command, never a
+# bypass, since _resolve_long_flag() only ever narrows what it recognizes,
+# it does not invent new matches).
 
 INPUT=$(cat)
 
@@ -367,11 +377,40 @@ def command_segments(command):
     # quote-MASKED copy (see mask_quotes) but sliced from the ORIGINAL
     # command text, so a segment's real "git"/"commit" tokens survive intact
     # for tokenization even when quoted (see mask_quotes for why deleting
-    # them instead was a critical bug, F025).
+    # them instead was a critical bug, F025). A "&" is NOT a segment
+    # separator when it immediately follows a ">": real bash lexes ">&" as
+    # one fd-duplication operator (`2>&1`, `>&2`), not a redirect
+    # immediately followed by a background/AND "&" -- splitting there was a
+    # REAL GATE BYPASS, not just a usability false-positive (unlike the
+    # identical bug in the sibling hook enforce-scope.sh.template, F030):
+    # `git commit 2>&1 -am "x"` split into segments ['git commit 2>',
+    # '1 -am "x"'], so has_staging_flag() never saw the real -am flag in
+    # the second segment (its first token is "1", not "git"/"commit", so
+    # segment_subcommand() never even recognized it as a git-commit
+    # segment) -- confirmed against real bash that this genuinely stages
+    # and commits in one step (found by adversarial review of PR #53,
+    # F030, filed as F034). The mirror shape needs the SAME treatment: a
+    # "&" is ALSO not a separator when immediately FOLLOWED by a ">" --
+    # `&>`/`&>>` is bash's combined stdout+stderr redirect, one operator,
+    # not background-"&" followed by a redirect. An initial version of
+    # this fix only guarded the "&" PRECEDED by ">" (matching enforce-
+    # scope.sh's own needs, where this shape is harmless -- that hook
+    # extracts write targets independently of segment/command-recognition
+    # boundaries, so a `&>`-caused split still leaves the redirect target
+    # itself checkable in the fragment it lands in). Here it is NOT
+    # harmless: `git commit &> out.log -a -m "bypass"` split into
+    # segments ['git commit', '> out.log -a -m "bypass"'], putting the
+    # real staging flags in a segment whose first token is ">", not
+    # "git"/"commit" -- segment_subcommand() never recognized it, so
+    # has_staging_flag() never ran, an identical bypass to the `2>&1`
+    # case this feature was filed to close (found by adversarial review
+    # of PR #58, F034). `&&` is unaffected (consumed whole by its own
+    # earlier alternative); real background "&" (not adjacent to any ">"
+    # on either side) still splits.
     masked = mask_quotes(command)
     segments = []
     start = 0
-    for m in re.finditer(r"\|\||&&|[|;\n&]", masked):
+    for m in re.finditer(r"\|\||&&|[|;\n]|(?<!>)&(?!>)", masked):
         segments.append(command[start:m.start()])
         start = m.end()
     segments.append(command[start:])

@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 39,
-  "passing": 23,
+  "passing": 24,
   "features": [
     {
       "id": "F001",
@@ -1042,8 +1042,8 @@
       "depends_on": [],
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
-      "coverage": "n/a (shell suite, no coverage tooling; full_test 763/763 is the gate)",
-      "notes": "Discovered by adversarial review of PR #49 (F027). No Linear issue -- same precedent as F022-F031, internally discovered during review. ADDITIONAL ITEM (round-3 review of PR #49): -U/--unified <n> is a required-value short flag in neither VALUE_TAKING_SHORT_FLAGS nor REQUIRED_VALUE_SHORT_FLAGS, so `git commit -U -- -a` is technically misread the same way -m once was. Confirmed NOT currently exploitable: real git rejects a bare -U outright (\"switch `U' expects an integer value\"), so nothing stages regardless of the gate's verdict. Folded in here as a completeness item for whenever F032 is implemented, not urgent enough to fix on its own. ROUND 2 (adversarial review of PR #56): round 1 was itself incomplete in two ways confirmed by a mechanical sweep (1859 long-option-shaped strings extracted from the git binary, filtered to the 57 git-commit recognizes, each probed for a real stage-and-commit via `-- -a`): (1) --trailer was a live bypass, missing entirely (`git commit --trailer -- -a` genuinely stages and commits, identical to the original --message bug); 5 more value-taking flags (--reedit-message, --cleanup, --unified, --inter-hunk-context, --pathspec-from-file) were also missing, though none independently exploitable via `-- -a` (git rejects `--` as their value) -- added anyway for defense-in-depth consistency with the other 9. (2) Exact-token matching missed git's own prefix-abbreviation feature entirely, defeating the fix even for --message itself: `--mess`, `--messa`, `--messag`, `--trail`, `--traile` all genuinely resolve and stage+commit in real git. Fixed by replacing exact-set matching with _resolve_long_flag(), mirroring real git's own unambiguous-prefix rule against the full GIT_COMMIT_LONG_OPTIONS universe -- which also required a SECOND mechanical extraction pass beyond `--git-completion-helper` (whose own suggestion list omits real options like --allow-empty/--allow-empty-message entirely), done here by systematically probing every 2- and 3-letter prefix against real git and harvesting every name mentioned in its own 'ambiguous option' error messages. As a direct consequence, an abbreviated STAGING flag (e.g. --inc for --include) is now also recognized, closing a related gap the original exact-match STAGING_FLAGS check never covered either.",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 823/823 is the gate)",
+      "notes": "Discovered by adversarial review of PR #49 (F027). No Linear issue -- same precedent as F022-F031, internally discovered during review. ADDITIONAL ITEM (round-3 review of PR #49): -U/--unified <n> is a required-value short flag in neither VALUE_TAKING_SHORT_FLAGS nor REQUIRED_VALUE_SHORT_FLAGS, so `git commit -U -- -a` is technically misread the same way -m once was. Confirmed NOT currently exploitable: real git rejects a bare -U outright (\"switch `U' expects an integer value\"), so nothing stages regardless of the gate's verdict. Folded in here as a completeness item for whenever F032 is implemented, not urgent enough to fix on its own. ROUND 2 (adversarial review of PR #56): round 1 was itself incomplete in two ways confirmed by a mechanical sweep (1859 long-option-shaped strings extracted from the git binary, filtered to the subset git-commit recognizes -- round 2's own independent re-derivation found this understated the real count: git commit actually accepts 77 base long-option spellings plus the whole `--no-no-*` double-negation family (19 more), not merely 57; git's option space is also NOT a simple prefix tree, so walking prefixes alone prunes valid families like `--no-no-verify` while `--no-no` itself stays unrecognized -- the round-1 sweep's CONCLUSIONS (the two live bypasses, the abbreviation gap) still hold under round 2's independent re-derivation, only the narrative around exactly how many options exist was imprecise), each probed for a real stage-and-commit via `-- -a`): (1) --trailer was a live bypass, missing entirely (`git commit --trailer -- -a` genuinely stages and commits, identical to the original --message bug); 5 more value-taking flags (--reedit-message, --cleanup, --unified, --inter-hunk-context, --pathspec-from-file) were also missing, though none independently exploitable via `-- -a` (git rejects `--` as their value) -- added anyway for defense-in-depth consistency with the other 9. (2) Exact-token matching missed git's own prefix-abbreviation feature entirely, defeating the fix even for --message itself: `--mess`, `--messa`, `--messag`, `--trail`, `--traile` all genuinely resolve and stage+commit in real git. Fixed by replacing exact-set matching with _resolve_long_flag(), mirroring real git's own unambiguous-prefix rule against the full GIT_COMMIT_LONG_OPTIONS universe -- which also required a SECOND mechanical extraction pass beyond `--git-completion-helper` (whose own suggestion list omits real options like --allow-empty/--allow-empty-message entirely), done here by systematically probing every 2- and 3-letter prefix against real git and harvesting every name mentioned in its own 'ambiguous option' error messages. As a direct consequence, an abbreviated STAGING flag (e.g. --inc for --include) is now also recognized, closing a related gap the original exact-match STAGING_FLAGS check never covered either. ROUND 2 (adversarial review of PR #56): independently re-derived the full option set from git's own errors (not just --git-completion-helper/prefix-probing) and validated the disambiguation model against real git's unique/ambiguous verdict on all 536 recognized prefixes with zero mismatches -- confirmed VALUE_TAKING_LONG_FLAGS and GIT_COMMIT_LONG_OPTIONS are both exactly right (no missing, no bogus entries) and a 536-spelling x 2-attack-shape differential fuzz against real git found zero bypasses. Two follow-ups applied: (1) added 5 pinning tests for the defense-in-depth-only flags (--reedit-message/--cleanup/--unified/--inter-hunk-context/--pathspec-from-file), previously uncovered by any assertion since none is exploitable via `-- -a` -- pinned via the other direction instead (each genuinely consumes a bare '-a' as its own value in real git, confirmed by direct execution, so a command shaped this way must ALLOW). (2) GIT_COMMIT_LONG_OPTIONS is a second git-version-pinned table in this file without a residual-holes entry alongside GIT_FLAGS_WITH_VALUE's existing one -- noted here as the retirement condition per this repo's own rule: if a future git version changes which options are ambiguous with which (e.g. adds a new option sharing a prefix with an existing one), GIT_COMMIT_LONG_OPTIONS needs re-verification against that version; last verified against git 2.52.0.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [
@@ -1053,27 +1053,6 @@
       ],
       "failure_reason": null,
       "discovered_via": "F027",
-      "spec": null
-    },
-    {
-      "id": "F034",
-      "description": "skills/harness-init/commit-gate.sh.template's command_segments() splits on any literal '&' (re.finditer(r\"\\|\\||&&|[|;\\n&]\", masked)), including the one glued to '>' in the fd-duplication idiom '2>&1' -- the identical bug F030 fixed in the SIBLING hook (enforce-scope.sh.template's segments_of()), but here it is a REAL gate bypass, not just a usability false-positive. CONFIRMED: 'git commit 2>&1 -am \"x\"' splits into segments ['git commit 2>', '1 -am \"x\"'] -- the '-am' staging flag lands in the SECOND segment, whose first token is '1', not 'git'/'commit', so segment_subcommand() never recognizes it as a git-commit segment at all and has_staging_flag() never runs on it. check_compound_stage_and_commit() returns ALLOW on a command that genuinely stages and commits in one step in real bash (confirmed: 'echo 2>&1 -am \"x\"' really does print '-am x' to stdout, proving the remaining arguments reach the command after the mid-command redirect, exactly as real bash parses it). The same one-character lookbehind fix F030 applied to enforce-scope.sh's segments_of() (change the split regex's bare '&' alternative to '(?<!>)&', so '&' is only a separator when NOT immediately preceded by '>') closes this too. CONFIRMED (round-2 review of PR #53): the separated form 'git commit 2>&1 -a -m \"x\"' bypasses identically to the '-am' cluster form -- not limited to the clustered flag shape.",
-      "priority": 9,
-      "status": "pending",
-      "scope": [
-        "skills/harness-init/commit-gate.sh.template",
-        "test/run-tests.sh"
-      ],
-      "depends_on": [],
-      "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #53 (F030), which fixed the identical bug in the sibling hook enforce-scope.sh.template and found the same root cause here too, but classified as a real gate bypass rather than a usability false-positive since this hook's whole purpose is to deny compound stage-and-commit commands. Deliberately not fixed inside PR #53 (different file, would have been scope creep on that PR). Given the severity (a live bypass of shipped security infrastructure, same class as F025), prioritize above the other pending internally-discovered features.",
-      "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
-      "failure_reason": null,
-      "discovered_via": "F030",
       "spec": null
     },
     {
@@ -1137,6 +1116,31 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F029",
+      "spec": null
+    },
+    {
+      "id": "F034",
+      "description": "skills/harness-init/commit-gate.sh.template's command_segments() splits on any literal '&' (re.finditer(r\"\\|\\||&&|[|;\\n&]\", masked)), including the one glued to '>' in the fd-duplication idiom '2>&1' -- the identical bug F030 fixed in the SIBLING hook (enforce-scope.sh.template's segments_of()), but here it is a REAL gate bypass, not just a usability false-positive. CONFIRMED: 'git commit 2>&1 -am \"x\"' splits into segments ['git commit 2>', '1 -am \"x\"'] -- the '-am' staging flag lands in the SECOND segment, whose first token is '1', not 'git'/'commit', so segment_subcommand() never recognizes it as a git-commit segment at all and has_staging_flag() never runs on it. check_compound_stage_and_commit() returns ALLOW on a command that genuinely stages and commits in one step in real bash (confirmed: 'echo 2>&1 -am \"x\"' really does print '-am x' to stdout, proving the remaining arguments reach the command after the mid-command redirect, exactly as real bash parses it). The same one-character lookbehind fix F030 applied to enforce-scope.sh's segments_of() (change the split regex's bare '&' alternative to '(?<!>)&', so '&' is only a separator when NOT immediately preceded by '>') closes this too. CONFIRMED (round-2 review of PR #53): the separated form 'git commit 2>&1 -a -m \"x\"' bypasses identically to the '-am' cluster form -- not limited to the clustered flag shape.",
+      "priority": 9,
+      "status": "passing",
+      "scope": [
+        "skills/harness-init/commit-gate.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 773/773 is the gate)",
+      "notes": "Discovered by adversarial review of PR #53 (F030), which fixed the identical bug in the sibling hook enforce-scope.sh.template and found the same root cause here too, but classified as a real gate bypass rather than a usability false-positive since this hook's whole purpose is to deny compound stage-and-commit commands. Deliberately not fixed inside PR #53 (different file, would have been scope creep on that PR). Given the severity (a live bypass of shipped security infrastructure, same class as F025), prioritized above the other pending internally-discovered features. ROUND 2 CORRECTION: round 1's claim that a leftover redirect token is fully 'inert' to has_staging_flag() was wrong -- it can be silently consumed as a value-taking short flag's value (e.g. -m), shifting the token-position-dependent scan and causing a narrow, NEW false deny (`git commit -m 2>&1 -a`, which real git does not stage-and-commit, since bash's own redirect-stripping makes '-a' the message text, not a flag). Accepted as a documented residual (fail-closed, low severity) rather than building additional machinery to strip redirect fragments from the token stream before flag-scanning runs.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Applied the identical one-character lookbehind fix F030 used in enforce-scope.sh.template's segments_of(): changed command_segments()'s split regex from a bare '&' inside the character class to a separate '(?<!>)&' alternative, so '&' is only a separator when NOT immediately preceded by '>'.",
+        "ROUND 2 (adversarial review of PR #58): round 1's claim that no second fix was needed, unlike F030, was PARTIALLY wrong. Two real issues found: (1) the mirror shape '&>'/'&>>' (bash's combined stdout+stderr redirect) was still a live, identical bypass -- `git commit &> out.log -a -m \"x\"` split into a segment starting with '>', never recognized as a git-commit segment. Fixed by making the lookaround symmetric: '(?<!>)&(?!>)'. (2) The 'inert leftover token' claim was also false: a leftover redirect fragment like '2>&1' CAN be consumed as a value-taking short flag's value (e.g. `git commit -m 2>&1 -a` treats '2>&1' as -m's value, then reads the real '-a' as a flag and DENIES) -- but real git, since bash also strips the redirect, sees `git commit -m -a` where '-a' becomes the MESSAGE TEXT, not a flag, so nothing stages and ALLOW is the correct verdict. This is a NEW, narrow FALSE DENY (fail-closed, not a bypass) introduced by round 1's own fix, accepted as a documented residual rather than building a full strip_redirects()-equivalent for commit-gate.sh: the severity is low (an inconvenience, never a security bypass) and this hook's own posture already accepts pattern-based, evadable-by-construction coverage for the same trade-off reasons enforce-scope.sh does.",
+        "Mutation-tested the &>/&>> fix: reverting the symmetric lookaround back to '(?<!>)&' alone fails exactly the 2 new assertions. Restored and re-verified 734/734 green at the time (post-merge count is 773/773; the assertion count grows as sibling branches merge)."
+      ],
+      "failure_reason": null,
+      "discovered_via": "F030",
       "spec": null
     },
     {
