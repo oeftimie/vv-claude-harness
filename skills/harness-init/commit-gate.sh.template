@@ -290,11 +290,24 @@ def command_segments(command):
     # quote-MASKED copy (see mask_quotes) but sliced from the ORIGINAL
     # command text, so a segment's real "git"/"commit" tokens survive intact
     # for tokenization even when quoted (see mask_quotes for why deleting
-    # them instead was a critical bug, F025).
+    # them instead was a critical bug, F025). A "&" is NOT a segment
+    # separator when it immediately follows a ">": real bash lexes ">&" as
+    # one fd-duplication operator (`2>&1`, `>&2`), not a redirect
+    # immediately followed by a background/AND "&" -- splitting there was a
+    # REAL GATE BYPASS, not just a usability false-positive (unlike the
+    # identical bug in the sibling hook enforce-scope.sh.template, F030):
+    # `git commit 2>&1 -am "x"` split into segments ['git commit 2>',
+    # '1 -am "x"'], so has_staging_flag() never saw the real -am flag in
+    # the second segment (its first token is "1", not "git"/"commit", so
+    # segment_subcommand() never even recognized it as a git-commit
+    # segment) -- confirmed against real bash that this genuinely stages
+    # and commits in one step (found by adversarial review of PR #53,
+    # F030, filed as F034). A bare "&" anywhere else (background, "&&", or
+    # the leading half of `&> file`) is unaffected and still splits.
     masked = mask_quotes(command)
     segments = []
     start = 0
-    for m in re.finditer(r"\|\||&&|[|;\n&]", masked):
+    for m in re.finditer(r"\|\||&&|[|;\n]|(?<!>)&", masked):
         segments.append(command[start:m.start()])
         start = m.end()
     segments.append(command[start:])

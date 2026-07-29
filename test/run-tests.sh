@@ -3951,6 +3951,34 @@ RC=$?
 assert_rc0 "$RC" "cg: 'git commit -vS -a -m x' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: clustered -vS does not swallow a real trailing -a"
 
+# F034: command_segments() split on any literal "&", including the one
+# glued to ">" in the fd-duplication idiom "2>&1" -- the identical bug
+# F030 fixed in the sibling hook enforce-scope.sh.template, but here it
+# was a REAL gate bypass, not a usability false-positive: the split put
+# the real trailing staging flag in a SECOND segment whose first token
+# isn't "git"/"commit", so segment_subcommand() never even recognized it
+# as a git-commit segment at all, and has_staging_flag() never ran on it.
+# Verified against real bash: `git commit 2>&1 -am "x"` genuinely stages
+# and commits in one step (the remaining arguments reach the command
+# after the mid-command redirect, exactly as real bash parses it).
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit 2>&1 -am "x"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit 2>&1 -am \"x\"' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: mid-command 2>&1 does not shadow a real trailing -am cluster"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit 2>&1 -a -m "x"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit 2>&1 -a -m \"x\"' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: mid-command 2>&1 does not shadow real separated -a -m flags"
+
+# No new false positive: a real background "&" NOT glued to ">" must still
+# act as a segment separator, unchanged from before.
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -m "x" & echo done')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -m \"x\" & echo done' passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: a real background '&' after a clean commit has no deny fields"
+
 echo ""
 echo "== agent frontmatter =="
 
