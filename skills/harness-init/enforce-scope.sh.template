@@ -353,8 +353,18 @@ def cp_mv_targets(tokens):
     # any of these forms at all, so an out-of-scope -t destination was never
     # checked (found by adversarial review of PR #42/F023, reported as
     # F024). Clustered short flags (`-rt DIR`, -r and -t combined) are not
-    # recognized, a documented residual (see header).
+    # recognized, a documented residual (see header). The scan stops at a
+    # literal "--" (end of flag parsing): without this, a real filename that
+    # happens to start with "-t" after "--" (e.g. `mv -- -t.txt dest.txt`)
+    # was misread as the -t flag itself, string-sliced into a bogus target
+    # ".txt", and the REAL destination (dest.txt, via the last_flagless_token
+    # fallback, never reached because this loop already returned) went
+    # unchecked -- the exact failure mode F029 exists to close, just in this
+    # sibling function instead of all_flagless_tokens() (found by
+    # adversarial review of PR #52, F029).
     for i, tok in enumerate(tokens):
+        if tok == "--":
+            break
         if tok in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
             return [tokens[i + 1]]
         if tok.startswith("--target-directory="):
@@ -395,7 +405,15 @@ def sed_inplace_targets(tokens):
     # (quoted) emptiness, and widening it to "any token after a bare -i"
     # would reintroduce the exact ambiguity this function exists to resolve
     # (GNU's bare "-i" never takes a following value at all) (found by
-    # adversarial review of PR #46, round 2).
+    # adversarial review of PR #46, round 2). Same "--" gap as
+    # cp_mv_targets()/all_flagless_tokens() (F029): before this, EVERY token
+    # starting with "-" was skipped as a flag unconditionally, including a
+    # literal "--" itself and a real filename after it (e.g. `sed -i -- -a
+    # .txt`), so a real out-of-scope file target following "--" was never
+    # recognized and went unchecked (found by adversarial review of PR #52,
+    # F029). Once "--" is seen, flag-detection stops entirely for the rest
+    # of the arguments -- every later token falls through to the same
+    # implicit-script-then-target logic as an ordinary flagless token.
     if not tokens or tokens[0] != "sed":
         return []
     args = tokens[1:]
@@ -409,18 +427,24 @@ def sed_inplace_targets(tokens):
     )
     targets = []
     consumed_implicit_script = has_explicit_script
+    past_separator = False
     i = 0
     while i < len(args):
         tok = args[i]
-        if tok in SED_SCRIPT_VALUE_FLAGS:
-            i += 2
-            continue
-        if tok == "-i" and i + 1 < len(args) and args[i + 1] in EMPTY_STRING_TOKENS:
-            i += 2
-            continue
-        if tok.startswith("-"):
+        if tok == "--" and not past_separator:
+            past_separator = True
             i += 1
             continue
+        if not past_separator:
+            if tok in SED_SCRIPT_VALUE_FLAGS:
+                i += 2
+                continue
+            if tok == "-i" and i + 1 < len(args) and args[i + 1] in EMPTY_STRING_TOKENS:
+                i += 2
+                continue
+            if tok.startswith("-"):
+                i += 1
+                continue
         if not consumed_implicit_script:
             consumed_implicit_script = True
             i += 1
