@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 32,
-  "passing": 17,
+  "total_features": 33,
+  "passing": 18,
   "features": [
     {
       "id": "F001",
@@ -1025,7 +1025,7 @@
       "assigned_to": null,
       "test_file": null,
       "coverage": null,
-      "notes": "Discovered by adversarial review of PR #49 (F027). No Linear issue -- same precedent as F022-F031, internally discovered during review.",
+      "notes": "Discovered by adversarial review of PR #49 (F027). No Linear issue -- same precedent as F022-F031, internally discovered during review. ADDITIONAL ITEM (round-3 review of PR #49): -U/--unified <n> is a required-value short flag in neither VALUE_TAKING_SHORT_FLAGS nor REQUIRED_VALUE_SHORT_FLAGS, so `git commit -U -- -a` is technically misread the same way -m once was. Confirmed NOT currently exploitable: real git rejects a bare -U outright (\"switch `U' expects an integer value\"), so nothing stages regardless of the gate's verdict. Folded in here as a completeness item for whenever F032 is implemented, not urgent enough to fix on its own.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
