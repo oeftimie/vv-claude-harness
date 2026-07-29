@@ -4177,8 +4177,9 @@ assert_deny_json "$OUT" "cg: mid-command '&>>' does not shadow a real trailing -
 
 # No new false positive on an ordinary clean commit followed by a real
 # background "&" -- the separator property itself (that a real background
-# "&" NOT glued to ">" still splits) is already pinned by an earlier '-am'
-# cluster test in this file, not by this one.
+# "&" NOT glued to ">" still splits) is already pinned by the DIR_CG_AMPERSAND
+# tests earlier in this file ('git status & git commit -m x', etc.) and the
+# Check-0 case ('echo hi & git add . && git commit -m x'), not by this one.
 OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -m "x" & echo done')
 RC=$?
 assert_rc0 "$RC" "cg: 'git commit -m \"x\" & echo done' passes, rc 0"
