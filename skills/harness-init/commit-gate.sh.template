@@ -399,26 +399,46 @@ def parse_command(command):
 # flag at all) was denied too (found by adversarial review of PR #40).
 VALUE_TAKING_SHORT_FLAGS = set("mFtSCcu")
 
+# Subset of VALUE_TAKING_SHORT_FLAGS whose BARE form (last char of a cluster,
+# nothing attached) also consumes the NEXT token as its value. -S/-u are
+# real git optargs (PARSE_OPT_OPTARG): bare "-S"/"-u" use a built-in default
+# and do NOT take the next token -- `git commit -u -a -m x` and `git commit
+# -S -a -m x` both genuinely stage and commit in real git (confirmed against
+# git 2.52.0: bare -S/-u behave exactly like no-value flags such as -n/-s).
+# Treating all seven letters as bare-value-taking (an earlier version of this
+# fix did) made a bare/clustered "-u"/"-S" swallow the token after it as if
+# it were a value, hiding a REAL trailing staging flag beyond it -- a gate
+# bypass `main` never had (found by adversarial review of PR #49, round 2).
+# -S/-u still belong in VALUE_TAKING_SHORT_FLAGS above: their ATTACHED form
+# (`-uall`, `-Skeyid`) is a real value and must not be misread as more flag
+# letters (confirmed: `-ua` -> "Invalid untracked files mode 'a'", so "a" is
+# -u's value, not the staging flag; `-Sa` -> "a" is the keyid, nothing
+# staged) -- only the BARE/next-token form was wrong.
+REQUIRED_VALUE_SHORT_FLAGS = set("mFtCc")
+
 
 # Returns (is_staging_flag, took_bare_value) for a single "-xyz"-shaped
 # cluster token: is_staging_flag is True if -a/-i appears anywhere in the
-# cluster; took_bare_value is True only if a value-taking short flag is the
+# cluster; took_bare_value is True only if a REQUIRED-value short flag
+# (REQUIRED_VALUE_SHORT_FLAGS, not merely VALUE_TAKING_SHORT_FLAGS) is the
 # LAST character in the cluster (so its value is the NEXT token, not part of
 # this one) -- e.g. "-m" or "-sm", but not "-mfix" or "-sm foo" (attached
-# value) or "-ma" (a real staging flag follows in the SAME cluster, checked
-# and returned first via is_staging above). A first pass checked only
-# `len(tok) == 2` (bare "-m" alone), missing every multi-letter cluster
-# ending on a value-taking flag like "-sm" or "-nm" -- found by adversarial
-# review of PR #49 (F027), confirmed against real git: `git commit -sm --
-# -a` both signs off AND stages via a real trailing -a that the narrower
-# check never reached.
+# value), "-ma" (a real staging flag follows in the SAME cluster, checked
+# and returned first via is_staging above), or "-S"/"-u" bare (optarg, no
+# next-token value at all). A first pass checked only `len(tok) == 2` (bare
+# "-m" alone), missing every multi-letter cluster ending on a value-taking
+# flag like "-sm" or "-nm" -- found by adversarial review of PR #49 (F027),
+# confirmed against real git: `git commit -sm -- -a` both signs off AND
+# stages via a real trailing -a that the narrower check never reached. The
+# position-aware fix for THAT gap then wrongly applied to -S/-u too, see
+# REQUIRED_VALUE_SHORT_FLAGS's own comment above.
 def _scan_short_flag_cluster(tok):
     body = tok[1:]
     for idx, c in enumerate(body):
         if c in ("a", "i"):
             return True, False
         if c in VALUE_TAKING_SHORT_FLAGS:
-            return False, idx == len(body) - 1
+            return False, c in REQUIRED_VALUE_SHORT_FLAGS and idx == len(body) - 1
     return False, False
 
 

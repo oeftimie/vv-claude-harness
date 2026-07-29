@@ -3670,6 +3670,33 @@ assert_rc0 "$RC" "cg: 'git commit -sm \"-a\"' exits 0, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "cg: cluster-form -sm's own value '-a' is not misread as the -a staging flag"
 
+# Round-2 review: the round-1 fix made -S/-u position-aware TOO, treating a
+# bare/clustered -S or -u as consuming the next token as its value like -m
+# does. Real git parses -S/-u as optargs (PARSE_OPT_OPTARG): a BARE -S/-u
+# uses its default and does NOT consume the next token, so `-u -a`/`-S -a`
+# (and clustered `-nu -a`/`-vS -a`) are genuine stage-and-commit shapes that
+# `main` already denied and the round-1 fix wrongly allowed -- found by
+# adversarial review of PR #49, round 2, confirmed against real git 2.52.0.
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -u -a -m x')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -u -a -m x' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare -u does not swallow a real trailing -a"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -S -a -m x')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -S -a -m x' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare -S does not swallow a real trailing -a"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -nu -a -m x')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -nu -a -m x' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: clustered -nu does not swallow a real trailing -a"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -vS -a -m x')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -vS -a -m x' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: clustered -vS does not swallow a real trailing -a"
+
 echo ""
 echo "== agent frontmatter =="
 
