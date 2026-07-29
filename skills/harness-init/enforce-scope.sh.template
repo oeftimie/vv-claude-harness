@@ -411,19 +411,34 @@ def sed_inplace_targets(tokens):
     # literal "--" itself and a real filename after it (e.g. `sed -i -- -a
     # .txt`), so a real out-of-scope file target following "--" was never
     # recognized and went unchecked (found by adversarial review of PR #52,
-    # F029). Once "--" is seen, flag-detection stops entirely for the rest
-    # of the arguments -- every later token falls through to the same
-    # implicit-script-then-target logic as an ordinary flagless token.
+    # F029). Once "--" is seen, EVERY flag-detection scan in this function --
+    # the `-i`/`--in-place` presence check and the has_explicit_script check
+    # immediately below, not just the token-walking loop further down --
+    # stops looking at flags for the rest of the arguments; every later
+    # token falls through to the same implicit-script-then-target logic as
+    # an ordinary flagless token. Missing this for the two `any()` checks
+    # (round 1 of PR #52 only fixed the loop) both under- and over-denies: a
+    # real out-of-scope FILE target that happens to start with "-i" (e.g.
+    # `sed 's/a/b/' -- -input.txt`, no actual -i flag at all) would wrongly
+    # trigger the in-place guard, and a real target literally named "-e" or
+    # "-f" after "--" would wrongly trigger has_explicit_script -- both
+    # found by adversarial review of PR #52, round 2.
     if not tokens or tokens[0] != "sed":
         return []
     args = tokens[1:]
-    if not any(t == "-i" or t.startswith("-i") or t == "--in-place" for t in args):
+    if "--" in args:
+        pre_separator_args = args[: args.index("--")]
+    else:
+        pre_separator_args = args
+    if not any(
+        t == "-i" or t.startswith("-i") or t == "--in-place" for t in pre_separator_args
+    ):
         return []
     has_explicit_script = any(
         t in SED_SCRIPT_VALUE_FLAGS
         or t.startswith("--expression=")
         or t.startswith("--file=")
-        for t in args
+        for t in pre_separator_args
     )
     targets = []
     consumed_implicit_script = has_explicit_script

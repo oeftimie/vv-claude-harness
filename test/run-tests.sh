@@ -1408,15 +1408,20 @@ assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F029): in-scope literal-dash target after '--' has no deny fields"
 
 # A second "--" after the first is ordinary literal text (POSIX: only the
-# FIRST "--" ends flag parsing), not another separator -- exercised here
-# since nothing previously covered more than one "--" in a token list.
+# FIRST "--" ends flag parsing), not another separator. The trailing "--"
+# here is itself the (out-of-scope) target -- a version that treated EVERY
+# "--" as a separator would just re-consume it and find no target at all,
+# wrongly ALLOWING the command; this is discriminating where an earlier
+# draft (two real out-of-scope paths around the second "--") was not, since
+# that draft passed identically whether or not the second "--" was treated
+# as literal text (found by adversarial review of PR #52, round 2).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm -- src/other/a.txt -- src/other/b.txt')")
+  "$(bash_command_json 'rm -- src/parser/a.txt --')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F029): a second '--' is literal text, not another separator (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F029): second-'--' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2 (F029): second-'--' denial names the first real out-of-scope target"
+assert_deny_json "$OUT" "hs2 (F029): trailing-'--'-as-target denial uses JSON deny form"
+assert_contains "$OUT" "write to '--'" \
+  "hs2 (F029): trailing-'--'-as-target denial names '--' itself, not silently allowed"
 
 # Round-1 review of PR #52: cp_mv_targets()'s own -t/--target-directory=
 # scan had the identical "--" gap, in a DIFFERENT function than
@@ -1465,6 +1470,29 @@ assert_rc0 "$RC" "hs2 (F029): 'sed -i ... -- -out.txt' out-of-scope literal-dash
 assert_deny_json "$OUT" "hs2 (F029): 'sed -i ... -- -out.txt' denial uses JSON deny form"
 assert_contains "$OUT" "-out.txt" \
   "hs2 (F029): 'sed -i ... -- -out.txt' denial names the real target after '--'"
+
+# Round-2 review of PR #52: the two any()-based guards above (in-place
+# presence, has_explicit_script) scanned ALL of args, including tokens AFTER
+# "--", not just the token-walking loop -- round 1 only fixed the loop. A
+# real out-of-scope FILE target that happens to start with "-i" (but there
+# is no actual -i flag anywhere before "--") wrongly triggered the in-place
+# guard; a real file literally named "-e"/"-f" after "--" wrongly triggered
+# has_explicit_script, misreading the SCRIPT itself as the (wrong) target
+# instead of the real file (found by adversarial review of PR #52, round 2).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed 's/a/b/' -- -input.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F029): sed with no real -i flag, only a post-'--' '-i'-shaped filename, passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F029): no real -i flag means no false deny, even with a '-i'-shaped filename after '--'"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i 's/a/b/' -- -e")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F029): 'sed -i ... -- -e' (a real file literally named -e) exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F029): 'sed -i ... -- -e' denial uses JSON deny form"
+assert_contains "$OUT" "write to '-e'" \
+  "hs2 (F029): 'sed -i ... -- -e' denial names the real file '-e', not the script text"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")
