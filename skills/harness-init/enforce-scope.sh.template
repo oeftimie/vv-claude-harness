@@ -461,6 +461,47 @@ def _flag_view(tok):
     return unquote_token(tok)
 
 
+def _attached_value_raw(tok, prefix_len):
+    # Returns the RAW (not-yet-unquoted) suffix of `tok` starting right after
+    # its recognized `prefix_len`-character flag prefix (e.g. 2 for "-t", or
+    # len("--target-directory=")), for write_targets()'s single later
+    # unquote_token() pass to resolve -- mirroring how the bare "-t DIR"/
+    # "--target-directory DIR" forms already return tokens[i+1] untouched.
+    # An earlier version sliced the VIEW instead (view.split("=", 1)[1] /
+    # view[2:]), handing write_targets() an ALREADY-unquoted-and-unescaped
+    # string that its own unquote_token() pass then processed a SECOND time.
+    # unquote_token() is not idempotent (F031's backslash-unescape isn't),
+    # so this silently mis-resolved any backslash in the destination:
+    # confirmed both directions by sweeping 3,645 backslash-bearing -t
+    # destinations against real GNU cp -- 70 unquoted cases regressed
+    # DENY->ALLOW (a fail-open: `cp -ts\\rc/parser/x a.txt` really targets
+    # the literal directory `s\rc/parser/x`, confirmed via `gcp` execution,
+    # but double-unquoting silently stripped the surviving backslash and
+    # made it look like the in-scope "src/parser/x") and 1,376 regressed
+    # ALLOW->DENY (found by adversarial review of PR #59, round 2).
+    # Since unquote_token() strips quote characters from ANYWHERE in a
+    # token (not just matched pairs at the edges) and unescapes backslashes
+    # globally, the fix below walks the RAW token counting non-quote
+    # characters until `prefix_len` of them are consumed, skipping over
+    # (but preserving in the returned suffix) any quote characters seen
+    # along the way. This correctly locates the raw split point whether the
+    # flag prefix is bare, only the value is quoted, or the WHOLE token
+    # (prefix included) is quoted -- in every case the returned suffix still
+    # carries any quote/backslash characters untouched, for write_targets()
+    # to resolve in exactly one pass, the same as the bare-form path.
+    seen = 0
+    for idx, ch in enumerate(tok):
+        if ch in ("'", '"'):
+            continue
+        seen += 1
+        if seen == prefix_len:
+            return tok[idx + 1 :]
+    return ""
+
+
+TARGET_DIRECTORY_EQUALS_LEN = len("--target-directory=")
+
+
 def cp_mv_targets(tokens):
     # cp/mv normally write to only the LAST flagless argument (the
     # destination); every earlier flagless argument is a SOURCE, read not
@@ -494,11 +535,12 @@ def cp_mv_targets(tokens):
     # bare `-t DIR`/`--target-directory DIR` forms return the RAW next
     # token (tokens[i+1], untouched, unquoted exactly once later by
     # write_targets()); the attached `--target-directory=DIR`/`-tDIR` forms
-    # extract their value from the VIEW instead, a documented, narrower
-    # residual (see header): a legitimate literal backslash inside DIR in
-    # these two attached forms specifically could be double-processed by
-    # write_targets()'s later unquote_token() pass, unlike every other path
-    # in this function.
+    # go through _attached_value_raw() for the identical reason (see its
+    # own docstring) -- an earlier version extracted their value from the
+    # VIEW instead, framed as "a documented, narrower residual"; a reviewer
+    # proved that framing wrong (it flips scope decisions in BOTH
+    # directions vs. main, a regression, not a residual) and this replaces
+    # it (F035 round 2, PR #59 round-2 review).
     for i, tok in enumerate(tokens):
         view = _flag_view(tok)
         if view == "--":
@@ -506,9 +548,9 @@ def cp_mv_targets(tokens):
         if view in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
             return [tokens[i + 1]]
         if view.startswith("--target-directory="):
-            return [view.split("=", 1)[1]]
+            return [_attached_value_raw(tok, TARGET_DIRECTORY_EQUALS_LEN)]
         if view.startswith("-t") and not view.startswith("--") and len(view) > 2:
-            return [view[2:]]
+            return [_attached_value_raw(tok, 2)]
     last = last_flagless_token(tokens)
     return [last] if last else []
 

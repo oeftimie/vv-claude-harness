@@ -1712,6 +1712,46 @@ assert_rc0 "$RC" "hs2 (F035): a quoted '-e' still consumes its script value, rc 
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F035): quoted '-e' with an in-scope target has no deny fields"
 
+# F035 round 2 (PR #59 round-2 review, finding B2): the previous test above
+# does NOT actually isolate has_explicit_script from the loop's own
+# SED_SCRIPT_VALUE_FLAGS check -- its target is IN scope, so both a correct
+# has_explicit_script (True, target correctly detected and allowed) and a
+# reverted one (False, the target wrongly consumed as a bogus "implicit
+# script" and never even reaching the target list) land on the same
+# observable ALLOW. Using an OUT-of-scope target here instead makes the two
+# code paths diverge: correct code finds the real target and denies it;
+# reverted code silently swallows it as a fake implicit script and finds NO
+# targets at all, wrongly allowing.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -i "-e" "s/a/b/" src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035 r2): quoted '-e' with an OUT-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035 r2): quoted '-e' out-of-scope denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f.txt" \
+  "hs2 (F035 r2): denial names the real target, proving has_explicit_script wasn't swallowed"
+
+# F035 round 2 (PR #59 round-2 review, finding B2): isolates _separator_index()'s
+# OWN SED_SCRIPT_VALUE_FLAGS check (distinct from sed_inplace_targets()'s
+# identically-shaped one in its main loop): a quoted "-f" must still be
+# recognized as consuming the NEXT token as its script-file value when
+# _separator_index() decides where flag parsing ends, not just in the main
+# loop. Here that consumed value happens to BE the literal string "--" (a
+# script genuinely named "--", not the pathspec separator) -- if
+# _separator_index() compared the RAW token instead of the view, a quoted
+# "-f" would go unrecognized, "--" would be misread as the real separator
+# one token too early, and the genuine "-i" that follows it would be cut out
+# of pre_separator_args entirely, making sed_inplace_targets() wrongly
+# conclude there is no in-place edit at all (silently ALLOWING an otherwise
+# out-of-scope target).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed "-f" -- -i src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035 r2): quoted '-f' consuming a literal '--' script name exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F035 r2): quoted '-f'-consumed-'--' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f.txt" \
+  "hs2 (F035 r2): denial names the real target, proving -i wasn't cut out of pre_separator_args"
+
 # Isolates the loop's GENERIC dash-prefixed-flag check (distinct from the
 # specific SED_SCRIPT_VALUE_FLAGS/-i checks above): a quoted, otherwise-
 # unrecognized sed flag like "-n" must still be skipped as SOME kind of
@@ -1736,6 +1776,28 @@ assert_rc0 "$RC" "hs2 (F035): a fully-quoted attached '-tDIR' cp form exits 0 (J
 assert_deny_json "$OUT" "hs2 (F035): quoted attached '-tDIR' denial uses JSON deny form"
 assert_contains "$OUT" "src/other/d/" \
   "hs2 (F035): quoted attached '-tDIR' denial names the real destination, not the in-scope source"
+
+# F035 round 2 (PR #59 round-2 review, finding B1): an UNQUOTED attached "-t"
+# value containing a real backslash was a genuine fail-open -- extracting the
+# value from the VIEW (already-unquoted-and-unescaped) instead of the raw
+# token meant write_targets()'s later unquote_token() pass processed it a
+# SECOND time, which is not idempotent (F031). Ground-truthed against real
+# GNU cp: `gcp -ts\\rc/parser/x a.txt` (raw command text has two literal
+# backslash characters; bash's own outside-quotes escaping collapses that to
+# ONE backslash in the real argv) genuinely targets the literal directory
+# `s\rc/parser/x` -- confirmed by executing gcp directly and reading its own
+# "No such file or directory" error, which names that exact string. That is
+# NOT in scope (it doesn't start with "src/parser/" -- the char after "s" is
+# a literal backslash, not "r"). The old double-unquoting silently stripped
+# the surviving backslash and produced "src/parser/x", which looks in-scope
+# and was wrongly ALLOWED.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp -ts\\rc/parser/x src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F035 r2): backslash-bearing unquoted attached '-t' value exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035 r2): backslash-bearing unquoted attached '-t' denial uses JSON deny form"
+assert_contains "$OUT" 's\\rc/parser/x' \
+  "hs2 (F035 r2): denial names the real (single-unescaped) destination, not a double-unescaped decoy"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")
