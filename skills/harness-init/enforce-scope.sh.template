@@ -574,10 +574,23 @@ def main():
     for segment in segments_of(command):
         for target in write_targets(segment):
             norm = normalize(target, project_root)
-            # normalize() runs BEFORE this check, so a traversal spelling
-            # (`/dev/../etc/passwd`) can't launder a real project-relative
-            # or absolute-outside-/dev/ path into looking like a /dev/*
-            # write -- ordering here is load-bearing.
+            # normalize() runs before this check so equivalent spellings of
+            # an exempt path (`/dev//null`, `/dev/./null`, `/dev/fd/../null`)
+            # are recognized as the same exact string is_dev_exempt() checks
+            # against -- NOT to prevent traversal from laundering a real
+            # out-of-scope path INTO looking exempt: is_dev_exempt() is
+            # exact-set/pattern membership, not a prefix match, so
+            # `/dev/../etc/passwd` (which resolves to `/etc/passwd`) was
+            # never going to match regardless of ordering -- confirmed by
+            # mutation-testing this ordering claim itself (moving the check
+            # before normalize() changed zero assertions). An earlier
+            # version of this comment claimed the ordering was load-bearing
+            # against traversal laundering; that was true of round 1's
+            # broad `startswith("/dev/")` prefix check, but became false
+            # once this round narrowed the check to exact membership --
+            # found by adversarial review of PR #53, round 2. Ordering WOULD
+            # become load-bearing again if DEV_EXEMPT_EXACT/DEV_FD_PATTERN
+            # were ever widened back to a prefix-style match.
             if is_dev_exempt(norm):
                 continue
             if norm in LEAD_OWNED:
