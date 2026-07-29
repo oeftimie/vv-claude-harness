@@ -4018,6 +4018,62 @@ RC=$?
 assert_rc0 "$RC" "cg: 'git commit --message=see -a' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: attached --message=value does not shadow a real trailing -a"
 
+# Round-1 review of PR #56: --trailer was missing entirely (a live bypass,
+# identical shape to --message), and exact-token matching missed git's own
+# prefix-abbreviation feature, defeating the fix even for --message itself
+# (`--mess`, `--messa` etc. all genuinely stage+commit in real git).
+# _resolve_long_flag() now checks any bare long-flag-shaped token against
+# the full GIT_COMMIT_LONG_OPTIONS universe, exactly mirroring real git's
+# own unambiguous-prefix rule.
+for CG_TRAILER_CMD in \
+  'git commit --trailer -- -a' \
+  'git commit --trail -- -a' \
+  'git commit --tr -- -a'
+do
+  OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_TRAILER_CMD")
+  RC=$?
+  assert_rc0 "$RC" "cg: '$CG_TRAILER_CMD' exits 0 (JSON deny)"
+  assert_deny_json "$OUT" "cg: '$CG_TRAILER_CMD' denial uses JSON deny form"
+done
+
+for CG_MESS_ABBREV_CMD in \
+  'git commit --mess -- -a' \
+  'git commit --messa -- -a' \
+  'git commit --messag -- -a'
+do
+  OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_MESS_ABBREV_CMD")
+  RC=$?
+  assert_rc0 "$RC" "cg: '$CG_MESS_ABBREV_CMD' exits 0 (JSON deny)"
+  assert_deny_json "$OUT" "cg: '$CG_MESS_ABBREV_CMD' denial uses JSON deny form"
+done
+
+# The false-positive direction: --trailer's own value must not be misread
+# as the -a staging flag (verified against real git: `--trailer -a -m msg`
+# stages nothing, since -a is consumed as the trailer's own value).
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --trailer -a -m msg')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --trailer -a -m msg' exits 0, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: --trailer's own value '-a' is not misread as the -a staging flag"
+
+# An ambiguous abbreviation (real git errors, nothing runs -- confirmed:
+# `git commit --t -- -a` -> "error: ambiguous option: t (could be --trailer
+# or --template)", rc 129) must not be misread as resolving to anything;
+# falling through as an inert token is the safe, correct outcome either way.
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --t -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --t -- -a' (ambiguous in real git) exits 0, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: ambiguous --t abbreviation is not misread as a value-taking flag"
+
+# An abbreviated STAGING flag (not just value-taking ones) must also be
+# recognized -- verified unambiguous against real git: --inc is the only
+# option starting with "inc".
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --inc -m "x"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --inc -m \"x\"' (abbreviated --include) exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: abbreviated --include denial uses JSON deny form"
+
 echo ""
 echo "== agent frontmatter =="
 
