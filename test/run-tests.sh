@@ -4148,7 +4148,12 @@ assert_deny_json "$OUT" "cg: mid-command 2>&1 does not shadow real separated -a 
 # into a segment starting with ">" that has_staging_flag() never even
 # recognized as a git-commit segment, an identical bypass to 2>&1. Verified
 # against real git: `git commit &> out.log -a -m "bypass"` genuinely stages
-# and commits.
+# and commits. This hook does static text analysis, not execution, so it
+# must deny the text regardless of whether THIS environment's own shell can
+# run it -- `&>>` specifically needs bash 4.0+ (a syntax error on this
+# repo's bash 3.2.57) but was confirmed to execute and genuinely bypass
+# under zsh 5.9, the shell this environment's own tools actually invoke
+# (round-3 review of PR #58).
 OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit &> out.log -a -m "x"')
 RC=$?
 assert_rc0 "$RC" "cg: 'git commit &> out.log -a -m \"x\"' exits 0 (JSON deny)"
@@ -4159,8 +4164,10 @@ RC=$?
 assert_rc0 "$RC" "cg: 'git commit &>> out.log -am \"x\"' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: mid-command '&>>' does not shadow a real trailing -am cluster"
 
-# No new false positive: a real background "&" NOT glued to ">" must still
-# act as a segment separator, unchanged from before.
+# No new false positive on an ordinary clean commit followed by a real
+# background "&" -- the separator property itself (that a real background
+# "&" NOT glued to ">" still splits) is already pinned by an earlier '-am'
+# cluster test in this file, not by this one.
 OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -m "x" & echo done')
 RC=$?
 assert_rc0 "$RC" "cg: 'git commit -m \"x\" & echo done' passes, rc 0"
