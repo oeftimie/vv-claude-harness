@@ -3971,6 +3971,22 @@ RC=$?
 assert_rc0 "$RC" "cg: 'git commit 2>&1 -a -m \"x\"' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: mid-command 2>&1 does not shadow real separated -a -m flags"
 
+# Round-1 review of PR #58: the mirror shape needs the same treatment --
+# "&>"/"&>>" (bash's combined stdout+stderr redirect, one operator) split
+# into a segment starting with ">" that has_staging_flag() never even
+# recognized as a git-commit segment, an identical bypass to 2>&1. Verified
+# against real git: `git commit &> out.log -a -m "bypass"` genuinely stages
+# and commits.
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit &> out.log -a -m "x"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit &> out.log -a -m \"x\"' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: mid-command '&>' does not shadow a real trailing -a -m"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit &>> out.log -am "x"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit &>> out.log -am \"x\"' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: mid-command '&>>' does not shadow a real trailing -am cluster"
+
 # No new false positive: a real background "&" NOT glued to ">" must still
 # act as a segment separator, unchanged from before.
 OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -m "x" & echo done')

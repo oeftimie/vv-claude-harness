@@ -302,12 +302,28 @@ def command_segments(command):
     # segment_subcommand() never even recognized it as a git-commit
     # segment) -- confirmed against real bash that this genuinely stages
     # and commits in one step (found by adversarial review of PR #53,
-    # F030, filed as F034). A bare "&" anywhere else (background, "&&", or
-    # the leading half of `&> file`) is unaffected and still splits.
+    # F030, filed as F034). The mirror shape needs the SAME treatment: a
+    # "&" is ALSO not a separator when immediately FOLLOWED by a ">" --
+    # `&>`/`&>>` is bash's combined stdout+stderr redirect, one operator,
+    # not background-"&" followed by a redirect. An initial version of
+    # this fix only guarded the "&" PRECEDED by ">" (matching enforce-
+    # scope.sh's own needs, where this shape is harmless -- that hook
+    # extracts write targets independently of segment/command-recognition
+    # boundaries, so a `&>`-caused split still leaves the redirect target
+    # itself checkable in the fragment it lands in). Here it is NOT
+    # harmless: `git commit &> out.log -a -m "bypass"` split into
+    # segments ['git commit', '> out.log -a -m "bypass"'], putting the
+    # real staging flags in a segment whose first token is ">", not
+    # "git"/"commit" -- segment_subcommand() never recognized it, so
+    # has_staging_flag() never ran, an identical bypass to the `2>&1`
+    # case this feature was filed to close (found by adversarial review
+    # of PR #58, F034). `&&` is unaffected (consumed whole by its own
+    # earlier alternative); real background "&" (not adjacent to any ">"
+    # on either side) still splits.
     masked = mask_quotes(command)
     segments = []
     start = 0
-    for m in re.finditer(r"\|\||&&|[|;\n]|(?<!>)&", masked):
+    for m in re.finditer(r"\|\||&&|[|;\n]|(?<!>)&(?!>)", masked):
         segments.append(command[start:m.start()])
         start = m.end()
     segments.append(command[start:])
