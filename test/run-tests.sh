@@ -3651,6 +3651,25 @@ assert_rc0 "$RC" "cg: 'git commit -m \"-a\"' exits 0, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "cg: -m's own value '-a' is not misread as the -a staging flag"
 
+# F027 round-1 review: a first pass only skipped the value token for a BARE
+# 2-character flag ("-m" alone), missing every multi-letter cluster ending
+# on a value-taking flag, e.g. "-sm" (sign-off + message). Same 2 shapes,
+# cluster form. Verified against real git: `git commit -sm -- -a` both
+# signs off AND stages (via the real trailing -a), and `git commit -sm "-a"`
+# stages nothing extra (-a is just message text).
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -sm -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -sm -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: cluster-form -sm's value doesn't shadow a real trailing -a"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: 'git commit -sm -- -a' denial names compound-stage-and-commit"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit -sm "-a"')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit -sm \"-a\"' exits 0, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: cluster-form -sm's own value '-a' is not misread as the -a staging flag"
+
 echo ""
 echo "== agent frontmatter =="
 

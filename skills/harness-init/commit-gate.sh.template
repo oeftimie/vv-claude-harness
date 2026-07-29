@@ -402,15 +402,23 @@ VALUE_TAKING_SHORT_FLAGS = set("mFtSCcu")
 
 # Returns (is_staging_flag, took_bare_value) for a single "-xyz"-shaped
 # cluster token: is_staging_flag is True if -a/-i appears anywhere in the
-# cluster; took_bare_value is True if the cluster ends on a value-taking
-# short flag with nothing attached (so its value is the NEXT token, not part
-# of this one).
+# cluster; took_bare_value is True only if a value-taking short flag is the
+# LAST character in the cluster (so its value is the NEXT token, not part of
+# this one) -- e.g. "-m" or "-sm", but not "-mfix" or "-sm foo" (attached
+# value) or "-ma" (a real staging flag follows in the SAME cluster, checked
+# and returned first via is_staging above). A first pass checked only
+# `len(tok) == 2` (bare "-m" alone), missing every multi-letter cluster
+# ending on a value-taking flag like "-sm" or "-nm" -- found by adversarial
+# review of PR #49 (F027), confirmed against real git: `git commit -sm --
+# -a` both signs off AND stages via a real trailing -a that the narrower
+# check never reached.
 def _scan_short_flag_cluster(tok):
-    for c in tok[1:]:
+    body = tok[1:]
+    for idx, c in enumerate(body):
         if c in ("a", "i"):
             return True, False
         if c in VALUE_TAKING_SHORT_FLAGS:
-            return False, True
+            return False, idx == len(body) - 1
     return False, False
 
 
@@ -427,11 +435,11 @@ def has_staging_flag(tokens):
             is_staging, took_bare_value = _scan_short_flag_cluster(tok)
             if is_staging:
                 return True
-            # A bare value-taking flag (e.g. "-m", no attached value) takes
-            # its value from the NEXT token, whatever that token's own
-            # content looks like -- it is opaque data, never itself a flag
-            # or the "--" pathspec separator (F027).
-            if took_bare_value and len(tok) == 2:
+            # A bare value-taking flag (e.g. "-m", or a cluster ending on
+            # one like "-sm") takes its value from the NEXT token, whatever
+            # that token's own content looks like -- it is opaque data,
+            # never itself a flag or the "--" pathspec separator (F027).
+            if took_bare_value:
                 i += 1
         i += 1
     return False
