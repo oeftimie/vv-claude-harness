@@ -393,6 +393,24 @@ SED_SCRIPT_VALUE_FLAGS = ("-e", "-f", "--expression", "--file")
 EMPTY_STRING_TOKENS = ("''", '""')
 
 
+def _separator_index(args):
+    # Returns the index of the first literal "--" that acts as a REAL
+    # separator, skipping any "--" consumed as an -e/-f/--expression/--file
+    # VALUE (e.g. `sed -f -- 's/a/b/'`, where "--" is a script file's own
+    # name, not the pathspec separator). Mirrors sed_inplace_targets()'s own
+    # token-walking loop exactly, so callers that need to know "where does
+    # flag parsing end" (the two any() guards) agree with the loop that
+    # actually walks past that point -- a naive `args.index("--")` could
+    # disagree and truncate one token too early (found by adversarial
+    # review of PR #52, round 3).
+    i = 0
+    while i < len(args):
+        if args[i] == "--":
+            return i
+        i += 2 if args[i] in SED_SCRIPT_VALUE_FLAGS else 1
+    return len(args)
+
+
 def sed_inplace_targets(tokens):
     # Walks sed's own arguments token by token (mirroring commit-gate.sh's
     # segment_subcommand flag-walking loop) instead of assuming a fixed
@@ -436,14 +454,23 @@ def sed_inplace_targets(tokens):
     # `sed 's/a/b/' -- -input.txt`, no actual -i flag at all) would wrongly
     # trigger the in-place guard, and a real target literally named "-e" or
     # "-f" after "--" would wrongly trigger has_explicit_script -- both
-    # found by adversarial review of PR #52, round 2.
+    # found by adversarial review of PR #52, round 2). Round 2's fix used a
+    # NAIVE first-literal-"--" index for the two any() guards, but the
+    # token-walking loop below uses a FLAG-AWARE walk that skips a "--"
+    # consumed as an -e/-f/--expression/--file VALUE (e.g. `sed -f -- ...`,
+    # a script FILE literally named "--"). When a "--" is consumed as a
+    # value, the naive index and the flag-aware walk disagree about where
+    # the real separator is, so the guards could truncate one token too
+    # early and miss a genuine -i flag positioned after the value-consumed
+    # "--" (found by adversarial review of PR #52, round 3). _separator_index()
+    # duplicates the loop's own flag-aware walk (not the loop itself, to
+    # keep it a plain boundary lookup with no target-collection side
+    # effects) so the guards and the loop always agree on where flag
+    # parsing actually ends.
     if not tokens or tokens[0] != "sed":
         return []
     args = tokens[1:]
-    if "--" in args:
-        pre_separator_args = args[: args.index("--")]
-    else:
-        pre_separator_args = args
+    pre_separator_args = args[: _separator_index(args)]
     if not any(
         t == "-i" or t.startswith("-i") or t == "--in-place" for t in pre_separator_args
     ):

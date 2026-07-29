@@ -1494,6 +1494,22 @@ assert_deny_json "$OUT" "hs2 (F029): 'sed -i ... -- -e' denial uses JSON deny fo
 assert_contains "$OUT" "write to '-e'" \
   "hs2 (F029): 'sed -i ... -- -e' denial names the real file '-e', not the script text"
 
+# Round-3 review of PR #52: round 2's pre_separator_args used a NAIVE
+# first-literal-"--" index, disagreeing with the token-walking loop's own
+# FLAG-AWARE walk, which skips a "--" consumed as an -e/-f/--expression/
+# --file VALUE (a script file literally named "--", e.g. `sed -f -- ...`).
+# The disagreement truncated the any() guards one token too early, missing
+# a genuine -i flag positioned right after the value-consumed "--" -- a
+# false negative wrongly ALLOWING a real in-place edit of an out-of-scope
+# file (found by adversarial review of PR #52, round 3).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -f -- -i src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F029): 'sed -f -- -i FILE' (-- is -f's own value, -i is real) exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F029): 'sed -f -- -i FILE' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f.txt" \
+  "hs2 (F029): 'sed -f -- -i FILE' denial names the real out-of-scope target"
+
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")
 RC=$?
