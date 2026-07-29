@@ -3951,6 +3951,73 @@ RC=$?
 assert_rc0 "$RC" "cg: 'git commit -vS -a -m x' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: clustered -vS does not swallow a real trailing -a"
 
+# F032: has_staging_flag() only recognized value-taking SHORT flags as
+# consuming a space-separated value; the same bug F027 fixed for short
+# flags was still present for long flags (--message, --file, --author,
+# --date, --template, --fixup, --squash, --reuse-message). Verified against
+# real git: `git commit --message -- -a` genuinely stages and commits in
+# one step (subject '--', plus the real trailing -a), which the gate
+# wrongly ALLOWED; `git commit --message -a` stages nothing extra (message
+# text is literally '-a'), which the gate wrongly DENIED as a false
+# positive. Verified all 8 flags are required-value in real git (`git
+# commit -h`), none an optarg like -S/-u, so all take the bare/next-token
+# skip unconditionally -- no F027-round-2-style split needed here.
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --message -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --message -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare --message does not swallow a real trailing -a via --"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: 'git commit --message -- -a' denial names compound-stage-and-commit"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --message -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --message -a' exits 0, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: --message's own value '-a' is not misread as the -a staging flag"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --file -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --file -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare --file does not swallow a real trailing -a via --"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --author -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --author -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare --author does not swallow a real trailing -a via --"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --date -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --date -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare --date does not swallow a real trailing -a via --"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --template -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --template -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare --template does not swallow a real trailing -a via --"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --fixup -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --fixup -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare --fixup does not swallow a real trailing -a via --"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --squash -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --squash -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare --squash does not swallow a real trailing -a via --"
+
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --reuse-message -- -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --reuse-message -- -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: bare --reuse-message does not swallow a real trailing -a via --"
+
+# The attached "--message=foo" form is a single token and must not trigger
+# the bare-value skip logic (which would wrongly consume the NEXT token,
+# a real trailing -a, as if it belonged to --message).
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --message=see -a')
+RC=$?
+assert_rc0 "$RC" "cg: 'git commit --message=see -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: attached --message=value does not shadow a real trailing -a"
+
 echo ""
 echo "== agent frontmatter =="
 

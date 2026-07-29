@@ -168,6 +168,27 @@ REPAIR_STAGED = (
 REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
 
 STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
+
+# Long `git commit` flags that take a bare (space-separated) value, e.g.
+# `git commit --message foo`. Unlike VALUE_TAKING_SHORT_FLAGS/
+# REQUIRED_VALUE_SHORT_FLAGS (F027), no split into an "attached-only" vs
+# "required" subset is needed here: verified against `git commit -h` that
+# all 8 are genuinely required-value (shown as `<value>`, never the
+# bracketed `[=<mode>]` optarg syntax `--untracked-files[=<mode>]` uses),
+# so every bare occurrence unconditionally consumes the next token as its
+# value. The attached "--message=foo" form is a single token that never
+# equals any string in this set, so it's never mistaken for the bare form
+# and needs no special handling. Before this, has_staging_flag() only
+# recognized this space-separated-value pattern for SHORT flags (F027);
+# the identical gap for these long flags let `git commit --message -- -a`
+# genuinely stage-and-commit in one step while the gate ALLOWed it, and
+# denied `git commit --message -a` as a false positive (found by
+# adversarial review of PR #49, F027, filed as F032).
+VALUE_TAKING_LONG_FLAGS = {
+    "--message", "--file", "--author", "--date", "--template",
+    "--fixup", "--squash", "--reuse-message",
+}
+
 # Global git flags that consume a following argument in their space-separated
 # form (the "=value" form, e.g. --git-dir=.git, is already handled -- it's a
 # single token with no following argument to skip). This set was probed
@@ -453,7 +474,11 @@ def has_staging_flag(tokens):
             break  # everything after this is a pathspec, never a flag
         if tok in STAGING_FLAGS:
             return True
-        if tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
+        if tok in VALUE_TAKING_LONG_FLAGS:
+            # Same "opaque next-token value" rule as the short-flag case
+            # below, for a bare long flag's space-separated value (F032).
+            i += 1
+        elif tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
             is_staging, took_bare_value = _scan_short_flag_cluster(tok)
             if is_staging:
                 return True
