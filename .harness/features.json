@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 58,
-  "passing": 45,
+  "passing": 46,
   "features": [
     {
       "id": "F001",
@@ -1581,7 +1581,7 @@
       "id": "F055",
       "description": "check-remaining-tasks.sh.template's TeammateIdle guidance has no concept of teammate ROLE: it re-nudges any idle teammate toward the next claimable feature for as long as ANY feature is claimable, regardless of whether that teammate is an implementer (for whom this is correct) or a reviewer/other non-implementer role with no further review assigned (for whom claiming an unrelated feature would itself be scope creep under the agent-teams protocol). CONFIRMED live, twice: review-pr69-f040 hit this originally (leading to F046's filing), and review-pr81-f047 hit it again after F046's stdout-to-stderr fix was live and working correctly -- the hook fired exactly to spec (rc=2, correct guidance on stderr) but a reviewer with a completed, delivered review had no way to signal 'done, nothing claimable is mine' short of messaging the lead directly or violating scope by self-claiming an implementation feature. The TeammateIdle payload itself carries no teammate identity (an existing, confirmed constraint), so the hook cannot distinguish roles on its own -- role-aware behavior would need to live in the agent definitions (e.g. a reviewer's own definition recognizing 'my assignment is done, message the lead and go idle' rather than treating check-remaining-tasks.sh's nudge as instruction to claim new work), not in this shared hook.",
       "priority": 38,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "agents/reviewer.md",
         "skills/harness-init/check-remaining-tasks.sh.template"
@@ -1590,12 +1590,14 @@
         "F046"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Raised by review-pr81-f047 (not filed by them -- explicitly deferred the filing decision to the lead, correctly declining to self-claim an unrelated implementation feature as a workaround, which would itself be the scope creep the agent-teams protocol prohibits). This is the second live occurrence of the same root cause that led to F046 being filed (review-pr69-f040 hit it first). depends_on F046 since it builds on the stderr-delivery fix; F046's own notes already flagged this as 'a separate design question, not addressed by this fix.'",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Raised by review-pr81-f047 (not filed by them -- explicitly deferred the filing decision to the lead, correctly declining to self-claim an unrelated implementation feature as a workaround, which would itself be the scope creep the agent-teams protocol prohibits). This is the second live occurrence of the same root cause that led to F046 being filed (review-pr69-f040 hit it first). depends_on F046 since it builds on the stderr-delivery fix; F046's own notes already flagged this as 'a separate design question, not addressed by this fix.'\n\nFIXED: the hook itself stays role-blind by construction (TeammateIdle carries no teammate identity, confirmed directly -- the payload has no field to key off), so the fix is split across the two places that actually can know or express role. (1) check-remaining-tasks.sh.template's stderr guidance now says explicitly that the claim-it instruction does not apply to a role with no Edit/Write tools, so a reviewer reading the raw nudge is told directly it isn't for them, not left to infer it. (2) agents/reviewer.md's existing 'decline and message the lead' instruction (already present since an earlier session) didn't actually stop the repeat-nudge loop review-pr81-f047 hit, because it said what to do on the FIRST nudge but not on every identical repeat afterward -- extended it to send the decline exactly once per review assignment, then end the turn silently on repeats, with an explicit note that the lead (not the hook) is responsible for shutting the teammate down once its review is delivered, mirroring the existing 'send the completion message exactly once' dedup convention for implementers. Added 2 new test assertions: one pins the new stderr wording (mutation-tested: reverting the hook template+live-copy change makes exactly this assertion fail), one greps reviewer.md for the dedup instruction (reverting the agents/reviewer.md change makes exactly that assertion fail). Full suite 1273/1273. Resynced .claude/hooks/check-remaining-tasks.sh from the template per F047's drift guard.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "role-blind hook text clarification (check-remaining-tasks.sh.template) + agent-definition decline-dedup instruction (agents/reviewer.md), rather than trying to smuggle teammate identity into the hook itself (no such field exists in the TeammateIdle payload; a per-teammate marker file would work mechanically but the feature's own filing explicitly called for the fix to live in agent definitions, and a marker file plus lead-side wiring is a bigger, riskier change than this repo's own actual failure mode needs)"
+      ],
       "failure_reason": null,
       "discovered_via": "F046",
       "spec": null
