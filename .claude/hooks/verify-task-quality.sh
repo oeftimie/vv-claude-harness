@@ -220,8 +220,11 @@ fi
 # a stale in-progress sibling feature, never actually saw either warning. The
 # same docs page documents `systemMessage` as a universal JSON output field
 # ("warning message shown to the user") that IS surfaced regardless of event
-# or exit code -- unlike `additionalContext`, which is restricted to
-# SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop and would silently
+# or exit code -- unlike `additionalContext`, which is delivered via
+# hookSpecificOutput and is documented only for a specific set of events
+# (SessionStart, Setup, SubagentStart, UserPromptSubmit, UserPromptExpansion,
+# PreToolUse, PostToolUse, PostToolUseFailure, PostToolBatch, Stop,
+# SubagentStop) that does not include TaskCompleted -- it would silently
 # no-op here. Both warnings are combined into ONE systemMessage (not two
 # separate echoes) since only a single JSON object can be emitted per hook
 # invocation.
