@@ -5197,14 +5197,81 @@ assert_deny_json "$OUT" "cg: F051r2 ANSI-C \$'\\\\--' denial uses JSON deny form
 assert_contains "$OUT" "compound-stage-and-commit" \
   "cg: F051r2 ANSI-C \$'\\\\--' denial names the finding class"
 
-# No new false positive: a REAL "--" pathspec separator must still end the
-# flag scan for real -- everything after it is a pathspec, not a flag, so
-# this must ALLOW (no -i/-a ever reaches has_staging_flag() as a flag).
+# A REAL "--" pathspec separator still ends the flag scan for real -- no
+# -i/-a after it is ever misread as a flag -- but the token that follows
+# ("newfile.txt") IS a real pathspec, which F052 now correctly recognizes
+# as its own compound-stage-and-commit risk (real git commits that file's
+# working-tree content directly, bypassing the index, the same way -a
+# does for the whole tree). This expectation flipped from ALLOW to DENY
+# when F052 closed that gap; see the dedicated F052 tests below for the
+# full coverage.
 OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x -- newfile.txt')
 RC=$?
-assert_rc0 "$RC" "cg: F051r2 real -- separator still allows, rc 0"
+assert_rc0 "$RC" "cg: F051r2 real -- separator + pathspec exits 0 (JSON deny, F052)"
+assert_deny_json "$OUT" "cg: F051r2 real -- separator + pathspec denial uses JSON deny form"
+
+# No new false positive: a real "--" with NOTHING after it (no pathspec at
+# all) must still allow -- confirms F052 didn't turn "--" itself into a
+# trigger, only a REAL pathspec following it.
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x --')
+RC=$?
+assert_rc0 "$RC" "cg: F051r2 real -- separator with no pathspec still allows, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "cg: F051r2 real -- separator has no deny fields"
+  "cg: F051r2 bare -- separator (no pathspec) has no deny fields"
+
+# F052: the CORE bug -- a bare pathspec with NO "--" separator at all.
+# `git commit -m x tracked.txt` commits tracked.txt's WORKING-TREE content
+# directly, bypassing the index entirely, exactly like -a does for the
+# whole tree -- confirmed against real git (a modified-but-unstaged
+# tracked.txt is committed with its dirty content, `git diff --cached`
+# shows nothing staged beforehand). Before this fix, has_staging_flag()
+# only ever looked for an explicit staging FLAG, never a bare pathspec
+# argument, so this was completely unchecked.
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x tracked.txt')
+RC=$?
+assert_rc0 "$RC" "cg (F052): bare pathspec with no -- separator exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg (F052): bare pathspec denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg (F052): bare pathspec denial names compound-stage-and-commit"
+
+# Multiple bare pathspecs: the first flagless token already triggers the
+# check, so a second one changes nothing -- confirms the loop doesn't skip
+# past a real pathspec while scanning ahead for something else.
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x a.txt b.txt')
+RC=$?
+assert_rc0 "$RC" "cg (F052): multiple bare pathspecs exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg (F052): multiple bare pathspecs denial uses JSON deny form"
+
+# No new false positive: an ordinary commit with a message and NO trailing
+# pathspec at all (the overwhelming common case) must still allow cleanly.
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x')
+RC=$?
+assert_rc0 "$RC" "cg (F052): ordinary commit with no pathspec still allows, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg (F052): ordinary commit with no pathspec has no deny fields"
+
+# No new false positive: --amend with no pathspec (no message-taking flag
+# even reached) must still allow.
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit --amend --no-edit')
+RC=$?
+assert_rc0 "$RC" "cg (F052): --amend --no-edit with no pathspec still allows, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg (F052): --amend --no-edit has no deny fields"
+
+# F052 bonus: the same fix also closes the optarg-long-flag variant of this
+# bypass. --untracked-files is an optarg flag (-u[<mode>]) that only takes
+# an ATTACHED value (--untracked-files=no); given bare with a following
+# token, real git reads that token as a pathspec, not the flag's value --
+# confirmed against real git: `git commit -m x --untracked-files no`
+# genuinely commits a tracked file literally named "no" (dirty, unstaged)
+# directly, identically to the bare-pathspec case above, and was silently
+# ALLOWed before this fix (found by adversarial review of PR #85).
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x --untracked-files no')
+RC=$?
+assert_rc0 "$RC" "cg (F052): '--untracked-files no' optarg-pathspec exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg (F052): '--untracked-files no' denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg (F052): '--untracked-files no' denial names compound-stage-and-commit"
 
 DIR_CG_SECRET="$WORK/commit-gate-secret"
 make_fixture "$DIR_CG_SECRET"
@@ -5843,8 +5910,7 @@ git -C "$DIR_CG_ATTACHEDFLAG" add secret.py
 for CG_ATTACHED_CMD in \
   'git commit -mfix' \
   'git commit -Fdraft.txt' \
-  'git commit -S0a46826a -m x' \
-  'git commit -- -a.txt'
+  'git commit -S0a46826a -m x'
 do
   OUT=$(run_commit_gate "$DIR_CG_ATTACHEDFLAG" "$CG_ATTACHED_CMD")
   RC=$?
@@ -5855,6 +5921,18 @@ do
   assert_not_contains "$OUT" "compound-stage-and-commit" \
     "cg: '$CG_ATTACHED_CMD' is not wrongly denied as a staging flag"
 done
+
+# 'git commit -- -a.txt' used to belong in the loop above (proving "-a.txt"
+# after a real "--" is read as a pathspec, not the -a staging flag) -- but
+# F052 now correctly recognizes ANY pathspec after "--" as its own
+# compound-stage-and-commit risk, so this shape's expectation changed from
+# "scanned for the OTHER file's secret" to "denied as compound" outright.
+OUT=$(run_commit_gate "$DIR_CG_ATTACHEDFLAG" 'git commit -- -a.txt')
+RC=$?
+assert_rc0 "$RC" "cg (F052): 'git commit -- -a.txt' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg (F052): 'git commit -- -a.txt' denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg (F052): 'git commit -- -a.txt' denial now names compound-stage-and-commit"
 
 # Coverage: a VAR=value env-assignment prefix before "git" must not prevent
 # the command from being recognized and scanned.
@@ -6242,15 +6320,22 @@ assert_rc0 "$RC" "cg: 'git commit --trailer -a -m msg' exits 0, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "cg: --trailer's own value '-a' is not misread as the -a staging flag"
 
-# An ambiguous abbreviation (real git errors, nothing runs -- confirmed:
-# `git commit --t -- -a` -> "error: ambiguous option: t (could be --trailer
-# or --template)", rc 129) must not be misread as resolving to anything;
-# falling through as an inert token is the safe, correct outcome either way.
+# An ambiguous abbreviation (real git errors before ever reaching "-- -a"
+# at all -- confirmed: `git commit --t -- -a` -> "error: ambiguous option:
+# t (could be --trailer or --template)", rc 129) must not be misread as
+# resolving to a value-taking flag; falling through as an inert token is
+# the safe, correct outcome for --t itself. But F052 now separately
+# recognizes "-a" (a real pathspec after a real "--") as its own
+# compound-stage-and-commit risk regardless of what precedes it -- an
+# accepted, safe-directional over-denial (this exact command would never
+# actually run in real git), not a bypass, consistent with this file's
+# existing over-denial-is-safe posture for ambiguous/ill-formed input.
 OUT=$(run_commit_gate "$DIR_CG_MVALUE" 'git commit --t -- -a')
 RC=$?
-assert_rc0 "$RC" "cg: 'git commit --t -- -a' (ambiguous in real git) exits 0, rc 0"
-assert_not_contains "$OUT" "permissionDecision" \
-  "cg: ambiguous --t abbreviation is not misread as a value-taking flag"
+assert_rc0 "$RC" "cg: 'git commit --t -- -a' exits 0 (JSON deny, F052 pathspec-after--)"
+assert_deny_json "$OUT" "cg: 'git commit --t -- -a' denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: 'git commit --t -- -a' denial names compound-stage-and-commit (the pathspec, not --t)"
 
 # An abbreviated STAGING flag (not just value-taking ones) must also be
 # recognized -- verified unambiguous against real git: --inc is the only

@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 56,
-  "passing": 42,
+  "passing": 43,
   "features": [
     {
       "id": "F001",
@@ -1497,19 +1497,22 @@
       "id": "F052",
       "description": "skills/harness-init/commit-gate.sh.template's compound-stage-and-commit check (DENY_COMPOUND) only looks for staging flags (-a/-i/--all/--include) or a separate `git add`/`git stage` in the same command -- it never considers a bare pathspec argument on `git commit` itself. `git commit -m x tracked.txt` and `git commit -m x -- tracked.txt` both commit the WORKING-TREE content of the named file directly, without ever touching the index, exactly like `-a` does for the whole tree -- confirmed against real git (a modified-but-unstaged tracked.txt is committed with its dirty content, `git diff --cached` shows nothing staged beforehand). Because the secret scan (Check 1) only reads `git diff --cached`, a secret introduced this way is invisible to it, identically to the -a/-i bypass DENY_COMPOUND exists to block -- except has_staging_flag() never looks for a bare pathspec at all. Confirmed this behaves identically on main and on both F051 rounds (not a regression from that work). Found by adversarial review of PR #79 (F051 round 2).",
       "priority": 35,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/commit-gate.sh.template",
+        ".claude/hooks/commit-gate.sh",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by review-pr79-f051 while re-verifying the F051 round-2 fix; independently reproduced by the lead against a fresh fixture before filing (git commit -m x tracked.txt on a dirty tracked file with a secret-shaped line commits it, hook silently allows, `git diff --cached` before the commit is empty -- confirmed identical on main and F051 round 2, so not a regression). Filed separately rather than folding into F051 to keep that PR's diff scoped to the reviewer's original CHANGES NEEDED finding.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by review-pr79-f051 while re-verifying the F051 round-2 fix; independently reproduced by the lead against a fresh fixture before filing (git commit -m x tracked.txt on a dirty tracked file with a secret-shaped line commits it, hook silently allows, `git diff --cached` before the commit is empty -- confirmed identical on main and F051 round 2, so not a regression). Filed separately rather than folding into F051 to keep that PR's diff scoped to the reviewer's original CHANGES NEEDED finding.\n\nFIXED: extended has_staging_flag() (kept the name to avoid an unnecessary rename ripple through every call site and test) to also flag any flagless token that survives past the existing flag/value-skip logic as a bare pathspec -- both before a real \"--\" separator and unconditionally after one, since real git commit never uses a \"--\"-separated argument as an opaque value for anything. This flipped the expected outcome for three PRE-EXISTING tests that previously asserted ALLOW for a trailing pathspec (each was actually testing a narrower property -- that the pathspec wasn't misread AS a staging flag, which remains true -- but the overall command is now correctly denied for the broader F052 reason instead): the F051r2 real-separator test, the 'git commit -- -a.txt' case in the attached-value-flags loop, and the ambiguous '--t -- -a' abbreviation test (the latter is now an accepted, safe-directional over-denial, since real git errors on the ambiguous --t before ever reaching '-- -a' at all -- the hook can't know that without fully modeling git's own option-ambiguity detection, and over-denial here is consistent with this file's existing posture for ambiguous/ill-formed input). Also updated the header's stale 'Residual holes' comment, which still described this exact gap as unfixed. Added 14 new assertions: the core bug (bare pathspec, no '--' at all), multiple pathspecs, two no-false-positive controls (ordinary no-pathspec commit, --amend --no-edit), plus the three updated tests' new DENY assertions. Full suite 1256/1256. Mutation-tested by reverting to the pre-fix template (and its resynced live copy): exactly 7 failures (the discriminating assertions across all 4 updated/new test groups), every no-false-positive control correctly unaffected.\n\nROUND 2 (review of PR #85): reviewer independently reproduced the core bug and all three test-expectation flips against real git 2.52.0, ran a 20-command false-positive battery, and mutation-tested in an isolated scratch clone (1249/1256, exactly 7 failures, matching round 1's own claim). Two required fixes, both accuracy issues, no logic errors: (1) DENY_COMPOUND's repair message still only named -a/-i/--all/--include, giving no hint that a trailing pathspec (this feature's own new trigger) was the actual reason -- corrected to mention dropping any trailing pathspec too. (2) _flag_view()'s own comment claimed an unquoted-and-escaped `\\--` with nothing after it 'falls through as an ordinary non-flag token, extending the scan' -- no longer true post-F052 (verified live: `git commit -m x \\--` denies on this branch, allowed on main): it now hits the new bare-pathspec check and returns True immediately, an accepted over-denial (never a bypass, confirmed) via a different mechanism than the comment described -- corrected. Also cleaned up the header's 'Residual holes' entry (it contradicted its own heading by listing a FIXED item under it), simplified `i += 1; i += 1` to `i += 2` per the reviewer's own note that it read like a bug, and added a test for a genuine additional bypass shape the fix already closed but nothing tested: `--untracked-files` is an optarg long flag that only takes an ATTACHED value, so a bare `--untracked-files no` reads 'no' as a real pathspec in real git -- confirmed live (a tracked file literally named 'no' gets its dirty content committed directly). Two accepted, non-blocking residuals the reviewer found and I independently confirmed: `git commit -U <n>` (short-form --unified) is a narrow over-denial since -U isn't in this file's VALUE_TAKING_SHORT_FLAGS set, but unreachable in practice (`-U` always errors '--unified requires --interactive/--patch', both interactive-only); and the escaped-`\\--`-with-nothing-after case documented in fix (2) above. Full suite after fixes: 1259/1259.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "extend has_staging_flag()'s existing token-walking loop to also detect a leftover flagless token (a bare pathspec) as a compound-stage-and-commit risk, unifying it with the existing staging-flag detection rather than adding a separate check"
+      ],
       "failure_reason": null,
       "discovered_via": "F051",
       "spec": null
