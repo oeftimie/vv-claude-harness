@@ -432,10 +432,37 @@ def redirect_targets(segment):
     # matching directly against the unmasked segment, as an earlier version
     # of the F024 fix did, treated every quoted ">" as a real redirect too.
     masked = mask_quotes(segment)
-    return [
+    targets = [
         segment[m.start(1):m.end(1)]
         for m in re.finditer(r">>?\s*([^\s<>|&;]+)", masked)
     ]
+    # `>&word` with word NOT purely digits/"-" is `&>word`, an ordinary FILE
+    # redirect (bash: `echo x >&outfile.txt` genuinely creates outfile.txt),
+    # not fd-duplication -- this was a real fail-open, confirmed identical on
+    # main and after F030's own fix: the pattern above can never match it
+    # (the char class it captures into explicitly excludes "&", so a target
+    # class starting right at "&" fails to match at all). Whitespace or
+    # quoting between `>&` and the word doesn't change bash's behavior (`>&
+    # outfile.txt`, `>&'outfile.txt'` both still create the file, confirmed
+    # against real bash) -- found by adversarial review of PR #53, round 3.
+    # Whether a given word counts as "purely digits/-" has to be decided on
+    # its UNQUOTED value, not the raw/masked text: `>&'1'` is STILL
+    # fd-duplication in real bash (quoting doesn't change the classification,
+    # confirmed empirically), so checking the masked capture (a NUL run for
+    # a quoted span) would wrongly treat it as a real target. No fd-prefix
+    # form is recognized here (`2>&outfile.txt`) -- real bash treats that as
+    # a hard "ambiguous redirect" syntax error and writes nothing at all, so
+    # there is no real target to protect; the negative-lookahead complexity
+    # to specifically exclude it would buy nothing (an fd-prefixed word this
+    # hook mistakes for a target still just denies a command that already
+    # can't run -- an over-cautious but safe outcome, not a bypass).
+    for m in re.finditer(r">&\s*([^\s<>|&;]+)", masked):
+        raw_word = segment[m.start(1):m.end(1)]
+        view_word = unquote_token(raw_word)
+        if view_word == "-" or view_word.isdigit():
+            continue
+        targets.append(raw_word)
+    return targets
 
 
 TARGET_DIRECTORY_FLAGS = ("-t", "--target-directory")
@@ -761,12 +788,27 @@ def strip_redirects(segment):
     # creates outfile.txt) -- so widening this alternative's `(?:\d+|-)` to
     # match any word would silently create a NEW unstripped-redirect gap,
     # the opposite of this fix's purpose (found by adversarial review of
-    # PR #53, round 1).
+    # PR #53, round 1). A THIRD alternative below closes that gap properly
+    # (F036): `>&word` (no fd prefix -- real bash treats an fd-prefixed
+    # form here, `2>&outfile.txt`, as a hard "ambiguous redirect" syntax
+    # error that writes nothing at all, so there is nothing to strip) is
+    # matched and removed like any other real redirect, regardless of
+    # whether `word` turns out to be digits/"-" (redirect_targets() is
+    # what decides whether a given occurrence is a real target worth
+    # denying; this function's only job is removing redirect text so the
+    # command's OWN arguments parse cleanly, so the two functions can
+    # disagree about "is this fd-dup or a file" without a bug -- stripping
+    # a genuine `>&1` here too is harmless, since the plain fd-dup
+    # alternative already strips it first at the same position).
     masked = mask_quotes(segment)
     kept = []
     last = 0
     FD_PREFIX = r"(?:(?:^|(?<=\s))\d+)?"
-    pattern = FD_PREFIX + r">&(?:\d+|-)|" + FD_PREFIX + r">>?\s*[^\s<>|&;]+"
+    pattern = (
+        FD_PREFIX + r">&(?:\d+|-)|"
+        + r">&\s*[^\s<>|&;]+|"
+        + FD_PREFIX + r">>?\s*[^\s<>|&;]+"
+    )
     for m in re.finditer(pattern, masked):
         kept.append(segment[last:m.start()])
         last = m.end()

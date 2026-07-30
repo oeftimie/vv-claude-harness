@@ -2353,6 +2353,83 @@ assert_deny_json "$OUT" "hs2 (F030): out-of-scope-plus-2>&1 denial uses JSON den
 assert_contains "$OUT" "src/other/a.txt" \
   "hs2 (F030): out-of-scope-plus-2>&1 denial names the real target, not a redirect fragment"
 
+# F036 (discovered_via F030): `>&word` with word NOT purely digits/"-" is an
+# ordinary FILE redirect in real bash (`&>word`), not fd-duplication --
+# confirmed against real bash: `echo HELLO >&outfile.txt` genuinely creates
+# outfile.txt. redirect_targets()'s char class explicitly excludes "&", so it
+# never matched this shape at all, silently ALLOWING a real out-of-scope
+# write. Whitespace or quoting between `>&` and the word doesn't change
+# bash's behavior, so all three shapes must be caught.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo HELLO >&src/other/out.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036): adjacent '>&word' file redirect exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F036): adjacent '>&word' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/out.txt'" \
+  "hs2 (F036): adjacent '>&word' denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo HELLO >& src/other/out2.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036): space-separated '>& word' file redirect exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F036): space-separated '>& word' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/out2.txt'" \
+  "hs2 (F036): space-separated '>& word' denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo HELLO >&'src/other/out3.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036): quoted '>&'\''word'\''' file redirect exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F036): quoted '>&word' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/out3.txt'" \
+  "hs2 (F036): quoted '>&word' denial names the real target"
+
+# No new false positive: an in-scope '>&word' target must still pass, and
+# the real fd-duplication forms (adjacent and space-separated digit/dash)
+# must remain unaffected -- confirmed against real bash that `>&1`/`>& 2`
+# are both still fd-duplication (no file written) even with the space.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo HELLO >&src/parser/out.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036): an in-scope '>&word' target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F036): in-scope '>&word' has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo HELLO >&1')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036): fd-duplication '>&1' still passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F036): fd-duplication '>&1' has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo HELLO >& 2')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036): space-separated fd-duplication '>& 2' still passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F036): space-separated fd-duplication '>& 2' has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "echo HELLO >&'-'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036): quoted fd-duplication \">&'-'\" still passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F036): quoted fd-duplication \">&'-'\" has no deny fields"
+
+# F036: strip_redirects() must ALSO remove a mid-command '>&word' (not just
+# redirect_targets() finding it as its own separate target), or the leftover
+# text survives into sed_inplace_targets()'s own argument walk as a bogus
+# extra token. Isolates this specifically: without the strip, this exact
+# command's denial names the MANGLED decoy text itself
+# (">&src/parser/decoy.txt", which happens to still deny only because it
+# doesn't match any real scope pattern -- coincidental, not a guarantee) --
+# the real target this hook must report is "src/other/f.txt", the actual
+# sed -i destination.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -i "s/a/b/" >&src/parser/decoy.txt src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036): mid-command '>&word' before a real sed target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F036): mid-command '>&word' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/f.txt'" \
+  "hs2 (F036): mid-command '>&word' denial names the real sed target, not the mangled decoy"
+
 # A real background/AND '&' NOT glued to a '>' must still act as a segment
 # separator, unchanged from before.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
