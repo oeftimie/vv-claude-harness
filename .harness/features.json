@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 50,
-  "passing": 34,
+  "passing": 35,
   "features": [
     {
       "id": "F001",
@@ -1305,16 +1305,16 @@
       "id": "F044",
       "description": "skills/harness-init/enforce-scope.sh.template's command-name recognition (write_targets()'s cp/mv/tee/rm dispatch, sed_inplace_targets()'s own sed-name guard) fully closed F040's quoting/backslash-escaping gap, but command-name INDIRECTION is a separate, still-open bypass on the same call sites: `/bin/rm`, `./rm`, `sudo rm`, `env rm`, `command rm`, `xargs rm`, and `FOO=1 rm` are all wrongly ALLOWED (no target extracted at all), since none of these tokens equals the bare command-name strings the dispatch compares against, even after _flag_view() normalization. CONFIRMED live (F040 PR #69 review): `FOO=1 rm src/other/h.txt` really deletes the out-of-scope file in real bash, and the hook allows it silently on both main (pre-F040) and the F040 branch (post-fix) alike -- this bug is pre-existing and outside F040's scope, not a regression it introduced. Arguably wider than F040 itself, since it defeats the SAME extractors via a completely different evasion class (indirection rather than quoting). Precedent for a fix already exists in this repo: skills/harness-init/commit-gate.sh.template's is_git_token() handles the path form via `os.path.basename(tok.lstrip(\"(\\\\\"))`; the env-var-prefix and wrapper-command forms (sudo/env/command/xargs) would need their own handling.",
       "priority": 28,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #69 (F040), while sweeping for other command-recognition bypasses in the same functions F040 just fixed. Confirmed live pre- and post-F040 (pre-existing, not a regression): /bin/rm, ./rm, sudo rm, env rm, command rm, xargs rm, FOO=1 rm all silently bypass write_targets()'s cp/mv/tee/rm recognition entirely.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by adversarial review of PR #69 (F040), while sweeping for other command-recognition bypasses in the same functions F040 just fixed. Confirmed live pre- and post-F040 (pre-existing, not a regression): /bin/rm, ./rm, sudo rm, env rm, command rm, xargs rm, FOO=1 rm all silently bypass write_targets()'s cp/mv/tee/rm recognition entirely.\n\nFIXED: built _resolve_command_tokens(), mirroring commit-gate.sh's is_git_token() path-form precedent (os.path.basename() after stripping a leading subshell-paren/backslash) and extending it with wrapper-command resolution (sudo/env/command/xargs, each followed by its own leading flags, also skipped) and env-assignment-prefix resolution (one or more VAR=value tokens). Confirmed against real bash before writing any fix: /bin/rm, FOO=1 rm, command rm, env rm, and xargs rm (piped a filename) all genuinely delete the target file; sudo rm is the same immediate-exec mechanism as command/env and not separately re-verified since this repo's own sandbox has no sudo access. Refactored sed_inplace_targets() to take args (the tokens after the resolved command name) directly rather than re-deriving its own narrower sed-name check internally (which only recognized F040's quoting/escaping, not indirection) -- write_targets()'s dispatch and sed_inplace_targets() now share ONE resolution instead of risking two inconsistent copies, the same lesson F041 already established for its own shared _sed_consumes_next_as_script() predicate. Bounded the resolver's own walk by len(tokens) so an all-wrapper token list (e.g. 'env command' with no real command after it) can't loop indefinitely -- confirmed live it correctly resolves to no targets (ALLOW, no crash) rather than erroring. Ran the full existing 1083-assertion suite BEFORE writing any new tests to confirm the dispatch refactor was behavior-preserving for every previously-tested case (zero regressions), then added 22 new assertions across 11 bypass shapes (path-form, sudo, env with flags, command, xargs, single and multiple env-assignment prefixes, cp/sed via the same resolver, a chained wrapper) plus 4 no-false-positive/no-crash assertions. Mutation-tested by reverting the whole template to the pre-fix version (via the parent commit) with the new tests still in place: exactly 22 failures, all F044-tagged, matching the 11 bypass tests precisely and nothing else.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
