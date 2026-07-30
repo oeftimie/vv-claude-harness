@@ -1963,8 +1963,13 @@ OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a fully-quoted attached '-tDIR' cp form exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F035): quoted attached '-tDIR' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/d/" \
-  "hs2 (F035): quoted attached '-tDIR' denial names the real destination, not the in-scope source"
+# Anchored on the leading quote in the denial message's "write to '...'" phrasing --
+# a plain substring check for "src/other/d/" also matches the WRONG value
+# "tsrc/other/d/" (round-2 review of PR #59, N2: this passed at 807/807 even with
+# the quote-skipping branch deleted entirely, or an off-by-one at the split point,
+# since both those broken helper outputs still contain "src/other/d/" as a tail).
+assert_contains "$OUT" "write to 'src/other/d/'" \
+  "hs2 (F035): quoted attached '-tDIR' denial names the real destination exactly, not the in-scope source"
 
 # F035 round 2 (PR #59 round-2 review, finding B1): an UNQUOTED attached "-t"
 # value containing a real backslash was a genuine fail-open -- extracting the
@@ -1987,6 +1992,24 @@ assert_rc0 "$RC" "hs2 (F035 r2): backslash-bearing unquoted attached '-t' value 
 assert_deny_json "$OUT" "hs2 (F035 r2): backslash-bearing unquoted attached '-t' denial uses JSON deny form"
 assert_contains "$OUT" 's\\rc/parser/x' \
   "hs2 (F035 r2): denial names the real (single-unescaped) destination, not a double-unescaped decoy"
+
+# F035 round 3 (PR #59 round-3 review, finding N1): the SAME double-unquoting
+# hazard as the -t case above, but on the sibling --target-directory= branch,
+# had ZERO mutation coverage -- reverting ONLY that branch to view-slicing
+# survived the full suite untouched. Ground-truthed against real GNU cp the
+# same way: `gcp --target-directory=s\\rc/parser/x a.txt` genuinely targets
+# the literal directory `s\rc/parser/x` (confirmed via gcp's own error
+# message), not the in-scope-looking `src/parser/x` double-unquoting would
+# produce.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --target-directory=s\\rc/parser/x src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" \
+  "hs2 (F035 r3): backslash-bearing unquoted '--target-directory=' value exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F035 r3): backslash-bearing unquoted '--target-directory=' denial uses JSON deny form"
+assert_contains "$OUT" 's\\rc/parser/x' \
+  "hs2 (F035 r3): denial names the real (single-unescaped) destination, not a double-unescaped decoy"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")

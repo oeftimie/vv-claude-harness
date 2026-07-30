@@ -489,6 +489,19 @@ def _attached_value_raw(tok, prefix_len):
     # (prefix included) is quoted -- in every case the returned suffix still
     # carries any quote/backslash characters untouched, for write_targets()
     # to resolve in exactly one pass, the same as the bare-form path.
+    # Documented residual (found by adversarial review of PR #59, round 3):
+    # a backslash-escaped character INSIDE the flag prefix itself (as opposed
+    # to inside the value) throws off the count by one per escape, since this
+    # walk counts a quote character as free but a backslash as a real,
+    # counted character -- `cp -\tsrc/parser/x a.txt`, `cp $'-t'src/parser/x
+    # a.txt`, and `cp --target-\directory=src/parser/x a.txt` are all
+    # genuinely in scope but wrongly DENIED (18 false positives found across
+    # 112 brute-forced prefix/destination spellings, zero fail-opens --
+    # strictly over-denial, not a bypass, and a new-vs-main regression only
+    # in this narrow, adversarial-quoting shape). Not fixed: nobody escapes
+    # characters inside a bare flag name in practice, and closing this
+    # would require tracking escape state through the prefix walk itself,
+    # not just counting past it.
     seen = 0
     for idx, ch in enumerate(tok):
         if ch in ("'", '"'):
