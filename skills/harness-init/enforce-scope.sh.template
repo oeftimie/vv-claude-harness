@@ -729,7 +729,49 @@ def _attached_value_raw(tok, prefix_len):
     return ""
 
 
-TARGET_DIRECTORY_EQUALS_LEN = len("--target-directory=")
+# The union of every long option GNU cp and GNU mv each recognize, used as
+# the disambiguation universe for _resolve_cp_mv_long_flag() (F048) --
+# mirroring enforce-scope.sh's own SED_LONG_OPTIONS/_resolve_sed_long_flag()
+# (F041) and commit-gate.sh's GIT_COMMIT_LONG_OPTIONS/_resolve_long_flag()
+# (F032). Mechanically extracted from `gcp --help`/`gmv --help` (GNU
+# coreutils 9.11), not assembled from memory. cp_mv_targets() is shared by
+# both commands and doesn't know which one triggered it, so the UNION is
+# the correct universe: --target-directory is the only long option in
+# either command's own set starting with "--t" (confirmed: no ambiguity at
+# any prefix length from "--t" up, in cp's set, mv's set, or the union),
+# so using the broader union here is never less safe than a per-command
+# set would be for this specific flag.
+CP_MV_LONG_OPTIONS = (
+    "--archive", "--attributes-only", "--backup", "--context",
+    "--copy-contents", "--debug", "--dereference", "--exchange", "--force",
+    "--help", "--interactive", "--keep-directory-symlink", "--link",
+    "--no-clobber", "--no-copy", "--no-dereference", "--no-preserve",
+    "--no-target-directory", "--one-file-system", "--parents", "--preserve",
+    "--recursive", "--reflink", "--remove-destination", "--sparse",
+    "--strip-trailing-slashes", "--suffix", "--symbolic-link",
+    "--target-directory", "--update", "--verbose", "--version",
+)
+
+
+def _resolve_cp_mv_long_flag(view):
+    # Resolves a "--xxx" token (flag-name part only, caller splits off any
+    # attached "=value" first) to its full long-option name if it's an
+    # exact match or an UNAMBIGUOUS prefix of exactly one entry in
+    # CP_MV_LONG_OPTIONS (the UNION of cp's and mv's real option sets, so a
+    # prefix ambiguous only against the other command's options, e.g. "--p"
+    # against mv's real set, returns None here too -- strictly more
+    # conservative than the single command actually being run, never less).
+    # Returns None on no match or an ambiguous prefix -- for the ONE flag
+    # this function cares about, --target-directory, that never matters:
+    # it's the only long option in either command's set (or their union)
+    # starting with "--t", so nothing here can ever misresolve a real
+    # ambiguous-in-cp/mv prefix INTO --target-directory. Treating an
+    # unresolved prefix as "not a recognized flag" is always safe either
+    # way, never a bypass.
+    if view in CP_MV_LONG_OPTIONS:
+        return view
+    matches = [o for o in CP_MV_LONG_OPTIONS if o.startswith(view)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def cp_mv_targets(tokens):
@@ -770,16 +812,29 @@ def cp_mv_targets(tokens):
     # VIEW instead, framed as "a documented, narrower residual"; a reviewer
     # proved that framing wrong (it flips scope decisions in BOTH
     # directions vs. main, a regression, not a residual) and this replaces
-    # it (F035 round 2, PR #59 round-2 review).
+    # it (F035 round 2, PR #59 round-2 review). Both the exact "--target-
+    # directory" spelling AND any unambiguous GNU-getopt_long abbreviation
+    # of it (bare "--targ", attached "--targ=DIR") are recognized via
+    # _resolve_cp_mv_long_flag() -- confirmed against real GNU cp/mv 9.11
+    # that `cp --targ=out src.txt`/`cp --t out src.txt`/`mv --targ=out
+    # src.txt` all genuinely redirect via -t's own mechanism, and every one
+    # of them was wrongly ALLOWED before this (F048, discovered alongside
+    # F041's identical gap in sed_inplace_targets(), filed separately since
+    # it's a different function with its own flag set and call sites).
     for i, tok in enumerate(tokens):
         view = _flag_view(tok)
         if view == "--":
             break
         if view in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
             return [tokens[i + 1]]
-        if view.startswith("--target-directory="):
-            return [_attached_value_raw(tok, TARGET_DIRECTORY_EQUALS_LEN)]
-        if view.startswith("-t") and not view.startswith("--") and len(view) > 2:
+        if view.startswith("--"):
+            flag_name = view.split("=", 1)[0]
+            if _resolve_cp_mv_long_flag(flag_name) == "--target-directory":
+                if "=" in view:
+                    return [_attached_value_raw(tok, len(flag_name) + 1)]
+                if i + 1 < len(tokens):
+                    return [tokens[i + 1]]
+        elif view.startswith("-t") and len(view) > 2:
             return [_attached_value_raw(tok, 2)]
     last = last_flagless_token(tokens)
     return [last] if last else []
