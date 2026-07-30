@@ -17,7 +17,11 @@
 # the goal is stopping accidental drift, not defeating an adversarial teammate.
 # Once a segment's own analysis begins, though, an exception anywhere in it (a
 # decoder crash, or anything else _check_segment() can't handle) denies that
-# segment unconditionally instead -- see main()'s own comment for why.
+# segment unconditionally instead -- see main()'s own comment for why. The same
+# split applies one layer up, at the FILE_PATH/COMMAND extraction near the top of
+# this file (F043): the JSON itself failing to parse stays fail-open, but anything
+# that goes wrong AFTER a successful parse (a raw surrogate crashing the final
+# print(), or any other unexpected shape) fails closed instead.
 # Straightforward single/double/ANSI-C quoting of a separator or a write target is
 # handled (see mask_quotes()/unquote_token()); nested or otherwise unusual quoting
 # is not attempted. Known false-positive residual: redirect-target extraction
@@ -115,21 +119,73 @@ PYEOF
 # benefit found in the same round).
 FILE_PATH=$(echo "$INPUT" | python3 -c "
 import json, os, sys
-data = json.load(sys.stdin)
-path = data.get('tool_input', {}).get('file_path', '')
-project_root = sys.argv[1]
-if path:
-    if path.startswith(project_root + '/'):
-        path = path[len(project_root) + 1:]
-    path = os.path.normpath(path)
-print(path)
+# The JSON parse itself is in its OWN try/except, exiting 2 on failure:
+# a genuinely unparseable tool-input document is this file's own
+# documented fail-open contract (see the header), and rc 2 tells the
+# caller to leave that behavior alone. Everything AFTER a successful
+# parse -- extracting the field, normalizing it, and printing it -- is a
+# SEPARATE try/except that exits 1 instead (F043): a raw lone UTF-16
+# surrogate (0xD800-0xDFFF) arriving directly in the input JSON (e.g.
+# {\"tool_input\":{\"file_path\":\"src/other/\ud800pwned.txt\"}}) is
+# perfectly valid JSON -- json.load() decodes its \uD800 escape into a
+# real Python str containing a lone surrogate with no error at all -- but
+# crashes the FINAL print(path) with UnicodeEncodeError once stdout isn't
+# a tty (confirmed live: identical code succeeds interactively, raises
+# under \$(...) capture). The 2>/dev/null on this whole command
+# substitution swallowed that traceback, FILE_PATH came back empty, and
+# the caller's own \"if [ -n \\\"\$FILE_PATH\\\" ]\" then skipped the
+# ENTIRE Edit/Write scope check -- silently allowing what should have
+# gone through this file's own AUTHORITATIVE gate (Edit/Write/MultiEdit
+# calls are blocked outright, not best-effort like the Bash coverage path
+# F038 already patches for its own \$'...' decoder). Two distinct exit
+# codes (not 'any nonzero') are required here: an uncaught exception's
+# default exit code is 1 regardless of which try/except raised it, so a
+# single except-and-exit(1) around BOTH stages would make a genuinely
+# unparseable document fail closed too, silently reversing this file's
+# own documented environment-failure contract -- rc 2 vs rc 1 is what
+# lets the caller (below) tell 'can't parse at all, stay fail-open' apart
+# from 'parsed fine, but unsafe to process further, fail closed'.
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(2)
+try:
+    path = data.get('tool_input', {}).get('file_path', '')
+    project_root = sys.argv[1]
+    if path:
+        if path.startswith(project_root + '/'):
+            path = path[len(project_root) + 1:]
+        path = os.path.normpath(path)
+    print(path)
+except Exception:
+    sys.exit(1)
 " "$PROJECT_ROOT" 2>/dev/null)
+FILE_PATH_RC=$?
+if [ "$FILE_PATH_RC" -eq 1 ]; then
+    echo "Edit blocked: file_path could not be safely extracted from tool input (treating as outside your assigned scope). $ANNOTATION"
+    exit 2
+fi
 
 COMMAND=$(echo "$INPUT" | python3 -c "
 import json, sys
-data = json.load(sys.stdin)
-print(data.get('tool_input', {}).get('command', ''))
+# Same two-stage split as FILE_PATH above, and for the same reason: a
+# crash AFTER a successful JSON parse -- the identical raw-surrogate
+# print() crash, reachable here via tool_input.command instead of
+# file_path -- fails closed (rc 1), while a genuinely unparseable
+# document stays fail-open (rc 2) (F043).
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(2)
+try:
+    print(data.get('tool_input', {}).get('command', ''))
+except Exception:
+    sys.exit(1)
 " 2>/dev/null)
+COMMAND_RC=$?
+if [ "$COMMAND_RC" -eq 1 ]; then
+    deny_json "command could not be safely extracted from tool input (best-effort, pattern-based check; treating as outside your assigned scope). $ANNOTATION"
+fi
 
 if [ -n "$FILE_PATH" ]; then
     case "$FILE_PATH" in

@@ -3322,6 +3322,46 @@ assert_rc0 "$RC" "hs2 (F042): an ordinary in-scope command with no crash passes,
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F042): ordinary in-scope command has no deny fields"
 
+# F043: the FILE_PATH/COMMAND extraction near the top of this hook fails
+# open the same way _decode_ansi_c_escape() did before F038/F042, but
+# earlier in the pipeline and via a different entry point: a raw lone
+# UTF-16 surrogate (0xD800-0xDFFF) arriving directly in the hook's OWN
+# input JSON is perfectly valid JSON -- json.load() decodes the \uD800
+# escape into a real Python str containing a lone surrogate with no error
+# at all -- but crashes the extraction script's own final print() with
+# UnicodeEncodeError once stdout isn't a tty. The 2>/dev/null on that
+# command substitution swallowed the traceback, FILE_PATH/COMMAND came
+# back empty, and "if [ -n \"\$FILE_PATH\" ]" skipped the ENTIRE scope
+# check -- silently allowing what should have gone through this file's
+# own AUTHORITATIVE file_path gate. Fixed with two distinct python-side
+# exit codes (2 = JSON couldn't be parsed at all, stays fail-open per
+# this file's own documented contract; 1 = parsed fine but unsafe to
+# process further, fails closed) so the fix doesn't accidentally reverse
+# the existing fail-open behavior for genuinely malformed input.
+OUT_SURROGATE_PATH_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/src/other/f043a.txt\ud800\"}}"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SURROGATE_PATH_JSON")
+RC=$?
+assert_rc2 "$RC" "hs2 (F043): a raw surrogate in file_path exits 2 (blocked), not silently allowed"
+assert_contains "$OUT" "could not be safely extracted" \
+  "hs2 (F043): surrogate-in-file_path denial states extraction failure"
+
+OUT_SURROGATE_CMD_JSON="{\"tool_input\":{\"command\":\"rm src/other/f043b.txt\ud800\"}}"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SURROGATE_CMD_JSON")
+RC=$?
+assert_rc0 "$RC" "hs2 (F043): a raw surrogate in command exits 0 (JSON deny), not silently allowed"
+assert_deny_json "$OUT" "hs2 (F043): surrogate-in-command denial uses JSON deny form"
+assert_contains "$OUT" "could not be safely extracted" \
+  "hs2 (F043): surrogate-in-command denial states extraction failure"
+
+# No regression: this file's own documented fail-open contract for a
+# genuinely unparseable tool-input document (as opposed to valid JSON
+# that merely crashes downstream) must be unchanged.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh '{not valid json at all')
+RC=$?
+assert_rc0 "$RC" "hs2 (F043): genuinely unparseable JSON still exits 0 (stays fail-open)"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F043): unparseable JSON has no deny fields (unchanged environment-failure contract)"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
