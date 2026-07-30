@@ -1709,6 +1709,73 @@ assert_rc0 "$RC" "hs2 (F048): in-scope destination via abbreviated '--targ=' pas
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F048): in-scope abbreviated destination has no deny fields"
 
+# F056: real GNU cp/mv PERMUTE argv -- a value-consuming option placed AFTER
+# both operands still consumes the token that follows IT as its own value,
+# never as a new destination operand. cp_mv_targets() used to walk tokens
+# with no notion of "this flag consumes the next token" at all (beyond
+# -t/--target-directory, which names the destination explicitly rather than
+# merely consuming a value), so the REAL destination went unchecked while a
+# later flag's own value (an ordinary-looking path) was wrongly treated as
+# the destination instead -- confirmed against real GNU cp 9.11 that `cp
+# src/parser/a.txt src/other/d --suffix src/parser/x` genuinely copies into
+# src/other/d, the true (here out-of-scope) destination, while src/parser/x
+# is never touched at all.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/other/d --suffix src/parser/x')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): 'cp ... --suffix VALUE' out-of-scope real destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F056): 'cp ... --suffix VALUE' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/d" \
+  "hs2 (F056): 'cp ... --suffix VALUE' denial names the real destination, not the suffix's own value"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/other/d -S src/parser/x')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): 'cp ... -S VALUE' out-of-scope real destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F056): 'cp ... -S VALUE' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/d" \
+  "hs2 (F056): 'cp ... -S VALUE' denial names the real destination, not -S's own value"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv src/parser/a.txt src/other/d --no-preserve mode')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): 'mv ... --no-preserve VALUE' out-of-scope real destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F056): 'mv ... --no-preserve VALUE' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/d" \
+  "hs2 (F056): 'mv ... --no-preserve VALUE' denial names the real destination"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/other/d --sparse always')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): 'cp ... --sparse VALUE' out-of-scope real destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F056): 'cp ... --sparse VALUE' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/d" \
+  "hs2 (F056): 'cp ... --sparse VALUE' denial names the real destination"
+
+# No new false positive: --update/--context/--preserve/--backup/--reflink all
+# take an OPTIONAL, attached-only argument in real GNU cp/mv (never a
+# separate token) -- confirmed empirically (each errors "cannot stat" on the
+# following token when given as two tokens, proving it's left as an ordinary
+# operand, never consumed as the flag's value). A bare form of these must NOT
+# be treated as consuming the next token, or an ordinary in-scope destination
+# placed right after one would be wrongly skipped past.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --update all src/parser/a.txt src/other/x')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): 'cp --update VALUE ...' out-of-scope real destination still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F056): 'cp --update VALUE ...' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x" \
+  "hs2 (F056): 'cp --update VALUE ...' denial still names the real (last flagless) destination"
+
+# No new false positive: an in-scope destination after a value-consuming flag
+# must still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp src/parser/a.txt src/parser/sub/d --suffix src/other/decoy')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): in-scope destination past a --suffix VALUE passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F056): in-scope destination past a --suffix VALUE has no deny fields (decoy value not checked as a target)"
+
 # No new false positive: all-in-scope multi-target commands, and a -t
 # destination that IS in scope, must still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
