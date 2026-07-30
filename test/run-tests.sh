@@ -3165,6 +3165,29 @@ assert_rc0 "$RC" "hs2 (F041): --fi -i.bak (no real in-place edit) passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F041): --fi -i.bak has no deny fields (not misread as enabling -i)"
 
+# _separator_index() specifically must also recognize the abbreviated
+# bare form -- per-site mutation testing (adversarial review of PR #71
+# round 2) found this site was the only one of the four sharing
+# _sed_consumes_next_as_script() with NO test discriminating it: reverting
+# ONLY _separator_index() back to an exact SED_SCRIPT_VALUE_FLAGS check
+# left every other test passing, since f041r's own "--fi -- <target>"
+# case has -i BEFORE --fi, so a too-early separator index doesn't drop
+# the in-place flag there. This shape puts the in-place flag AFTER a
+# value-consumed "--", so a naive (unfixed) _separator_index() truncates
+# pre_separator_args before ever seeing "-i", silently dropping the
+# in-place-presence guard entirely. Confirmed against real gsed 4.10 with
+# a file literally named "--" holding a script: `sed --fi -- -i file`
+# genuinely in-place edits ("--" is --file's own abbreviated value, so
+# "-i" is still parsed as a real flag afterward).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed --fi -- -i src/other/f041w.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): --fi -- -i (separator-index abbreviation) exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F041): --fi -- -i denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041w.txt" \
+  "hs2 (F041): --fi -- -i denial names the real target"
+
 # No new false positive: an in-scope abbreviated --i must still be allowed,
 # and an AMBIGUOUS abbreviation (--f, which real GNU sed itself rejects as
 # ambiguous between --file and --follow-symlinks) must not be misread as

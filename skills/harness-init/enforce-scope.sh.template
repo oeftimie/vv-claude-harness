@@ -735,9 +735,9 @@ SED_SCRIPT_VALUE_FLAGS = ("-e", "-f", "--expression", "--file")
 # from memory: --quiet/--silent are both listed as -n's long form; the
 # rest are one option each. GNU sed accepts any prefix of a long option
 # that uniquely identifies it among this FULL set (confirmed: `gsed --xyz`
-# errors "unrecognized option"; `gsed --f=x` errors "ambiguous option: f
-# (could be --file or --follow-symlinks)"), the same unambiguous-prefix
-# rule real git uses. Before this, sed_inplace_targets()'s in-place-
+# errors "unrecognized option"; `gsed --f=x` errors "option '--f=x' is
+# ambiguous; possibilities: '--file' '--follow-symlinks'"), the same
+# unambiguous-prefix rule real git uses. Before this, sed_inplace_targets()'s in-place-
 # presence guard recognized only the exact string "--in-place" or the
 # attached "--in-place=" prefix -- confirmed against real gsed that
 # --i, --in, --in-p, --in-pla, --in-plac (bare) and --i=.bak, --in-p=.bak
