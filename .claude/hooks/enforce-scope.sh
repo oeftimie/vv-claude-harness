@@ -73,7 +73,13 @@ INPUT=$(cat)
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 
-# Only enforce if a scope file exists (teammates only, not lead agents)
+# Only enforce if a scope file exists. In practice this is teammates only (the
+# lead's own session has no scope file of its own to spawn WITH) -- but this
+# check has no actual session-awareness: it's a single shared file's existence,
+# checked identically regardless of who is asking. While ANY teammate's scope
+# file exists, the LEAD's own actions are gated by it too (confirmed live
+# during F060's review: the lead's own reassignment-rewrite and teardown-delete
+# of this very file are denied while a team is active) -- see F061.
 SCOPE_FILE=".claude/teammate-scope.txt"
 if [ ! -f "$SCOPE_FILE" ]; then
     exit 0
