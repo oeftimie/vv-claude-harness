@@ -249,7 +249,8 @@ If the TeammateIdle hook immediately prompts you to pick up a new task after com
 | Scope expansion approved | `SendMessage({ type: "message", recipient: "teammate-name", content: "Approved. You now own [files] in addition to your original scope." })` |
 | Plan approved | `SendMessage({ type: "message", recipient: "teammate-name", content: "Plan approved. Proceed with implementation." })` |
 | Plan rejected | `SendMessage({ type: "message", recipient: "teammate-name", content: "Plan rejected. Revise: [feedback]. Resubmit before implementing." })` |
-| Shutdown | `SendMessage({ type: "shutdown_request", recipient: "teammate-name", content: "All tasks complete, shutting down team." })` |
+| Shutdown (team-wide, Phase 5) | `SendMessage({ type: "shutdown_request", recipient: "teammate-name", content: "All tasks complete, shutting down team." })` |
+| Shutdown (early release, F059) | `SendMessage({ type: "shutdown_request", recipient: "teammate-name", content: "Your assigned work is complete -- shutting you down." })` |
 
 > **Known bug:** `plan_approval_response` type in `SendMessage` reports success but the message is never delivered to the recipient. Use `type: "message"` for all plan approvals and rejections. This workaround is confirmed working as of Claude Code v2.1.33+. **Retirement condition**: the maintenance loop's `plan_approval_response` probe (`docs/maintenance-runbook.md`) reports FIXED on a live spawned-teammate round trip; as of run #0 (`MAINTENANCE_LOG.md`, 2026-07-24) the round trip itself could not be reached (no `require_plan_approval`-equivalent spawn option, no `EnterPlanMode`/`ExitPlanMode` exposed to teammates), so this remains open, not retired.
 

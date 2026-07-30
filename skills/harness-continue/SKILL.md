@@ -331,12 +331,12 @@ blocked, or the approved plan itself must change.
    - **Blocked message**: unblock or reassign
    - **Scope expansion request**: approve or deny, update scope in features.json
    - **Plan approval request**: review plan, approve or reject with a direct `SendMessage` (type `"message"`, not `"plan_approval_response"` which has a delivery bug)
-   - **Completion report from a role-limited teammate** (e.g. a reviewer, which has no
-     Edit/Write tools by construction): if it reports its assigned work is done and has
-     nothing left it can claim, send it a `shutdown_request` promptly instead of leaving
-     it idle until Phase 5 (F059). Do NOT do this for an implementer between features --
-     it remains a legitimate `TeammateIdle` reassignment target for as long as the team
-     is running.
+   - **Completion report from a role-limited teammate** (e.g. a reviewer or a researcher,
+     structurally unable to claim any remaining feature work): if it reports its
+     assigned work is done and has nothing left it can claim, send it a
+     `shutdown_request` promptly instead of leaving it idle until Phase 5 (F059). Do NOT
+     do this for an implementer between features -- it remains a legitimate
+     `TeammateIdle` reassignment target for as long as the team is running.
 3. Resolve conflicts if teammates need overlapping files
 4. After 3 check-ins with no progress from a teammate, take over that scope or spawn a replacement
 
@@ -392,8 +392,9 @@ Do NOT write domain-specific decisions here — those go in the Domain sections.
 
 ### Phase 5: Teardown
 
-1. Send `shutdown_request` to all teammates via `SendMessage`
-2. Wait for `shutdown_response` from each
+1. Send `shutdown_request` to all REMAINING teammates via `SendMessage` (F059) --
+   any released early during Phase 3 for being role-limited are already down
+2. Wait for `shutdown_response` from each remaining teammate
 3. Delete `.claude/teammate-scope.txt` if it exists — it is per-teammate transient
    state, not a harness-init artifact, and must not survive the team it armed.
 4. Write handoff to `claude-progress.txt`:

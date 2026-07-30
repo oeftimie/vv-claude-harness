@@ -5411,7 +5411,7 @@ fi
 
 HARNESS_CONTINUE_SKILL="$REPO_ROOT/skills/harness-continue/SKILL.md"
 if grep -q "Completion report from a role-limited teammate" "$HARNESS_CONTINUE_SKILL" \
-  && grep -q "Do NOT do this for an implementer between features" "$HARNESS_CONTINUE_SKILL"; then
+  && grep -q "an implementer between features -- it remains a legitimate" "$HARNESS_CONTINUE_SKILL"; then
   pass "mnt (F059): harness-continue/SKILL.md's Phase 3 monitoring step covers early release"
 else
   fail "mnt (F059): harness-continue/SKILL.md is missing the Phase 3 early-release guidance"
