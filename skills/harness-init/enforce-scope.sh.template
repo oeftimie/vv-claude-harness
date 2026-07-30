@@ -812,8 +812,17 @@ def cp_mv_targets(tokens):
     # and DIR is the sole write target -- an earlier version didn't look for
     # any of these forms at all, so an out-of-scope -t destination was never
     # checked (found by adversarial review of PR #42/F023, reported as
-    # F024). Clustered short flags (`-rt DIR`, -r and -t combined) are not
-    # recognized, a documented residual (see header). The scan stops at a
+    # F024). Clustered short flags (`-rt DIR`, -r and -t combined; likewise
+    # `-rS VALUE`, -r and -S combined, since F056 gave -S the same
+    # value-consuming recognition as -t) are not recognized, a documented
+    # residual (see header) -- confirmed against real GNU cp that `cp
+    # src/parser/a.txt src/other/d -rS src/parser/x` still writes to
+    # src/other/d (the real destination) while this function, both before
+    # and after F056, returns the wrong token (src/parser/x) since neither
+    # -t nor -S is recognized once clustered with another short flag. F056
+    # narrows this residual's reach (bare -S is now handled) without closing
+    # it for the clustered form, identically to the pre-existing -rt gap.
+    # The scan stops at a
     # literal "--" (end of flag parsing): without this, a real filename that
     # happens to start with "-t" after "--" (e.g. `mv -- -t.txt dest.txt`)
     # was misread as the -t flag itself, string-sliced into a bogus target

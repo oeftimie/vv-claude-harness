@@ -1767,6 +1767,48 @@ assert_deny_json "$OUT" "hs2 (F056): 'cp --update VALUE ...' denial uses JSON de
 assert_contains "$OUT" "src/other/x" \
   "hs2 (F056): 'cp --update VALUE ...' denial still names the real (last flagless) destination"
 
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --preserve mode src/parser/a.txt src/other/x')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): 'cp --preserve VALUE ...' out-of-scope real destination still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F056): 'cp --preserve VALUE ...' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x" \
+  "hs2 (F056): 'cp --preserve VALUE ...' denial still names the real (last flagless) destination"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --backup numbered src/parser/a.txt src/other/x')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): 'cp --backup VALUE ...' out-of-scope real destination still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F056): 'cp --backup VALUE ...' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x" \
+  "hs2 (F056): 'cp --backup VALUE ...' denial still names the real (last flagless) destination"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --reflink auto src/parser/a.txt src/other/x')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): 'cp --reflink VALUE ...' out-of-scope real destination still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F056): 'cp --reflink VALUE ...' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x" \
+  "hs2 (F056): 'cp --reflink VALUE ...' denial still names the real (last flagless) destination"
+
+# F056 round 2 (review of PR #90): the flag-shaped-value edge case -- a
+# value-consuming flag's OWN value happening to look like another flag (here
+# "-t") -- was reasoned about in the code comment, the notes, and
+# approaches_tried as the justification for an index-skip design over a
+# filter-after-the-fact one, but had no assertion actually pinning it.
+# Confirmed against real GNU cp that `cp --suffix -t src dest` treats "-t" as
+# the literal suffix value, never as a target-directory flag (dest stays
+# "dest", not redirected) -- a future refactor back to mark-then-filter would
+# silently reintroduce a -t early-return bypass here while every other F056
+# test (which all use an ordinary-looking value) stayed green.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --suffix -t src/parser/a.txt src/other/d')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F056): '--suffix -t' flag-shaped value exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F056): '--suffix -t' flag-shaped value denial uses JSON deny form"
+assert_contains "$OUT" "src/other/d" \
+  "hs2 (F056): flag-shaped '-t' value is consumed as the suffix, not re-parsed as a target-directory flag"
+
 # No new false positive: an in-scope destination after a value-consuming flag
 # must still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
