@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 49,
-  "passing": 33,
+  "passing": 34,
   "features": [
     {
       "id": "F001",
@@ -1284,16 +1284,16 @@
       "id": "F043",
       "description": "skills/harness-init/enforce-scope.sh.template's FILE_PATH/COMMAND extraction (the `FILE_PATH=$(echo \"$INPUT\" | python3 -c \"...\" 2>/dev/null)` block) fails open the same way _decode_ansi_c_escape() did before F038 rounds 2-3, but earlier in the pipeline and via a different entry point: a raw lone UTF-16 surrogate (0xD800-0xDFFF) arriving directly in the hook's OWN input JSON (e.g. `{\"tool_input\":{\"file_path\":\"src/other/\\ud800pwned.txt\"}}` -- no $'...' ANSI-C quoting or bash decoding involved at all, since json.load() itself decodes the JSON \\uD800 escape into a Python str containing a lone surrogate) crashes `print(path)` with the same UnicodeEncodeError. The `2>/dev/null` on that command substitution swallows the traceback, FILE_PATH comes back empty, and `if [ -n \"$FILE_PATH\" ]` skips the ENTIRE Edit/Write scope check block -- silently allowing what should have gone through the AUTHORITATIVE file_path gate (Edit/Write/MultiEdit tool calls are blocked outright, not best-effort like the Bash coverage path F038 itself patches). The identical extraction pattern is used for COMMAND just below it, so the Bash coverage path is affected too.",
       "priority": 27,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #67, round 2 (F038's surrogate/multi-char-uppercase fixes for the $'...' ANSI-C decoder). Pre-dates F038 entirely -- this is a structurally different code path (the hook's own top-level JSON input extraction, not the bash-side $'...' decoder F038 touches) with much lower reachability, since a lone surrogate must survive transport from whatever produces the tool_input JSON in the first place (Claude's own model output is valid UTF-8/UTF-16 text and would not normally carry an isolated surrogate this way; some other JSON-producing intermediary would need to construct or forward one). Deliberately not folded into F038's own PRs, which were already at their third round under time pressure from a live regression in a different function -- filed as its own feature per the round-2 reviewer's explicit recommendation.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by adversarial review of PR #67, round 2 (F038's surrogate/multi-char-uppercase fixes for the $'...' ANSI-C decoder). Pre-dates F038 entirely -- this is a structurally different code path (the hook's own top-level JSON input extraction, not the bash-side $'...' decoder F038 touches) with much lower reachability, since a lone surrogate must survive transport from whatever produces the tool_input JSON in the first place (Claude's own model output is valid UTF-8/UTF-16 text and would not normally carry an isolated surrogate this way; some other JSON-producing intermediary would need to construct or forward one). Deliberately not folded into F038's own PRs, which were already at their third round under time pressure from a live regression in a different function -- filed as its own feature per the round-2 reviewer's explicit recommendation.\n\nFIXED: confirmed the bypass live before touching code (both a raw \\uD800 surrogate in tool_input.file_path AND in tool_input.command produced rc=0 with completely empty stdout -- silent ALLOW -- against a fixture scoped to src/parser/, while the identical non-surrogate command correctly denied). Fixed with a two-stage try/except per extraction script, using TWO DISTINCT exit codes rather than one: exit 2 means json.load() itself failed (genuinely unparseable input, stays fail-open -- this file's own documented environment-failure contract, unchanged), exit 1 means the JSON parsed successfully but something after that (the field extraction, normalize, or the final print()) crashed (fails closed). A single except-and-exit(1) wrapping BOTH stages would have silently reversed the documented fail-open behavior for genuinely malformed JSON, since Python's default uncaught-exception exit code is 1 regardless of which stage raised -- confirmed this exact regression live via a dedicated mutation test (collapsing the two stages into one flipped the 'genuinely unparseable JSON stays fail-open' test from ALLOW to DENY). FILE_PATH's denial uses the plain-text/exit-2 form (matching its existing authoritative-gate convention); COMMAND's uses deny_json() (matching its existing best-effort-gate convention) -- neither introduces a new denial format into a code path that didn't already have one. Mutation-tested the whole fix (revert -> exactly 4 of 7 new assertions fail) and the two-stage design specifically (collapse to one stage -> exactly 1 assertion fails, the malformed-JSON regression test) in isolation.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
