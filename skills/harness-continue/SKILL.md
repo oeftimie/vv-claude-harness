@@ -331,6 +331,12 @@ blocked, or the approved plan itself must change.
    - **Blocked message**: unblock or reassign
    - **Scope expansion request**: approve or deny, update scope in features.json
    - **Plan approval request**: review plan, approve or reject with a direct `SendMessage` (type `"message"`, not `"plan_approval_response"` which has a delivery bug)
+   - **Completion report from a role-limited teammate** (e.g. a reviewer, which has no
+     Edit/Write tools by construction): if it reports its assigned work is done and has
+     nothing left it can claim, send it a `shutdown_request` promptly instead of leaving
+     it idle until Phase 5 (F059). Do NOT do this for an implementer between features --
+     it remains a legitimate `TeammateIdle` reassignment target for as long as the team
+     is running.
 3. Resolve conflicts if teammates need overlapping files
 4. After 3 check-ins with no progress from a teammate, take over that scope or spawn a replacement
 

@@ -3967,7 +3967,7 @@ fi
 # implementation feature must not re-message the lead on every repeat -- that
 # discipline has to live in the agent definition, since only it knows the role.
 if grep -q "Send that decline message only once per review assignment" "$REPO_ROOT/agents/reviewer.md" \
-  && grep -q "Phase 5 teardown, after all teammates' work is" "$REPO_ROOT/agents/reviewer.md"; then
+  && grep -q "role-limited teammate" "$REPO_ROOT/agents/reviewer.md"; then
   pass "hs2 (F055): reviewer.md dedups the TeammateIdle decline instead of re-messaging the lead"
 else
   fail "hs2 (F055): reviewer.md missing the TeammateIdle decline-dedup instruction"
@@ -5394,6 +5394,41 @@ if [ "$PROTOCOL_POINTER_COUNT" -eq 3 ]; then
   pass "mnt: all 3 still-instructional plan_approval_request sites carry a pointer"
 else
   fail "mnt: expected 3 plan_approval_request pointer sites, found $PROTOCOL_POINTER_COUNT"
+fi
+
+# F059: rules/agent-teams-protocol.md previously documented only team-wide
+# shutdown (step 15, after step 10 synthesizes ALL teammates' work) -- no
+# per-teammate early release existed for a teammate that structurally cannot
+# claim any remaining work (e.g. a reviewer). Pin both the new lead-side rule
+# and its explicit carve-out for implementers (who must stay available for
+# TeammateIdle reassignment) so a future edit can't silently drop either half.
+if grep -q "Early release for role-limited teammates" "$PROTOCOL_MD" \
+  && grep -q "implementer between features is NOT" "$PROTOCOL_MD"; then
+  pass "mnt (F059): agent-teams-protocol.md documents per-teammate early release, with the implementer carve-out"
+else
+  fail "mnt (F059): agent-teams-protocol.md is missing the early-release rule or its implementer carve-out"
+fi
+
+HARNESS_CONTINUE_SKILL="$REPO_ROOT/skills/harness-continue/SKILL.md"
+if grep -q "Completion report from a role-limited teammate" "$HARNESS_CONTINUE_SKILL" \
+  && grep -q "Do NOT do this for an implementer between features" "$HARNESS_CONTINUE_SKILL"; then
+  pass "mnt (F059): harness-continue/SKILL.md's Phase 3 monitoring step covers early release"
+else
+  fail "mnt (F059): harness-continue/SKILL.md is missing the Phase 3 early-release guidance"
+fi
+
+# F055's reviewer.md text ("the lead shuts teammates down at Phase 5 teardown...
+# not the moment your individual review lands") was accurate when written, but
+# F059 makes it WRONG in the other direction: the lead is now expected to
+# release a reviewer promptly, not wait for Phase 5. Confirm the stale claim is
+# gone and the corrected one is present, the same drift class F058's round-1
+# review caught in commit-gate.sh's comments after a sibling fix changed the
+# ground truth out from under them.
+if grep -q "expected to release you promptly" "$REPO_ROOT/agents/reviewer.md" \
+  && ! grep -q "not the moment your individual review lands" "$REPO_ROOT/agents/reviewer.md"; then
+  pass "mnt (F059): agents/reviewer.md's shutdown-timing claim was updated for the new early-release rule"
+else
+  fail "mnt (F059): agents/reviewer.md still asserts the pre-F059 Phase-5-only shutdown timing"
 fi
 
 if grep -q "[Rr]etirement condition" "$REPO_ROOT/README.md"; then

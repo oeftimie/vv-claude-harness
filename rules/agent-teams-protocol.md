@@ -187,6 +187,20 @@ The lead:
 
 If the lead catches itself starting to implement code instead of delegating, it should stop and spawn a teammate for that work.
 
+**Early release for role-limited teammates (F059).** Step 15's shutdown is team-wide by
+default, so a teammate can otherwise sit idle for the rest of the session once its own
+work is done, waiting on features it structurally cannot claim. This only applies to a
+teammate whose ROLE makes it structurally unable to act on ANY currently claimable
+work -- a reviewer (no Edit/Write tools by construction) is the clear case; an
+implementer between features is NOT, even if nothing is assigned to it right now, since
+it remains a legitimate `TeammateIdle` reassignment target for as long as the team is
+running (the existing "no wasted capacity" design, unchanged by this rule). When a
+role-limited teammate reports its assigned work is done (e.g. a review delivered and
+acted on) and has nothing left to claim, the lead SHOULD send it a `shutdown_request`
+promptly rather than waiting for Phase 5 -- distinguishing the two cases is a judgment
+call for the lead, not something the `TeammateIdle` hook can do on its own (it has no
+teammate identity to key off, confirmed during F055).
+
 ## Teammate Responsibilities
 
 Each teammate is a focused implementer. It:
