@@ -823,8 +823,8 @@ def cp_mv_targets(tokens):
     # narrows this residual's reach (bare -S is now handled) without closing
     # it for the clustered form, identically to the pre-existing -rt gap.
     # The scan stops at a literal "--" (end of flag parsing): without this, a
-    # real filename that
-    # happens to start with "-t" after "--" (e.g. `mv -- -t.txt dest.txt`)
+    # real filename that happens to start with "-t" after "--" (e.g. `mv --
+    # -t.txt dest.txt`)
     # was misread as the -t flag itself, string-sliced into a bogus target
     # ".txt", and the REAL destination (dest.txt, via the last_flagless_token
     # fallback, never reached because this loop already returned) went
