@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 53,
+  "total_features": 54,
   "passing": 39,
   "features": [
     {
@@ -1376,7 +1376,9 @@
         ".claude/hooks/check-remaining-tasks.sh",
         ".claude/hooks/verify-task-quality.sh",
         ".claude/hooks/verify-git-identity.sh",
-        ".claude/hooks/statusline.sh"
+        ".claude/hooks/harness_state.py",
+        ".claude/hooks/commit-gate.sh",
+        "test/run-tests.sh"
       ],
       "depends_on": [
         "F046"
@@ -1384,7 +1386,7 @@
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
       "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
-      "notes": "Reported by teammate review-pr69-f040 while investigating its own TeammateIdle idle-loop issue (F046): noticed the live hook it was reading didn't match the template's current structure at all. Independently confirmed via `diff skills/harness-init/<name>.sh.template .claude/hooks/<name>` for all 5 hooks before filing -- sizes above are measured, not estimated. depends_on F046 only in the sense that F046's fix should land in the template FIRST, so this resync picks up the corrected version rather than needing a second resync immediately after. This is a resync/copy operation, not new logic -- should be a mechanical diff-and-replace per hook plus a full_test run to confirm nothing in this repo's own workflow depended on the old (buggy) installed behavior, but still needs the standard review cycle since it changes what actually gates every future teammate's actions in this repo.\n\nFIXED: re-copied all four hook templates (enforce-scope.sh, check-remaining-tasks.sh, verify-task-quality.sh, verify-git-identity.sh) plus harness_state.py.template (entirely missing before this fix, and required by the current templates of the first two) into .claude/hooks/, verbatim, no logic changes. statusline.sh needed no resync -- confirmed it's sourced from this plugin's own hooks/statusline.sh, not from skills/harness-init/, and was already byte-identical. Verified against the live repo before relying on it: confirmed no .claude/teammate-scope.txt exists for this lead session, so the resynced enforce-scope.sh still exits 0 for all of my own edits; verify-git-identity.sh still allows this session's git identity; check-remaining-tasks.sh now correctly reports claimable features (rc=2, guidance on stderr, matching F047's live-repro trigger) instead of the stale inline logic. Ran both full_test and smoke_test after resyncing, both green. Added a permanent drift guard to test/run-tests.sh (5 assertions, one per resynced file) that diffs this repo's installed copy against its template and fails loudly on any future divergence, rather than relying on a teammate stumbling into the live bug again (which is exactly how this session re-discovered F046's stale-hook manifestation). Mutation-tested by reverting the installed hooks to their pre-fix state: exactly the 5 new assertions fail, nothing else. Full suite 1198/1198.",
+      "notes": "Reported by teammate review-pr69-f040 while investigating its own TeammateIdle idle-loop issue (F046): noticed the live hook it was reading didn't match the template's current structure at all. Independently confirmed via `diff skills/harness-init/<name>.sh.template .claude/hooks/<name>` for all 5 hooks before filing -- sizes above are measured, not estimated. depends_on F046 only in the sense that F046's fix should land in the template FIRST, so this resync picks up the corrected version rather than needing a second resync immediately after. This is a resync/copy operation, not new logic -- should be a mechanical diff-and-replace per hook plus a full_test run to confirm nothing in this repo's own workflow depended on the old (buggy) installed behavior, but still needs the standard review cycle since it changes what actually gates every future teammate's actions in this repo.\n\nFIXED: re-copied all four hook templates (enforce-scope.sh, check-remaining-tasks.sh, verify-task-quality.sh, verify-git-identity.sh) plus harness_state.py.template (entirely missing before this fix, and required by the current templates of the first two) into .claude/hooks/, verbatim, no logic changes. statusline.sh needed no resync -- confirmed it's sourced from this plugin's own hooks/statusline.sh, not from skills/harness-init/, and was already byte-identical. Verified against the live repo before relying on it: confirmed no .claude/teammate-scope.txt exists for this lead session, so the resynced enforce-scope.sh still exits 0 for all of my own edits; verify-git-identity.sh still allows this session's git identity; check-remaining-tasks.sh now correctly reports claimable features (rc=2, guidance on stderr, matching F047's live-repro trigger) instead of the stale inline logic. Ran both full_test and smoke_test after resyncing, both green. Added a permanent drift guard to test/run-tests.sh (5 assertions, one per resynced file) that diffs this repo's installed copy against its template and fails loudly on any future divergence, rather than relying on a teammate stumbling into the live bug again (which is exactly how this session re-discovered F046's stale-hook manifestation). Mutation-tested by reverting the installed hooks to their pre-fix state: exactly the 5 new assertions fail, nothing else. Full suite 1198/1198.\n\nROUND 2 (review of PR #81): reviewer found the fix itself correct but the record around it incomplete in three ways, all independently confirmed before acting:\n1. scope array didn't match the diff (missing harness_state.py, added; test/run-tests.sh, modified; statusline.sh listed but correctly NOT touched) -- corrected above.\n2. commit-gate.sh.template was never installed to .claude/hooks/ at all (confirmed: `git log --all -- .claude/hooks/commit-gate.sh` returns nothing), the identical class of gap as harness_state.py's prior absence. Installed it verbatim (inert until wired -- nothing in settings.json invokes it yet, see point 3) and added it to the drift guard, plus a 6th assertion for statusline.sh (compared against hooks/statusline.sh, the plugin's own copy, since there is no skills/harness-init/statusline.sh.template).\n3. This repo's .claude/settings.json wires enforce-scope.sh only on the Edit|Write|MultiEdit matcher, NOT on Bash -- unlike SKILL.md's own canonical settings.json, which wires enforce-scope.sh AND commit-gate.sh on the Bash matcher too. Confirmed: a scoped teammate could write outside its scope via Bash in this repo today, and even with commit-gate.sh now installed, nothing invokes it. NOT fixed in this PR: wiring a new hook onto every future Bash tool call is a live behavior change for the rest of this session's autonomous sweep (every commit, every teammate's Bash-based file write), not a mechanical resync -- filed separately as F054 for its own dedicated testing and review rather than silently folding a behavioral change into this PR. Also folded into F054: settings.json invokes hooks as `bash .claude/hooks/<name>.sh` where context_summary.md's OVI-48 decision records `\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/<name>.sh` -- harmless in practice (every hook self-anchors via PROJECT_ROOT) but the same settings.json-vs-documented-decision drift family.\n\nThis feature's own claim is narrowed accordingly: F047 fixes FILE-LEVEL drift (installed hook content vs. template content) only. Hook-WIRING drift (what's actually invoked, and how) in .claude/settings.json is real, confirmed, and tracked separately as F054 -- not silently left unaddressed. Re-ran full suite after all three fixes: 1200/1200. Mutation-tested the 2 new assertions (commit-gate.sh, statusline.sh): reverting/tampering each in turn gives exactly 1 failure per file, nothing else.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [
@@ -1523,6 +1525,28 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F046",
+      "spec": null
+    },
+    {
+      "id": "F054",
+      "description": "This repo's .claude/settings.json wires enforce-scope.sh only on the PreToolUse Edit|Write|MultiEdit matcher -- unlike SKILL.md's own canonical settings.json (skills/harness-init/SKILL.md, ~lines 300-326), which wires enforce-scope.sh AND commit-gate.sh on the Bash matcher too (alongside verify-git-identity.sh, which IS wired there in this repo). CONFIRMED: this repo's Bash matcher only invokes verify-git-identity.sh; the entire F023-F046 scope-enforcement hardening arc for Bash-based writes (quoting, escaping, traversal, NUL-truncation, sed -i clustering, long-option abbreviation) is installed (once F047 merges) but never invoked here, and a scoped teammate could write outside its assigned scope via a Bash command today. commit-gate.sh (now installed by F047, but inert) is in the same state -- nothing invokes it. Separately, this repo's settings.json invokes hooks as `bash .claude/hooks/<name>.sh`, while context_summary.md's own OVI-48 decision (2026-07-22) records the canonical invocation as `\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/<name>.sh` -- harmless in practice since every hook self-anchors via PROJECT_ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\", but the same settings.json-vs-documented-decision drift family, worth reconciling in the same pass. This is a live behavior change (gates every future Bash tool call in this repo, not a mechanical file resync), so it needs its own careful testing (in particular: confirm commit-gate.sh doesn't interfere with this repo's own normal add-then-commit workflow) and its own dedicated review, separate from F047's file-level resync.",
+      "priority": 37,
+      "status": "pending",
+      "scope": [
+        ".claude/settings.json"
+      ],
+      "depends_on": [
+        "F047"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by review-pr81-f047 while verifying F047's claim that this repo's own gating now reflects the hardened design -- found the file-level resync was correct but two settings.json gaps make parts of it inert (enforce-scope.sh and commit-gate.sh not wired on the Bash matcher) and one invocation-style drift from a documented decision (OVI-48's `\"$CLAUDE_PROJECT_DIR\"/...` form vs. the live `bash ...` form). Independently confirmed by the lead against SKILL.md's own canonical settings.json and against context_summary.md's OVI-48 entry before filing. depends_on F047 only in the sense that F047's file-level resync (in particular commit-gate.sh's installation) should land first, so wiring it doesn't reference a non-existent file.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F047",
       "spec": null
     }
   ]
