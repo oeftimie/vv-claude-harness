@@ -4266,10 +4266,27 @@ with open(os.path.join(root, ".claude", "settings.json")) as fh:
 
 if "bash .claude/hooks/" in text:
     print("live settings.json still invokes a hook cwd-relative (bash .claude/hooks/...)")
-if text.count('\\"$CLAUDE_PROJECT_DIR\\"/.claude/hooks/') < 5:
-    print("live settings.json lacks the CLAUDE_PROJECT_DIR-absolute invocation form")
 if '"Bash(bash .claude/hooks/*.sh)"' in text:
     print("live settings.json's permissions allowlist still lists the cwd-relative hook form")
+
+# Per-command check (not a loose text.count()): every actual hook command,
+# plus statusLine, must individually use the canonical absolute form --
+# reverting any ONE of them to the cwd-relative form while leaving the
+# total occurrence count high enough elsewhere would otherwise pass a
+# threshold-based check silently (found by adversarial review of PR #87).
+CANONICAL_PREFIX = '"$CLAUDE_PROJECT_DIR"/.claude/hooks/'
+hook_commands = [("statusLine", data.get("statusLine", {}).get("command", ""))]
+for event, entries in data.get("hooks", {}).items():
+    for entry in entries:
+        for h in entry.get("hooks", []):
+            hook_commands.append((f"{event}/{entry.get('matcher', '<no-matcher>')}", h.get("command", "")))
+for label, cmd in hook_commands:
+    # Only checks commands that actually invoke a named .claude/hooks/*
+    # script -- PostToolUse's own command is an inline jq/bash one-liner
+    # with no hook script of its own, so it's exempt from this check by
+    # construction, not overlooked.
+    if ".claude/hooks/" in cmd and not cmd.startswith(CANONICAL_PREFIX):
+        print(f"{label}'s command does not start with the CLAUDE_PROJECT_DIR-absolute form: {cmd!r}")
 
 bash_hooks = []
 for entry in data.get("hooks", {}).get("PreToolUse", []):
