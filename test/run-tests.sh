@@ -3800,6 +3800,17 @@ else
   fail "hs2: reviewer.md missing the Bash-backstop acknowledgment"
 fi
 
+# F055: the TeammateIdle hook re-fires on every idle check regardless of teammate
+# role (no identity in the payload), so a reviewer that declines an offered
+# implementation feature must not re-message the lead on every repeat -- that
+# discipline has to live in the agent definition, since only it knows the role.
+if grep -q "Send that decline message only once per review assignment" "$REPO_ROOT/agents/reviewer.md" \
+  && grep -q "lead is expected to shut you down" "$REPO_ROOT/agents/reviewer.md"; then
+  pass "hs2 (F055): reviewer.md dedups the TeammateIdle decline instead of re-messaging the lead"
+else
+  fail "hs2 (F055): reviewer.md missing the TeammateIdle decline-dedup instruction"
+fi
+
 if grep -qi "best-effort" "$REPO_ROOT/README.md" && grep -q "lead-owned" "$REPO_ROOT/README.md"; then
   pass "hs2: README's tiers table documents best-effort Bash coverage + lead-owned files"
 else
@@ -3900,6 +3911,13 @@ STDOUT_ONLY=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}' 2>/dev/null)
 assert_empty "$STDOUT_ONLY" "ht: check-remaining-tasks writes nothing to stdout"
 STDERR_ONLY=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
 assert_contains "$STDERR_ONLY" "F003" "ht: the claimable feature id is on stderr specifically"
+
+# F055: the hook cannot tell a review-only teammate from an implementer (no
+# identity in the TeammateIdle payload), so the guidance itself must say the
+# claim-it instruction does not apply to a role with no Edit/Write tools.
+assert_contains "$STDERR_ONLY" "no Edit/Write tools" \
+  "ht (F055): guidance states the claim instruction doesn't apply to non-implementer roles"
+
 python3 - "$DIR_HR/.harness/features.json" <<'PYEOF'
 import json
 import sys

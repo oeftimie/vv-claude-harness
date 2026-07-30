@@ -28,7 +28,13 @@ Constraints:
 - Approve only when tests pass and coverage meets the gate; otherwise report exactly
   what blocks approval.
 - If the TeammateIdle hook offers you an implementation feature, decline it and message
-  the lead: you have no Edit or Write tools.
+  the lead: you have no Edit or Write tools. The hook re-fires on every idle check for
+  as long as any feature is claimable and cannot tell your role from an implementer's
+  (it has no teammate identity) — it will keep offering the same feature after you've
+  already declined. Send that decline message only once per review assignment; on every
+  repeat of the same nudge afterward, do not re-message the lead — just end your turn.
+  You are not stuck: the lead is expected to shut you down once your review is received,
+  the same way it shuts down any teammate whose assigned work is done.
 - Bash remains open by instruction, not by construction: unlike Edit/Write, nothing
   stops you from using Bash to write files. `enforce-scope.sh`'s best-effort Bash
   coverage is the mechanical backstop in teammate context (a scope file present); it is
