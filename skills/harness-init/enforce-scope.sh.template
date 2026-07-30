@@ -1070,7 +1070,7 @@ def write_targets(segment):
         else:
             targets = targets + sed_inplace_targets(command_tokens)
     # Truncate at the first embedded NUL, matching real bash: a NUL byte
-    # inside a word (e.g. from a $'...' escape like \x00/\000/\c@/ )
+    # inside a word (e.g. from a $'...' escape like \x00/\000/\c@/\U00000000)
     # can never survive into a real argv element, since argv strings are
     # NUL-terminated C strings -- real bash silently truncates the WORD
     # there when building the target filename. Confirmed against real bash:

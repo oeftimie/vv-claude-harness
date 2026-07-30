@@ -2935,6 +2935,24 @@ assert_deny_json "$OUT" "hs2 (F039): NUL-truncated traversal denial uses JSON de
 assert_contains "$OUT" "write to 'src/other/bad.txt'" \
   "hs2 (F039): NUL-truncated traversal denial names the real (truncated) target"
 
+# The NUL must be truncated regardless of what immediately follows it --
+# both new tests above happen to place the NUL immediately before a "/",
+# which a narrower (and wrong) fix like truncating only "NUL-then-slash"
+# would also pass. Real bash truncates at the NUL itself, not at a
+# NUL-slash pair: confirmed against real bash, `echo x > $'src/other/
+# bad.txt\x00x/../../parser/ok.txt'` (NUL followed by "x", not "/")
+# STILL genuinely creates "src/other/bad.txt" (found by adversarial review
+# of PR #68, which proved a "truncate only at NUL immediately before a
+# slash" mutant survives the two tests above at 999/999 while wrongly
+# allowing this exact out-of-scope write).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/other/bad.txt\x00x/../../parser/ok.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F039): a NUL not adjacent to a slash still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F039): NUL-not-adjacent-to-slash denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/bad.txt'" \
+  "hs2 (F039): NUL-not-adjacent-to-slash denial names the real (truncated) target"
+
 # The same fix must apply regardless of which escape spelling produced the
 # embedded NUL -- an octal \000 escape is a different decode path
 # (ANSI_C_ESCAPE_PATTERN's octal group, not \xHH) through the same
@@ -5277,6 +5295,23 @@ for TPL in "$TEMPLATES_DIR"/*.sh.template; do
     pass "n: bash -n $BASE (template)"
   else
     fail "n: bash -n $BASE (template)"
+  fi
+  # A stray literal NUL byte in a template is invisible in a normal diff
+  # (git's own binary-file heuristic only samples the first 8000 bytes)
+  # but silently blinds Grep-family tools on the whole file (ugrep -I
+  # treats it as binary and returns no match, not an error) and ships
+  # byte-exact to every downstream project via harness-init -- found by
+  # adversarial review of PR #68 (F039), which caught exactly this typo in
+  # this repo's own commit-in-progress: a comment listing NUL escape
+  # spellings had a literal 0x00 byte where the text \U00000000 was meant.
+  # A shell/grep-based check can't reliably search FOR a NUL byte (a NUL
+  # in a shell argument truncates the argument to empty, which then
+  # matches everything -- confirmed empirically while writing this check),
+  # so this reads the raw bytes directly instead.
+  if python3 -c "import sys; sys.exit(1 if b'\\x00' in open(sys.argv[1], 'rb').read() else 0)" "$TPL"; then
+    pass "n: $BASE (template) contains no literal NUL byte"
+  else
+    fail "n: $BASE (template) contains a literal NUL byte"
   fi
 done
 
