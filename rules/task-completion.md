@@ -16,6 +16,7 @@ Additional for harness projects:
 - [ ] `features.json` audited against actual work done — every touched feature has updated status, test_file, coverage; unmapped work gets a new feature entry with `discovered_via`
 - [ ] `context_summary.md` has any non-obvious root causes, gotchas, or patterns discovered this session
 - [ ] Retrospective written to `context_summary.md` under `## Meta-Session [DATE]` (mandatory even for single-session work)
+- [ ] `.harness/mld/YYYY-MM-DD-<session-id>.md` written for this session (lead-only, mandatory; see `rules/mld-review.md`) — distinct from the Retrospective above, not a substitute for it
 - [ ] `claude-progress.txt` has session handoff
 - [ ] Task list is current — no stale in-progress or pending tasks that no longer reflect reality
 

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # SessionStart hook: injects harness orientation into model context for harness projects.
 # Plain stdout reaches the model (capped at 10,000 chars). Always exits 0; never blocks.
+# Hard invariant, enforced mechanically: this file must NEVER contain the literal
+# lowercase substring naming the per-session telemetry directory under .harness/
+# (checked by /harness-doctor's non-injection check and a permanent regression
+# test in test/run-tests.sh; see harness-continue's Session End step and its
+# linked review-cadence rule for what that directory is and why).
 set -uo pipefail
 
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || ROOT=$(pwd)
@@ -16,6 +21,24 @@ except Exception:
     pass
 ' 2>/dev/null || true)
 
+SESSION_ID=$(printf '%s' "$STDIN_JSON" | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("session_id") or "")
+except Exception:
+    pass
+' 2>/dev/null || true)
+# session_id is externally supplied and echoed into the orientation block below --
+# never trust it raw. Unfiltered, a newline lets it inject arbitrary lines into the
+# most authoritative position in this hook's output (directly under the orientation
+# header, indistinguishable from harness-authored content), and a "/" or ".." lets
+# it escape its intended directory once the lead uses it verbatim in a later
+# filename (see the header comment above for what that directory is and why it
+# is deliberately not named here). Restricting to a safe charset closes both
+# at once; the length cap keeps a maliciously long value from bloating the context
+# injection (found by adversarial review of PR #62).
+SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
+
 if [ "$SOURCE" = "compact" ]; then
   echo "## Compaction recovery"
   echo "Context was just compacted. Re-read the Active Context section of"
@@ -24,6 +47,8 @@ if [ "$SOURCE" = "compact" ]; then
 fi
 
 echo "## Harness orientation (auto-injected)"
+
+[ -n "$SESSION_ID" ] && echo "Session: $SESSION_ID"
 
 if [ -f "$H/SESSION_INCOMPLETE" ]; then
   echo ""
