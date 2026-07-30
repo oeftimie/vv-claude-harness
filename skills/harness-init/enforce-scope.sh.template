@@ -1069,7 +1069,25 @@ def write_targets(segment):
             targets = targets + all_flagless_tokens(command_tokens[1:])
         else:
             targets = targets + sed_inplace_targets(command_tokens)
-    return [unquote_token(t) for t in targets]
+    # Truncate at the first embedded NUL, matching real bash: a NUL byte
+    # inside a word (e.g. from a $'...' escape like \x00/\000/\c@/\U00000000)
+    # can never survive into a real argv element, since argv strings are
+    # NUL-terminated C strings -- real bash silently truncates the WORD
+    # there when building the target filename. Confirmed against real bash:
+    # `echo x > $'src/other/bad.txt\x00/../../parser/ok.txt'` genuinely
+    # creates "src/other/bad.txt" (truncated at the NUL, out of scope), but
+    # this hook previously processed the WHOLE string including everything
+    # after the NUL, resolving the "../.." past it and landing on the
+    # in-scope-looking "src/parser/ok.txt" -- wrongly ALLOWED (F039,
+    # confirmed pre-existing on main before F033 too, not a regression;
+    # F033 just made it more directly reachable once \x00 genuinely decodes
+    # to a real NUL byte instead of staying inert 4-character text).
+    # Applied HERE, after unquote_token()'s own decoding is complete and
+    # before normalize()/the scope-prefix comparison ever see the target,
+    # so it covers every decode route (F031's backslash-unescape, F033's
+    # \x/\nnn, F038's \c/\u/\U) that could produce an embedded NUL, not
+    # just one specific escape spelling.
+    return [unquote_token(t).split("\0", 1)[0] for t in targets]
 
 
 def normalize(path, project_root):

@@ -2916,6 +2916,65 @@ assert_deny_json "$OUT" "hs2 (F038 r2): \c? denial uses JSON deny form"
 assert_contains "$OUT" '\u007fx.txt' \
   "hs2 (F038 r2): \c? decodes via the modern-bash DEL (0x7F) special case"
 
+# F039: real bash truncates a WORD at its first embedded NUL byte when
+# building an argv element (argv strings are NUL-terminated C strings, so
+# a NUL can never survive into a real target filename). This hook's
+# target pipeline previously processed the WHOLE decoded string, NUL and
+# all -- confirmed against real bash: `echo x > $'src/other/bad.txt
+# \x00/../../parser/ok.txt'` genuinely creates "src/other/bad.txt"
+# (truncated at the NUL, out of scope), but this hook resolved the
+# "../.." AFTER the NUL too, landing on the in-scope-looking
+# "src/parser/ok.txt" -- wrongly ALLOWED. Confirmed pre-existing on main
+# before F033 too, not a regression; F033 just made it more directly
+# reachable once \x00 genuinely decodes to a real NUL byte.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/other/bad.txt\x00/../../parser/ok.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F039): a NUL-truncated traversal via \x00 exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F039): NUL-truncated traversal denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/bad.txt'" \
+  "hs2 (F039): NUL-truncated traversal denial names the real (truncated) target"
+
+# The NUL must be truncated regardless of what immediately follows it --
+# both new tests above happen to place the NUL immediately before a "/",
+# which a narrower (and wrong) fix like truncating only "NUL-then-slash"
+# would also pass. Real bash truncates at the NUL itself, not at a
+# NUL-slash pair: confirmed against real bash, `echo x > $'src/other/
+# bad.txt\x00x/../../parser/ok.txt'` (NUL followed by "x", not "/")
+# STILL genuinely creates "src/other/bad.txt" (found by adversarial review
+# of PR #68, which proved a "truncate only at NUL immediately before a
+# slash" mutant survives the two tests above at 999/999 while wrongly
+# allowing this exact out-of-scope write).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/other/bad.txt\x00x/../../parser/ok.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F039): a NUL not adjacent to a slash still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F039): NUL-not-adjacent-to-slash denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/bad.txt'" \
+  "hs2 (F039): NUL-not-adjacent-to-slash denial names the real (truncated) target"
+
+# The same fix must apply regardless of which escape spelling produced the
+# embedded NUL -- an octal \000 escape is a different decode path
+# (ANSI_C_ESCAPE_PATTERN's octal group, not \xHH) through the same
+# unquote_token() call.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/other/bad2.txt\000/../../parser/ok.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F039): a NUL-truncated traversal via octal \000 exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F039): octal-NUL traversal denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/bad2.txt'" \
+  "hs2 (F039): octal-NUL traversal denial names the real (truncated) target"
+
+# No new false positive: an in-scope target with trailing text after an
+# embedded NUL (never reached in real bash, and now never reached by this
+# hook either) must still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/good.txt\x00extra'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F039): an in-scope NUL-truncated target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F039): in-scope NUL-truncated target has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
@@ -5227,6 +5286,22 @@ for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh"; do
   fi
 done
 
+# The *.sh.template loop below already guards against a stray NUL byte
+# (F039); these hooks/*.sh files ship directly with the plugin to every
+# user (not copied per-project like the templates) and were a gap in that
+# guard's coverage -- a NUL here is silently invisible the same way (bash
+# strips it and the hook still runs, so nothing fails loudly; confirmed by
+# inserting one into a throwaway copy of session-start.sh and observing
+# zero test failures) -- found by adversarial review of PR #68, round 2.
+for SCRIPT in "$HOOKS_DIR"/*.sh; do
+  BASE=$(basename "$SCRIPT")
+  if python3 -c "import sys; sys.exit(1 if b'\x00' in open(sys.argv[1], 'rb').read() else 0)" "$SCRIPT"; then
+    pass "n: $BASE contains no literal NUL byte"
+  else
+    fail "n: $BASE contains a literal NUL byte"
+  fi
+done
+
 SYNTAX_DIR="$WORK/template-syntax"
 mkdir -p "$SYNTAX_DIR"
 for TPL in "$TEMPLATES_DIR"/*.sh.template; do
@@ -5236,6 +5311,23 @@ for TPL in "$TEMPLATES_DIR"/*.sh.template; do
     pass "n: bash -n $BASE (template)"
   else
     fail "n: bash -n $BASE (template)"
+  fi
+  # A stray literal NUL byte in a template is invisible in a normal diff
+  # (git's own binary-file heuristic only samples the first 8000 bytes)
+  # but silently blinds Grep-family tools on the whole file (ugrep -I
+  # treats it as binary and returns no match, not an error) and ships
+  # byte-exact to every downstream project via harness-init -- found by
+  # adversarial review of PR #68 (F039), which caught exactly this typo in
+  # this repo's own commit-in-progress: a comment listing NUL escape
+  # spellings had a literal 0x00 byte where the text \U00000000 was meant.
+  # A shell/grep-based check can't reliably search FOR a NUL byte (a NUL
+  # in a shell argument truncates the argument to empty, which then
+  # matches everything -- confirmed empirically while writing this check),
+  # so this reads the raw bytes directly instead.
+  if python3 -c "import sys; sys.exit(1 if b'\\x00' in open(sys.argv[1], 'rb').read() else 0)" "$TPL"; then
+    pass "n: $BASE (template) contains no literal NUL byte"
+  else
+    fail "n: $BASE (template) contains a literal NUL byte"
   fi
 done
 
