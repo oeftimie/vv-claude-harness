@@ -3533,6 +3533,77 @@ assert_rc0 "$RC" "hs2 (F041): an ambiguous --f passes, rc 0 (real sed errors, no
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F041): ambiguous --f has no deny fields (not misread as --in-place)"
 
+# F049: the backup-SUFFIX value itself is a second, independent write
+# target whenever it contains "*" -- GNU sed replaces every "*" with the
+# file argument exactly as given and resolves the result relative to the
+# CURRENT directory, not the file's own directory, so a suffix like
+# "../other/*" can genuinely write the backup somewhere entirely different
+# from the file being edited (confirmed against real gsed 4.10). Before
+# this, sed_inplace_targets() only ever checked the file argument, never
+# this second target hiding inside the suffix's own value.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i../other/'*' 's/a/b/' src/parser/f049a.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F049): attached '-i../other/*' backup-suffix target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F049): attached '-i../other/*' denial uses JSON deny form"
+assert_contains "$OUT" "other/src/parser/f049a.txt" \
+  "hs2 (F049): denial names the real out-of-scope backup path"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed --in-place=../other/'*' 's/a/b/' src/parser/f049b.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F049): long-form '--in-place=../other/*' backup-suffix target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F049): long-form '--in-place=../other/*' denial uses JSON deny form"
+assert_contains "$OUT" "other/src/parser/f049b.txt" \
+  "hs2 (F049): long-form denial names the real out-of-scope backup path"
+
+# Multiple files: each file gets its OWN backup at the suffix-derived path
+# (confirmed against real gsed: two file arguments produce two independent
+# backups), so both must be checked, not just the first.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i../other/'*' 's/a/b/' src/parser/f049e.txt src/parser/f049f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F049): multi-file backup-suffix target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F049): multi-file denial uses JSON deny form"
+
+# "Last -i wins" -- confirmed against real gsed that a LATER -i entirely
+# overrides an earlier one's suffix, not just its presence: an earlier
+# asterisk-bearing suffix must not survive if a later -i replaces it.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i.bak -i../other/'*' 's/a/b/' src/parser/f049g.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F049): a later -i's suffix wins over an earlier one exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F049): later-suffix-wins denial uses JSON deny form"
+
+# No new false positive: a later BARE -i must cancel an earlier suffix
+# entirely (no backup at all, per real gsed), not just fail to add a new
+# target -- confirming this doesn't over-deny.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i../other/'*' -i 's/a/b/' src/parser/f049h.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F049): a later bare -i cancelling an earlier suffix passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F049): later-bare-i-cancels-suffix has no deny fields"
+
+# No new false positive: a suffix with no "*" at all (the ordinary,
+# everyday ".bak"-style case) must still pass cleanly -- no new target is
+# ever derived from it.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i.bak 's/a/b/' src/parser/f049c.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F049): an ordinary '.bak' suffix (no asterisk) passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F049): ordinary '.bak' suffix has no deny fields"
+
+# No new false positive: an asterisk-bearing suffix whose DERIVED path is
+# still in scope must be allowed cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -isrc/parser/backup_'*' 's/a/b/' src/parser/f049d.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F049): an in-scope derived backup path passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F049): in-scope derived backup path has no deny fields"
+
 # F042: a decoder exception (currently none are known -- F038 rounds 2-3
 # hardened the only two found so far -- but this hook's own design is
 # fail-OPEN on ANY exception, an input-controlled lever this defense-in-
