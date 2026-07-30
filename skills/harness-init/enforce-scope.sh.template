@@ -966,7 +966,7 @@ def _separator_index(args):
     return len(args)
 
 
-def sed_inplace_targets(tokens):
+def sed_inplace_targets(args):
     # Walks sed's own arguments token by token (mirroring commit-gate.sh's
     # segment_subcommand flag-walking loop) instead of assuming a fixed
     # position is "the script": -e/-f/--expression/--file each consume
@@ -1049,17 +1049,20 @@ def sed_inplace_targets(tokens):
     # flags may precede "i" in a cluster and why (a GNU/BSD flavor
     # difference this repo's own platform makes relevant, not an
     # arbitrary choice).
-    # Compares _flag_view(tokens[0]), not the raw token, for the same reason
-    # as every other flag/name comparison in this function (F035) -- a
-    # backslash-escaped or quoted "sed" (`\sed -i ...`, `"sed" -i ...`) is
-    # ordinary shell, not adversarial, and real bash still runs sed. The raw
-    # comparison never matched those spellings, so this function returned []
-    # (no targets) and the in-place edit went entirely unchecked, confirmed
-    # live against a src/parser/-scoped fixture (F040, discovered alongside
-    # write_targets()'s identical bug in its own cp/mv/tee/rm dispatch).
-    if not tokens or _flag_view(tokens[0]) != "sed":
-        return []
-    args = tokens[1:]
+    # Takes ARGS (the tokens AFTER the command name), not the full token
+    # list including the command name itself -- the caller (write_targets())
+    # is the single place responsible for deciding this segment really
+    # invokes sed, via _resolve_command_tokens() (F044), which recognizes
+    # quoted/escaped spellings (F040), path-form indirection (/bin/sed,
+    # ./sed), env-assignment prefixes (FOO=1 sed), and wrapper commands
+    # (sudo/env/command/xargs sed). An earlier version of this function
+    # duplicated a NARROWER piece of that same resolution internally
+    # (`_flag_view(tokens[0]) != "sed"`, recognizing only quoting/escaping,
+    # not indirection) -- once write_targets() gained the fuller resolver
+    # for its own cp/mv/tee/rm dispatch, keeping a second, weaker copy of
+    # the same decision here would have silently reintroduced the exact
+    # indirection bypass F044 fixes, just for sed specifically instead of
+    # cp/mv/tee/rm.
     pre_separator_args = args[: _separator_index(args)]
     # The two presence-checking any() guards below only scan FLAG
     # positions, not positions consumed as a preceding -e/-f/--expression/
@@ -1235,6 +1238,59 @@ def split_tokens(segment):
     return [segment[m.start():m.end()] for m in re.finditer(r"\S+", masked)]
 
 
+# Wrapper commands that immediately exec the NEXT real command name given to
+# them, rather than being the write-relevant command themselves (F044).
+# xargs is included even though its full semantics (building an argv from
+# stdin, possibly with an unrelated leading command) are more elaborate than
+# the other three -- confirmed against real bash that `xargs rm` (piped a
+# filename on stdin) genuinely runs rm, and treating "xargs CMD ..." as "this
+# segment can end up running CMD ..." is the same order of approximation
+# this hook already makes elsewhere (best-effort, not a full shell parser).
+COMMAND_WRAPPERS = ("sudo", "env", "command", "xargs")
+
+VAR_ASSIGNMENT_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _resolve_command_tokens(tokens):
+    # Returns (command_name, args) -- the REAL write-relevant command name
+    # this segment ultimately invokes, and every token after it -- resolving
+    # three kinds of indirection real bash honors but the bare
+    # `command_tokens[0] in (...)` comparison this replaced did not (F044):
+    # a path-form command name (`/bin/rm`, `./rm`; resolved via
+    # os.path.basename(), the same mechanism commit-gate.sh's is_git_token()
+    # already uses for git, extended here to cp/mv/tee/rm/sed), one or more
+    # leading `VAR=value` environment-assignment prefixes (`FOO=1 rm file`,
+    # a real bash feature for setting a variable for one command, not
+    # adversarial), and the wrapper commands in COMMAND_WRAPPERS (each of
+    # which is followed by its OWN leading flags, also skipped, before the
+    # real command name). Confirmed live against real bash that every one of
+    # these forms genuinely runs the wrapped/indirected command: `/bin/rm`,
+    # `FOO=1 rm`, `command rm`, `env rm`, and `xargs rm` (piped a filename)
+    # all deleted the target file; `sudo rm` is the same mechanism as
+    # `command`/`env` (immediate exec of the given argv) and not separately
+    # re-verified here since this repo's own sandbox has no sudo access.
+    # Bounded by len(tokens) (not an unconditional while True) so a
+    # pathological all-wrapper token list (e.g. "env env env env") can never
+    # loop indefinitely -- it simply resolves to (None, []) once every token
+    # is consumed without finding a real command name, the same "not a
+    # recognized write command" outcome as any other unrecognized name.
+    i = 0
+    n = len(tokens)
+    while i < n:
+        view = _flag_view(tokens[i])
+        if VAR_ASSIGNMENT_PATTERN.match(view):
+            i += 1
+            continue
+        name = os.path.basename(view.lstrip("(\\"))
+        if name in COMMAND_WRAPPERS:
+            i += 1
+            while i < n and _flag_view(tokens[i]).startswith("-"):
+                i += 1
+            continue
+        return name, tokens[i + 1:]
+    return None, []
+
+
 def write_targets(segment):
     # Returns EVERY real write target in a segment, not just one -- a command
     # can write to multiple targets at once (`rm a b`, `tee f1 f2`, `sed -i`
@@ -1250,26 +1306,22 @@ def write_targets(segment):
     targets = redirect_targets(segment)
     command_tokens = split_tokens(strip_redirects(segment))
     if command_tokens:
-        # Compares _flag_view(command_tokens[0]), not the raw token, for the
-        # same reason cp_mv_targets()/sed_inplace_targets() compare _flag_view
-        # of their OWN flag tokens (F035): a backslash-escaped or quoted
-        # command name (`\rm src/other/f.txt`, `"rm" src/other/f.txt`, `'rm'
-        # src/other/f.txt`) is ordinary, everyday shell -- a common
-        # alias-bypass idiom, not an adversarial technique -- and real bash
-        # runs it as plain rm regardless of the escaping/quoting. The raw
-        # comparison here never matched any of those spellings, so command
-        # recognition failed entirely and NO target was ever extracted for
-        # cp/mv/tee/rm (confirmed live: rc=0, no denial, against a fixture
-        # scoped to src/parser/). This is a command-NAME recognition check,
-        # not a target-VALUE extraction, so there is no double-unquote risk:
-        # the command name itself is never returned as a target (F040).
-        command_name = _flag_view(command_tokens[0])
+        # _resolve_command_tokens() (F044) handles BOTH the quoting/escaping
+        # indirection F040 fixed (a backslash-escaped or quoted command name
+        # like `\rm src/other/f.txt`, `"rm" src/other/f.txt` -- ordinary
+        # everyday shell, not adversarial, since real bash runs it as plain
+        # rm regardless) AND path-form/wrapper-command/env-assignment
+        # indirection (`/bin/rm`, `sudo rm`, `FOO=1 rm`, ... -- see its own
+        # comment). This is a command-NAME recognition check, not a target-
+        # VALUE extraction, so there is no double-unquote risk: the command
+        # name itself is never returned as a target.
+        command_name, args = _resolve_command_tokens(command_tokens)
         if command_name in ("cp", "mv"):
-            targets = targets + cp_mv_targets(command_tokens[1:])
+            targets = targets + cp_mv_targets(args)
         elif command_name in ("tee", "rm"):
-            targets = targets + all_flagless_tokens(command_tokens[1:])
-        else:
-            targets = targets + sed_inplace_targets(command_tokens)
+            targets = targets + all_flagless_tokens(args)
+        elif command_name == "sed":
+            targets = targets + sed_inplace_targets(args)
     # Truncate at the first embedded NUL, matching real bash: a NUL byte
     # inside a word (e.g. from a $'...' escape like \x00/\000/\c@/\U00000000)
     # can never survive into a real argv element, since argv strings are
