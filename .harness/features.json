@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 52,
-  "passing": 37,
+  "passing": 38,
   "features": [
     {
       "id": "F001",
@@ -1347,19 +1347,21 @@
       "id": "F046",
       "description": "skills/harness-init/check-remaining-tasks.sh.template (the TeammateIdle blocking hook) exits 2 to keep an idle teammate working, but writes its guidance text (which feature to pick up, or the retrospective/wrap-up instruction) to STDOUT, never stderr. CONFIRMED live: `echo '{}' | bash .claude/hooks/check-remaining-tasks.sh 2>/dev/null` prints the full guidance message; the same command with `2>&1 1>/dev/null` (stderr only) prints nothing at all, rc=2. Every sibling blocking hook writes its guidance to stderr instead (`grep -c '>&2'`: enforce-scope.sh.template=2, verify-task-quality.sh.template=3), and this appears to be the channel the harness actually surfaces back to a blocked teammate -- a teammate held idle by this hook receives an empty message on every re-prompt and has no way to learn what work it's being asked to pick up, and no way to tell whether the loop is expected to keep firing or is stuck. Reachable by any teammate that finishes its assigned work while claimable features remain in features.json (e.g. a reviewer with no further review to do), which is an ordinary, non-adversarial outcome, not an edge case.",
       "priority": 30,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/check-remaining-tasks.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Reported by teammate review-pr69-f040 (the F040 reviewer), stuck in a TeammateIdle re-prompt loop after its review was delivered and merged, with 7 consecutive re-prompts each carrying \"No stderr output\". Independently confirmed live before filing: the hook's guidance text is genuinely only on stdout, stderr is empty on every invocation. Also flagged by the same reporter: this doesn't fully solve idle teammates with no assignable work (e.g. reviewers) -- the hook has no concept of role and will re-block ANY idle teammate for as long as ANY feature is claimable, which is a separate design question (role-aware idle behavior), not addressed by this fix. Per an existing memory note, the TeammateIdle payload itself carries no teammate identity, so role-aware behavior would have to live in the agent definitions, not this hook.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Reported by teammate review-pr69-f040 (the F040 reviewer), stuck in a TeammateIdle re-prompt loop after its review was delivered and merged, with 7 consecutive re-prompts each carrying \"No stderr output\". Independently confirmed live before filing: the hook's guidance text is genuinely only on stdout, stderr is empty on every invocation. Also flagged by the same reporter: this doesn't fully solve idle teammates with no assignable work (e.g. reviewers) -- the hook has no concept of role and will re-block ANY idle teammate for as long as ANY feature is claimable, which is a separate design question (role-aware idle behavior), not addressed by this fix. Per an existing memory note, the TeammateIdle payload itself carries no teammate identity, so role-aware behavior would have to live in the agent definitions, not this hook.\n\nFIXED: both echo statements in check-remaining-tasks.sh.template's final claimable-feature branch now write to stderr (`>&2`), matching the sibling hooks' convention. Ground-truthed the bug directly before fixing (stdout-only run showed the full guidance; stderr-only run was completely empty, rc=2) and re-verified the fix the same way (stdout-only now empty, stderr-only carries the guidance). Updated the one existing test that asserted against combined stdout (`run_hook` doesn't capture stderr unless the caller redirects it, so this test would have silently gone green on empty output without the `2>&1` fix) and added 2 new assertions that pin the fix specifically: stdout must be empty, and the claimable feature id must appear when only stderr is captured. Full suite 1193/1193. Mutation-tested by reverting to the pre-fix template: exactly the 2 new assertions fail, nothing else.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "redirect the two guidance echo statements to stderr (>&2), matching the sibling hooks"
+      ],
       "failure_reason": null,
       "discovered_via": "F040",
       "spec": null
