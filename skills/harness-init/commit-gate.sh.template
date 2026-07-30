@@ -758,13 +758,31 @@ def _consumes_next_token(view):
 
 
 def has_staging_flag(tokens, views):
+    # Despite the name (kept to avoid an unnecessary rename ripple through
+    # every call site and test), this now also catches a BARE PATHSPEC
+    # argument on `git commit` -- `git commit -m x tracked.txt` and
+    # `git commit -m x -- tracked.txt` both commit tracked.txt's WORKING-
+    # TREE content directly, bypassing the index entirely, exactly like
+    # -a does for the whole tree (confirmed against real git: a modified-
+    # but-unstaged tracked.txt is committed with its dirty content,
+    # `git diff --cached` shows nothing staged beforehand) -- the same
+    # compound-stage-and-commit risk DENY_COMPOUND exists to block, via a
+    # different mechanism this function never looked for at all (F052,
+    # found by adversarial review of PR #79 while confirming F051 round
+    # 2's own fix, filed separately to keep that PR scoped).
     i = 0
     n = len(tokens)
     while i < n:
         tok = tokens[i]
         view = views[i]
         if view == "--":
-            break  # everything after this is a pathspec, never a flag
+            # Everything after a REAL "--" is unconditionally a pathspec,
+            # never a flag -- if any token remains, its working-tree
+            # content gets committed directly (F052). Real git commit
+            # never uses one "--"-separated argument as an opaque value
+            # for anything, so no further skip logic applies past this
+            # point.
+            return i + 1 < n
         if tok in STAGING_FLAGS:
             return True
         if tok.startswith("--") and len(tok) > 2 and "=" not in tok:
@@ -803,6 +821,20 @@ def has_staging_flag(tokens, views):
         # exists to close.
         if _consumes_next_token(view):
             i += 1
+            i += 1
+            continue
+        if not view.startswith("-"):
+            # A flagless token that survives to here (not itself a
+            # recognized flag, and not consumed as one's value) is a bare
+            # pathspec argument (F052) -- checked against VIEW, matching
+            # every other decision in this function that determines
+            # whether real bash/git would treat something as a flag vs.
+            # opaque data; a token that genuinely starts with "-" but
+            # isn't recognized by any branch above is left alone exactly
+            # as before (an unrecognized flag attempt, not a pathspec --
+            # unchanged, pre-existing behavior, not something this
+            # feature expands).
+            return True
         i += 1
     return False
 
