@@ -10,11 +10,14 @@
 # Residual: the reformatting step assumes harness_state.py's documented contract (the
 # literal string "no claimable feature" or valid JSON) and is not independently
 # validated -- an out-of-contract module output would raise rather than fall back.
-# Guidance text (which feature to pick up next) goes to stderr, not stdout, matching
-# every sibling blocking hook (enforce-scope.sh.template, verify-task-quality.sh.template)
-# -- stderr is the channel actually surfaced back to a blocked teammate on a TeammateIdle
-# re-prompt; a stdout-only message left an idle teammate with no visible guidance at all
-# (F046, reported by a teammate stuck in a re-prompt loop with "No stderr output").
+# Guidance text (which feature to pick up next) goes to stderr, not stdout: Claude
+# Code discards a hook's stdout entirely on exit 2 and feeds only stderr back to the
+# blocked agent as its error message (code.claude.com/docs/en/hooks). A stdout-only
+# message left an idle teammate with no visible guidance at all (F046, reported by a
+# teammate stuck in a re-prompt loop with "No stderr output"). This was the first
+# hook in this repo to get the channel right -- enforce-scope.sh.template's two
+# legacy `exit 2` sites and verify-task-quality.sh.template's four all still write
+# their blocking message to stdout, the same defect, not yet fixed (see F046 notes).
 
 set -euo pipefail
 
