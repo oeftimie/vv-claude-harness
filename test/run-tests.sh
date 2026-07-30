@@ -3065,14 +3065,12 @@ assert_contains "$OUT" "src/other/f041c.txt" \
   "hs2 (F041): abbreviated attached --i=.bak denial names the real target"
 
 # The identical abbreviation gap also affects has_explicit_script's own
-# --expression=/--file= recognition in the same function, but only the
-# ATTACHED form ("--exp=script") is fixed here, not a bare abbreviated
-# form ("--exp script") -- see this function's own SED_LONG_OPTIONS
-# comment for why the bare form is a deliberate, safe residual (the two
-# "wrong by one token" errors it would otherwise introduce cancel exactly
-# for a single bare abbreviated script flag). This test pins that the
-# bare form REMAINS correctly denied (unchanged behavior, not a new fix):
-# real gsed genuinely in-place edits via `sed -i --exp 's/a/b/' file`.
+# --expression=/--file= recognition, the main token-walking loop's own
+# 2-token skip, and _separator_index()'s own copy of that skip -- all four
+# sites now share _sed_consumes_next_as_script(), recognizing a bare OR
+# attached abbreviated form identically (F041). Both the bare and attached
+# forms of `--exp`/`--fi` genuinely consume the NEXT (or attached) token as
+# their script value in real gsed.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed -i --exp 's/a/b/' src/other/f041d.txt")")
 RC=$?
@@ -3081,11 +3079,6 @@ assert_deny_json "$OUT" "hs2 (F041): -i with abbreviated bare --exp denial uses 
 assert_contains "$OUT" "src/other/f041d.txt" \
   "hs2 (F041): -i with abbreviated bare --exp denial names the real target"
 
-# The ATTACHED form is the one this fix actually changes: before it, this
-# exact command was wrongly ALLOWED (the real file target was swallowed
-# as the implicit script slot and never checked at all) -- confirmed
-# against real gsed that `sed -i --exp='s/a/b/' file` genuinely in-place
-# edits.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed -i --exp='s/a/b/' src/other/f041e.txt")")
 RC=$?
@@ -3093,6 +3086,84 @@ assert_rc0 "$RC" "hs2 (F041): -i with abbreviated attached --exp= exits 0 (JSON 
 assert_deny_json "$OUT" "hs2 (F041): -i with abbreviated attached --exp= denial uses JSON deny form"
 assert_contains "$OUT" "src/other/f041e.txt" \
   "hs2 (F041): -i with abbreviated attached --exp= denial names the real target"
+
+# CRITICAL: the bare-abbreviated-flag recognition above is not optional --
+# an earlier version of this fix left the bare form of --file/--expression
+# unrecognized in the walking loop/has_explicit_script (reasoning that a
+# single bare abbreviated script flag's errors in each cancel out,
+# landing on the same real target either way). That reasoning FAILS
+# whenever the flag's value is not itself a flagless token -- starts with
+# "-", or is exactly "--" -- because the (then-unfixed) walking loop's
+# `view.startswith("-"): i += 1` branch swallows the VALUE as an unrelated
+# flag instead of leaving it for a 2-token skip, breaking the cancellation
+# and letting the REAL file get swallowed as the implicit script instead:
+# a genuine fail-open, found by adversarial review of PR #71. Confirmed
+# against real gsed: `sed -i --fi -x.sed file` (a script-file argument
+# that happens to look like a flag) genuinely in-place edits via --file's
+# abbreviated bare form.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i --fi -x.sed src/other/f041q.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): -i --fi with a leading-dash script-file value exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F041): -i --fi leading-dash-value denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041q.txt" \
+  "hs2 (F041): -i --fi leading-dash-value denial names the real target"
+
+# Same fail-open via the OTHER discriminating value shape: a script-file
+# argument literally named "--". Confirmed against real gsed with a file
+# literally named "--" containing a script: `sed -i --fi -- file`
+# genuinely in-place edits (real bash/sed treat "--" here as --file's own
+# VALUE, not the pathspec separator, since it's consumed as the previous
+# flag's argument before separator-detection ever sees it).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i --fi -- src/other/f041r.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): -i --fi with a '--' script-file value exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F041): -i --fi '--'-value denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041r.txt" \
+  "hs2 (F041): -i --fi '--'-value denial names the real target"
+
+# The same fail-open is reachable through this PR's OWN newly-recognized
+# --in-place abbreviation, one flag later -- confirms the fix must cover
+# both the in-place guard AND the script-value recognition together.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed --in-place --fi -x.sed src/other/f041s.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): --in-place --fi with a leading-dash value exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F041): --in-place --fi leading-dash-value denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041s.txt" \
+  "hs2 (F041): --in-place --fi leading-dash-value denial names the real target"
+
+# With TWO bare abbreviated script flags, the (now-fixed) walking loop
+# must land on the REAL file, not misname the second script fragment --
+# this is the case that would have exposed the old scoped-back fix's
+# mis-naming (both flags recognized, or neither, never one bare-form
+# recognized and the other not).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i --exp 's/a/b/' --exp 's/c/d/' src/other/f041t.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): two bare abbreviated --exp flags exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F041): two bare --exp flags denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041t.txt" \
+  "hs2 (F041): two bare --exp flags denial names the REAL file, not a script fragment"
+
+# No new false positive, AND a pre-existing false positive is fixed as a
+# side effect: before recognizing --fi as an abbreviation of --file, an
+# unrecognized "--fi" left "-i.bak" looking like a flag position, which
+# IN_PLACE_CLUSTER_PATTERN then mismatched as enabling in-place mode --
+# wrongly denying a command that never edits in place at all. Confirmed
+# against real gsed: `gsed --fi -i.bak file1 file2` treats "-i.bak" as
+# --file's own script-file value (no -i/--in-place flag is present at
+# all) and performs no in-place edit, the same "value that looks like a
+# flag" class PR #52 round 4 fixed for the exact-spelling form.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed --fi -i.bak src/other/f041u.txt src/other/f041v.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): --fi -i.bak (no real in-place edit) passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F041): --fi -i.bak has no deny fields (not misread as enabling -i)"
 
 # No new false positive: an in-scope abbreviated --i must still be allowed,
 # and an AMBIGUOUS abbreviation (--f, which real GNU sed itself rejects as

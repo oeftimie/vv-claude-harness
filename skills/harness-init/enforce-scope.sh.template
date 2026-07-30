@@ -745,24 +745,46 @@ SED_SCRIPT_VALUE_FLAGS = ("-e", "-f", "--expression", "--file")
 # since --in-place is the only long option starting with "--i" (no
 # ambiguity to resolve), and every one of these was wrongly ALLOWED
 # (F041). The identical abbreviation gap also affects has_explicit_script's
-# own --expression=/--file= recognition below, but ONLY the ATTACHED form
-# ("--exp=script") is fixed there, not a bare abbreviated form ("--exp
-# script") -- confirmed both are real GNU sed syntax, but the bare form is
-# a documented, deliberate residual: has_explicit_script only decides
-# whether ONE flagless token gets swallowed as an implicit script, and the
-# main token-walking loop's OWN 2-token skip for -e/-f/--expression/--file
-# (SED_SCRIPT_VALUE_FLAGS, unchanged by this fix) already fails to skip a
-# bare abbreviated flag's value the same way has_explicit_script used to
-# fail to recognize it -- the two "wrong by one token" errors cancel
-# exactly for a single bare abbreviated script flag (verified via mutation
-# testing: reverting this entire fix does not change which target gets
-# denied for `sed -i --exp 's/a/b/' out-of-scope-file`, only for the
-# ATTACHED form). Fixing has_explicit_script's bare-form recognition
-# WITHOUT also reworking the walking loop's own token-consumption count
-# would break that symmetry and make the denial name the wrong (script
-# fragment) string instead of the real file -- not worth the added
-# surface for a case real, but not shown to be a fail-open, only a
-# find-the-wrong-string edge case with 2+ bare abbreviated script flags.
+# own --expression=/--file= recognition, AND the main token-walking loop's
+# 2-token skip for -e/-f/--expression/--file, AND _separator_index()'s own
+# copy of that same skip -- all four sites now recognize a bare OR
+# attached abbreviated form via _sed_consumes_next_as_script() below, not
+# just an exact SED_SCRIPT_VALUE_FLAGS string.
+#
+# An earlier version of this fix recognized the bare abbreviated form ONLY
+# in the in-place guard, leaving the other three sites (has_explicit_script,
+# the walking loop, _separator_index()) matching the exact-string
+# SED_SCRIPT_VALUE_FLAGS set only, on the theory that a single bare
+# abbreviated script flag's "wrong by one token" error in the (unfixed)
+# walking loop exactly cancels has_explicit_script's own "wrong by one
+# token" error, landing on the same real target either way. That theory is
+# FALSE whenever the flag's value is not itself a flagless token -- i.e.
+# starts with "-" (a script/script-file argument that happens to look like
+# a flag, e.g. a file named "-x.sed") or is exactly "--". In that case the
+# walking loop's `view.startswith("-"): i += 1` branch swallows the VALUE
+# as if it were an unrelated flag instead of leaving it for the
+# (unfixed) 2-token skip to consume, so the cancellation breaks down and
+# the REAL target is what gets swallowed as the implicit script instead --
+# a genuine fail-open, not a cosmetic mis-naming. Confirmed against real
+# gsed 4.10 (adversarial review of PR #71): `sed -i --fi -x.sed
+# out-of-scope-file` and `sed -i --fi -- out-of-scope-file` (with a file
+# literally named "--" containing a script) both genuinely in-place edit
+# the real file, and the hook (with only the in-place guard fixed)
+# silently ALLOWed both -- reachable even against this fix's OWN newly
+# recognized --in-place, since `sed --in-place --fi -x.sed file` hits the
+# identical gap one flag later. This fix closes it at all four sites with
+# one shared predicate, confirmed by mutation testing that: (a) all four
+# shapes above now DENY and name the real file, (b) the previously
+# mis-named 2-flag case (`sed -i --exp 's/a/b/' --exp 's/c/d/'
+# out-of-scope-file`) now correctly names the real file instead of the
+# second script fragment, and (c) a genuine pre-existing FALSE POSITIVE is
+# also fixed as a side effect: `sed --fi -i.bak file1 file2` was wrongly
+# DENIED (the unrecognized `--fi` left "-i.bak" looking like a flag
+# position, which IN_PLACE_CLUSTER_PATTERN then mismatched as enabling
+# in-place mode) even though real gsed treats "-i.bak" as --file's own
+# script-file value and performs no in-place edit at all -- the same
+# "value that looks like a flag" bug class PR #52 round 4 already fixed
+# for the exact-spelling form, reintroduced here via abbreviation.
 SED_LONG_OPTIONS = (
     "--quiet", "--silent", "--debug", "--expression", "--file",
     "--follow-symlinks", "--in-place", "--line-length", "--posix",
@@ -801,6 +823,28 @@ def _sed_long_flag_name(tok):
     if not tok.startswith("--"):
         return None
     return _resolve_sed_long_flag(tok.split("=", 1)[0])
+
+
+def _sed_consumes_next_as_script(view):
+    # True if `view` is a BARE (not self-contained) script-value flag that
+    # consumes the NEXT token as its value -- either an exact
+    # SED_SCRIPT_VALUE_FLAGS entry, or an unambiguous abbreviation of
+    # --expression/--file with no attached "=value" (F041). An attached
+    # form ("--exp=script") is a single self-contained token that must NOT
+    # be counted here (no extra token to skip) -- distinguished by the
+    # absence of "=" in `view`, since _sed_long_flag_name() resolves the
+    # name portion the same way for both attached and bare forms and can't
+    # itself tell them apart. This is the ONE predicate all four places in
+    # this function that need to agree on "does this flag position consume
+    # 2 tokens or 1" must share -- _separator_index(), the flag_positions
+    # walk, has_explicit_script, and the main token-walking loop -- so an
+    # abbreviated flag can never be recognized at one site and missed at
+    # another (the same guard-vs-loop disagreement risk F029/F052
+    # established for this file, now extended to abbreviation as well as
+    # quoting).
+    if view in SED_SCRIPT_VALUE_FLAGS:
+        return True
+    return "=" not in view and _sed_long_flag_name(view) in ("--expression", "--file")
 
 
 # Matches a short-flag cluster ending in "i" (F037): both GNU's and BSD/
@@ -858,7 +902,7 @@ def _separator_index(args):
     while i < len(args):
         if _flag_view(args[i]) == "--":
             return i
-        i += 2 if _flag_view(args[i]) in SED_SCRIPT_VALUE_FLAGS else 1
+        i += 2 if _sed_consumes_next_as_script(_flag_view(args[i])) else 1
     return len(args)
 
 
@@ -972,7 +1016,7 @@ def sed_inplace_targets(tokens):
     fi = 0
     while fi < len(pre_separator_args):
         flag_positions.append(fi)
-        if _flag_view(pre_separator_args[fi]) in SED_SCRIPT_VALUE_FLAGS:
+        if _sed_consumes_next_as_script(_flag_view(pre_separator_args[fi])):
             fi += 2
         else:
             fi += 1
@@ -984,11 +1028,8 @@ def sed_inplace_targets(tokens):
         return []
     has_explicit_script = any(
         _flag_view(pre_separator_args[idx]) in SED_SCRIPT_VALUE_FLAGS
-        or (
-            "=" in _flag_view(pre_separator_args[idx])
-            and _sed_long_flag_name(_flag_view(pre_separator_args[idx]))
-            in ("--expression", "--file")
-        )
+        or _sed_long_flag_name(_flag_view(pre_separator_args[idx]))
+        in ("--expression", "--file")
         for idx in flag_positions
     )
     targets = []
@@ -1003,7 +1044,7 @@ def sed_inplace_targets(tokens):
             i += 1
             continue
         if not past_separator:
-            if view in SED_SCRIPT_VALUE_FLAGS:
+            if _sed_consumes_next_as_script(view):
                 i += 2
                 continue
             if view == "-i" and i + 1 < len(args) and _flag_view(args[i + 1]) == "":
