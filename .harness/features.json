@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 56,
-  "passing": 44,
+  "total_features": 57,
+  "passing": 45,
   "features": [
     {
       "id": "F001",
@@ -1549,20 +1549,30 @@
       "id": "F054",
       "description": "This repo's .claude/settings.json wires enforce-scope.sh only on the PreToolUse Edit|Write|MultiEdit matcher -- unlike SKILL.md's own canonical settings.json (skills/harness-init/SKILL.md, ~lines 300-326), which wires enforce-scope.sh AND commit-gate.sh on the Bash matcher too (alongside verify-git-identity.sh, which IS wired there in this repo). CONFIRMED: this repo's Bash matcher only invokes verify-git-identity.sh; the entire F023-F046 scope-enforcement hardening arc for Bash-based writes (quoting, escaping, traversal, NUL-truncation, sed -i clustering, long-option abbreviation) is installed (once F047 merges) but never invoked here, and a scoped teammate could write outside its assigned scope via a Bash command today. commit-gate.sh (now installed by F047, but inert) is in the same state -- nothing invokes it. Separately, this repo's settings.json invokes hooks as `bash .claude/hooks/<name>.sh`, while context_summary.md's own OVI-48 decision (2026-07-22) records the canonical invocation as `\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/<name>.sh` -- harmless in practice since every hook self-anchors via PROJECT_ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\", but the same settings.json-vs-documented-decision drift family, worth reconciling in the same pass. This is a live behavior change (gates every future Bash tool call in this repo, not a mechanical file resync), so it needs its own careful testing (in particular: confirm commit-gate.sh doesn't interfere with this repo's own normal add-then-commit workflow) and its own dedicated review, separate from F047's file-level resync.",
       "priority": 37,
-      "status": "pending",
+      "status": "passing",
       "scope": [
-        ".claude/settings.json"
+        ".claude/settings.json",
+        ".harness/harness.json",
+        "skills/harness-init/commit-gate.sh.template",
+        ".claude/hooks/commit-gate.sh",
+        "test/run-tests.sh"
       ],
       "depends_on": [
         "F047"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by review-pr81-f047 while verifying F047's claim that this repo's own gating now reflects the hardened design -- found the file-level resync was correct but two settings.json gaps make parts of it inert (enforce-scope.sh and commit-gate.sh not wired on the Bash matcher) and one invocation-style drift from a documented decision (OVI-48's `\"$CLAUDE_PROJECT_DIR\"/...` form vs. the live `bash ...` form). Independently confirmed by the lead against SKILL.md's own canonical settings.json and against context_summary.md's OVI-48 entry before filing. depends_on F047 only in the sense that F047's file-level resync (in particular commit-gate.sh's installation) should land first, so wiring it doesn't reference a non-existent file.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by review-pr81-f047 while verifying F047's claim that this repo's own gating now reflects the hardened design -- found the file-level resync was correct but two settings.json gaps make parts of it inert (enforce-scope.sh and commit-gate.sh not wired on the Bash matcher) and one invocation-style drift from a documented decision (OVI-48's `\"$CLAUDE_PROJECT_DIR\"/...` form vs. the live `bash ...` form). Independently confirmed by the lead against SKILL.md's own canonical settings.json and against context_summary.md's OVI-48 entry before filing. depends_on F047 only in the sense that F047's file-level resync (in particular commit-gate.sh's installation) should land first, so wiring it doesn't reference a non-existent file.\n\nFIXED: wired enforce-scope.sh and commit-gate.sh onto the Bash PreToolUse matcher, matching SKILL.md's own canonical settings.json exactly. Also reconciled the invocation-style drift (bash .claude/hooks/<name>.sh -> \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/<name>.sh) across every hook command and the permissions allowlist entry. Verified safe BEFORE wiring live: confirmed no .claude/teammate-scope.txt exists for this lead session (enforce-scope.sh continues to exit 0 unconditionally), and tested commit-gate.sh directly against this session's own actual commit pattern (separate git add then git commit -m, never -a/-i/a bare pathspec) plus every other command type used throughout this sweep (git status, gh pr merge, bash test/run-tests.sh, python3 -c) -- all correctly no-op or allow. Discovered live, immediately after wiring: this session's own established habit of combining `git add` and `git commit` into ONE Bash tool call (joined by a newline) is now correctly denied as compound-stage-and-commit, since command_segments() treats a literal newline as a control operator exactly like &&, splitting the one call into an add segment and a commit segment within the same parsed command -- confirmed this is the hook working exactly as designed (a real pre-commit hook can't scan an index that only just got staged in the same breath), not a bug, and adapted by issuing add/commit as separate calls going forward; saved as a session/project memory note so future work in this repo doesn't rediscover it. Added a test mirroring the existing SKILL.md-settings-block check but against this repo's actual live settings.json: confirms enforce-scope.sh/commit-gate.sh/verify-git-identity.sh are all wired on Bash and the CLAUDE_PROJECT_DIR-absolute form is used throughout. Full suite 1266/1266. Mutation-tested by reverting settings.json to its pre-fix state: exactly the 1 new assertion fails (a single combined check, matching the existing SKILL.md-settings-block test's own pattern for this kind of structural check), nothing else.\n\nROUND 2 (review of PR #87): reviewer found a real, blocking consequence of this fix that round 1 didn't anticipate: once commit-gate.sh is live on the Bash matcher, this repo's own test/run-tests.sh -- which deliberately stages secret-SHAPED synthetic fixture data throughout the F023-F052 arc to test the secret scanner itself -- can no longer be committed at all. Independently reproduced by the lead (as two properly-separated git add / git commit calls, learning from the same newline-joining mistake this session's own memory note now documents): confirmed a real secret-assignment denial on an ordinary fixture addition. Fixed by extending commit-gate.sh.template's existing *.env.example exemption with an opt-in, harness.json-configured secret_scan_exempt_paths array (mirrors style_gate_enabled()'s own pattern) [CORRECTED, round 3 review of PR #87: the original wording here claimed harness.json is lead-owned, so a scoped teammate can't self-grant an exemption -- FALSE, verified live: enforce-scope.sh's own LEAD_OWNED set only ever protects features.json/context_summary.md/claude-progress.txt; harness.json is protected only by the ordinary scope check, so a teammate scoped to .harness/ (or to harness.json itself) genuinely can edit this exemption list. This is a tuning knob for a project's own known, synthetic test fixtures, not a defense against a teammate who already has write access to harness.json -- corrected in the template's own comments, this notes field, and the test comment. Filed F058 to make harness.json genuinely LEAD_OWNED as its own feature, since that's a real behavior change beyond F054's remit]. Deliberately kept the exemption MECHANISM in the shared template (byte-identical across template and live copy, satisfying F047's drift guard) while configuring the specific exempt path (test/run-tests.sh) in this repo's own harness.json -- rather than hardcoding it into the live copy, which would have reintroduced exactly the drift F047 was filed to close. Verified end-to-end in a fresh fixture: without the config, the fixture addition denies; with it, the identical commit allows, and a different non-exempted path with the same content still correctly denies. Also fixed the reviewer's minor finding: the invocation-style guard used a loose text.count(...) < 5 threshold that could pass with some individual hook commands reverted to the cwd-relative form -- replaced with a per-command check over the parsed JSON, verified this variant now correctly fails. Added 5 new assertions for the exemption mechanism. Full suite after all fixes: 1271/1271.\n\nAlso documented, per the same review round, that exempting a path wholesale means a real secret later landing in that same file is also no longer caught -- an accepted cost for known synthetic test fixtures, not a residual to close.",
       "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "scope_expansions": [
+        ".harness/harness.json",
+        "skills/harness-init/commit-gate.sh.template",
+        ".claude/hooks/commit-gate.sh"
+      ],
+      "approaches_tried": [
+        "wire enforce-scope.sh and commit-gate.sh onto the Bash matcher and reconcile the CLAUDE_PROJECT_DIR invocation form, matching SKILL.md's canonical settings.json exactly, after verifying live against this session's own actual commands that the change is safe"
+      ],
       "failure_reason": null,
       "discovered_via": "F047",
       "spec": null
@@ -1610,6 +1620,28 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F048",
+      "spec": null
+    },
+    {
+      "id": "F058",
+      "description": "enforce-scope.sh.template's LEAD_OWNED set (and the mirrored Edit/Write case statement) protects exactly three files -- .harness/features.json, .harness/context_summary.md, .harness/claude-progress.txt -- regardless of a teammate's own scope. .harness/harness.json is NOT in this set: it's protected only by the ordinary scope check, so a teammate scoped to `.harness/` (or to harness.json specifically) can edit it directly via Edit/Write or Bash. CONFIRMED live: with scope=`.harness/`, both a Write to .harness/harness.json and a Bash redirect (`> .harness/harness.json`) return ALLOW, while the same scope still denies a Write to features.json (genuinely lead-owned, denied regardless of scope). harness.json now holds git identity config, prep/stamp config, and (as of F054) a security-relevant commit-gate.sh secret-scan exemption list -- all things a scoped teammate arguably shouldn't be able to edit unilaterally the way it can edit its own assigned source files. This is a genuine behavior change (adding a file to LEAD_OWNED denies ALL teammates editing it, not just out-of-scope ones), so it needs its own feature and review, not a fold-in to whatever last touched harness.json's schema.",
+      "priority": 40,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        ".claude/hooks/enforce-scope.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by review-pr87-f054 while verifying F054's own claim that harness.json is lead-owned -- that claim was false (never true; F054's own comments and notes invented it rather than reflecting existing behavior), and the reviewer correctly flagged it as a security claim inside a security hook that ships to every downstream harness user via the template. Independently confirmed live by the lead (Write and Bash-redirect both ALLOW under a .harness/ scope, contrasted against features.json's genuine LEAD_OWNED denial) before filing. F054's own claim was corrected to describe the ACTUAL (weaker) guarantee rather than left false; this feature is the real fix, deliberately scoped separately per the reviewer's own recommendation (their option (a) vs. the smaller, in-scope option (b) F054 itself took).",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F054",
       "spec": null
     }
   ]

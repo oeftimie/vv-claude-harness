@@ -4247,6 +4247,62 @@ else
   fail "ht: SKILL.md settings block -- $SETTINGS_BLOCK_ERRORS"
 fi
 
+# F054: this repo runs on its own harness, so its OWN live .claude/settings.json
+# is what actually WIRES the installed hooks (F047's own resync fixed their
+# CONTENT, but wiring is a separate concern this checks) -- confirmed live that
+# enforce-scope.sh and commit-gate.sh were never invoked on the Bash matcher
+# at all, so the entire F023-F046 Bash-scope-enforcement arc, and every commit-
+# gate check, were installed but inert in this repo. Mirrors the SKILL.md check
+# above, but against the actual live file, not the distributable example.
+LIVE_SETTINGS_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import json
+import os
+import sys
+
+root = sys.argv[1]
+with open(os.path.join(root, ".claude", "settings.json")) as fh:
+    text = fh.read()
+    data = json.loads(text)
+
+if "bash .claude/hooks/" in text:
+    print("live settings.json still invokes a hook cwd-relative (bash .claude/hooks/...)")
+if '"Bash(bash .claude/hooks/*.sh)"' in text:
+    print("live settings.json's permissions allowlist still lists the cwd-relative hook form")
+
+# Per-command check (not a loose text.count()): every actual hook command,
+# plus statusLine, must individually use the canonical absolute form --
+# reverting any ONE of them to the cwd-relative form while leaving the
+# total occurrence count high enough elsewhere would otherwise pass a
+# threshold-based check silently (found by adversarial review of PR #87).
+CANONICAL_PREFIX = '"$CLAUDE_PROJECT_DIR"/.claude/hooks/'
+hook_commands = [("statusLine", data.get("statusLine", {}).get("command", ""))]
+for event, entries in data.get("hooks", {}).items():
+    for entry in entries:
+        for h in entry.get("hooks", []):
+            hook_commands.append((f"{event}/{entry.get('matcher', '<no-matcher>')}", h.get("command", "")))
+for label, cmd in hook_commands:
+    # Only checks commands that actually invoke a named .claude/hooks/*
+    # script -- PostToolUse's own command is an inline jq/bash one-liner
+    # with no hook script of its own, so it's exempt from this check by
+    # construction, not overlooked.
+    if ".claude/hooks/" in cmd and not cmd.startswith(CANONICAL_PREFIX):
+        print(f"{label}'s command does not start with the CLAUDE_PROJECT_DIR-absolute form: {cmd!r}")
+
+bash_hooks = []
+for entry in data.get("hooks", {}).get("PreToolUse", []):
+    if entry.get("matcher") == "Bash":
+        bash_hooks = [h["command"] for h in entry.get("hooks", [])]
+for name in ("enforce-scope.sh", "commit-gate.sh", "verify-git-identity.sh"):
+    if not any(name in cmd for cmd in bash_hooks):
+        print(f"live settings.json's Bash matcher is missing {name}")
+PYEOF
+)
+if [ -z "$LIVE_SETTINGS_ERRORS" ]; then
+  pass "ht (F054): this repo's live settings.json wires enforce-scope.sh/commit-gate.sh on Bash"
+else
+  fail "ht (F054): live settings.json -- $LIVE_SETTINGS_ERRORS"
+fi
+
 echo ""
 echo "== harness_state.py =="
 
@@ -5342,6 +5398,49 @@ OUT=$(run_commit_gate "$DIR_CG_ENVEX" 'git commit -m "add example"')
 RC=$?
 assert_rc0 "$RC" "cg: .env.example staged passes despite secret-shaped content"
 assert_not_contains "$OUT" "permissionDecision" "cg: .env.example exemption has no deny fields"
+
+# F054: a project's own test suite may need to deliberately stage secret-
+# SHAPED synthetic fixture data to test a scanner like this one (discovered
+# live: once this hook was wired onto the Bash matcher, this repo's own
+# test/run-tests.sh could no longer be committed at all). Opt-in via
+# harness.json's secret_scan_exempt_paths array -- NOT a hard security
+# boundary: harness.json is protected only by the ordinary scope check, not
+# enforce-scope.sh's own LEAD_OWNED set, so a teammate scoped to `.harness/`
+# could add its own exemption here (found by adversarial review of PR #87;
+# a stronger LEAD_OWNED guarantee is tracked separately).
+DIR_CG_EXEMPTCFG="$WORK/commit-gate-exempt-config"
+make_fixture "$DIR_CG_EXEMPTCFG"
+install_hooks "$DIR_CG_EXEMPTCFG"
+python3 - "$DIR_CG_EXEMPTCFG/.harness/harness.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+data["secret_scan_exempt_paths"] = ["fixtures.py"]
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+echo 'api_key = "abcdefghijklmnopqrstuvwx"' > "$DIR_CG_EXEMPTCFG/fixtures.py"
+git -C "$DIR_CG_EXEMPTCFG" add fixtures.py
+OUT=$(run_commit_gate "$DIR_CG_EXEMPTCFG" 'git commit -m "add fixtures"')
+RC=$?
+assert_rc0 "$RC" "cg (F054): configured exempt path passes despite secret-shaped content"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg (F054): configured exempt path has no deny fields"
+
+# No new false positive: a DIFFERENT, non-exempted path with the same
+# secret-shaped content must still correctly deny.
+echo 'api_key = "abcdefghijklmnopqrstuvwx"' > "$DIR_CG_EXEMPTCFG/other.py"
+git -C "$DIR_CG_EXEMPTCFG" add other.py
+OUT=$(run_commit_gate "$DIR_CG_EXEMPTCFG" 'git commit -m "add other"')
+RC=$?
+assert_rc0 "$RC" "cg (F054): a non-exempted path with secret-shaped content exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg (F054): non-exempted path denial uses JSON deny form"
+assert_contains "$OUT" "secret-assignment" \
+  "cg (F054): non-exempted path denial names secret-assignment"
 
 DIR_CG_STYLEOFF="$WORK/commit-gate-style-off"
 make_fixture "$DIR_CG_STYLEOFF"

@@ -10,6 +10,7 @@
     "ssh_host": "github.com"
   },
   "team_structure": null,
+  "secret_scan_exempt_paths": ["test/run-tests.sh"],
   "prep": {
     "linear": {
       "ready_label": "harness-ready",

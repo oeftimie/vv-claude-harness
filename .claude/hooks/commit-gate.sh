@@ -38,7 +38,23 @@
 #      this trades some false positives for fewer false negatives, acceptable
 #      since the pattern set is the project's own tuning surface) and
 #      URL-embedded credentials (any scheme, not just http/https). Any staged
-#      path whose basename matches `*.env.example` is exempt. Denial names the
+#      path whose basename matches `*.env.example` is exempt, as is any path
+#      listed verbatim in harness.json's `secret_scan_exempt_paths` array
+#      (opt-in, absent/non-array means no additional exemptions) -- for a
+#      project whose own test suite deliberately stages secret-SHAPED fixture
+#      data to test a scanner like this one (F054, discovered live: this
+#      repo's own test/run-tests.sh could no longer be committed once this
+#      hook was wired onto the Bash matcher). harness.json is protected only
+#      by the ORDINARY scope check (unlike features.json/context_summary.md/
+#      claude-progress.txt, which enforce-scope.sh's own LEAD_OWNED set
+#      denies regardless of scope) -- a teammate scoped to `.harness/` or to
+#      harness.json specifically can edit this exemption list itself (found
+#      by adversarial review of PR #87; a stronger, LEAD_OWNED guarantee is
+#      tracked separately, since making it true is a real behavior change
+#      beyond this feature's own remit). Exempting a path wholesale means a
+#      REAL secret that later lands in that same file is also no longer
+#      caught -- an accepted cost for a project's own known, synthetic test
+#      fixtures, not a residual to close. Denial names the
 #      finding class, file, and line number -- NEVER the matched value or line
 #      content, to avoid writing a candidate secret into the transcript or hook
 #      logs. Pattern set is tuned by editing this copied-then-project-owned file
@@ -902,15 +918,42 @@ def added_lines(diff_text):
             current_line += 1
 
 
-def is_exempt(path):
-    return fnmatch.fnmatch(path.rsplit("/", 1)[-1], "*.env.example")
+def secret_scan_exempt_paths(project_root):
+    # Opt-in, harness.json-configured list of paths (verbatim, relative to
+    # project_root, matching the diff's own path form) additionally exempt
+    # from the secret scan -- for a project whose own test suite must stage
+    # secret-SHAPED synthetic fixture data to test a scanner like this one
+    # (F054). Mirrors style_gate_enabled()'s own read-harness.json-or-
+    # default-off pattern. NOT a hard security boundary: harness.json is
+    # protected only by the ordinary scope check, not enforce-scope.sh's own
+    # LEAD_OWNED set, so a teammate scoped to `.harness/` (or to harness.json
+    # itself) can add its own path here (found by adversarial review of
+    # PR #87). This exemption is a tuning knob for a project's own known,
+    # synthetic test fixtures, not a defense against a teammate who already
+    # has write access to harness.json.
+    path = os.path.join(project_root, ".harness", "harness.json")
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    paths = data.get("secret_scan_exempt_paths")
+    if not isinstance(paths, list):
+        return []
+    return [p for p in paths if isinstance(p, str)]
 
 
-def find_secret(lines, deadline):
+def is_exempt(path, exempt_paths):
+    if fnmatch.fnmatch(path.rsplit("/", 1)[-1], "*.env.example"):
+        return True
+    return path in exempt_paths
+
+
+def find_secret(lines, deadline, exempt_paths):
     for path, lineno, content in lines:
         if time.monotonic() > deadline:
             return None
-        if is_exempt(path):
+        if is_exempt(path, exempt_paths):
             continue
         scanned = content[:SECRET_SCAN_MAX_LEN]
         if SECRET_PATTERN.search(scanned):
@@ -971,7 +1014,8 @@ def main():
             return
         lines = list(added_lines(diff_text))
         deadline = time.monotonic() + SCAN_TIME_BUDGET_SECONDS
-        reason = find_secret(lines, deadline)
+        exempt_paths = secret_scan_exempt_paths(project_root)
+        reason = find_secret(lines, deadline, exempt_paths)
         if reason:
             print(reason)
             return
