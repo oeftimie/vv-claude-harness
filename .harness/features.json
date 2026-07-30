@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 52,
+  "total_features": 53,
   "passing": 38,
   "features": [
     {
@@ -1356,7 +1356,7 @@
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
       "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
-      "notes": "Reported by teammate review-pr69-f040 (the F040 reviewer), stuck in a TeammateIdle re-prompt loop after its review was delivered and merged, with 7 consecutive re-prompts each carrying \"No stderr output\". Independently confirmed live before filing: the hook's guidance text is genuinely only on stdout, stderr is empty on every invocation. Also flagged by the same reporter: this doesn't fully solve idle teammates with no assignable work (e.g. reviewers) -- the hook has no concept of role and will re-block ANY idle teammate for as long as ANY feature is claimable, which is a separate design question (role-aware idle behavior), not addressed by this fix. Per an existing memory note, the TeammateIdle payload itself carries no teammate identity, so role-aware behavior would have to live in the agent definitions, not this hook.\n\nFIXED: both echo statements in check-remaining-tasks.sh.template's final claimable-feature branch now write to stderr (`>&2`), matching the sibling hooks' convention. Ground-truthed the bug directly before fixing (stdout-only run showed the full guidance; stderr-only run was completely empty, rc=2) and re-verified the fix the same way (stdout-only now empty, stderr-only carries the guidance). Updated the one existing test that asserted against combined stdout (`run_hook` doesn't capture stderr unless the caller redirects it, so this test would have silently gone green on empty output without the `2>&1` fix) and added 2 new assertions that pin the fix specifically: stdout must be empty, and the claimable feature id must appear when only stderr is captured. Full suite 1193/1193. Mutation-tested by reverting to the pre-fix template: exactly the 2 new assertions fail, nothing else.",
+      "notes": "Reported by teammate review-pr69-f040 (the F040 reviewer), stuck in a TeammateIdle re-prompt loop after its review was delivered and merged, with 7 consecutive re-prompts each carrying \"No stderr output\". Independently confirmed live before filing: the hook's guidance text is genuinely only on stdout, stderr is empty on every invocation. Also flagged by the same reporter: this doesn't fully solve idle teammates with no assignable work (e.g. reviewers) -- the hook has no concept of role and will re-block ANY idle teammate for as long as ANY feature is claimable, which is a separate design question (role-aware idle behavior), not addressed by this fix. Per an existing memory note, the TeammateIdle payload itself carries no teammate identity, so role-aware behavior would have to live in the agent definitions, not this hook.\n\nFIXED: both echo statements in check-remaining-tasks.sh.template's final claimable-feature branch now write to stderr (`>&2`), matching the sibling hooks' convention. Ground-truthed the bug directly before fixing (stdout-only run showed the full guidance; stderr-only run was completely empty, rc=2) and re-verified the fix the same way (stdout-only now empty, stderr-only carries the guidance). Updated the one existing test that asserted against combined stdout (`run_hook` doesn't capture stderr unless the caller redirects it, so this test would have silently gone green on empty output without the `2>&1` fix) and added 2 new assertions that pin the fix specifically: stdout must be empty, and the claimable feature id must appear when only stderr is captured. Full suite 1193/1193. Mutation-tested by reverting to the pre-fix template: exactly the 2 new assertions fail, nothing else.\n\nCORRECTION (review of PR #80): the FIXED paragraph above, and the description field's `grep -c '>&2'` comparison, both claimed the sibling hooks (enforce-scope.sh.template, verify-task-quality.sh.template) already write their blocking guidance to stderr. Ground-truthed and confirmed FALSE: the `>&2` counts quoted in the description are comment lines and progress-log lines, not blocking guidance -- both of enforce-scope.sh.template's `exit 2` sites (:166, :212) and all four of verify-task-quality.sh.template's (:47, :81, :92, :125), plus verify-git-identity.sh.template's one (:68), write their actual rejection/block message via plain `echo` to stdout. This fix is correct, but for a different, now-verified reason: per Claude Code's own docs (code.claude.com/docs/en/hooks, confirmed via direct fetch), exit 2 discards a hook's stdout entirely and feeds only stderr back to the blocked agent as its error message -- this was the FIRST hook in this repo to get that channel right, not one matching an existing convention. Comment in the template and this notes field corrected accordingly. Filed F053 (discovered_via F046) for the identical defect in the three sibling hooks, since PreToolUse/Stop/SubagentStop/TeammateIdle are all confirmed exit-2-discards-stdout paths, but TaskCompleted's exit-2 semantics were not independently confirmed and need checking before scoping that fix.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [
@@ -1498,6 +1498,29 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F051",
+      "spec": null
+    },
+    {
+      "id": "F053",
+      "description": "enforce-scope.sh.template's two legacy `exit 2` sites (:166, :212) and verify-task-quality.sh.template's four (:47, :81, :92, :125) all write their blocking guidance (\"Edit blocked: ...\", \"Task rejected: ...\") via plain `echo` to stdout, the identical defect F046 fixed in check-remaining-tasks.sh.template. Per Claude Code's own docs (code.claude.com/docs/en/hooks), exit 2 discards a hook's stdout entirely and feeds only stderr back to the blocked agent -- confirmed the effect table names PreToolUse (enforce-scope.sh's event), Stop, SubagentStop, and TeammateIdle explicitly, but does NOT explicitly confirm TaskCompleted's exit-2 semantics (verify-task-quality.sh's event), which needs independent confirmation before scoping that half of this fix. verify-git-identity.sh.template (:68, PreToolUse) has the same defect too but is not yet confirmed as reachable by an idle/blocked teammate the same way (its block is a same-turn PreToolUse denial, not a re-prompt loop) -- worth checking whether that distinction matters before folding it in.",
+      "priority": 36,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "skills/harness-init/verify-task-quality.sh.template",
+        "skills/harness-init/verify-git-identity.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by review-pr80-f046 while verifying F046's claim that the sibling hooks already write blocking guidance to stderr -- that claim was false, and the reviewer found the same stdout-only defect present in all three sibling hooks instead. Independently confirmed by the lead (grep + direct read of each exit-2 site) before filing. PreToolUse/Stop/SubagentStop/TeammateIdle are confirmed exit-2-discards-stdout paths per the Claude Code docs; TaskCompleted's exit-2 semantics (relevant to verify-task-quality.sh.template specifically) were not independently confirmed by the reviewer and should be checked before implementing that part of this fix.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F046",
       "spec": null
     }
   ]
