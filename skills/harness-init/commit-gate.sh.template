@@ -327,6 +327,65 @@ def mask_quotes(command):
     return QUOTE_SPAN_PATTERN.sub(repl, command)
 
 
+ANSI_C_SIMPLE_ESCAPES = {
+    "\\": "\\", "'": "'", '"': '"',
+    "a": "\a", "b": "\b", "e": "\x1b", "f": "\f",
+    "n": "\n", "r": "\r", "t": "\t", "v": "\v",
+}
+ANSI_C_ESCAPE_PATTERN = re.compile(
+    r"\\(?:x([0-9A-Fa-f]{1,2})|([0-7]{1,3})|c(.)"
+    r"|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})|(.))"
+)
+
+
+def _decode_ansi_c_escape(m):
+    # Ported verbatim from enforce-scope.sh.template's own decoder (F038),
+    # since this hook's own unquote_token() (below) had the identical gap:
+    # a $'...' wrapper was stripped with a plain regex substitution that
+    # never decoded what was INSIDE it, so an escaped spelling of "git"
+    # (`$'\x67it'`) reached is_git_token() undecoded and failed to match --
+    # which, because is_git_token() is the ONLY thing deciding whether a
+    # segment is git-shaped at all, silently disabled this hook's ENTIRE
+    # analysis (both the compound-stage-and-commit check and the secret
+    # scan) for that segment, not just a cosmetic miss (F051, adversarial
+    # review of PR #77). See enforce-scope.sh.template's own copy of this
+    # function for the full formula verification, version-split notes
+    # (bash 3.2.57 vs 5.3.15's differing \c? behavior), and the surrogate/
+    # multi-char-uppercase crash history (F038 rounds 1-3) -- reproduced
+    # here unchanged since the decode logic itself is bash-version
+    # behavior, not specific to either hook.
+    hexdigits, octdigits, ctrlchar, u4, u8, other = (
+        m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6)
+    )
+    if hexdigits is not None:
+        return chr(int(hexdigits, 16))
+    if octdigits is not None:
+        return chr(int(octdigits, 8) & 0xFF)
+    if ctrlchar is not None:
+        upper = ctrlchar.upper()
+        if upper == "?":
+            return "\x7f"
+        if len(upper) != 1:
+            upper = ctrlchar
+        return chr(ord(upper) & 0x1F)
+    if u4 is not None:
+        return _unicode_escape_or_literal(u4, "u")
+    if u8 is not None:
+        return _unicode_escape_or_literal(u8, "U")
+    return ANSI_C_SIMPLE_ESCAPES.get(other, "\\" + other)
+
+
+def _unicode_escape_or_literal(hexdigits, prefix):
+    # Ported alongside _decode_ansi_c_escape() (F051); see
+    # enforce-scope.sh.template's own copy for the full incident this
+    # closes (a lone surrogate crashing this hook's own denial-printing
+    # step into a silent no-op).
+    codepoint = int(hexdigits, 16)
+    if 0xD800 <= codepoint <= 0xDFFF or codepoint > 0x10FFFF:
+        return "\\" + prefix + hexdigits
+    return chr(codepoint)
+
+
 def unquote_token(token):
     # Strips quote characters from a single ALREADY-TOKENIZED word -- never
     # used to re-segment or re-tokenize, only to normalize a token (which may
@@ -335,8 +394,29 @@ def unquote_token(token):
     # string. Safe here specifically because split_tokens() has already
     # resolved token boundaries using mask_quotes(); this function never
     # looks at whitespace or separators (F025, PR #44).
-    token = re.sub(r"\$'((?:[^'\\]|\\.)*)'", r"\1", token)
-    return token.replace("'", "").replace('"', "")
+    #
+    # A $'...' span's inner text is now decoded per bash's ANSI-C quoting
+    # grammar in this SAME substitution, and a bare backslash outside
+    # quotes is now stripped too (both ported from enforce-scope.sh.
+    # template's own unquote_token(), F033/F038 and F031 respectively) --
+    # this function previously only stripped the $'...' WRAPPER without
+    # decoding what was inside it, and never touched an interior backslash
+    # at all, so `g\it`/`\g\i\t`/`$'\x67it'` all reached is_git_token()
+    # still spelling something other than the bare string "git", silently
+    # disabling this hook's entire analysis for that segment (F051, found
+    # by adversarial review of PR #77). Confirmed live before this fix:
+    # `g\it commit -a -m "test"` and `$'\x67it' commit -a -m "test"` both
+    # silently ALLOWed a real compound-stage-and-commit violation, and
+    # with a real secret staged, `g\it commit -m "add config"` silently
+    # ALLOWed it through where the bare `git commit -m "add config"`
+    # correctly denied secret-assignment.
+    token = re.sub(
+        r"\$'((?:[^'\\]|\\.)*)'",
+        lambda m: ANSI_C_ESCAPE_PATTERN.sub(_decode_ansi_c_escape, m.group(1)),
+        token,
+    )
+    token = token.replace("'", "").replace('"', "")
+    return re.sub(r"\\(.)", r"\1", token)
 
 
 def split_tokens(segment):

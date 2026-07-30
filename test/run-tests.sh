@@ -4799,6 +4799,70 @@ assert_deny_json "$OUT" "cg: F045 single-quoted 'git' denial uses JSON deny form
 assert_contains "$OUT" "compound-stage-and-commit" \
   "cg: F045 single-quoted 'git' denial names the finding class"
 
+# F051: unlike quoting (F045, already handled correctly), an ESCAPED
+# spelling of "git" reached is_git_token() undecoded, since this hook's
+# own unquote_token() only stripped a $'...' wrapper without decoding
+# what was inside it, and never touched an interior backslash outside
+# quotes at all. Because is_git_token() failing makes segment_subcommand()
+# return (None, None), this disables the ENTIRE gate for that segment --
+# confirmed live that `g\it commit -a -m "test"` silently ALLOWed a real
+# compound-stage-and-commit violation, and `\g\i\t`/`$'\x67it'` did too
+# (found by adversarial review of PR #77, while confirming F045's own
+# "not a bug" conclusion).
+DIR_CG_ESCGIT="$WORK/commit-gate-escaped-git"
+make_fixture "$DIR_CG_ESCGIT"
+install_hooks "$DIR_CG_ESCGIT"
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT" 'g\it commit -a -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: F051 backslash-escaped g\\it commit -a exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F051 backslash-escaped g\\it denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: F051 backslash-escaped g\\it denial names the finding class"
+
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT" '\g\i\t commit -a -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: F051 fully-escaped \\g\\i\\t commit -a exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F051 fully-escaped \\g\\i\\t denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: F051 fully-escaped \\g\\i\\t denial names the finding class"
+
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT" '$'"'"'\x67it'"'"' commit -a -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: F051 ANSI-C \$'\\x67it' commit -a exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F051 ANSI-C \$'\\x67it' denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: F051 ANSI-C \$'\\x67it' denial names the finding class"
+
+# No new false positive: an escaped "git" on an ordinary, non-violating
+# command must still be allowed, and the one benign exception
+# (backslash-before-a-quote, which real bash reports as command-not-
+# found, not a bypass) must not be misread as a violation either.
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT" 'g\it commit -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: F051 backslash-escaped g\\it on an ordinary commit passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: F051 ordinary escaped-git commit has no deny fields"
+
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT" '\"git\" commit -a -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: F051 benign \\\"git\\\" (command-not-found) passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: F051 benign \\\"git\\\" has no deny fields (not misread as a violation)"
+
+# The escape-decoding gap disabled the SECRET SCAN too, not just the
+# compound check -- confirmed with a real staged secret before fixing.
+DIR_CG_ESCGIT_SECRET="$WORK/commit-gate-escaped-git-secret"
+make_fixture "$DIR_CG_ESCGIT_SECRET"
+install_hooks "$DIR_CG_ESCGIT_SECRET"
+echo 'api_key = "abcdefghijklmnopqrstuvwx"' > "$DIR_CG_ESCGIT_SECRET/config.py"
+git -C "$DIR_CG_ESCGIT_SECRET" add config.py
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_SECRET" 'g\it commit -m "add config"')
+RC=$?
+assert_rc0 "$RC" "cg: F051 backslash-escaped g\\it with a staged secret exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F051 escaped-git secret-scan denial uses JSON deny form"
+assert_contains "$OUT" "secret-assignment" \
+  "cg: F051 escaped-git secret-scan denial names the finding class"
+
 DIR_CG_SECRET="$WORK/commit-gate-secret"
 make_fixture "$DIR_CG_SECRET"
 install_hooks "$DIR_CG_SECRET"
