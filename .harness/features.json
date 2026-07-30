@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 42,
+  "total_features": 43,
   "passing": 29,
   "features": [
     {
@@ -1263,6 +1263,27 @@
       "test_file": null,
       "coverage": null,
       "notes": "Discovered by adversarial review of PR #67, round 2 (F038's surrogate fail-open fix). Not a currently-known-open bypass -- the reviewer who raised it explicitly judged the two specific fixes already shipped (F038 rounds 2-3) as 'complete for the branch [they] target' after checking the entire relevant codepoint space. This is defense-in-depth against the NEXT unknown exception type in the same decoder, not a fix for a known-live bug -- deliberately not folded into F038's own emergency-fix PRs, which were already at their third round under time pressure from a live regression.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F038",
+      "spec": null
+    },
+    {
+      "id": "F043",
+      "description": "skills/harness-init/enforce-scope.sh.template's FILE_PATH/COMMAND extraction (the `FILE_PATH=$(echo \"$INPUT\" | python3 -c \"...\" 2>/dev/null)` block) fails open the same way _decode_ansi_c_escape() did before F038 rounds 2-3, but earlier in the pipeline and via a different entry point: a raw lone UTF-16 surrogate (0xD800-0xDFFF) arriving directly in the hook's OWN input JSON (e.g. `{\"tool_input\":{\"file_path\":\"src/other/\\ud800pwned.txt\"}}` -- no $'...' ANSI-C quoting or bash decoding involved at all, since json.load() itself decodes the JSON \\uD800 escape into a Python str containing a lone surrogate) crashes `print(path)` with the same UnicodeEncodeError. The `2>/dev/null` on that command substitution swallows the traceback, FILE_PATH comes back empty, and `if [ -n \"$FILE_PATH\" ]` skips the ENTIRE Edit/Write scope check block -- silently allowing what should have gone through the AUTHORITATIVE file_path gate (Edit/Write/MultiEdit tool calls are blocked outright, not best-effort like the Bash coverage path F038 itself patches). The identical extraction pattern is used for COMMAND just below it, so the Bash coverage path is affected too.",
+      "priority": 27,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #67, round 2 (F038's surrogate/multi-char-uppercase fixes for the $'...' ANSI-C decoder). Pre-dates F038 entirely -- this is a structurally different code path (the hook's own top-level JSON input extraction, not the bash-side $'...' decoder F038 touches) with much lower reachability, since a lone surrogate must survive transport from whatever produces the tool_input JSON in the first place (Claude's own model output is valid UTF-8/UTF-16 text and would not normally carry an isolated surrogate this way; some other JSON-producing intermediary would need to construct or forward one). Deliberately not folded into F038's own PRs, which were already at their third round under time pressure from a live regression in a different function -- filed as its own feature per the round-2 reviewer's explicit recommendation.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
