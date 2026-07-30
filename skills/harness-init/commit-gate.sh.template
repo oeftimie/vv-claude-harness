@@ -62,9 +62,11 @@
 # (logged to stderr as the exception TYPE NAME only, never its message/args,
 # since exception text can itself carry matched line content).
 #
-# Residual holes: `git commit <pathspec>` commits the working tree without
-# staging, which this hook cannot distinguish from a normal commit of
-# already-staged content. A single staged line longer than SECRET_SCAN_MAX_LEN
+# Residual holes: `git commit <pathspec>` (with or without a preceding "--")
+# used to commit the working tree without staging, indistinguishable from a
+# normal commit of already-staged content -- FIXED (F052): has_staging_flag()
+# now recognizes any bare pathspec argument as the same compound-stage-and-
+# commit risk -a/-i already trigger. A single staged line longer than SECRET_SCAN_MAX_LEN
 # is only scanned up to that length -- a secret past that point on the same
 # line is silently missed (accepted: scanning overlapping windows to close
 # this adds real complexity for a line length no ordinary commit approaches).
