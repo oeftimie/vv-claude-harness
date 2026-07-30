@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 55,
-  "passing": 39,
+  "passing": 40,
   "features": [
     {
       "id": "F001",
@@ -1400,19 +1400,21 @@
       "id": "F048",
       "description": "skills/harness-init/enforce-scope.sh.template's TARGET_DIRECTORY_FLAGS = (\"-t\", \"--target-directory\") and the `startswith(\"--target-directory=\")` check (cp_mv_targets()) compare against the EXACT long-option string only, not any unambiguous GNU getopt_long abbreviation of it -- the same abbreviation-recognition gap F041 just fixed for sed's --in-place/--expression/--file, but in a different function (cp_mv_targets(), not sed_inplace_targets()). CONFIRMED against real GNU coreutils 9.11: `cp --targ=DIR src.txt` and `cp --t DIR src.txt` (bare, space-separated) both genuinely redirect the destination via -t's own mechanism, and `mv --targ=DIR src.txt`/`mv --t DIR src.txt` behave identically -- --target-directory is the only cp/mv long option starting with \"--t\" (no ambiguity to resolve), so every prefix from \"--t\" up is unambiguous. Every one of these is wrongly ALLOWED today (the real destination is never recognized as a flag-driven target at all, so it falls through to the ordinary last-flagless-token logic and the true -t/--target-directory destination is missed).",
       "priority": 32,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #71 (F041), while checking for the same abbreviation-comparison bug class elsewhere in the file after finding it in sed_inplace_targets(). Reviewer explicitly recommended filing this as its own feature rather than expanding F041's scope, since it's a different function (cp_mv_targets(), not sed_inplace_targets()) with its own TARGET_DIRECTORY_FLAGS/_attached_value_raw() call sites. Independently confirmed live before filing: `gcp --targ=out src.txt` genuinely copies into out/ via real GNU cp 9.11.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by adversarial review of PR #71 (F041), while checking for the same abbreviation-comparison bug class elsewhere in the file after finding it in sed_inplace_targets(). Reviewer explicitly recommended filing this as its own feature rather than expanding F041's scope, since it's a different function (cp_mv_targets(), not sed_inplace_targets()) with its own TARGET_DIRECTORY_FLAGS/_attached_value_raw() call sites. Independently confirmed live before filing: `gcp --targ=out src.txt` genuinely copies into out/ via real GNU cp 9.11.\n\nFIXED: added CP_MV_LONG_OPTIONS (the union of every long option GNU cp and GNU mv each recognize, mechanically extracted from `gcp --help`/`gmv --help`, GNU coreutils 9.11) and _resolve_cp_mv_long_flag(), mirroring this file's own SED_LONG_OPTIONS/_resolve_sed_long_flag() pattern (F041). Confirmed --target-directory is the only long option in either command's own set (or their union) starting with \"--t\", at every prefix length from \"--t\" up -- ground-truthed by generating all --t-prefixed matches against the full option list, not assumed. Rewrote cp_mv_targets()'s flag-recognition loop to resolve any \"--\" token's flag-name part (split off any attached \"=value\" first) against this universe; the attached-form value extraction correctly computes its prefix length from the ACTUAL resolved abbreviation's length, not the full \"--target-directory=\" length (e.g. \"--targ=out\" splits after 7 characters, not 20). Removed the now-unused TARGET_DIRECTORY_EQUALS_LEN constant. Resynced .claude/hooks/enforce-scope.sh from the updated template per F047's drift guard, and confirmed this session's own operations (no scope file for a lead agent) are unaffected. Added 12 new assertions: 3 each for bare abbreviated 'cp --targ' and attached abbreviated 'cp --targ=' (rc0/deny_json/contains), 2 for attached abbreviated 'mv --targ=' (rc0/deny_json), 2 for a no-false-positive ambiguous-prefix guard ('--n', which could match 5 different --no-* options and must NOT resolve to --target-directory), 2 for a no-false-positive in-scope abbreviated destination. Full suite 1212/1212. Mutation-tested by reverting the template (and its resynced live copy) to the pre-fix state: exactly 5 failures (the discriminating deny_json/contains assertions for the 3 bypass-shape tests; the rc0-only mv assertion and both no-false-positive negative-control tests correctly unaffected), confirming the tests discriminate this fix specifically.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "port the SED_LONG_OPTIONS/_resolve_sed_long_flag() abbreviation-resolution pattern (F041) to a new CP_MV_LONG_OPTIONS/_resolve_cp_mv_long_flag() pair, using the union of cp's and mv's real long options since cp_mv_targets() is shared by both commands"
+      ],
       "failure_reason": null,
       "discovered_via": "F041",
       "spec": null
