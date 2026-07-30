@@ -447,10 +447,18 @@ def _flag_view(tok):
     # check then wrongly treated as ending the flag scan before it ever
     # reached the real -i -- a genuine fail-open this PR's own escape-
     # decoding fix introduced as a side effect (F051 round 2, adversarial
-    # review of PR #79). The SAME mechanism affects segment_subcommand()'s
-    # own GIT_FLAGS_WITH_VALUE 2-token skip and "-"-prefix 1-token skip,
-    # and has_staging_flag()'s long-flag/short-flag-cluster bare-value
-    # skips -- all rewritten to use this view instead of the raw token.
+    # review of PR #79). has_staging_flag()'s long-flag/short-flag-cluster
+    # bare-value skips use this view for the same reason (see
+    # _consumes_next_token()). segment_subcommand()'s own GIT_FLAGS_WITH_VALUE
+    # 2-token skip and generic "-"-prefix 1-token skip were NOT converted:
+    # they only ever run on tokens BEFORE the subcommand, and confirmed
+    # against real git, any token whose raw form has this same
+    # backslash-preserved-by-quotes shape (`git '\-C' commit ...`, `git
+    # '\--' commit ...`) makes real git reject the whole invocation
+    # ("'\-C' is not a git command") before anything is staged or committed
+    # -- unlike the post-subcommand case above, where git tolerates the
+    # divergent token as an ordinary pathspec and keeps parsing later
+    # flags. Not independently reachable, so left on the raw token.
     # Not stripping the backslash here means a rare unquoted-and-escaped
     # separator (`\--`, no quotes at all -- where real bash DOES strip the
     # backslash, giving a genuine "--") is no longer recognized as one
