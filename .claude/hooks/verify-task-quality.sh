@@ -72,8 +72,14 @@ if [ "$FEATURE_ID_RC" -eq 1 ]; then
 fi
 
 if [ ! -f ".harness/init.sh" ]; then
-    echo "Task rejected: .harness/init.sh not found. Cannot verify tests pass."
-    echo "Run /harness-init to create the test script, or create it manually."
+    # Claude Code discards a hook's stdout entirely on exit 2 and feeds only
+    # stderr back to the blocked agent as its error message
+    # (code.claude.com/docs/en/hooks) -- this and the other three exit-2
+    # sites below wrote their rejection message to stdout, silently
+    # discarding it on every real TaskCompleted rejection (F053, the
+    # identical defect F046 fixed in check-remaining-tasks.sh.template).
+    echo "Task rejected: .harness/init.sh not found. Cannot verify tests pass." >&2
+    echo "Run /harness-init to create the test script, or create it manually." >&2
     exit 2
 fi
 
@@ -103,10 +109,10 @@ increment_correction_cycles() {
 # Stage 1: Smoke test (fast compile/syntax check)
 echo "Stage 1: Smoke test..." >&2
 SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
-    echo "Task rejected: smoke test failed. Fix compilation errors before marking complete."
-    echo ""
-    echo "Smoke test output:"
-    echo "$SMOKE_OUTPUT" | tail -20
+    echo "Task rejected: smoke test failed. Fix compilation errors before marking complete." >&2
+    echo "" >&2
+    echo "Smoke test output:" >&2
+    echo "$SMOKE_OUTPUT" | tail -20 >&2
     increment_correction_cycles
     exit 2
 }
@@ -114,10 +120,10 @@ SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
 # Stage 2: Full test suite
 echo "Stage 2: Full test suite..." >&2
 FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
-    echo "Task rejected: tests are failing. Fix the failures before marking complete."
-    echo ""
-    echo "Test output (last 20 lines):"
-    echo "$FULL_OUTPUT" | tail -20
+    echo "Task rejected: tests are failing. Fix the failures before marking complete." >&2
+    echo "" >&2
+    echo "Test output (last 20 lines):" >&2
+    echo "$FULL_OUTPUT" | tail -20 >&2
     increment_correction_cycles
     exit 2
 }
@@ -150,7 +156,7 @@ PYEOF
     if [ -n "$COVERAGE_RESULT" ]; then
         ACHIEVED="${COVERAGE_RESULT%%|*}"
         TARGET="${COVERAGE_RESULT##*|}"
-        echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%."
+        echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%." >&2
         increment_correction_cycles
         exit 2
     fi
