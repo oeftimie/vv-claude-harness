@@ -2809,6 +2809,79 @@ assert_rc0 "$RC" "hs2 (F038): a \u-escaped ordinary character in an in-scope \$'
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F038): \u-escaped ordinary character has no deny fields"
 
+# F038 round 2 (adversarial review of PR #66): _decode_ansi_c_escape()'s
+# \u/\U handling only guarded a codepoint ABOVE Unicode's own max
+# (0x10FFFF, via a try/except around chr()) but let a LONE SURROGATE
+# (0xD800-0xDFFF) through unchecked -- Python's chr() happily constructs a
+# string containing one WITHOUT raising. This hook's own LATER
+# json.dumps()/print() of the denial message DOES raise
+# (UnicodeEncodeError: surrogates not allowed) once a resolved path
+# contains one, and because this hook is fail-OPEN on any exception (an
+# empty DENY_REASON means deny_json() never runs), a PLAIN out-of-scope
+# write with NO traversal at all -- just a lone surrogate escape anywhere
+# in the target -- silently bypassed detection entirely. Confirmed by
+# direct execution before the fix: rc 0, no deny fields, traceback on
+# stderr only, and the write genuinely lands. This is a NEW fail-open this
+# feature itself introduced, not a residual -- the most severe finding of
+# this feature's own review.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/other/\ud800x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038 r2): a lone-surrogate \u escape exits 0 (JSON deny, not a crash)"
+assert_deny_json "$OUT" "hs2 (F038 r2): lone-surrogate denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" \
+  "hs2 (F038 r2): lone-surrogate denial names the real out-of-scope target"
+
+# Composes with the pre-existing F031/F033 defenses too: a REAL ".."
+# traversal plus a trailing lone surrogate must still resolve and deny
+# correctly, not crash past the point where the real target was already
+# computed.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/../other/\ud800x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038 r2): traversal plus a trailing lone surrogate exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F038 r2): traversal-plus-surrogate denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" \
+  "hs2 (F038 r2): traversal-plus-surrogate denial names the real out-of-scope target"
+
+# A \U (8-hex) lone surrogate must be rejected the same way as \u's
+# 4-hex form -- both share the same _unicode_escape_or_literal() guard.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/other/\U0000D800x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038 r2): a lone-surrogate \U escape exits 0 (JSON deny, not a crash)"
+assert_deny_json "$OUT" "hs2 (F038 r2): \U lone-surrogate denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" \
+  "hs2 (F038 r2): \U lone-surrogate denial names the real out-of-scope target"
+
+# F038 round 2: the \cX formula IS observable through this hook's own
+# ALLOW/DENY interface, despite an earlier round's claim otherwise -- the
+# JSON-encoded denial message renders a control byte as a distinct,
+# inspectable \u00XX escape sequence. This pins the general AND-0x1F
+# formula directly: \c0 ('0' = 0x30) must decode to 0x10, which
+# json.dumps() renders as the literal 6-character sequence \u0010 in the
+# denial text -- a WRONG formula (e.g. XOR-0x40, or a constant) would
+# render a different sequence, or none, at this exact position.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/../other/\c0x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038 r2): a \c0-escaped out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F038 r2): \c0 denial uses JSON deny form"
+assert_contains "$OUT" '\u0010x.txt' \
+  "hs2 (F038 r2): \c0 decodes via the AND-0x1F formula (0x30 & 0x1F = 0x10)"
+
+# "?" (0x3F) is a genuine, disclosed version split: bash 3.2.57 decodes
+# \c? to 0x1F (matching the general AND-0x1F formula), but bash 5.3.15
+# special-cases it to 0x7F (DEL) -- confirmed directly on both. This pins
+# the modern-bash special case this implementation matches.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/../other/\c?x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038 r2): a \c?-escaped out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F038 r2): \c? denial uses JSON deny form"
+assert_contains "$OUT" '\u007fx.txt' \
+  "hs2 (F038 r2): \c? decodes via the modern-bash DEL (0x7F) special case"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
