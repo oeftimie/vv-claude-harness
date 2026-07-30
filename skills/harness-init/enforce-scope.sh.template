@@ -297,30 +297,61 @@ def _decode_ansi_c_escape(m):
     # decode to "." on any bash new enough, a live, not merely theoretical,
     # bypass class identical to F033's own. \cX decodes on BOTH bash
     # versions already (found by adversarial review of PR #57), using
-    # `ord(X.upper()) & 0x1F` -- verified against 10 characters spanning
-    # letters, digits, and punctuation (bash's actual formula masks to the
-    # low 5 bits; a naive "XOR 0x40" convention some documentation implies
-    # gives the WRONG byte for any character below 0x40, e.g. "?" (0x3F)
-    # -- confirmed empirically: real bash decodes \c? to 0x1F, not the
-    # 0x7F a XOR-based implementation would wrongly produce). \cX can only
-    # ever produce a non-printable control byte (0x00-0x1F), never "."
-    # (0x2e) or "/" (0x2f), so it is not independently traversal-
-    # exploitable the way \u/\U are -- implemented anyway for completeness
-    # now that the pattern is being extended regardless. \u/\U are both
-    # GREEDY up to their digit cap (4 for \u, 8 for \U), matching \x's own
-    # greedy 1-2 digit behavior -- confirmed empirically (`\u2b` consumes
-    # BOTH hex-looking characters as one 2-digit codepoint 0x2B ('+'), not
-    # \u2 followed by literal "b"), and the resulting codepoint is encoded
-    # the same way Python's own str type stores it (chr()), which downstream
-    # scope-pattern string comparisons consume directly with no further
-    # byte-level re-encoding needed. A \U value exceeding Unicode's own
-    # max codepoint (0x10FFFF) is a documented residual left undecoded
-    # (real bash uses an extended, pre-RFC-3629 UTF-8 byte encoding for
-    # these that Python's chr() cannot represent) -- confirmed real bash
-    # still encodes something for \U11000000 (out of range) and
-    # \U0000D800 (a raw surrogate codepoint), but neither can ever spell
-    # "." or "/" regardless of exact byte representation, so left
-    # unresolved rather than replicating bash's own extended encoding.
+    # `ord(X.upper()) & 0x1F` -- verified against 10+ characters spanning
+    # letters, digits, and punctuation on BOTH bash versions (bash's real
+    # formula masks to the low 5 bits; a naive "XOR 0x40" convention some
+    # documentation implies gives the WRONG byte for digits/`~`/`{`/`|`/
+    # space on either version). "?" (0x3F) is a genuine, disclosed
+    # version split, not a single fixed answer: bash 3.2.57 decodes \c? to
+    # 0x1F (matching the general formula), but bash 5.3.15 special-cases
+    # it to 0x7F (DEL) -- confirmed on both directly (found by adversarial
+    # review of PR #66, round 1, which caught an earlier version of this
+    # comment wrongly claiming a single universal 0x1F answer verified
+    # against 5.3.15, when 5.3.15 itself gives 0x7F). Matching modern
+    # bash's special case here, since a newer bash is what most
+    # environments actually run. \cX can only ever produce a non-printable
+    # control byte (0x00-0x1F) or DEL (0x7F), never "." (0x2e) or "/"
+    # (0x2f), so it is not independently traversal-exploitable the way
+    # \u/\U are -- implemented anyway for completeness now that the
+    # pattern is being extended regardless, and its exact value IS
+    # observable through this hook's own ALLOW/DENY interface despite
+    # looking like it shouldn't be: the byte survives into the resolved
+    # path and the JSON-encoded denial message renders it as a distinct,
+    # inspectable escape sequence (found by the same review round, which
+    # used exactly this to prove the wrong formula was uncaught by any
+    # test). \u/\U are both GREEDY up to their digit cap (4 for \u, 8 for
+    # \U), matching \x's own greedy 1-2 digit behavior -- confirmed
+    # empirically (`\u2b` consumes BOTH hex-looking characters as one
+    # 2-digit codepoint 0x2B ('+'), not \u2 followed by literal "b"), and
+    # the resulting codepoint is encoded the same way Python's own str
+    # type stores it (chr()), which downstream scope-pattern string
+    # comparisons consume directly with no further byte-level re-encoding
+    # needed. Both \u and \U reject two ranges into the literal-text
+    # fallback rather than calling chr() unconditionally: a codepoint
+    # outside Unicode's own valid range (above 0x10FFFF -- real bash uses
+    # an extended, pre-RFC-3629 UTF-8 byte encoding for these that
+    # Python's chr() cannot represent) and, CRITICALLY, the UTF-16
+    # surrogate range 0xD800-0xDFFF. An earlier version of this fix only
+    # guarded the out-of-range case (a try/except around chr() catching
+    # ValueError) and let a lone surrogate through unchecked, since
+    # Python's chr() happily constructs a string containing one WITHOUT
+    # raising -- this was a genuine, newly-introduced fail-open, not a
+    # residual: this hook's own later json.dumps()/print() of the denial
+    # message DOES raise (UnicodeEncodeError: surrogates not allowed) once
+    # a resolved path contains one, and because this hook's whole design
+    # is fail-OPEN on any exception (DENY_REASON coming back empty means
+    # deny_json() is never called), a plain out-of-scope write with NO
+    # traversal at all -- just a lone \ud800 anywhere in the target --
+    # silently bypassed detection entirely, and composed with the EXISTING
+    # F031/F033 defenses too (a real `..` PLUS a trailing \ud800 also
+    # crashed past the point where the real target had already been
+    # correctly resolved) (found by adversarial review of PR #66, round 1;
+    # confirmed by direct execution: the write genuinely lands, rc 0, no
+    # deny fields, traceback on stderr only). Neither a surrogate nor an
+    # out-of-range codepoint can ever spell "." or "/" regardless of exact
+    # byte representation, so rejecting both into the literal fallback
+    # costs nothing security-wise while removing the crash-to-silent-
+    # ALLOW lever entirely.
     hexdigits, octdigits, ctrlchar, u4, u8, other = (
         m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6)
     )
@@ -329,15 +360,46 @@ def _decode_ansi_c_escape(m):
     if octdigits is not None:
         return chr(int(octdigits, 8) & 0xFF)
     if ctrlchar is not None:
-        return chr(ord(ctrlchar.upper()) & 0x1F)
+        upper = ctrlchar.upper()
+        if upper == "?":
+            return "\x7f"
+        if len(upper) != 1:
+            # ANSI_C_ESCAPE_PATTERN's c(.) captures ANY single character, and
+            # for 102 distinct Unicode characters str.upper() returns TWO
+            # characters (e.g. U+00DF, the German sharp s, uppercases to the
+            # two-character string "SS"), which
+            # made ord() raise TypeError -- crashing this hook's Python
+            # subprocess, which this hook's own fail-open design (see header)
+            # then turns into a SILENT ALLOW for the entire command, not just
+            # a missed decode: `$'src/parser/\c<that char>q.txt'` anywhere in
+            # a compound command let an UNRELATED, plain-ASCII, ordinarily-
+            # denied out-of-scope write elsewhere in the SAME command through
+            # too, confirmed live on main (found by adversarial review of PR
+            # #67, the exact same fail-open class the surrogate fix above
+            # closes, recurring one branch over with a different exception
+            # type no source-range guard on \u/\U could ever have caught).
+            # Falling back to the ORIGINAL (non-uppercased) character instead
+            # of crashing diverges from real bash's own byte-wise result for
+            # these characters, but \cX can never spell "." or "/" on either
+            # reading, so only not-crashing matters here.
+            upper = ctrlchar
+        return chr(ord(upper) & 0x1F)
     if u4 is not None:
-        return chr(int(u4, 16))
+        return _unicode_escape_or_literal(u4, "u")
     if u8 is not None:
-        try:
-            return chr(int(u8, 16))
-        except ValueError:
-            return "\\U" + u8
+        return _unicode_escape_or_literal(u8, "U")
     return ANSI_C_SIMPLE_ESCAPES.get(other, "\\" + other)
+
+
+def _unicode_escape_or_literal(hexdigits, prefix):
+    # Shared by \uHHHH and \UHHHHHHHH: rejects a codepoint that Python's
+    # chr() would accept but this hook's own later JSON encoding cannot --
+    # see _decode_ansi_c_escape()'s own comment for the full incident this
+    # closes (a lone surrogate crashed the hook into a silent ALLOW).
+    codepoint = int(hexdigits, 16)
+    if 0xD800 <= codepoint <= 0xDFFF or codepoint > 0x10FFFF:
+        return "\\" + prefix + hexdigits
+    return chr(codepoint)
 
 
 def unquote_token(token):
@@ -358,8 +420,10 @@ def unquote_token(token):
     # separately as F033: a different mechanism from F031 -- escape
     # DECODING inside an already-recognized $'...' span, not escape
     # REMOVAL outside quotes). \cX (control-char), \uHHHH, and \UHHHHHHHH
-    # escapes are NOT decoded -- a documented residual, same "not a full
-    # shell parser" posture as the rest of this hook; tracked separately.
+    # escapes are ALSO decoded (F038) -- see _decode_ansi_c_escape()'s own
+    # comment for the exact formulas, verification, and the one disclosed
+    # residual (a \U codepoint outside Unicode's valid range, or landing
+    # in the surrogate range, is left undecoded rather than crashing).
     token = re.sub(
         r"\$'((?:[^'\\]|\\.)*)'",
         lambda m: ANSI_C_ESCAPE_PATTERN.sub(_decode_ansi_c_escape, m.group(1)),
