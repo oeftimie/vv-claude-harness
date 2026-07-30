@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 53,
-  "passing": 38,
+  "passing": 39,
   "features": [
     {
       "id": "F001",
@@ -1370,7 +1370,7 @@
       "id": "F047",
       "description": "This repo's OWN live `.claude/hooks/*.sh` (the hooks that actually gate work in THIS repo, as opposed to skills/harness-init/*.sh.template which are the distributable source) have drifted badly out of sync with their templates and were never re-synced as the templates were fixed across many sessions of this same OVI-44 sweep. CONFIRMED via `diff` against the current templates: enforce-scope.sh is 1301 diff lines behind (it predates every fix from F023 through F041 -- essentially the entire quoting/escaping/traversal/command-recognition hardening arc this sweep has been doing), verify-task-quality.sh is 122 lines behind, check-remaining-tasks.sh has diverged onto an inline-python implementation the template no longer uses (the template now delegates to harness_state.py's next-claimable), verify-git-identity.sh is a smaller 10-line drift. statusline.sh is effectively in sync (1-line trailing-newline diff only). This means every hook enforcing scope, task quality, and git identity for teammates spawned IN THIS REPO during this entire sweep has been running the OLD, pre-fix logic, not the hardened version this repo has spent dozens of features building -- the fixes exist only in the distributable template, not in the copy actually protecting this project's own teammates.",
       "priority": 31,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         ".claude/hooks/enforce-scope.sh",
         ".claude/hooks/check-remaining-tasks.sh",
@@ -1382,12 +1382,14 @@
         "F046"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Reported by teammate review-pr69-f040 while investigating its own TeammateIdle idle-loop issue (F046): noticed the live hook it was reading didn't match the template's current structure at all. Independently confirmed via `diff skills/harness-init/<name>.sh.template .claude/hooks/<name>` for all 5 hooks before filing -- sizes above are measured, not estimated. depends_on F046 only in the sense that F046's fix should land in the template FIRST, so this resync picks up the corrected version rather than needing a second resync immediately after. This is a resync/copy operation, not new logic -- should be a mechanical diff-and-replace per hook plus a full_test run to confirm nothing in this repo's own workflow depended on the old (buggy) installed behavior, but still needs the standard review cycle since it changes what actually gates every future teammate's actions in this repo.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Reported by teammate review-pr69-f040 while investigating its own TeammateIdle idle-loop issue (F046): noticed the live hook it was reading didn't match the template's current structure at all. Independently confirmed via `diff skills/harness-init/<name>.sh.template .claude/hooks/<name>` for all 5 hooks before filing -- sizes above are measured, not estimated. depends_on F046 only in the sense that F046's fix should land in the template FIRST, so this resync picks up the corrected version rather than needing a second resync immediately after. This is a resync/copy operation, not new logic -- should be a mechanical diff-and-replace per hook plus a full_test run to confirm nothing in this repo's own workflow depended on the old (buggy) installed behavior, but still needs the standard review cycle since it changes what actually gates every future teammate's actions in this repo.\n\nFIXED: re-copied all four hook templates (enforce-scope.sh, check-remaining-tasks.sh, verify-task-quality.sh, verify-git-identity.sh) plus harness_state.py.template (entirely missing before this fix, and required by the current templates of the first two) into .claude/hooks/, verbatim, no logic changes. statusline.sh needed no resync -- confirmed it's sourced from this plugin's own hooks/statusline.sh, not from skills/harness-init/, and was already byte-identical. Verified against the live repo before relying on it: confirmed no .claude/teammate-scope.txt exists for this lead session, so the resynced enforce-scope.sh still exits 0 for all of my own edits; verify-git-identity.sh still allows this session's git identity; check-remaining-tasks.sh now correctly reports claimable features (rc=2, guidance on stderr, matching F047's live-repro trigger) instead of the stale inline logic. Ran both full_test and smoke_test after resyncing, both green. Added a permanent drift guard to test/run-tests.sh (5 assertions, one per resynced file) that diffs this repo's installed copy against its template and fails loudly on any future divergence, rather than relying on a teammate stumbling into the live bug again (which is exactly how this session re-discovered F046's stale-hook manifestation). Mutation-tested by reverting the installed hooks to their pre-fix state: exactly the 5 new assertions fail, nothing else. Full suite 1198/1198.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "mechanical re-copy from skills/harness-init/*.sh.template into .claude/hooks/, plus a permanent drift-detection test"
+      ],
       "failure_reason": null,
       "discovered_via": "F040",
       "spec": null
