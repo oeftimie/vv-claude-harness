@@ -990,6 +990,41 @@ def _sed_consumes_next_as_script(view):
 IN_PLACE_CLUSTER_PATTERN = re.compile(r"^-[nrEsuzalH]*i")
 
 
+def _is_inplace_flag(view):
+    # True if VIEW enables in-place editing at all (clustered short form or
+    # --in-place, bare or abbreviated) -- the ONE predicate every check in
+    # this function that needs to agree on "is this the in-place flag" must
+    # share, mirroring _sed_consumes_next_as_script()'s own role for the
+    # "does this flag consume the next token" decision. Used by both the
+    # presence-check any() below and _sed_inplace_suffix_raw()'s caller, so
+    # they can never disagree about which flag positions are in-place flags
+    # (the same guard-vs-loop disagreement risk F029/F052/F041 already
+    # established for this file).
+    return bool(IN_PLACE_CLUSTER_PATTERN.match(view)) or _sed_long_flag_name(view) == "--in-place"
+
+
+def _sed_inplace_suffix_raw(tok):
+    # Returns the RAW (not-yet-unquoted) backup-suffix text attached to TOK
+    # -- an in-place flag already confirmed via _is_inplace_flag() -- or ""
+    # if TOK carries no attached suffix at all (a bare "-i"/"--in-place",
+    # which GNU sed itself treats as "no backup made", the same as an
+    # explicit empty suffix). Mirrors _attached_value_raw()'s own technique
+    # (walk the RAW token counting non-quote characters past the matched
+    # flag-prefix length) so the returned suffix still carries any quote/
+    # backslash characters untouched, for combining with a RAW file token
+    # and unquoting exactly once later (F049) -- extracting from the VIEW
+    # instead would double-unquote once combined and unquoted again,
+    # reintroducing the exact bug class F035 round 2/3 fixed for cp_mv_targets().
+    view = _flag_view(tok)
+    match = IN_PLACE_CLUSTER_PATTERN.match(view)
+    if match:
+        return _attached_value_raw(tok, match.end())
+    if _sed_long_flag_name(view) == "--in-place" and "=" in view:
+        flag_name = view.split("=", 1)[0]
+        return _attached_value_raw(tok, len(flag_name) + 1)
+    return ""
+
+
 def _separator_index(args):
     # Returns the index of the first literal "--" that acts as a REAL
     # separator, skipping any "--" consumed as an -e/-f/--expression/--file
@@ -1139,9 +1174,7 @@ def sed_inplace_targets(args):
         else:
             fi += 1
     if not any(
-        IN_PLACE_CLUSTER_PATTERN.match(_flag_view(pre_separator_args[idx]))
-        or _sed_long_flag_name(_flag_view(pre_separator_args[idx])) == "--in-place"
-        for idx in flag_positions
+        _is_inplace_flag(_flag_view(pre_separator_args[idx])) for idx in flag_positions
     ):
         return []
     has_explicit_script = any(
@@ -1150,6 +1183,40 @@ def sed_inplace_targets(args):
         in ("--expression", "--file")
         for idx in flag_positions
     )
+    # The backup-suffix VALUE itself is a second, independent write target
+    # whenever it contains "*": GNU sed replaces every "*" in the suffix
+    # with the file argument exactly as given on the command line (not just
+    # its basename) and resolves the result relative to the CURRENT
+    # directory, not relative to the file's own directory -- so a suffix
+    # like "../other/*" can genuinely write the backup somewhere completely
+    # different from the file being edited (confirmed against real GNU sed
+    # 4.10: `sed -i'../other/*' 's/a/b/' p.txt`, run from an in-scope cwd,
+    # creates a real file at `../other/p.txt`). sed_inplace_targets() used
+    # to only ever check the file argument itself, never this second target
+    # hiding inside the suffix's own value (F049, found by adversarial
+    # review of PR #71 while differentially fuzzing this function's
+    # abbreviation handling for a different bug class entirely). Only the
+    # LAST in-place-enabling flag position's suffix matters: confirmed
+    # against real GNU sed that a later "-i"/"--in-place" (with or without
+    # its own suffix) entirely overrides an earlier one's suffix, not just
+    # its presence -- `sed -i.first -i'../third/*' ...` uses ONLY
+    # `../third/*`, and `sed -i'../third/*' -i ...` (bare, no suffix) makes
+    # NO backup at all, the earlier suffix discarded along with it. A
+    # suffix with NO "*" is always either empty (no backup at all) or a
+    # plain literal string GNU sed APPENDS directly to the file argument
+    # (`file.txt` + `.bak` = `file.txt.bak`, always alongside the original
+    # file, never a new scope decision) -- confirmed this is true even when
+    # that literal suffix itself contains "/", since without "*" there is
+    # no path-joining semantics at all, just string concatenation, which in
+    # practice produces a malformed path GNU sed's own rename immediately
+    # rejects (documented residual, not fixed: vanishingly narrow, and
+    # accepted rather than modeling GNU's own rename-failure behavior here).
+    inplace_suffix_raw = ""
+    for idx in flag_positions:
+        view = _flag_view(pre_separator_args[idx])
+        if _is_inplace_flag(view):
+            inplace_suffix_raw = _sed_inplace_suffix_raw(pre_separator_args[idx])
+    inplace_suffix_view = unquote_token(inplace_suffix_raw)
     targets = []
     consumed_implicit_script = has_explicit_script
     past_separator = False
@@ -1176,6 +1243,29 @@ def sed_inplace_targets(args):
             i += 1
             continue
         targets.append(tok)
+        # Documented residual (found by adversarial review of PR #83): the
+        # "*" PRESENCE check reads the DECODED view (inplace_suffix_view),
+        # but the substitution below replaces "*" in the RAW string --
+        # correct for an ordinary literal "*", but when the "*" only exists
+        # after ANSI-C decoding (e.g. a suffix given as $'\x2a'), the RAW
+        # string has no literal "*" character for .replace() to find, so
+        # the substitution silently no-ops and the RAW suffix (still
+        # containing the undecoded escape) is returned as-is -- once
+        # write_targets() unquotes it later, the resulting "target" is just
+        # a bare "*" rather than the true suffix-with-file-substituted
+        # path, which can wrongly DENY an otherwise in-scope command (the
+        # bare "*" never matches a real scope prefix). Confirmed this can
+        # only ever OVER-deny, never bypass: the derived string here and
+        # the true (fully-substituted) string always share the same prefix
+        # up to the first "*", and scope matching is a plain prefix check
+        # with no globbing, so wrongly denying is the only possible
+        # direction of error. Not fixed: doing so would require detecting
+        # AND substituting against the same (decoded) representation while
+        # still returning a RAW value for write_targets()'s single later
+        # unquote pass -- a real restructure for an edge case that needs an
+        # ANSI-C-escaped asterisk specifically inside a sed backup suffix.
+        if "*" in inplace_suffix_view:
+            targets.append(inplace_suffix_raw.replace("*", tok))
         i += 1
     return targets
 
