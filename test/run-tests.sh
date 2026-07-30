@@ -4772,6 +4772,33 @@ assert_rc0 "$RC" "cg: git commit -a exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: -a form denial uses JSON deny form"
 assert_contains "$OUT" "compound-stage-and-commit" "cg: -a form denial names the finding class"
 
+# F045: is_git_token() was suspected of the same quoted-command-name gap
+# F040 fixed in enforce-scope.sh, but investigation found the suspicion
+# doesn't materialize end-to-end: parse_command()'s own tokens are already
+# unquoted (unquote_token()) BEFORE segment_subcommand() ever calls
+# is_git_token() on them, so a quoted "git"/'git' is indistinguishable from
+# bare git by the time is_git_token() sees it. Ground-truthed live before
+# concluding this: both quoted forms already deny identically to the bare
+# form. These tests lock that behavior in as a regression guard, since a
+# future refactor that fed is_git_token() a RAW (still-quoted) token
+# instead could reopen exactly the suspected gap.
+DIR_CG_QGIT="$WORK/commit-gate-quoted-git"
+make_fixture "$DIR_CG_QGIT"
+install_hooks "$DIR_CG_QGIT"
+OUT=$(run_commit_gate "$DIR_CG_QGIT" '"git" commit -a -m "test"')
+RC=$?
+assert_rc0 "$RC" "cg: F045 double-quoted \"git\" commit -a exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F045 double-quoted \"git\" denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: F045 double-quoted \"git\" denial names the finding class"
+
+OUT=$(run_commit_gate "$DIR_CG_QGIT" "'git' commit -a -m \"test\"")
+RC=$?
+assert_rc0 "$RC" "cg: F045 single-quoted 'git' commit -a exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F045 single-quoted 'git' denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: F045 single-quoted 'git' denial names the finding class"
+
 DIR_CG_SECRET="$WORK/commit-gate-secret"
 make_fixture "$DIR_CG_SECRET"
 install_hooks "$DIR_CG_SECRET"
