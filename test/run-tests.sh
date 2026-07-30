@@ -5258,6 +5258,21 @@ assert_rc0 "$RC" "cg (F052): --amend --no-edit with no pathspec still allows, rc
 assert_not_contains "$OUT" "permissionDecision" \
   "cg (F052): --amend --no-edit has no deny fields"
 
+# F052 bonus: the same fix also closes the optarg-long-flag variant of this
+# bypass. --untracked-files is an optarg flag (-u[<mode>]) that only takes
+# an ATTACHED value (--untracked-files=no); given bare with a following
+# token, real git reads that token as a pathspec, not the flag's value --
+# confirmed against real git: `git commit -m x --untracked-files no`
+# genuinely commits a tracked file literally named "no" (dirty, unstaged)
+# directly, identically to the bare-pathspec case above, and was silently
+# ALLOWed before this fix (found by adversarial review of PR #85).
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x --untracked-files no')
+RC=$?
+assert_rc0 "$RC" "cg (F052): '--untracked-files no' optarg-pathspec exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg (F052): '--untracked-files no' denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg (F052): '--untracked-files no' denial names compound-stage-and-commit"
+
 DIR_CG_SECRET="$WORK/commit-gate-secret"
 make_fixture "$DIR_CG_SECRET"
 install_hooks "$DIR_CG_SECRET"

@@ -62,11 +62,7 @@
 # (logged to stderr as the exception TYPE NAME only, never its message/args,
 # since exception text can itself carry matched line content).
 #
-# Residual holes: `git commit <pathspec>` (with or without a preceding "--")
-# used to commit the working tree without staging, indistinguishable from a
-# normal commit of already-staged content -- FIXED (F052): has_staging_flag()
-# now recognizes any bare pathspec argument as the same compound-stage-and-
-# commit risk -a/-i already trigger. A single staged line longer than SECRET_SCAN_MAX_LEN
+# Residual holes: a single staged line longer than SECRET_SCAN_MAX_LEN
 # is only scanned up to that length -- a secret past that point on the same
 # line is silently missed (accepted: scanning overlapping windows to close
 # this adds real complexity for a line length no ordinary commit approaches).
@@ -203,7 +199,8 @@ DENY_COMPOUND = (
     "a pre-commit hook can only scan an index that already holds the content -- "
     "newly staged content in the same command is invisible to the secret scan. "
     "Repair: split into a separate 'git add <files>' followed by 'git commit' "
-    "with no staging flags (avoid -a/-i/--all/--include)."
+    "with no staging flags and no trailing pathspec (avoid -a/-i/--all/--include, "
+    "and drop any file argument after the commit message)."
 )
 REPAIR_STAGED = (
     "remove or redact the flagged value from the staged diff, or move it to an "
@@ -498,9 +495,16 @@ def _flag_view(tok):
     # backslash, giving a genuine "--") is no longer recognized as one
     # either, over-denying instead of under-denying: an accepted,
     # documented trade in the safe direction, not a new bypass (confirmed:
-    # such a token doesn't even start with "-" once viewed this way, so it
-    # falls through as an ordinary non-flag token, extending the scan
-    # rather than truncating it).
+    # such a token doesn't even start with "-" once viewed this way). Since
+    # F052, this specific over-denial is a DENY rather than an ALLOW-with-
+    # extended-scan: `git commit -m x \--` (nothing after the escaped
+    # separator) is real bash's harmless bare "--" with no pathspec, but
+    # this view-level check can't tell that apart from a real leftover
+    # pathspec, so has_staging_flag() now returns True for it immediately
+    # instead of continuing to scan for a later real flag -- still
+    # over-denial only (a command that would have ALLOWED now DENIES),
+    # never a bypass, and still the same accepted trade this comment
+    # already documents.
     tok = re.sub(
         r"\$'((?:[^'\\]|\\.)*)'",
         lambda m: ANSI_C_ESCAPE_PATTERN.sub(_decode_ansi_c_escape, m.group(1)),
@@ -822,8 +826,7 @@ def has_staging_flag(tokens, views):
         # whatever REAL flag follows it -- the fail-open F051 round 2
         # exists to close.
         if _consumes_next_token(view):
-            i += 1
-            i += 1
+            i += 2
             continue
         if not view.startswith("-"):
             # A flagless token that survives to here (not itself a
