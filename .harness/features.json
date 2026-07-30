@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 58,
-  "passing": 45,
+  "total_features": 59,
+  "passing": 46,
   "features": [
     {
       "id": "F001",
@@ -1581,7 +1581,7 @@
       "id": "F055",
       "description": "check-remaining-tasks.sh.template's TeammateIdle guidance has no concept of teammate ROLE: it re-nudges any idle teammate toward the next claimable feature for as long as ANY feature is claimable, regardless of whether that teammate is an implementer (for whom this is correct) or a reviewer/other non-implementer role with no further review assigned (for whom claiming an unrelated feature would itself be scope creep under the agent-teams protocol). CONFIRMED live, twice: review-pr69-f040 hit this originally (leading to F046's filing), and review-pr81-f047 hit it again after F046's stdout-to-stderr fix was live and working correctly -- the hook fired exactly to spec (rc=2, correct guidance on stderr) but a reviewer with a completed, delivered review had no way to signal 'done, nothing claimable is mine' short of messaging the lead directly or violating scope by self-claiming an implementation feature. The TeammateIdle payload itself carries no teammate identity (an existing, confirmed constraint), so the hook cannot distinguish roles on its own -- role-aware behavior would need to live in the agent definitions (e.g. a reviewer's own definition recognizing 'my assignment is done, message the lead and go idle' rather than treating check-remaining-tasks.sh's nudge as instruction to claim new work), not in this shared hook.",
       "priority": 38,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "agents/reviewer.md",
         "skills/harness-init/check-remaining-tasks.sh.template"
@@ -1590,12 +1590,14 @@
         "F046"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Raised by review-pr81-f047 (not filed by them -- explicitly deferred the filing decision to the lead, correctly declining to self-claim an unrelated implementation feature as a workaround, which would itself be the scope creep the agent-teams protocol prohibits). This is the second live occurrence of the same root cause that led to F046 being filed (review-pr69-f040 hit it first). depends_on F046 since it builds on the stderr-delivery fix; F046's own notes already flagged this as 'a separate design question, not addressed by this fix.'",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Raised by review-pr81-f047 (not filed by them -- explicitly deferred the filing decision to the lead, correctly declining to self-claim an unrelated implementation feature as a workaround, which would itself be the scope creep the agent-teams protocol prohibits). This is the second live occurrence of the same root cause that led to F046 being filed (review-pr69-f040 hit it first). depends_on F046 since it builds on the stderr-delivery fix; F046's own notes already flagged this as 'a separate design question, not addressed by this fix.'\n\nFIXED: the hook itself stays role-blind by construction (TeammateIdle carries no teammate identity, confirmed directly -- the payload has no field to key off), so the fix is split across the two places that actually can know or express role. (1) check-remaining-tasks.sh.template's stderr guidance now says explicitly that the claim-it instruction does not apply to a role with no Edit/Write tools, so a reviewer reading the raw nudge is told directly it isn't for them, not left to infer it. (2) agents/reviewer.md's existing 'decline and message the lead' instruction (already present since an earlier session) didn't actually stop the repeat-nudge loop review-pr81-f047 hit, because it said what to do on the FIRST nudge but not on every identical repeat afterward -- extended it to send the decline exactly once per review assignment, then end the turn silently on repeats, with an explicit note that the lead (not the hook) is responsible for shutting the teammate down once its review is delivered, mirroring the existing 'send the completion message exactly once' dedup convention for implementers. Added 2 new test assertions: one pins the new stderr wording (mutation-tested: reverting the hook template+live-copy change makes exactly this assertion fail), one greps reviewer.md for the dedup instruction (reverting the agents/reviewer.md change makes exactly that assertion fail). Full suite 1273/1273. Resynced .claude/hooks/check-remaining-tasks.sh from the template per F047's drift guard.\n\nROUND 2 (review of PR #89): reviewer found 1 major finding, ground-truthed and confirmed before fixing: agents/reviewer.md's added text claimed \"the lead is expected to shut you down once your review is received, the same way it shuts down any teammate whose assigned work is done\" -- checked directly against rules/agent-teams-protocol.md's Lead Agent Responsibilities list (steps 1-16): shutdown is step 15, sent to ALL teammates, after step 10 synthesizes ALL teammates' work, not per-teammate on individual completion. No per-teammate on-completion shutdown is documented anywhere in the protocol. Corrected the sentence to state what the protocol actually guarantees (team-wide shutdown at Phase 5 teardown, after all teammates' work is synthesized) rather than a stronger, unsupported reassurance. Declined the reviewer's alternative option of adding a real per-teammate on-completion shutdown to the protocol itself (their option (b)) since that's a behavior change to rules/agent-teams-protocol.md outside F055's declared scope, not a mechanical correction -- would need its own review. Also tightened test/run-tests.sh's new stderr assertion to also require the actionable clause (\"does not apply to you\"), not just the descriptive \"no Edit/Write tools\" substring, per the reviewer's minor finding, and swapped the approaches_tried justification for the mechanical-alternative dismissal from an appeal to the spec's own wording to the actual technical reason (the closest existing precedent, .claude/teammate-scope.txt, is a single shared file, not per-teammate, so it couldn't carry role under concurrency either). Full suite re-run after all three fixes: 1274/1274.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "role-blind hook text clarification (check-remaining-tasks.sh.template) + agent-definition decline-dedup instruction (agents/reviewer.md), rather than trying to smuggle teammate identity into the hook itself (no such field exists in the TeammateIdle payload). Checked the mechanical alternative directly rather than dismissing it by appeal to the filing's own wording: .claude/teammate-scope.txt, the closest existing precedent for per-teammate hook state, is a single SHARED file (created per spawn, rewritten per reassignment, deleted at teardown -- rules/agent-teams-protocol.md), not one keyed by teammate. It could not distinguish concurrent teammates in the exact scenario at issue (a reviewer idle while implementers still hold claimable features), so a marker file on that model would not solve the identity problem either -- it would need new per-teammate naming, lead-side write-per-spawn wiring, and teardown handling, which is new protocol surface to fix a failure mode whose cost is some wasted teammate turns. Disproportionate."
+      ],
       "failure_reason": null,
       "discovered_via": "F046",
       "spec": null
@@ -1663,6 +1665,29 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F053",
+      "spec": null
+    },
+    {
+      "id": "F059",
+      "description": "The Agent Teams protocol (rules/agent-teams-protocol.md's Lead Agent Responsibilities) only documents team-WIDE shutdown: step 15 sends shutdown_request to ALL teammates, after step 10 synthesizes ALL teammates' work, at Phase 5 teardown. There is no documented per-teammate on-completion shutdown -- a teammate whose own assigned work is done (e.g. a reviewer whose review has been delivered and acted on) has no path to being released before the ENTIRE team reaches Phase 5, even if every other teammate still has features to implement. Confirmed via exhaustive grep for 'shutdown' across rules/, skills/, agents/ during F055's round-2 review: 5 hits total, all describing team-wide shutdown, none describing per-teammate early release. Consequence (observed live during F055's own review, review-pr89-f055's TeammateIdle hook kept re-firing on it 6 consecutive times after its review was delivered): a teammate with nothing left to claim spins silently (post-F055) or spams the lead (pre-F055) for the remainder of the session's team-wide work, rather than being released. This is a coordination semantics change affecting every teammate type, not just reviewers, so it needs its own spec and review rather than being folded into F055's narrower fix (F055 only made the interim behavior less noisy; it did not, and per its own scope could not, add an actual release path).",
+      "priority": 42,
+      "status": "pending",
+      "scope": [
+        "rules/agent-teams-protocol.md",
+        "skills/harness-continue/SKILL.md"
+      ],
+      "depends_on": [
+        "F055"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Recommended by review-pr89-f055-2 during F055's round-2 review (not filed by them -- correctly declined to fold a coordination-semantics change into an unrelated PR, and explicitly recommended filing it as its own feature rather than letting the idea die in a PR comment thread, citing F055 itself as the precedent for that pattern). Not yet scoped in detail: the concrete design (a new per-teammate SendMessage pattern? a lead-side rule to proactively check TaskList and release idle-with-nothing-claimable teammates rather than waiting for Phase 5?) needs its own investigation before implementation starts.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F055",
       "spec": null
     }
   ]

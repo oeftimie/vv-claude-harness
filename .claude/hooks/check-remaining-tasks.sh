@@ -18,6 +18,12 @@
 # hook in this repo to get the channel right -- enforce-scope.sh.template's two
 # legacy `exit 2` sites and verify-task-quality.sh.template's four all still write
 # their blocking message to stdout, the same defect, not yet fixed (see F046 notes).
+# Role-blind by construction (F055): the TeammateIdle payload carries no teammate
+# identity, so this hook cannot tell an implementer from a review-only teammate and
+# will offer the same claimable feature to both for as long as one exists. The
+# guidance text below says so explicitly; the rest of the fix (a reviewer declining
+# once instead of re-messaging the lead on every repeat) lives in agents/reviewer.md,
+# since that is the only place role is actually known.
 
 set -euo pipefail
 
@@ -56,4 +62,5 @@ print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
 
 echo "$NEXT" >&2
 echo "Read .harness/features.json for full details, then claim it via TaskUpdate." >&2
+echo "If your role has no Edit/Write tools (e.g. a review-only teammate), this does not apply to you -- see your own agent definition for what to do instead." >&2
 exit 2
