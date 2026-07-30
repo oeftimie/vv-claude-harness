@@ -2550,6 +2550,26 @@ assert_deny_json "$OUT" "hs2 (F037 r1): BSD clustered '-ai' denial uses JSON den
 assert_contains "$OUT" "write to 'src/other/f.txt'" \
   "hs2 (F037 r1): BSD clustered '-ai' denial names the real target"
 
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -Hi.bak 's/a/b/' src/other/f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F037 r1): BSD clustered '-Hi' out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F037 r1): BSD clustered '-Hi' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/f.txt'" \
+  "hs2 (F037 r1): BSD clustered '-Hi' denial names the real target"
+
+# Pins the deliberate "l" trade-off itself (round-2 review, non-blocking nit
+# 1): without this assertion, a future narrowing of the class back to
+# excluding "l" (undoing the accepted GNU-side over-denial in exchange for
+# closing the BSD fail-open) would fail no test at all.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -li.bak 's/a/b/' src/other/f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F037 r1): BSD clustered '-li' out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F037 r1): BSD clustered '-li' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/f.txt'" \
+  "hs2 (F037 r1): BSD clustered '-li' denial names the real target"
+
 # Isolates the e/f exclusion from IN_PLACE_CLUSTER_PATTERN specifically --
 # without it, "-fi" would be misread as -f combined with -i, when real GNU
 # sed treats "i" here as -f's own script-file VALUE (a file literally named
