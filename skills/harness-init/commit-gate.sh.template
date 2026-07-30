@@ -38,7 +38,15 @@
 #      this trades some false positives for fewer false negatives, acceptable
 #      since the pattern set is the project's own tuning surface) and
 #      URL-embedded credentials (any scheme, not just http/https). Any staged
-#      path whose basename matches `*.env.example` is exempt. Denial names the
+#      path whose basename matches `*.env.example` is exempt, as is any path
+#      listed verbatim in harness.json's `secret_scan_exempt_paths` array
+#      (opt-in, absent/non-array means no additional exemptions) -- for a
+#      project whose own test suite deliberately stages secret-SHAPED fixture
+#      data to test a scanner like this one (F054, discovered live: this
+#      repo's own test/run-tests.sh could no longer be committed once this
+#      hook was wired onto the Bash matcher). harness.json is lead-owned
+#      (enforce-scope.sh denies a teammate editing it directly), so this
+#      exemption list can't be self-granted by a scoped teammate. Denial names the
 #      finding class, file, and line number -- NEVER the matched value or line
 #      content, to avoid writing a candidate secret into the transcript or hook
 #      logs. Pattern set is tuned by editing this copied-then-project-owned file
@@ -902,15 +910,37 @@ def added_lines(diff_text):
             current_line += 1
 
 
-def is_exempt(path):
-    return fnmatch.fnmatch(path.rsplit("/", 1)[-1], "*.env.example")
+def secret_scan_exempt_paths(project_root):
+    # Opt-in, harness.json-configured list of paths (verbatim, relative to
+    # project_root, matching the diff's own path form) additionally exempt
+    # from the secret scan -- for a project whose own test suite must stage
+    # secret-SHAPED synthetic fixture data to test a scanner like this one
+    # (F054). Mirrors style_gate_enabled()'s own read-harness.json-or-
+    # default-off pattern. harness.json is lead-owned, so a scoped teammate
+    # can't grant itself an exemption this way.
+    path = os.path.join(project_root, ".harness", "harness.json")
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    paths = data.get("secret_scan_exempt_paths")
+    if not isinstance(paths, list):
+        return []
+    return [p for p in paths if isinstance(p, str)]
 
 
-def find_secret(lines, deadline):
+def is_exempt(path, exempt_paths):
+    if fnmatch.fnmatch(path.rsplit("/", 1)[-1], "*.env.example"):
+        return True
+    return path in exempt_paths
+
+
+def find_secret(lines, deadline, exempt_paths):
     for path, lineno, content in lines:
         if time.monotonic() > deadline:
             return None
-        if is_exempt(path):
+        if is_exempt(path, exempt_paths):
             continue
         scanned = content[:SECRET_SCAN_MAX_LEN]
         if SECRET_PATTERN.search(scanned):
@@ -971,7 +1001,8 @@ def main():
             return
         lines = list(added_lines(diff_text))
         deadline = time.monotonic() + SCAN_TIME_BUDGET_SECONDS
-        reason = find_secret(lines, deadline)
+        exempt_paths = secret_scan_exempt_paths(project_root)
+        reason = find_secret(lines, deadline, exempt_paths)
         if reason:
             print(reason)
             return

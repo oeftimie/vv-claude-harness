@@ -5382,6 +5382,46 @@ RC=$?
 assert_rc0 "$RC" "cg: .env.example staged passes despite secret-shaped content"
 assert_not_contains "$OUT" "permissionDecision" "cg: .env.example exemption has no deny fields"
 
+# F054: a project's own test suite may need to deliberately stage secret-
+# SHAPED synthetic fixture data to test a scanner like this one (discovered
+# live: once this hook was wired onto the Bash matcher, this repo's own
+# test/run-tests.sh could no longer be committed at all). Opt-in via
+# harness.json's secret_scan_exempt_paths array, lead-owned so a scoped
+# teammate can't grant itself an exemption.
+DIR_CG_EXEMPTCFG="$WORK/commit-gate-exempt-config"
+make_fixture "$DIR_CG_EXEMPTCFG"
+install_hooks "$DIR_CG_EXEMPTCFG"
+python3 - "$DIR_CG_EXEMPTCFG/.harness/harness.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+data["secret_scan_exempt_paths"] = ["fixtures.py"]
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+echo 'api_key = "abcdefghijklmnopqrstuvwx"' > "$DIR_CG_EXEMPTCFG/fixtures.py"
+git -C "$DIR_CG_EXEMPTCFG" add fixtures.py
+OUT=$(run_commit_gate "$DIR_CG_EXEMPTCFG" 'git commit -m "add fixtures"')
+RC=$?
+assert_rc0 "$RC" "cg (F054): configured exempt path passes despite secret-shaped content"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg (F054): configured exempt path has no deny fields"
+
+# No new false positive: a DIFFERENT, non-exempted path with the same
+# secret-shaped content must still correctly deny.
+echo 'api_key = "abcdefghijklmnopqrstuvwx"' > "$DIR_CG_EXEMPTCFG/other.py"
+git -C "$DIR_CG_EXEMPTCFG" add other.py
+OUT=$(run_commit_gate "$DIR_CG_EXEMPTCFG" 'git commit -m "add other"')
+RC=$?
+assert_rc0 "$RC" "cg (F054): a non-exempted path with secret-shaped content exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg (F054): non-exempted path denial uses JSON deny form"
+assert_contains "$OUT" "secret-assignment" \
+  "cg (F054): non-exempted path denial names secret-assignment"
+
 DIR_CG_STYLEOFF="$WORK/commit-gate-style-off"
 make_fixture "$DIR_CG_STYLEOFF"
 install_hooks "$DIR_CG_STYLEOFF"
