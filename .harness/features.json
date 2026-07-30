@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 50,
-  "passing": 35,
+  "passing": 36,
   "features": [
     {
       "id": "F001",
@@ -1326,16 +1326,16 @@
       "id": "F045",
       "description": "skills/harness-init/commit-gate.sh.template's is_git_token() recognizes `\\git`, `(git`, and path forms like `/usr/bin/git`, but NOT a quoted command name (`\"git\"` or `'git'`) -- the mirror-image of the gap F040 just closed in enforce-scope.sh's command-name recognition. CONFIRMED at the function level: extracting is_git_token() and unit-testing it directly shows `\"git\"` -> False and `'git'` -> False (should be True). NOT YET CONFIRMED end-to-end through the real hook: a plain `git commit -m x` (the simplest possible input) did not trigger the gate at all in the reviewer's fixture during the F040 PR #69 review, so reachability of this specific quoted-command-name gap through the actual commit-gate.sh entry point is unverified -- flagged as likely, not confirmed, pending a dedicated fixture that first establishes a baseline case where the gate demonstrably fires.",
       "priority": 29,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/commit-gate.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #69 (F040), as a sibling-file check for the same command-name-recognition bug class F040 just fixed in enforce-scope.sh. Reviewer explicitly could not confirm end-to-end reachability (the gate itself did not fire on a plain `git commit -m x` in their fixture) -- first task for whoever picks this up is establishing why the gate isn't firing at all before assessing the quoted-name gap's real severity.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by adversarial review of PR #69 (F040), as a sibling-file check for the same command-name-recognition bug class F040 just fixed in enforce-scope.sh. Reviewer explicitly could not confirm end-to-end reachability (the gate itself did not fire on a plain `git commit -m x` in their fixture) -- first task for whoever picks this up is establishing why the gate isn't firing at all before assessing the quoted-name gap's real severity.\n\nRESOLVED (not a bug): first task per this entry's own notes was establishing why the gate didn't fire on a plain `git commit -m x` before assessing the quoted-name gap's severity -- answer: that command is NOT supposed to trigger a denial at all. It's exactly the SAFE, repaired pattern the gate's own repair message recommends (`git add` separately, then a plain `git commit` with no staging flags) -- the earlier reviewer's fixture was testing a non-violation, not evidence the gate was broken. Re-tested with an actual violation (`git commit -a -m wip`, which correctly denies with the compound-stage-and-commit reason) and its quoted-git-name variants (`\"git\" commit -a -m wip`, `'git' commit -a -m wip`): BOTH quoted forms ALREADY deny identically to the bare form, end-to-end, live. Read why: parse_command()'s own comment states tokens are unquoted ONE AT A TIME via unquote_token() immediately after split_tokens(seg), BEFORE segment_subcommand() (the function that calls is_git_token()) ever sees them (`tokens = [unquote_token(t) for t in split_tokens(seg)]`). So by the time is_git_token() is actually invoked in the real pipeline, a quoted \"git\"/'git' is indistinguishable from bare git -- the original ticket's \"unit-level test\" (feeding is_git_token() a RAW, still-quoted string in isolation) tested a call shape that never occurs in the real pipeline, since is_git_token() has exactly ONE call site and it always receives an already-unquoted token. No code change needed in commit-gate.sh.template. Added 2 regression tests (6 assertions) locking this in, since a future refactor that fed is_git_token() a raw token directly could reopen exactly the suspected gap -- mutation-tested by reverting parse_command()'s own pre-unquote step: 13 assertions failed, including both new F045 tests AND 9 pre-existing F025 tests covering the same invariant from the quoted-subcommand angle, confirming this invariant is now guarded from multiple angles.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
