@@ -4363,6 +4363,103 @@ assert_rc0 "$RC" "ht: acceptance with no proof still exits 0"
 assert_contains "$OUT" "no proof recorded" "ht: no-proof acceptance warns on stdout"
 assert_contains "$OUT" "F003" "ht: no-proof warning names the feature"
 
+# F057: Claude Code's own hooks docs (confirmed via direct fetch for TaskCompleted
+# specifically, not just the general "for most events" prose) say TaskCompleted is
+# NOT one of the three exit-0 exceptions (UserPromptSubmit, UserPromptExpansion,
+# SessionStart) where stdout is shown as context -- a plain `echo` on this accept
+# path would land only in the debug log, never seen by the teammate (the identical
+# defect class F046/F053 fixed for exit-2 blocking messages, discovered as a
+# sibling investigation). The fix wraps both accept-path warnings in the
+# `systemMessage` JSON field instead, which the same docs page documents as
+# visible to the user regardless of event or exit code. Pin the ACTUAL JSON
+# structure here, not just a substring match anywhere in the output -- a
+# regression back to plain `echo` would still contain the same substrings and
+# pass every pre-existing assertion above, silently reintroducing the invisible-
+# warning defect. Stdout captured SEPARATELY from stderr here (unlike $OUT
+# above, which combines both via 2>&1 for the substring checks) -- the
+# Stage 1/Stage 2 progress lines go to stderr, and mixing them into the same
+# capture would make it something other than the single JSON object the hook
+# actually emits on stdout.
+STDOUT_ONLY_HQ7=$(run_hook "$DIR_HQ7" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F003"}}}' 2>/dev/null)
+OUT_JSON_CHECK=$(python3 - "$STDOUT_ONLY_HQ7" <<'PYEOF'
+import json
+import sys
+
+raw = sys.argv[1]
+try:
+    data = json.loads(raw)
+except (ValueError, TypeError):
+    print("NOT_JSON")
+    sys.exit(0)
+if not isinstance(data, dict) or "systemMessage" not in data:
+    print("NO_SYSTEMMESSAGE_KEY")
+    sys.exit(0)
+msg = data["systemMessage"]
+if "no proof recorded" not in msg:
+    print("MISSING_PROOF_WARNING")
+    sys.exit(0)
+if "F003" not in msg:
+    print("MISSING_FEATURE_ID")
+    sys.exit(0)
+print("OK")
+PYEOF
+)
+assert_contains "$OUT_JSON_CHECK" "OK" \
+  "ht (F057): no-proof warning is valid JSON with a systemMessage field naming the warning and feature"
+
+# The base fixture's F002 starts "in-progress" and set_f003_fields() also marks
+# F003 itself "in-progress" -- both warnings fire together here, and only ONE
+# JSON object can be emitted per hook invocation, so they must be combined into
+# a single systemMessage rather than two separate (and JSON-breaking) echoes.
+assert_contains "$OUT" "still marked in-progress" \
+  "ht (F057): the in-progress reminder fires alongside the no-proof warning in the same run"
+COMBINED_JSON_CHECK=$(python3 - "$STDOUT_ONLY_HQ7" <<'PYEOF'
+import json
+import sys
+
+raw = sys.argv[1]
+try:
+    data = json.loads(raw)
+except (ValueError, TypeError):
+    print("NOT_JSON")
+    sys.exit(0)
+msg = data.get("systemMessage", "") if isinstance(data, dict) else ""
+if "no proof recorded" in msg and "still marked in-progress" in msg:
+    print("OK")
+else:
+    print("MISSING_ONE_OR_BOTH")
+PYEOF
+)
+assert_contains "$COMBINED_JSON_CHECK" "OK" \
+  "ht (F057): both warnings are combined into a single systemMessage JSON object, not two separate ones"
+
+# No new false positive: a fully clean accept (no proof warning, no in-progress
+# features at all) must produce genuinely empty stdout -- no spurious JSON,
+# no empty systemMessage.
+DIR_HQ7CLEAN="$WORK/ht-quality-clean-accept"
+make_fixture "$DIR_HQ7CLEAN"
+install_hooks "$DIR_HQ7CLEAN"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ7CLEAN/.harness/init.sh"
+python3 - "$DIR_HQ7CLEAN/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    feature["status"] = "passing"
+    feature["proof"] = {"claim": "x", "evidence_type": "unit", "artifact": "y"}
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_hook "$DIR_HQ7CLEAN" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>/dev/null)
+RC=$?
+assert_rc0 "$RC" "ht (F057): a fully clean accept still exits 0"
+assert_empty "$OUT" "ht (F057): a fully clean accept has no stdout at all (no spurious systemMessage)"
+
 DIR_HQ8="$WORK/ht-quality-qa-binding-match"
 make_fixture "$DIR_HQ8"
 install_hooks "$DIR_HQ8"
