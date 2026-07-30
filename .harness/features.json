@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 40,
-  "passing": 26,
+  "passing": 27,
   "features": [
     {
       "id": "F001",
@@ -1093,19 +1093,21 @@
       "id": "F036",
       "description": "skills/harness-init/enforce-scope.sh.template's redirect_targets()/strip_redirects() only recognize `>`/`>>` (file redirect) and `[n]>&(digits|-)` (fd duplication) as real redirect operators. Real bash also has `>&word` for a NON-numeric, non-'-' word (fd omitted) -- this is `&>word`, an ordinary FILE redirect, not fd duplication. CONFIRMED: `echo HELLO >&/etc/passwd` genuinely creates/overwrites /etc/passwd in real bash (bash 3.2.57), but this hook's regex never matches `>&` followed by a non-digit/non-'-' word at all, so the write target is never extracted and the command is wrongly ALLOWED -- confirmed identical on origin/main and after F030's fix (pre-existing, not a regression). Widening strip_redirects()'s existing `>&(?:\\d+|-)` alternative to match any word would be WRONG (that alternative exists specifically to STRIP the fd-dup form without creating a bogus target, per F030's own comment); the real fix belongs in redirect_targets(), which needs a new alternative recognizing `>&word` (word not purely digits or '-') as a real file-redirect target, mirroring the existing `>>?` alternative. CONFIRMED by adversarial review of PR #53, round 3: two related forms also genuinely write a real file and also bypass this hook, unchanged on both main and the F030 branch -- the space-separated `>& /etc/passwd` (whitespace between `>&` and the word) and the quoted `>&'file'` form. Any fix for this feature must allow intervening whitespace/quoting between `>&` and the word, not just the bare-adjacent form the original description named, or it will miss both.",
       "priority": 20,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #53, round 2 (F030's narrowed /dev/* exemption and strip_redirects() comment fix). Confirmed pre-existing on main, unrelated to F030's own changes; lower severity than F034 (this hook's Bash coverage is explicitly documented as best-effort/pattern-based, not adversarial-proof, and this is an unusual redirect shape), so not urgent enough to block F030's merge.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by adversarial review of PR #53, round 2 (F030's narrowed /dev/* exemption and strip_redirects() comment fix). Confirmed pre-existing on main, unrelated to F030's own changes; lower severity than F034 (this hook's Bash coverage is explicitly documented as best-effort/pattern-based, not adversarial-proof, and this is an unusual redirect shape), so not urgent enough to block F030's merge. Implemented: redirect_targets() gained a second re.finditer pass matching `>&\\s*(word)`, with the word's UNQUOTED value (not the raw/masked text) checked against being purely digits or \"-\" to decide whether it's fd-duplication (excluded) or a real file target (included) -- quoting doesn't change bash's own classification here (`>&'1'` is still fd-duplication, confirmed empirically), so checking the masked/raw text would have wrongly treated a quoted digit as a real target. strip_redirects() gained a parallel third alternative (`>&\\s*[^\\s<>|&;]+`, deliberately with no fd-prefix option -- real bash treats an fd-prefixed word here, `2>&outfile.txt`, as a hard \"ambiguous redirect\" syntax error that writes nothing at all, confirmed empirically, so there is no real target to protect there). All three real-bash-confirmed shapes (adjacent `>&word`, space-separated `>& word`, quoted `>&'word'`) are covered, plus confirmed no regression on the existing fd-duplication forms (`>&1`, `>& 2`, `>&'-'`, all still correctly unaffected).",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Ground-truthed every shape against real bash before implementing (not assumed from the ticket description): adjacent/space/quoted `>&word` all genuinely create the file; a quoted digit or \"-\" (`>&'1'`, `>&'-'`) is still fd-duplication, not a file (quoting doesn't change bash's classification); an fd-prefixed word form (`2>&outfile.txt`) is a hard bash syntax error, not a working redirect, so it needs no dedicated handling. Mutation-tested three ways: removing redirect_targets()'s new loop entirely (fails exactly its 6 new assertions), removing the digit/dash exclusion filter (fails exactly the 3 fd-duplication no-deny assertions plus 2 pre-existing F030 2>&1 assertions, confirming no new false-positive was introduced there either), and removing strip_redirects()'s new alternative (initially survived at 918/918 -- redirect_targets() alone already denies the simple `echo ... >&word` cases regardless of stripping, since \"echo\" isn't a cp/mv/tee/rm/sed command all_flagless_tokens()/cp_mv_targets() would even look at; had to construct a mid-command case before a REAL sed -i target to expose it -- without the strip, the denial coincidentally still fires, but names the WRONG (mangled decoy) target instead of the real one, a genuine correctness bug the new dedicated test now catches)."
+      ],
       "failure_reason": null,
       "discovered_via": "F030",
       "spec": null
