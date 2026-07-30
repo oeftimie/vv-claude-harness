@@ -1636,6 +1636,59 @@ RC=$?
 assert_rc0 "$RC" "hs2: 'cp --target-directory=' out-of-scope destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: 'cp --target-directory=' denial uses JSON deny form"
 
+# F048: an unambiguous GNU-getopt_long abbreviation of --target-directory
+# (bare "--targ"/"--t", attached "--targ=DIR") is just as real a destination
+# flag to real GNU cp/mv as the exact spelling -- confirmed against real
+# GNU cp/mv 9.11 that `cp --targ=out src.txt`, `cp --t out src.txt`, and
+# `mv --targ=out src.txt` all genuinely redirect via -t's own mechanism.
+# Before this, only the exact "--target-directory"/"--target-directory="
+# spellings were recognized, so an out-of-scope abbreviated destination was
+# never checked at all (the identical abbreviation gap F041 fixed for
+# sed's --in-place, but in this sibling function's own flag set).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --targ src/other/ src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F048): bare abbreviated 'cp --targ' out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F048): bare abbreviated 'cp --targ' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" \
+  "hs2 (F048): bare abbreviated 'cp --targ' denial names the destination, not a source"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --targ=src/other/ src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F048): attached abbreviated 'cp --targ=' out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F048): attached abbreviated 'cp --targ=' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" \
+  "hs2 (F048): attached abbreviated 'cp --targ=' denial names the destination, not a source"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'mv --targ=src/other/ src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F048): attached abbreviated 'mv --targ=' out-of-scope destination exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F048): attached abbreviated 'mv --targ=' denial uses JSON deny form"
+
+# No new false positive: an ambiguous prefix among the FULL cp/mv long-
+# option set (e.g. "--n", which could be --no-clobber/--no-copy/--no-
+# dereference/--no-preserve/--no-target-directory) must NOT resolve to
+# --target-directory -- real GNU cp/mv itself errors on it as ambiguous,
+# so it must fall through to the ordinary last-flagless-token destination
+# exactly as it did before this fix.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --n src/parser/a.txt src/parser/b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F048): ambiguous '--n' prefix on an all-in-scope command passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F048): ambiguous '--n' prefix has no deny fields (not misread as --target-directory)"
+
+# No new false positive: an in-scope destination via the abbreviated form
+# must still be allowed cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'cp --targ=src/parser/sub/ src/parser/a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F048): in-scope destination via abbreviated '--targ=' passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F048): in-scope abbreviated destination has no deny fields"
+
 # No new false positive: all-in-scope multi-target commands, and a -t
 # destination that IS in scope, must still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
