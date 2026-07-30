@@ -615,13 +615,32 @@ def cp_mv_targets(tokens):
 
 SED_SCRIPT_VALUE_FLAGS = ("-e", "-f", "--expression", "--file")
 
-# Matches a short-flag cluster ending in "i" (F037): GNU sed's own
-# argument-less short flags (n, r, E, s, u, z) may precede "i" in the same
-# token (`-ri`, `-ni`, `-Ei`, `-nsi`, ...); "e"/"f"/"l" are deliberately
-# excluded since they take their OWN argument and consume the REST of the
-# token once encountered, so "-fi" is -f's value "i" (a file literally
-# named "i"), never -f combined with -i (confirmed against real GNU sed).
-IN_PLACE_CLUSTER_PATTERN = re.compile(r"^-[nrEsuz]*i")
+# Matches a short-flag cluster ending in "i" (F037): both GNU's and BSD/
+# macOS's own argument-less short flags may precede "i" in the same token
+# (`-ri`, `-ni`, `-Ei`, `-nsi`, ... on GNU; `-ai.bak`, `-Hi.bak`, `-ali.bak`
+# on BSD/macOS's own /usr/bin/sed, confirmed against it directly -- this
+# repo's own stated platform, and this same function already accommodates
+# a BSD idiom elsewhere, the `-i ''` empty-suffix skip below). "e"/"f" are
+# excluded on both flavors since they take their OWN argument and consume
+# the REST of the token once encountered, so "-fi" is -f's value "i" (a
+# file literally named "i"), never -f combined with -i (confirmed against
+# real GNU sed: `sed -fi file` prints to stdout, unmodified). "l" is a
+# genuine, irreconcilable conflict between the two flavors and included
+# here as a deliberate choice, not an oversight: BSD's `-l` takes no
+# argument (line-buffered output; confirmed via `sed -li.bak ...`
+# genuinely in-place edits), but GNU's `-l N` takes a MANDATORY numeric
+# one (confirmed via `gsed -li file`: prints to stdout, unmodified -- "i"
+# is consumed as -l's line-length value, not a flag). Including "l"
+# closes the real BSD fail-open at the cost of over-denying an unusual
+# GNU combination (`sed -li... ` intending -l's own value, not -i) --
+# accepted, same class as this hook's other documented safe-direction
+# residuals, since a fail-open is worse than an over-caution and BSD/macOS
+# is the platform this repo itself runs on. "a"/"H" (BSD-only, confirmed
+# via `sed -ai.bak`/`sed -Hi.bak`) cost nothing on GNU either way: real
+# GNU sed rejects them outright as invalid options, so a command using
+# them can never reach GNU's own in-place logic regardless of what this
+# hook decides (found by adversarial review of PR #65, round 1).
+IN_PLACE_CLUSTER_PATTERN = re.compile(r"^-[nrEsuzalH]*i")
 
 
 def _separator_index(args):
@@ -728,23 +747,16 @@ def sed_inplace_targets(tokens):
     # adversarial review of PR #59, F035).
     # In-place presence used to recognize only a BARE "-i", an attached
     # short-flag suffix ("-i" as a literal prefix, e.g. "-i.bak"), or an
-    # EXACT "--in-place" -- missing two real, ordinary GNU invocation
-    # shapes (F037): CLUSTERED short flags where -i is not first in the
-    # token (`sed -ri 's/a/b/' file`, `sed -ni 's/a/b/p' file` -- GNU
-    # allows combining -n/-r/-E/-s/-u/-z with -i in one token), and the
-    # attached long-form suffix `--in-place=.bak`. Both are more reachable
-    # in ordinary usage than anything F029 fixed (no unusual quoting or
-    # "--" needed, just an everyday flag-combining habit) -- confirmed
-    # against real GNU sed (gsed 4.10): `-ri`/`-ni`/`-Ei`/`-nsi` all
-    # genuinely enable in-place editing with i's optional suffix empty
-    # (nothing follows "i" in the token), and `--in-place=.bak` genuinely
-    # writes a backup with that suffix, same as `-i.bak`. IN_PLACE_CLUSTER
-    # only allows GNU's OWN argument-less short flags (n, r, E, s, u, z)
-    # before "i" -- not "e"/"f"/"l", which take their OWN argument and
-    # consume the REST of the token once encountered, so e.g. "-fi" is
-    # -f's script-file value "i" (a file literally named "i"), never -f
-    # combined with -i (confirmed against real gsed: `sed -fi file`
-    # prints to stdout, unmodified, no in-place edit at all).
+    # EXACT "--in-place" -- missing two real, ordinary invocation shapes
+    # (F037): CLUSTERED short flags where -i is not first in the token
+    # (`sed -ri 's/a/b/' file`, `sed -ni 's/a/b/p' file`), and the attached
+    # long-form suffix `--in-place=.bak`. Both are more reachable in
+    # ordinary usage than anything F029 fixed (no unusual quoting or "--"
+    # needed, just an everyday flag-combining habit). See
+    # IN_PLACE_CLUSTER_PATTERN's own comment above for exactly which short
+    # flags may precede "i" in a cluster and why (a GNU/BSD flavor
+    # difference this repo's own platform makes relevant, not an
+    # arbitrary choice).
     if not tokens or tokens[0] != "sed":
         return []
     args = tokens[1:]

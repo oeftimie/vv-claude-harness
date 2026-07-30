@@ -2535,6 +2535,58 @@ assert_rc0 "$RC" "hs2 (F037): 'sed -f -i.bak file' (a real -f value, not -i) pas
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F037): 'sed -f -i.bak file' has no deny fields (not a real in-place edit)"
 
+# F037 round 1 (adversarial review of PR #65): BSD/macOS's own /usr/bin/sed
+# has DIFFERENT argument-less short flags than GNU (-a, -H, -l per its own
+# usage string), confirmed directly against it -- `sed -ai.bak`/`-Hi.bak`
+# both genuinely in-place edit with a backup, same bug class as the GNU
+# clustered forms above, just the BSD half of it. This repo's own platform
+# is macOS, and this same function already accommodates a BSD idiom
+# elsewhere (the `-i ''` empty-suffix skip).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -ai.bak 's/a/b/' src/other/f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F037 r1): BSD clustered '-ai' out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F037 r1): BSD clustered '-ai' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/f.txt'" \
+  "hs2 (F037 r1): BSD clustered '-ai' denial names the real target"
+
+# Isolates the e/f exclusion from IN_PLACE_CLUSTER_PATTERN specifically --
+# without it, "-fi" would be misread as -f combined with -i, when real GNU
+# sed treats "i" here as -f's own script-file VALUE (a file literally named
+# "i"), so BOTH following arguments are ordinary INPUT files sed reads and
+# prints to stdout, writing neither (confirmed against real gsed: `gsed -fi
+# script_arg f.txt` prints twice, leaves both files byte-for-byte
+# unmodified). A single trailing argument isn't enough to discriminate this
+# mutation: a wrongly-triggered in-place guard would still swallow the lone
+# remaining token as a fake "implicit script" and find zero targets either
+# way, landing on the same ALLOW by coincidence. TWO trailing arguments are
+# needed so a wrongly-triggered guard consumes the first as the fake
+# implicit script and then wrongly finds the SECOND as a real target.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -fi src/parser/script_arg.txt src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F037 r1): 'sed -fi FILE FILE' (a real -f value, not -i) passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F037 r1): 'sed -fi FILE FILE' has no deny fields (e/f exclusion holds)"
+
+# Three-flag cluster and a quoted cluster -- both correct today, previously
+# unpinned by any assertion.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -rni 's/a/b/p' src/other/f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F037 r1): three-flag cluster '-rni' out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F037 r1): three-flag cluster '-rni' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/f.txt'" \
+  "hs2 (F037 r1): three-flag cluster '-rni' denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed "-ri" '"'"'s/a/b/'"'"' src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F037 r1): quoted cluster '\"-ri\"' out-of-scope target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F037 r1): quoted cluster '\"-ri\"' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/f.txt'" \
+  "hs2 (F037 r1): quoted cluster '\"-ri\"' denial names the real target"
+
 # A real background/AND '&' NOT glued to a '>' must still act as a segment
 # separator, unchanged from before.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
