@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 56,
-  "passing": 40,
+  "passing": 41,
   "features": [
     {
       "id": "F001",
@@ -1424,19 +1424,22 @@
       "id": "F049",
       "description": "skills/harness-init/enforce-scope.sh.template's sed_inplace_targets() only checks the FILE being edited (`sed -i<SUFFIX> ... file`) against scope, never the backup-suffix value itself, even though GNU sed's `*` expansion in the suffix lets the backup land in a completely different (potentially out-of-scope) directory. CONFIRMED against real gsed 4.10, executed from an in-scope `src/parser/` cwd: `gsed -i'../other/*' 's/a/b/' p.txt` genuinely creates a real file at `../other/p.txt` (rc=0), and the identical gap exists for the long form `--in-place=../other/*`. The hook extracts only `p.txt` (correctly recognized as in scope) and never inspects the suffix value at all, so the actual out-of-scope backup write goes completely unchecked. Present identically on main and on the F041 PR (#71) HEAD -- pre-existing, not introduced by F041's abbreviation fix, and a different bug class entirely (a second, unchecked write target hiding inside a flag's OWN value, not a flag-recognition gap).",
       "priority": 33,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
+        ".claude/hooks/enforce-scope.sh",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #71 (F041 round 2), while differentially fuzzing sed_inplace_targets() against an independent GNU-sed parsing model (406,900+ sequences) to look for any remaining fail-open in the abbreviation fix. Explicitly flagged by the reviewer as its own, different bug class (a second write target -- the backup file -- rather than a flag-recognition gap) and recommended as a separate feature rather than folding into F041. Independently confirmed live before filing: `gsed -i'../other/*' 's/a/b/' p.txt` from an in-scope cwd genuinely writes outside scope.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by adversarial review of PR #71 (F041 round 2), while differentially fuzzing sed_inplace_targets() against an independent GNU-sed parsing model (406,900+ sequences) to look for any remaining fail-open in the abbreviation fix. Explicitly flagged by the reviewer as its own, different bug class (a second write target -- the backup file -- rather than a flag-recognition gap) and recommended as a separate feature rather than folding into F041. Independently confirmed live before filing: `gsed -i'../other/*' 's/a/b/' p.txt` from an in-scope cwd genuinely writes outside scope.\n\nFIXED: added _is_inplace_flag() (a single shared predicate for \"is this the in-place flag\", replacing the presence check's inline duplicated condition, to avoid a guard-vs-loop disagreement risk this file has hit before -- F029/F052/F041) and _sed_inplace_suffix_raw() (extracts the RAW, not-yet-unquoted suffix attached to an in-place flag, mirroring _attached_value_raw()'s technique so the derived target is unquoted exactly once later by write_targets(), never twice -- the exact double-unquote bug class F035 rounds 2/3 fixed for cp_mv_targets()). Ground-truthed against real GNU sed 4.10 before implementing: only the LAST in-place-enabling flag's suffix matters (a later -i entirely overrides an earlier one's suffix, not just its presence -- confirmed both directions: a later suffixed -i replaces an earlier one, and a later BARE -i cancels an earlier suffix entirely, no backup at all); a suffix with no \"*\" is always either empty or a literal string GNU sed appends directly to the file argument (confirmed this holds even when that literal suffix itself contains \"/\", which produces a malformed concatenated path real GNU sed's own rename immediately rejects -- documented as an accepted, vanishingly narrow residual, not fixed); a suffix WITH \"*\" always needs checking, even with no \"/\" of its own, since the file argument itself may carry directory components that get baked into the substitution in a scope-relevant way (confirmed directly: `sed -iBACKUP_'*' file` from within a subdirectory attempts to rename into a sibling directory literally named after the file's own path prefix). Added 16 new assertions covering: attached and long-form asterisk suffixes, multiple files (each gets its own derived target), last-flag-wins for both a later suffix replacing an earlier one AND a later bare -i cancelling one, plus two no-false-positive controls (an ordinary no-asterisk suffix, and an asterisk-bearing suffix whose derived path is still in scope). Full suite 1229/1229. Mutation-tested by reverting to the pre-fix template (and its resynced live copy): exactly 6 failures (the discriminating deny-related assertions for the 4 bypass-shape tests), both negative-control tests correctly unaffected.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "extract the RAW backup-suffix value from whichever flag position enables in-place editing (last one wins, matching real GNU sed), and whenever it contains \"*\", derive a second write target by substituting the RAW file token for every \"*\", mirroring cp_mv_targets()'s own RAW-value-extraction convention to avoid double-unquoting"
+      ],
       "failure_reason": null,
       "discovered_via": "F041",
       "spec": null
