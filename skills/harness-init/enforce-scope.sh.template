@@ -1229,32 +1229,13 @@ def write_targets(segment):
     # \x/\nnn, F038's \c/\u/\U) that could produce an embedded NUL, not
     # just one specific escape spelling.
     #
-    # unquote_token() is wrapped PER TARGET, not applied to the whole list in
-    # one comprehension, so a decoder exception on ONE target falls back to
-    # that target's RAW, undecoded text instead of aborting the ENTIRE scan
-    # (F042). _decode_ansi_c_escape() has already been hardened against two
-    # specific exception types found by adversarial review (F038 round 2's
-    # surrogate ValueError, round 3's multi-char-uppercase TypeError), both
-    # discovered by constructing a malicious TARGET path -- there is no
-    # reason to believe those are the last two, and this hook's own
-    # fail-open-on-any-exception design (documented in this file's header)
-    # is meant to cover ENVIRONMENT failures (unreadable scope file,
-    # unparseable JSON), not an input-controlled lever that silently
-    # disables enforcement for a WHOLE command because ONE of several
-    # targets in it happens to crash the decoder. The raw-text fallback is
-    # safe-directional, not merely inert: a still-escaped/quoted string
-    # (e.g. containing a literal `\` or `$'`) essentially never matches a
-    # real scope-directory prefix via normalize()'s plain startswith()
-    # comparison, so a target that fails to decode is very likely DENIED,
-    # not silently allowed -- the opposite of what an uncaught exception
-    # does today.
-    result = []
-    for t in targets:
-        try:
-            result.append(unquote_token(t).split("\0", 1)[0])
-        except Exception:
-            result.append(t)
-    return result
+    # A decoder exception here is NOT caught locally (F042): main()'s own
+    # per-segment try/except is the single place that decides what happens
+    # on ANY analysis failure, covering this call and everything else that
+    # processes this segment's targets -- see main()'s own comment for why
+    # an EARLIER version of this fix tried a per-target raw-text fallback
+    # here instead, and why that was a real bypass, not a residual.
+    return [unquote_token(t).split("\0", 1)[0] for t in targets]
 
 
 def normalize(path, project_root):
@@ -1300,70 +1281,105 @@ def main():
     project_root = sys.argv[2]
     patterns = sys.argv[3:]
     for segment in segments_of(command):
-        # write_targets()'s own per-target decode fallback (F042, above)
-        # only covers the FINAL unquote_token() pass over the collected
-        # target list -- it can't help if a decoder exception is thrown
-        # EARLIER, while write_targets() is still figuring out what the
-        # targets even are: _flag_view() (used throughout
-        # cp_mv_targets()/sed_inplace_targets()/all_flagless_tokens() for
-        # flag and command-name RECOGNITION, not target extraction) calls
-        # the SAME unquote_token()/_decode_ansi_c_escape() decoder on every
-        # token it inspects, well before any target list exists to iterate
-        # over. Deliberately NOT given the same "fall back to this token's
-        # raw text" treatment as the per-target case: a raw (still-escaped)
-        # token used for FLAG comparison would essentially never match an
-        # exact flag string like "-i"/"--in-place", so treating a
-        # recognition-time decode failure as "flag not present" risks
-        # silently DISABLING a real in-place/script-value guard instead of
-        # over-denying -- the opposite safety direction from a target-value
-        # decode failure. Rather than attempt that different, riskier
-        # fallback per call site (there are several: _flag_view() itself,
-        # the `view_word` site, and any function that calls either), this
-        # wraps the WHOLE write_targets(segment) call: on ANY exception
-        # anywhere in it, fall back to treating the RAW, unparsed segment
-        # text itself as a single write target. A raw shell segment (e.g.
-        # `sed -i --fi -x.sed src/other/f.txt`) essentially never matches a
-        # real scope-directory prefix either, so this is safe-directional
-        # the same way the per-target fallback is -- and critically, it
-        # means a crash while processing segment N no longer prevents
-        # segment N+1 (a later part of the SAME compound command, e.g.
-        # after a `;` or `&&`) from being checked at all, which an uncaught
-        # exception anywhere in write_targets() would otherwise do (F042).
         try:
-            segment_targets = write_targets(segment)
+            if _check_segment(segment, project_root, patterns):
+                return
         except Exception:
-            segment_targets = [segment]
-        for target in segment_targets:
-            norm = normalize(target, project_root)
-            # normalize() runs before this check so equivalent spellings of
-            # an exempt path (`/dev//null`, `/dev/./null`)
-            # are recognized as the same exact string is_dev_exempt() checks
-            # against -- NOT to prevent traversal from laundering a real
-            # out-of-scope path INTO looking exempt: is_dev_exempt() is
-            # exact-set/pattern membership, not a prefix match, so
-            # `/dev/../etc/passwd` (which resolves to `/etc/passwd`) was
-            # never going to match regardless of ordering -- confirmed by
-            # mutation-testing this ordering claim itself (moving the check
-            # before normalize() changed zero assertions). An earlier
-            # version of this comment claimed the ordering was load-bearing
-            # against traversal laundering; that was true of round 1's
-            # broad `startswith("/dev/")` prefix check, but became false
-            # once this round narrowed the check to exact membership --
-            # found by adversarial review of PR #53, round 2. Ordering WOULD
-            # become load-bearing again if DEV_EXEMPT_EXACT/DEV_FD_PATTERN
-            # were ever widened back to a prefix-style match.
-            if is_dev_exempt(norm):
-                continue
-            if norm in LEAD_OWNED:
-                print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
-                return
-            if not any(norm.startswith(p) for p in patterns):
-                print(
-                    f"Bash write to '{norm}' is outside your assigned scope "
-                    f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
-                    f"{ANNOTATION}"
-                )
-                return
+            # ANY exception anywhere while analyzing this segment -- a
+            # decoder crash inside write_targets() (still none currently
+            # known; F038 rounds 2-3 closed the only two ever found, this
+            # is defense-in-depth against the next one), or anywhere else
+            # in normalize()/is_dev_exempt()/the scope-comparison below --
+            # means denying UNCONDITIONALLY, never comparing any
+            # attacker-controlled fallback text against scope (F042).
+            #
+            # An earlier version of this fix instead fell back to treating
+            # raw, undecoded text (either one target's raw token, or the
+            # whole raw segment) as if it were a real path to compare
+            # against scope patterns, reasoning that a still-escaped
+            # string "essentially never" matches a real scope-directory
+            # prefix. That reasoning was FALSE: the attacker chooses the
+            # raw text, and can trivially place an in-scope-looking prefix
+            # (e.g. "src/parser/") immediately before the crash-triggering
+            # escape, making the exact SAME construction this fix's own
+            # tests used to prove "processing continues past the crash"
+            # into a genuine bypass instead -- confirmed live (adversarial
+            # review of PR #73): `src/parser/$'\Qx' > src/other/evil.txt`
+            # silently ALLOWed the real out-of-scope redirect, because the
+            # raw segment fallback text happened to start with "src/parser/".
+            # Comparing ANY fallback text against scope patterns is
+            # unsound in general, since the fallback text is exactly the
+            # part of the input that couldn't be safely analyzed -- there
+            # is no text to fall back to that isn't also attacker-
+            # controlled. Denying unconditionally removes that lever
+            # entirely: a segment (or anything in it) that can't be
+            # analyzed is always treated as a violation, full stop, same
+            # as this hook already refuses to run rather than guess when
+            # PROJECT_ROOT/the scope file/the tool-input JSON can't be
+            # resolved (see this file's own header). This also closes a
+            # SEPARATE gap the per-target/per-segment split had: the
+            # final `print(f"Bash write to '{norm}' is outside...")` call
+            # below crashes with UnicodeEncodeError if `norm` ever
+            # contains a raw lone surrogate (the actual F038 round 2
+            # incident -- a surrogate reaching PRINT, not a ValueError
+            # from chr() itself, which F038's own fix already prevents by
+            # returning literal escape text instead of a real surrogate
+            # character) -- that print() call sits INSIDE this same
+            # try/except now, not in a separate uncovered path.
+            #
+            # A one-line stderr note is added here (F042 round 2): before
+            # this fix, ANY decoder crash left a visible Python traceback
+            # on stderr; the earlier per-target/per-segment fallback made
+            # that failure completely silent, removing the only signal
+            # that anything went wrong (found by adversarial review of PR
+            # #73). stderr is never captured into DENY_REASON, so this
+            # costs nothing operationally.
+            print(f"enforce-scope: segment analysis failed, denying: {segment!r}", file=sys.stderr)
+            print(
+                f"Bash write target in {segment!r} could not be safely analyzed "
+                f"(best-effort, pattern-based check; treating as outside your "
+                f"assigned scope). {ANNOTATION}"
+            )
+            return
+
+
+def _check_segment(segment, project_root, patterns):
+    # Returns True once a real scope decision has been printed for this
+    # segment (main() must stop entirely at that point, not keep scanning
+    # later segments) -- False means this segment raised no violation, so
+    # main()'s own loop should move on to the next one.
+    for target in write_targets(segment):
+        norm = normalize(target, project_root)
+        # normalize() runs before this check so equivalent spellings of
+        # an exempt path (`/dev//null`, `/dev/./null`)
+        # are recognized as the same exact string is_dev_exempt() checks
+        # against -- NOT to prevent traversal from laundering a real
+        # out-of-scope path INTO looking exempt: is_dev_exempt() is
+        # exact-set/pattern membership, not a prefix match, so
+        # `/dev/../etc/passwd` (which resolves to `/etc/passwd`) was
+        # never going to match regardless of ordering -- confirmed by
+        # mutation-testing this ordering claim itself (moving the check
+        # before normalize() changed zero assertions). An earlier
+        # version of this comment claimed the ordering was load-bearing
+        # against traversal laundering; that was true of round 1's
+        # broad `startswith("/dev/")` prefix check, but became false
+        # once this round narrowed the check to exact membership --
+        # found by adversarial review of PR #53, round 2. Ordering WOULD
+        # become load-bearing again if DEV_EXEMPT_EXACT/DEV_FD_PATTERN
+        # were ever widened back to a prefix-style match.
+        if is_dev_exempt(norm):
+            continue
+        if norm in LEAD_OWNED:
+            print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
+            return True
+        if not any(norm.startswith(p) for p in patterns):
+            print(
+                f"Bash write to '{norm}' is outside your assigned scope "
+                f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
+                f"{ANNOTATION}"
+            )
+            return True
+    return False
 
 
 main()
