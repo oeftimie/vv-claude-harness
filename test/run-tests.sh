@@ -4863,6 +4863,59 @@ assert_deny_json "$OUT" "cg: F051 escaped-git secret-scan denial uses JSON deny 
 assert_contains "$OUT" "secret-assignment" \
   "cg: F051 escaped-git secret-scan denial names the finding class"
 
+# F051 ROUND 2: unquote_token()'s round-1 fix (above) strips a backslash
+# unconditionally, including one that appeared INSIDE single/double quotes
+# -- where real bash treats it as a literal character, never an escape.
+# has_staging_flag()'s own "--" pathspec-separator check and its long-flag
+# value-skip both keyed off that same over-stripped token, so a real
+# bash '\--' (a literal 3-char pathspec, never the actual "--" separator)
+# got wrongly collapsed to plain "--" and treated as ending the flag scan
+# early, letting a real "-i" placed after it slip past has_staging_flag()
+# entirely (found by adversarial review of PR #79). Fixed by threading a
+# second, non-backslash-stripping "view" per token through parse_command()
+# and having has_staging_flag() make its stop/skip decisions against that
+# view instead of the fully-unquoted token.
+DIR_CG_ESCGIT_R2="$WORK/commit-gate-escaped-dashdash"
+make_fixture "$DIR_CG_ESCGIT_R2"
+install_hooks "$DIR_CG_ESCGIT_R2"
+
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x -i newfile.txt')
+RC=$?
+assert_rc0 "$RC" "cg: F051r2 control (unescaped) commit -m x -i exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F051r2 control denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: F051r2 control denial names the finding class"
+
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" "git commit -m x '\\--' -i newfile.txt")
+RC=$?
+assert_rc0 "$RC" "cg: F051r2 single-quoted '\\--' before -i exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F051r2 single-quoted '\\--' denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: F051r2 single-quoted '\\--' denial names the finding class"
+
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x "\--" -i newfile.txt')
+RC=$?
+assert_rc0 "$RC" "cg: F051r2 double-quoted \"\\--\" before -i exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F051r2 double-quoted \"\\--\" denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: F051r2 double-quoted \"\\--\" denial names the finding class"
+
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x $'"'"'\\--'"'"' -i newfile.txt')
+RC=$?
+assert_rc0 "$RC" "cg: F051r2 ANSI-C \$'\\\\--' before -i exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F051r2 ANSI-C \$'\\\\--' denial uses JSON deny form"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "cg: F051r2 ANSI-C \$'\\\\--' denial names the finding class"
+
+# No new false positive: a REAL "--" pathspec separator must still end the
+# flag scan for real -- everything after it is a pathspec, not a flag, so
+# this must ALLOW (no -i/-a ever reaches has_staging_flag() as a flag).
+OUT=$(run_commit_gate "$DIR_CG_ESCGIT_R2" 'git commit -m x -- newfile.txt')
+RC=$?
+assert_rc0 "$RC" "cg: F051r2 real -- separator still allows, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: F051r2 real -- separator has no deny fields"
+
 DIR_CG_SECRET="$WORK/commit-gate-secret"
 make_fixture "$DIR_CG_SECRET"
 install_hooks "$DIR_CG_SECRET"
