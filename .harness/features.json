@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 40,
-  "passing": 27,
+  "passing": 28,
   "features": [
     {
       "id": "F001",
@@ -1117,19 +1117,21 @@
       "id": "F037",
       "description": "skills/harness-init/enforce-scope.sh.template's sed_inplace_targets() recognizes GNU/BSD in-place editing only via a bare `-i`, an attached short-flag suffix (`t.startswith(\"-i\")` on an UNCLUSTERED token, e.g. `-i.bak`), or `--in-place` exactly. Two real, ordinary invocation shapes are missed entirely: (1) CLUSTERED short flags, e.g. `sed -ri 's/a/b/' file` or `sed -ni 's/a/b/' file` (GNU allows combining -r/-n with -i in one token) -- `t.startswith(\"-i\")` is false for `-ri`/`-ni` (the string starts with '-r'/'-n', not '-i'), so the whole in-place-presence guard misses it and sed_inplace_targets() returns [] unconditionally, wrongly ALLOWING an in-place edit of an out-of-scope file; (2) GNU's attached long-form suffix `--in-place=.bak` -- matches neither `t == \"--in-place\"` (exact match only) nor `t.startswith(\"-i\")` (the token starts with `--`, not `-i`), same wrong-ALLOW outcome. CONFIRMED more reachable in ordinary usage than anything F029 itself fixed (no unusual quoting or '--' needed, just a common flag-combining habit).",
       "priority": 21,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #52, round 3 (F029's sed_inplace_targets() separator-index fix). Confirmed pre-existing on main, unrelated to F029's own '--' work -- a different bug class (clustered/long-form flag recognition, not '--' awareness). The existing header comment documents a clustered-flag residual for cp/mv (-rt DIR) only; sed has no equivalent note today, which this feature's fix should also add once landed. Likely fix: recognize any short-flag cluster containing 'i' as specifying in-place mode (mirroring commit-gate.sh's own cluster-scanning approach, F027), and recognize `--in-place=` as an attached-value prefix alongside the exact `--in-place` match. Also noted (round-4 review of PR #52, non-blocking): a pre-existing over-deny, identical on main and unrelated to any F029 change -- `sed -f -i.bak file` denies, since the in-place guard's -e/-f VALUE scan sees the string '-i.bak' and its own startswith('-i') check misfires on it, even though real sed treats '-i.bak' here as -f's script-file VALUE (an unusual but valid filename) and writes nothing. Fails safe (over-deny on an absurd filename), so not urgent, but worth folding into whichever fix lands for this feature's own -ri/--in-place= gaps.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by adversarial review of PR #52, round 3 (F029's sed_inplace_targets() separator-index fix). Confirmed pre-existing on main, unrelated to F029's own '--' work -- a different bug class (clustered/long-form flag recognition, not '--' awareness). The existing header comment documents a clustered-flag residual for cp/mv (-rt DIR) only; sed has no equivalent note today, which this feature's fix should also add once landed. Likely fix: recognize any short-flag cluster containing 'i' as specifying in-place mode (mirroring commit-gate.sh's own cluster-scanning approach, F027), and recognize `--in-place=` as an attached-value prefix alongside the exact `--in-place` match. Also noted (round-4 review of PR #52, non-blocking): a pre-existing over-deny, identical on main and unrelated to any F029 change -- `sed -f -i.bak file` denies, since the in-place guard's -e/-f VALUE scan sees the string '-i.bak' and its own startswith('-i') check misfires on it, even though real sed treats '-i.bak' here as -f's script-file VALUE (an unusual but valid filename) and writes nothing. Fails safe (over-deny on an absurd filename), so not urgent, but worth folding into whichever fix lands for this feature's own -ri/--in-place= gaps. Implemented: new IN_PLACE_CLUSTER_PATTERN (`^-[nrEsuz]*i`) recognizes any short-flag cluster ending in \"i\" where the preceding characters are GNU sed's own argument-less short flags (n, r, E, s, u, z) -- deliberately excludes e/f/l, which take their own argument and consume the rest of the token once encountered (`-fi` is -f's value \"i\", a file literally named \"i\", never -f combined with -i, confirmed against real GNU sed). Added alongside the existing exact `--in-place` check: `.startswith(\"--in-place=\")` for the attached long-form suffix. Also folded in the round-4-noted false positive per that review's own suggestion: the two in-place-presence/has_explicit_script any() guards previously scanned ALL pre_separator_args indiscriminately, so a value consumed by a preceding -e/-f (e.g. `sed -f -i.bak file`, where \"-i.bak\" is a real file used as -f's own script-file argument, confirmed against real GNU sed: prints to stdout, unmodified, no in-place edit at all) was wrongly read as specifying -i. Fixed by computing flag_positions first (mirroring the main loop's own SED_SCRIPT_VALUE_FLAGS skip) and having both guards scan only those positions. Every new shape ground-truthed against real GNU sed (gsed 4.10, installed via Homebrew for this feature since no GNU sed was previously available in this environment) before implementing, not assumed from the ticket description: -ri, -ni, -Ei, -nsi all genuinely enable in-place editing with an empty suffix (since nothing follows \"i\" in the token); --in-place=.bak genuinely writes a backup with that suffix; -fi and `-f -i.bak file` both genuinely print to stdout with no in-place edit at all.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Installed GNU sed via Homebrew (gsed 4.10) specifically to ground-truth every claim in this feature against real execution rather than reasoning from memory, since this environment had no GNU sed available (a standing limitation another reviewer flagged earlier this session for a different feature). Mutation-tested two ways: reverting the clustered/long-form recognition to the old exact/prefix-only check fails exactly the 6 new clustered/long-form assertions; reverting flag_positions to include every position (undoing the round-4 fold-in) fails exactly the new 'sed -f -i.bak file' no-deny assertion."
+      ],
       "failure_reason": null,
       "discovered_via": "F029",
       "spec": null
