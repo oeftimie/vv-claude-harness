@@ -53,15 +53,16 @@
 #      F058, filed separately since it's a genuine behavior change). Exempting
 #      a path wholesale still means a REAL secret that later lands in that
 #      same file is also no longer caught -- an accepted cost for a project's
-#      own known, synthetic test fixtures, not a residual to close. Denial names the
-#      finding class, file, and line number -- NEVER the matched value or line
-#      content, to avoid writing a candidate secret into the transcript or hook
-#      logs. Pattern set is tuned by editing this copied-then-project-owned file
-#      directly; no separate runtime override mechanism exists. The pattern is
-#      still worst-case polynomial in a single line's length on adversarially
-#      repeated keyword-shaped text with no valid terminator (removing its
-#      leading wildcard prefix cut the constant factor by roughly two orders of
-#      magnitude but did not change its complexity class) -- SECRET_SCAN_MAX_LEN
+#      own known, synthetic test fixtures, not a residual to close. Denial
+#      names the finding class, file, and line number -- NEVER the matched
+#      value or line content, to avoid writing a candidate secret into the
+#      transcript or hook logs. Pattern set is tuned by editing this
+#      copied-then-project-owned file directly; no separate runtime override
+#      mechanism exists. The pattern is still worst-case polynomial in a
+#      single line's length on adversarially repeated keyword-shaped text
+#      with no valid terminator (removing its leading wildcard prefix cut
+#      the constant factor by roughly two orders of magnitude but did not
+#      change its complexity class) -- SECRET_SCAN_MAX_LEN
 #      bounds any one line's scan time regardless, and SCAN_TIME_BUDGET_SECONDS
 #      bounds the total across every line, so neither the pattern's exact
 #      complexity nor the number of staged lines can make this hook hang.

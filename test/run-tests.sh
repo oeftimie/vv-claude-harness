@@ -5585,11 +5585,13 @@ assert_not_contains "$OUT" "permissionDecision" "cg: .env.example exemption has 
 # SHAPED synthetic fixture data to test a scanner like this one (discovered
 # live: once this hook was wired onto the Bash matcher, this repo's own
 # test/run-tests.sh could no longer be committed at all). Opt-in via
-# harness.json's secret_scan_exempt_paths array -- NOT a hard security
-# boundary: harness.json is protected only by the ordinary scope check, not
-# enforce-scope.sh's own LEAD_OWNED set, so a teammate scoped to `.harness/`
-# could add its own exemption here (found by adversarial review of PR #87;
-# a stronger LEAD_OWNED guarantee is tracked separately).
+# harness.json's secret_scan_exempt_paths array -- harness.json is in
+# enforce-scope.sh's own LEAD_OWNED set as of F058: no teammate can add its
+# own exemption here regardless of its assigned scope (F054 originally
+# shipped a false claim that this was already true, found by adversarial
+# review of PR #87; closed for real by F058). Still not a defense against
+# the lead's own unwise exemption -- LEAD_OWNED protects against teammates
+# only.
 DIR_CG_EXEMPTCFG="$WORK/commit-gate-exempt-config"
 make_fixture "$DIR_CG_EXEMPTCFG"
 install_hooks "$DIR_CG_EXEMPTCFG"
