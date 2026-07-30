@@ -757,10 +757,17 @@ def _resolve_cp_mv_long_flag(view):
     # Resolves a "--xxx" token (flag-name part only, caller splits off any
     # attached "=value" first) to its full long-option name if it's an
     # exact match or an UNAMBIGUOUS prefix of exactly one entry in
-    # CP_MV_LONG_OPTIONS. Returns None on no match or an ambiguous prefix --
-    # in the ambiguous case, real GNU cp/mv itself errors out and nothing
-    # runs, so treating it as "not a recognized flag" here is always safe,
-    # never a bypass.
+    # CP_MV_LONG_OPTIONS (the UNION of cp's and mv's real option sets, so a
+    # prefix ambiguous only against the other command's options, e.g. "--p"
+    # against mv's real set, returns None here too -- strictly more
+    # conservative than the single command actually being run, never less).
+    # Returns None on no match or an ambiguous prefix -- for the ONE flag
+    # this function cares about, --target-directory, that never matters:
+    # it's the only long option in either command's set (or their union)
+    # starting with "--t", so nothing here can ever misresolve a real
+    # ambiguous-in-cp/mv prefix INTO --target-directory. Treating an
+    # unresolved prefix as "not a recognized flag" is always safe either
+    # way, never a bypass.
     if view in CP_MV_LONG_OPTIONS:
         return view
     matches = [o for o in CP_MV_LONG_OPTIONS if o.startswith(view)]

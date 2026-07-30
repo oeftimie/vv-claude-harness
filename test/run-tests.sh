@@ -1666,17 +1666,26 @@ OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
 RC=$?
 assert_rc0 "$RC" "hs2 (F048): attached abbreviated 'mv --targ=' out-of-scope destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F048): attached abbreviated 'mv --targ=' denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" \
+  "hs2 (F048): attached abbreviated 'mv --targ=' denial names the destination, not a source"
 
 # No new false positive: an ambiguous prefix among the FULL cp/mv long-
 # option set (e.g. "--n", which could be --no-clobber/--no-copy/--no-
 # dereference/--no-preserve/--no-target-directory) must NOT resolve to
 # --target-directory -- real GNU cp/mv itself errors on it as ambiguous,
 # so it must fall through to the ordinary last-flagless-token destination
-# exactly as it did before this fix.
+# exactly as it did before this fix. The first flagless argument here is
+# deliberately OUT of scope (src/other/x): if "--n" were ever wrongly
+# resolved to --target-directory, cp_mv_targets() would return THAT
+# argument as the destination and this would wrongly DENY -- with both
+# operands in scope (the original version of this test), a misresolution
+# and the correct fallback both land on an in-scope token, so the
+# assertion couldn't actually tell them apart (found by adversarial
+# review of PR #82).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp --n src/parser/a.txt src/parser/b.txt')")
+  "$(bash_command_json 'cp --n src/other/x src/parser/b.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F048): ambiguous '--n' prefix on an all-in-scope command passes, rc 0"
+assert_rc0 "$RC" "hs2 (F048): ambiguous '--n' prefix on an in-scope real destination passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F048): ambiguous '--n' prefix has no deny fields (not misread as --target-directory)"
 
