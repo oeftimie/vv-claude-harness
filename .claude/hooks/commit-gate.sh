@@ -200,7 +200,7 @@ DENY_COMPOUND = (
     "newly staged content in the same command is invisible to the secret scan. "
     "Repair: split into a separate 'git add <files>' followed by 'git commit' "
     "with no staging flags and no trailing pathspec (avoid -a/-i/--all/--include, "
-    "and drop any file argument after the commit message)."
+    "and drop any file argument from the commit command)."
 )
 REPAIR_STAGED = (
     "remove or redact the flagged value from the staged diff, or move it to an "
