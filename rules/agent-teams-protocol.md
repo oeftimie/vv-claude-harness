@@ -187,6 +187,20 @@ The lead:
 
 If the lead catches itself starting to implement code instead of delegating, it should stop and spawn a teammate for that work.
 
+**Early release for role-limited teammates (F059).** Step 15's shutdown is team-wide by
+default, so a teammate can otherwise sit idle for the rest of the session once its own
+work is done, waiting on features it structurally cannot claim. This only applies to a
+teammate whose ROLE makes it structurally unable to act on ANY currently claimable
+work -- a reviewer (no Edit/Write tools by construction) is the clear case; an
+implementer between features is NOT, even if nothing is assigned to it right now, since
+it remains a legitimate `TeammateIdle` reassignment target for as long as the team is
+running (the existing "no wasted capacity" design, unchanged by this rule). When a
+role-limited teammate reports its assigned work is done (e.g. a review delivered and
+acted on) and has nothing left to claim, the lead SHOULD send it a `shutdown_request`
+promptly rather than waiting for Phase 5 -- distinguishing the two cases is a judgment
+call for the lead, not something the `TeammateIdle` hook can do on its own (it has no
+teammate identity to key off, confirmed during F055).
+
 ## Teammate Responsibilities
 
 Each teammate is a focused implementer. It:
@@ -235,7 +249,8 @@ If the TeammateIdle hook immediately prompts you to pick up a new task after com
 | Scope expansion approved | `SendMessage({ type: "message", recipient: "teammate-name", content: "Approved. You now own [files] in addition to your original scope." })` |
 | Plan approved | `SendMessage({ type: "message", recipient: "teammate-name", content: "Plan approved. Proceed with implementation." })` |
 | Plan rejected | `SendMessage({ type: "message", recipient: "teammate-name", content: "Plan rejected. Revise: [feedback]. Resubmit before implementing." })` |
-| Shutdown | `SendMessage({ type: "shutdown_request", recipient: "teammate-name", content: "All tasks complete, shutting down team." })` |
+| Shutdown (team-wide, Phase 5) | `SendMessage({ type: "shutdown_request", recipient: "teammate-name", content: "All tasks complete, shutting down team." })` |
+| Shutdown (early release, F059) | `SendMessage({ type: "shutdown_request", recipient: "teammate-name", content: "Your assigned work is complete -- shutting you down." })` |
 
 > **Known bug:** `plan_approval_response` type in `SendMessage` reports success but the message is never delivered to the recipient. Use `type: "message"` for all plan approvals and rejections. This workaround is confirmed working as of Claude Code v2.1.33+. **Retirement condition**: the maintenance loop's `plan_approval_response` probe (`docs/maintenance-runbook.md`) reports FIXED on a live spawned-teammate round trip; as of run #0 (`MAINTENANCE_LOG.md`, 2026-07-24) the round trip itself could not be reached (no `require_plan_approval`-equivalent spawn option, no `EnterPlanMode`/`ExitPlanMode` exposed to teammates), so this remains open, not retired.
 

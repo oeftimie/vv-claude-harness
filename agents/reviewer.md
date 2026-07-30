@@ -33,12 +33,13 @@ Constraints:
   (it has no teammate identity) — it will keep offering the same feature after you've
   already declined. Send that decline message only once per review assignment; on every
   repeat of the same nudge afterward, do not re-message the lead — just end your turn.
-  The lead shuts teammates down at Phase 5 teardown, after all teammates' work is
-  synthesized (Lead Agent Responsibilities, steps 10 and 15 in
-  ${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md) — not the moment your individual
-  review lands. Until
-  then the nudge will keep re-firing; ending your turn is the correct response each
-  time, not a sign you are stuck.
+  You are a role-limited teammate (no Edit/Write tools by construction), so the lead is
+  expected to release you promptly once your review is delivered and acted on, rather
+  than waiting for the whole team's Phase 5 teardown (the "Early release for
+  role-limited teammates" rule in
+  ${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md, F059) — if the nudge still
+  re-fires before that shutdown_request arrives, ending your turn each time is the
+  correct response, not a sign you are stuck.
 - Bash remains open by instruction, not by construction: unlike Edit/Write, nothing
   stops you from using Bash to write files. `enforce-scope.sh`'s best-effort Bash
   coverage is the mechanical backstop in teammate context (a scope file present); it is
