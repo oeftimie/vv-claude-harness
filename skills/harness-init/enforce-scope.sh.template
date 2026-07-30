@@ -162,7 +162,14 @@ except Exception:
 " "$PROJECT_ROOT" 2>/dev/null)
 FILE_PATH_RC=$?
 if [ "$FILE_PATH_RC" -eq 1 ]; then
-    echo "Edit blocked: file_path could not be safely extracted from tool input (treating as outside your assigned scope). $ANNOTATION"
+    # Claude Code discards a hook's stdout entirely on exit 2 and feeds only
+    # stderr back to the blocked agent as its error message
+    # (code.claude.com/docs/en/hooks) -- this legacy exit-2 site (unlike
+    # deny_json()'s own JSON-on-stdout-at-exit-0 path used elsewhere in this
+    # file) still wrote its message to stdout, silently discarding it on
+    # every real PreToolUse block (F053, the identical defect F046 fixed in
+    # check-remaining-tasks.sh.template).
+    echo "Edit blocked: file_path could not be safely extracted from tool input (treating as outside your assigned scope). $ANNOTATION" >&2
     exit 2
 fi
 
@@ -204,11 +211,14 @@ if [ -n "$FILE_PATH" ]; then
         fi
     done < "$SCOPE_FILE"
 
-    echo "Edit blocked: $FILE_PATH is outside your assigned scope."
-    echo "Your scope (from $SCOPE_FILE):"
-    cat "$SCOPE_FILE" | grep -v '^#' | grep -v '^$'
-    echo ""
-    echo "Repair: request a scope expansion from the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Requesting scope expansion to $FILE_PATH because [reason].\" })"
+    # F053: same stdout-discard-on-exit-2 defect as above -- every line of
+    # this denial (including the scope-file dump) must reach stderr, or a
+    # scoped teammate blocked from an out-of-scope edit sees nothing at all.
+    echo "Edit blocked: $FILE_PATH is outside your assigned scope." >&2
+    echo "Your scope (from $SCOPE_FILE):" >&2
+    cat "$SCOPE_FILE" | grep -v '^#' | grep -v '^$' >&2
+    echo "" >&2
+    echo "Repair: request a scope expansion from the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Requesting scope expansion to $FILE_PATH because [reason].\" })" >&2
     exit 2
 fi
 

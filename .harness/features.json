@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 56,
-  "passing": 43,
+  "passing": 44,
   "features": [
     {
       "id": "F001",
@@ -1521,21 +1521,26 @@
       "id": "F053",
       "description": "enforce-scope.sh.template's two legacy `exit 2` sites (:166, :212) and verify-task-quality.sh.template's four (:47, :81, :92, :125) all write their blocking guidance (\"Edit blocked: ...\", \"Task rejected: ...\") via plain `echo` to stdout, the identical defect F046 fixed in check-remaining-tasks.sh.template. Per Claude Code's own docs (code.claude.com/docs/en/hooks), exit 2 discards a hook's stdout entirely and feeds only stderr back to the blocked agent -- confirmed the effect table names PreToolUse (enforce-scope.sh's event), Stop, SubagentStop, and TeammateIdle explicitly, but does NOT explicitly confirm TaskCompleted's exit-2 semantics (verify-task-quality.sh's event), which needs independent confirmation before scoping that half of this fix. verify-git-identity.sh.template (:68, PreToolUse) has the same defect too but is not yet confirmed as reachable by an idle/blocked teammate the same way (its block is a same-turn PreToolUse denial, not a re-prompt loop) -- worth checking whether that distinction matters before folding it in.",
       "priority": 36,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "skills/harness-init/verify-task-quality.sh.template",
         "skills/harness-init/verify-git-identity.sh.template",
+        ".claude/hooks/enforce-scope.sh",
+        ".claude/hooks/verify-task-quality.sh",
+        ".claude/hooks/verify-git-identity.sh",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by review-pr80-f046 while verifying F046's claim that the sibling hooks already write blocking guidance to stderr -- that claim was false, and the reviewer found the same stdout-only defect present in all three sibling hooks instead. Independently confirmed by the lead (grep + direct read of each exit-2 site) before filing. PreToolUse/Stop/SubagentStop/TeammateIdle are confirmed exit-2-discards-stdout paths per the Claude Code docs; TaskCompleted's exit-2 semantics (relevant to verify-task-quality.sh.template specifically) were not independently confirmed by the reviewer and should be checked before implementing that part of this fix.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by review-pr80-f046 while verifying F046's claim that the sibling hooks already write blocking guidance to stderr -- that claim was false, and the reviewer found the same stdout-only defect present in all three sibling hooks instead. Independently confirmed by the lead (grep + direct read of each exit-2 site) before filing. PreToolUse/Stop/SubagentStop/TeammateIdle are confirmed exit-2-discards-stdout paths per the Claude Code docs; TaskCompleted's exit-2 semantics (relevant to verify-task-quality.sh.template specifically) were not independently confirmed by the reviewer and should be checked before implementing that part of this fix.\n\nFIXED: confirmed TaskCompleted's exit-2 stdout-discard behavior before implementing verify-task-quality.sh.template's half of this fix (fetched code.claude.com/docs/en/hooks directly: the \"Exit code 2 behavior per event\" table lists TaskCompleted as blockable -- \"Yes | Prevents the task from being marked as completed\" -- and the table has no stdout column at all, it describes only the blocking effect. The stdout rule is stated once, unconditionally, in prose: \"Exit 2 means a blocking error. Claude Code ignores stdout and any JSON in it. Instead, stderr text is fed back to Claude as an error message.\" So it applies to every blockable event including TaskCompleted -- direct confirmation, not an inference from a documentation gap [CORRECTED, round 2 review of PR #86: the original wording here wrongly claimed the table was silent on TaskCompleted; it isn't, and the reviewer's independent fetch caught this before it became a stale, unchecked claim the way F046's own sibling-hook comparison did]). Also confirmed verify-git-identity.sh.template's distinction (same-turn PreToolUse denial vs. a re-prompt loop) doesn't matter for whether the bug exists -- PreToolUse is explicitly confirmed exit-2-discards-stdout in the docs regardless, so folded it into this fix's scope too rather than leaving it out on a distinction that turned out not to matter. Redirected all `echo` calls before each exit-2 site to stderr: enforce-scope.sh.template's 2 legacy sites, verify-task-quality.sh.template's 4, and verify-git-identity.sh.template's 2 (including the one F050 added earlier in this same sweep, which inherited the stdout convention that existed when it was written). Updated ~10 pre-existing tests that captured stdout-only via run_hook (which only captures stdout unless the caller redirects) -- without adding 2>&1 these would have started failing on empty output once the fix moved the message to stderr. Added 6 new assertions (2 per file) pinning the mechanism directly: stdout alone empty, stderr alone carries the message. Full suite 1265/1265. Mutation-tested by reverting all three templates and their resynced live copies: exactly 6 failures (2 per file), confirming precise discrimination.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "port check-remaining-tasks.sh.template's F046 fix (redirect exit-2 blocking echo statements to stderr) to the three remaining sibling hooks, after confirming via the official docs that TaskCompleted's exit-2 semantics match the general rule and that the same-turn-vs-loop distinction for verify-git-identity.sh doesn't change whether the underlying defect exists"
+      ],
       "failure_reason": null,
       "discovered_via": "F046",
       "spec": null

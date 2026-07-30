@@ -82,7 +82,13 @@ except Exception:
 " 2>/dev/null)
 COMMAND_RC=$?
 if [ "$COMMAND_RC" -eq 1 ]; then
-    echo "Git operation blocked: command could not be safely extracted from tool input (treating as a possible push/pull/clone/fetch out of caution)."
+    # Claude Code discards a hook's stdout entirely on exit 2 and feeds only
+    # stderr back to the blocked agent as its error message
+    # (code.claude.com/docs/en/hooks) -- this and the identity-mismatch exit-2
+    # site below wrote their message to stdout, silently discarding it on
+    # every real PreToolUse block (F053, the identical defect F046 fixed in
+    # check-remaining-tasks.sh.template).
+    echo "Git operation blocked: command could not be safely extracted from tool input (treating as a possible push/pull/clone/fetch out of caution)." >&2
     exit 2
 fi
 
@@ -96,15 +102,15 @@ CURRENT_NAME=$(git config user.name 2>/dev/null)
 CURRENT_EMAIL=$(git config user.email 2>/dev/null)
 
 if [ "$CURRENT_NAME" != "$EXPECTED_NAME" ] || [ "$CURRENT_EMAIL" != "$EXPECTED_EMAIL" ]; then
-    echo "Git push blocked: identity mismatch."
-    echo ""
-    echo "Expected (from .harness/harness.json):"
-    echo "  $EXPECTED_NAME <$EXPECTED_EMAIL>"
-    echo ""
-    echo "Current:"
-    echo "  $CURRENT_NAME <$CURRENT_EMAIL>"
-    echo ""
-    echo "Fix with: git config user.name \"$EXPECTED_NAME\" && git config user.email \"$EXPECTED_EMAIL\""
+    echo "Git push blocked: identity mismatch." >&2
+    echo "" >&2
+    echo "Expected (from .harness/harness.json):" >&2
+    echo "  $EXPECTED_NAME <$EXPECTED_EMAIL>" >&2
+    echo "" >&2
+    echo "Current:" >&2
+    echo "  $CURRENT_NAME <$CURRENT_EMAIL>" >&2
+    echo "" >&2
+    echo "Fix with: git config user.name \"$EXPECTED_NAME\" && git config user.email \"$EXPECTED_EMAIL\"" >&2
     exit 2
 fi
 

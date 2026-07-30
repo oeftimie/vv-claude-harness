@@ -1197,12 +1197,23 @@ printf 'src/parser/\n' > "$DIR_HS/.claude/teammate-scope.txt"
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$IN_SCOPE_JSON")
 RC=$?
 assert_rc0 "$RC" "ht: enforce-scope allows an in-scope edit"
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON" 2>&1)
 RC=$?
 assert_rc2 "$RC" "ht: enforce-scope blocks an out-of-scope edit"
 assert_contains "$OUT" "src/other/y.py" "ht: block message names the file"
 assert_contains "$OUT" "scope expansion" "ht: block message names the scope-expansion repair"
-OUT=$(run_hook_from_subdir "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON")
+
+# F053: Claude Code discards a hook's stdout entirely on exit 2 and feeds
+# only stderr back to the blocked agent -- the identical defect F046 fixed
+# in check-remaining-tasks.sh.template. Pin the mechanism directly: stdout
+# alone must be empty, stderr alone must carry the block message.
+STDOUT_ONLY=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON" 2>/dev/null)
+assert_empty "$STDOUT_ONLY" "ht (F053): out-of-scope block writes nothing to stdout"
+STDERR_ONLY=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON" 2>&1 1>/dev/null)
+assert_contains "$STDERR_ONLY" "src/other/y.py" \
+  "ht (F053): out-of-scope block message is on stderr specifically"
+
+OUT=$(run_hook_from_subdir "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON" 2>&1)
 RC=$?
 assert_rc2 "$RC" "ht: enforce-scope still blocks when cwd is a subdirectory"
 
@@ -2348,7 +2359,7 @@ assert_contains "$OUT" "lead-owned" \
 # traverse out via Edit even after the Bash-side fix (found by adversarial
 # review of PR #48).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(edit_json "$DIR_HS/src/parser/../other/y.py")")
+  "$(edit_json "$DIR_HS/src/parser/../other/y.py")" 2>&1)
 RC=$?
 assert_rc2 "$RC" "hs2: Edit with a '..'-traversal escaping scope is blocked (legacy exit 2)"
 assert_contains "$OUT" "src/other/y.py" \
@@ -3750,7 +3761,7 @@ assert_not_contains "$OUT" "permissionDecision" \
 # process further, fails closed) so the fix doesn't accidentally reverse
 # the existing fail-open behavior for genuinely malformed input.
 OUT_SURROGATE_PATH_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/src/other/f043a.txt\ud800\"}}"
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SURROGATE_PATH_JSON")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SURROGATE_PATH_JSON" 2>&1)
 RC=$?
 assert_rc2 "$RC" "hs2 (F043): a raw surrogate in file_path exits 2 (blocked), not silently allowed"
 assert_contains "$OUT" "could not be safely extracted" \
@@ -3806,15 +3817,23 @@ OUT=$(run_hook "$DIR_HG" verify-git-identity.sh '{"tool_input":{"command":"ls -l
 RC=$?
 assert_rc0 "$RC" "ht: verify-git-identity ignores non-git commands"
 git -C "$DIR_HG" config user.name "Impostor"
-OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$PUSH_JSON")
+OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$PUSH_JSON" 2>&1)
 RC=$?
 assert_rc2 "$RC" "ht: verify-git-identity blocks git push on identity mismatch"
 assert_contains "$OUT" "Fix with: git config user.name" "ht: mismatch message includes the fix command"
 
+# F053: same stdout-discard-on-exit-2 mechanism as enforce-scope.sh -- pin
+# it directly for this hook's own identity-mismatch block too.
+STDOUT_ONLY=$(run_hook "$DIR_HG" verify-git-identity.sh "$PUSH_JSON" 2>/dev/null)
+assert_empty "$STDOUT_ONLY" "ht (F053): identity-mismatch block writes nothing to stdout"
+STDERR_ONLY=$(run_hook "$DIR_HG" verify-git-identity.sh "$PUSH_JSON" 2>&1 1>/dev/null)
+assert_contains "$STDERR_ONLY" "Fix with: git config user.name" \
+  "ht (F053): identity-mismatch block message is on stderr specifically"
+
 # Hostile case (F005/OVI-61): mismatched EMAIL specifically, name restored to match.
 git -C "$DIR_HG" config user.name "Fixture User"
 git -C "$DIR_HG" config user.email "impostor@example.com"
-OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$PUSH_JSON")
+OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$PUSH_JSON" 2>&1)
 RC=$?
 assert_rc2 "$RC" "hg: verify-git-identity blocks git push on email mismatch alone"
 assert_contains "$OUT" "Fix with: git config user.name" \
@@ -3830,7 +3849,7 @@ assert_contains "$OUT" "impostor@example.com" \
 # push/pull/clone/fetch grep never matched regardless of the real command,
 # silently skipping this hook's identity check entirely.
 SURROGATE_PUSH_JSON='{"tool_input":{"command":"git push origin main\ud800"}}'
-OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$SURROGATE_PUSH_JSON")
+OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$SURROGATE_PUSH_JSON" 2>&1)
 RC=$?
 assert_rc2 "$RC" "hg (F050): a raw surrogate in command is blocked, not silently allowed"
 assert_contains "$OUT" "could not be safely extracted" \
@@ -3946,7 +3965,7 @@ assert_contains "$OUT" "malformed feature entry" "ht: the bad-field entry is not
 DIR_HQ="$WORK/ht-quality-noinit"
 make_fixture "$DIR_HQ"
 install_hooks "$DIR_HQ"
-OUT=$(run_hook "$DIR_HQ" verify-task-quality.sh '{}')
+OUT=$(run_hook "$DIR_HQ" verify-task-quality.sh '{}' 2>&1)
 RC=$?
 assert_rc2 "$RC" "ht: verify-task-quality rejects when .harness/init.sh is missing"
 assert_contains "$OUT" "init.sh not found" \
@@ -3980,6 +3999,7 @@ assert_contains "$OUT" "smoke test failed" \
   "hg: smoke-failure message names the violated invariant (F005/OVI-61)"
 assert_contains "$OUT" "Fix compilation errors before marking complete" \
   "hg: smoke-failure message names the repair (F005/OVI-61)"
+
 METRICS=$(python3 - "$DIR_HQ2/.harness/features.json" <<'PYEOF'
 import json
 import sys
@@ -3999,6 +4019,19 @@ if [ -z "$(tail -c 1 "$DIR_HQ2/.harness/features.json")" ]; then
 else
   fail "ht: features.json lost its trailing newline after the metrics write"
 fi
+
+# F053: same stdout-discard-on-exit-2 mechanism as enforce-scope.sh/
+# verify-git-identity.sh -- pin it for this hook's own TaskCompleted
+# rejection too. Run AFTER the correction_cycles metrics check above (these
+# two extra invocations bump F002's correction_cycles further, which would
+# otherwise throw off that assertion's exact expected count).
+STDOUT_ONLY=$(run_hook "$DIR_HQ2" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' 2>/dev/null)
+assert_empty "$STDOUT_ONLY" "ht (F053): smoke-test rejection writes nothing to stdout"
+STDERR_ONLY=$(run_hook "$DIR_HQ2" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' 2>&1 1>/dev/null)
+assert_contains "$STDERR_ONLY" "smoke test failed" \
+  "ht (F053): smoke-test rejection message is on stderr specifically"
 
 DIR_HQ3="$WORK/ht-quality-untargeted"
 make_fixture "$DIR_HQ3"
