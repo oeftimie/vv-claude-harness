@@ -3649,10 +3649,19 @@ assert_contains "$OUT" "impostor@example.com" \
 DIR_HR="$WORK/ht-remaining"
 make_fixture "$DIR_HR"
 install_hooks "$DIR_HR"
-OUT=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}')
+OUT=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}' 2>&1)
 RC=$?
 assert_rc2 "$RC" "ht: check-remaining-tasks exits 2 when a feature is claimable"
 assert_contains "$OUT" "F003" "ht: offers the claimable feature id"
+
+# F046: the guidance text must be on STDERR specifically -- that's the channel
+# actually surfaced back to a blocked teammate on a TeammateIdle re-prompt, not
+# stdout (confirmed live before the fix: stdout carried the whole message and
+# stderr was empty, leaving an idle teammate with no visible guidance at all).
+STDOUT_ONLY=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}' 2>/dev/null)
+assert_empty "$STDOUT_ONLY" "ht: check-remaining-tasks writes nothing to stdout"
+STDERR_ONLY=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
+assert_contains "$STDERR_ONLY" "F003" "ht: the claimable feature id is on stderr specifically"
 python3 - "$DIR_HR/.harness/features.json" <<'PYEOF'
 import json
 import sys

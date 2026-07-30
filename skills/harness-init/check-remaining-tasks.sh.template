@@ -10,6 +10,11 @@
 # Residual: the reformatting step assumes harness_state.py's documented contract (the
 # literal string "no claimable feature" or valid JSON) and is not independently
 # validated -- an out-of-contract module output would raise rather than fall back.
+# Guidance text (which feature to pick up next) goes to stderr, not stdout, matching
+# every sibling blocking hook (enforce-scope.sh.template, verify-task-quality.sh.template)
+# -- stderr is the channel actually surfaced back to a blocked teammate on a TeammateIdle
+# re-prompt; a stdout-only message left an idle teammate with no visible guidance at all
+# (F046, reported by a teammate stuck in a re-prompt loop with "No stderr output").
 
 set -euo pipefail
 
@@ -46,6 +51,6 @@ print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
       f\"{status_note} [scope: {scope}]\")
 ")
 
-echo "$NEXT"
-echo "Read .harness/features.json for full details, then claim it via TaskUpdate."
+echo "$NEXT" >&2
+echo "Read .harness/features.json for full details, then claim it via TaskUpdate." >&2
 exit 2
