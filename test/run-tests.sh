@@ -1293,6 +1293,49 @@ assert_rc0 "$RC" "hs2 (F058): an ordinary in-scope .harness/ file still passes, 
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F058): ordinary in-scope .harness/ file has no deny fields"
 
+# F060: .claude/teammate-scope.txt was NOT in LEAD_OWNED before this fix -- a
+# teammate scoped to .claude/ could edit its OWN scope definition directly
+# (confirmed live before the fix: both a Write and a Bash redirect to it
+# returned ALLOW under a .claude/ scope), a strictly larger hole than F058's
+# harness.json gap since the edit takes effect on the teammate's very next
+# tool call in the same session. A fresh fixture with scope=.claude/ makes the
+# LEAD_OWNED override the ONLY thing that can produce a deny here, the same
+# discriminating-fixture reasoning as DIR_HL above.
+DIR_HC="$WORK/ht-teammate-scope-lead-owned"
+make_fixture "$DIR_HC"
+install_hooks "$DIR_HC"
+printf '.claude/\n' > "$DIR_HC/.claude/teammate-scope.txt"
+
+OUT=$(run_hook "$DIR_HC" enforce-scope.sh "$(edit_json "$DIR_HC/.claude/teammate-scope.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F060): Edit to teammate-scope.txt exits 0 (JSON deny, not exit 2)"
+assert_deny_json "$OUT" "hs2 (F060): teammate-scope.txt Edit denial uses the JSON deny form"
+assert_contains "$OUT" "lead-owned" "hs2 (F060): teammate-scope.txt Edit denial names the invariant"
+
+OUT=$(run_hook "$DIR_HC" enforce-scope.sh \
+  "$(bash_command_json 'echo ".claude/" > .claude/teammate-scope.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F060): Bash write to teammate-scope.txt exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F060): teammate-scope.txt Bash write denial uses JSON deny form"
+
+# No new false positive: a teammate explicitly assigned .claude/hooks/ (or any
+# other ordinary in-scope .claude/ file) must still be able to work on it --
+# this fix deliberately protects ONLY teammate-scope.txt, not the hooks
+# themselves or the whole .claude/ directory (F060's own filing: making the
+# hooks unconditionally lead-owned would block legitimate hook-development
+# work, which this repo's own sweep does routinely).
+OUT=$(run_hook "$DIR_HC" enforce-scope.sh "$(edit_json "$DIR_HC/.claude/hooks/enforce-scope.sh")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F060): an in-scope .claude/hooks/ file still passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F060): in-scope .claude/hooks/ file has no deny fields (hooks stay ordinary-scope-governed)"
+
+OUT=$(run_hook "$DIR_HC" enforce-scope.sh "$(edit_json "$DIR_HC/.claude/some-other-file.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F060): an ordinary in-scope .claude/ file still passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F060): ordinary in-scope .claude/ file has no deny fields"
+
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'tee src/other/escaped.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2: Bash tee to an out-of-scope target exits 0 (JSON deny)"

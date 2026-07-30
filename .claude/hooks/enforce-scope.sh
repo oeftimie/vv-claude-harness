@@ -73,7 +73,13 @@ INPUT=$(cat)
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 
-# Only enforce if a scope file exists (teammates only, not lead agents)
+# Only enforce if a scope file exists. In practice this is teammates only (the
+# lead's own session has no scope file of its own to spawn WITH) -- but this
+# check has no actual session-awareness: it's a single shared file's existence,
+# checked identically regardless of who is asking. While ANY teammate's scope
+# file exists, the LEAD's own actions are gated by it too (confirmed live
+# during F060's review: the lead's own reassignment-rewrite and teardown-delete
+# of this very file are denied while a team is active) -- see F061.
 SCOPE_FILE=".claude/teammate-scope.txt"
 if [ ! -f "$SCOPE_FILE" ]; then
     exit 0
@@ -208,6 +214,27 @@ if [ -n "$FILE_PATH" ]; then
         .harness/features.json|.harness/context_summary.md|.harness/claude-progress.txt|.harness/harness.json)
             deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION"
             ;;
+        # .claude/teammate-scope.txt added by F060: confirmed live (review-pr91-f058)
+        # that a teammate scoped to .claude/ could edit its OWN scope definition
+        # directly -- a strictly larger hole than F058's harness.json gap, since the
+        # edit takes effect on the teammate's very next tool call in the same
+        # session. Deliberately NOT extended to .claude/hooks/*.sh (the enforcement
+        # hooks themselves): per rules/agent-teams-protocol.md, this file is
+        # created/rewritten by the LEAD per spawn/reassignment, so a teammate never
+        # legitimately needs to touch it regardless of what it's assigned -- unlike
+        # the hooks, which a teammate explicitly scoped to .claude/hooks/ can be
+        # legitimately assigned to modify (this repo's own sweep does exactly that
+        # routinely). Protecting only the scope-definition file, not the whole
+        # .claude/ directory or the hooks, closes the MOST DIRECT self-widening
+        # route without blocking real hook-development work -- two others remain
+        # deliberately open: a teammate scoped to .claude/ can still rewrite
+        # .claude/hooks/enforce-scope.sh itself, or edit .claude/settings.json to
+        # remove the hook wiring outright, disarming enforcement entirely. Both
+        # residuals are accepted for the same reason (a teammate can be
+        # legitimately assigned that scope), not fixed here (F060).
+        .claude/teammate-scope.txt)
+            deny_json "teammate-scope.txt is lead-owned; report via SendMessage instead. $ANNOTATION"
+            ;;
     esac
 
     # Legacy path (unchanged): check if file path matches any scope pattern
@@ -251,6 +278,11 @@ LEAD_OWNED = {
     # full rationale (git identity, prep/stamp config, and the F054 secret-scan
     # exemption list are all security-relevant configuration this file holds).
     ".harness/harness.json",
+    # Added by F060 -- see the mirrored Edit/Write case statement above for the
+    # full rationale (a teammate's own scope definition; the lead is its only
+    # legitimate writer, deliberately narrower than protecting .claude/hooks/*.sh
+    # too, which a teammate can be legitimately assigned to work on).
+    ".claude/teammate-scope.txt",
 }
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
 
