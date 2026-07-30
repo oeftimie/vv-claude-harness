@@ -1243,6 +1243,27 @@ def sed_inplace_targets(args):
             i += 1
             continue
         targets.append(tok)
+        # Documented residual (found by adversarial review of PR #83): the
+        # "*" PRESENCE check reads the DECODED view (inplace_suffix_view),
+        # but the substitution below replaces "*" in the RAW string --
+        # correct for an ordinary literal "*", but when the "*" only exists
+        # after ANSI-C decoding (e.g. a suffix given as $'\x2a'), the RAW
+        # string has no literal "*" character for .replace() to find, so
+        # the substitution silently no-ops and the RAW suffix (still
+        # containing the undecoded escape) is returned as-is -- once
+        # write_targets() unquotes it later, the resulting "target" is just
+        # a bare "*" rather than the true suffix-with-file-substituted
+        # path, which can wrongly DENY an otherwise in-scope command (the
+        # bare "*" never matches a real scope prefix). Confirmed this can
+        # only ever OVER-deny, never bypass: the derived string here and
+        # the true (fully-substituted) string always share the same prefix
+        # up to the first "*", and scope matching is a plain prefix check
+        # with no globbing, so wrongly denying is the only possible
+        # direction of error. Not fixed: doing so would require detecting
+        # AND substituting against the same (decoded) representation while
+        # still returning a RAW value for write_targets()'s single later
+        # unquote pass -- a real restructure for an edge case that needs an
+        # ANSI-C-escaped asterisk specifically inside a sed backup suffix.
         if "*" in inplace_suffix_view:
             targets.append(inplace_suffix_raw.replace("*", tok))
         i += 1

@@ -3604,6 +3604,19 @@ assert_rc0 "$RC" "hs2 (F049): an in-scope derived backup path passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F049): in-scope derived backup path has no deny fields"
 
+# Documented residual (adversarial review of PR #83): an ANSI-C-escaped
+# asterisk in the suffix (e.g. $'\x2a') is invisible to the RAW-string
+# ".replace("*", tok)" substitution, so the derived "target" ends up as a
+# bare, undecoded "*" rather than the true substituted path -- this can
+# only ever wrongly DENY an otherwise in-scope command, never bypass one
+# (locked in here as an over-deny, not a regression test for a fix).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -i$'"'"'\x2a'"'"' '"'"'s/a/b/'"'"' src/parser/f049i.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F049): ANSI-C-escaped asterisk suffix residual exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F049): ANSI-C-escaped asterisk residual over-denies, never bypasses"
+
 # F042: a decoder exception (currently none are known -- F038 rounds 2-3
 # hardened the only two found so far -- but this hook's own design is
 # fail-OPEN on ANY exception, an input-controlled lever this defense-in-
