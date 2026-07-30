@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 47,
+  "total_features": 48,
   "passing": 32,
   "features": [
     {
@@ -1246,7 +1246,7 @@
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
       "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
-      "notes": "Discovered by adversarial review of PR #65, round 1 (F037's clustered -i / --in-place= fix). Confirmed pre-existing on main, unrelated to F037's own changes -- a different bug class (long-option abbreviation, not clustered-short-flag or attached-long-form recognition). Reviewer's own framing: \"would not block\" F037 on this, lower reachability, candidate for its own future feature.\n\nFIXED: mechanically extracted GNU sed's full long-option universe from `gsed --help` (GNU sed 4.10, installed via `brew install gnu-sed` for F037), built SED_LONG_OPTIONS + _resolve_sed_long_flag()/_sed_long_flag_name() mirroring commit-gate.sh's F032 pattern (GIT_COMMIT_LONG_OPTIONS/_resolve_long_flag()). The in-place-presence guard now recognizes any unambiguous abbreviation of --in-place, bare or with an attached =SUFFIX (confirmed against real gsed: --i, --in-p, --i=.bak all genuinely in-place edit). SCOPE NARROWED from the ticket's own note during implementation: has_explicit_script's --expression=/--file= recognition is extended ONLY for the ATTACHED abbreviated form (--exp=script), not a bare one (--exp script) -- proved via mutation testing that the bare form is a safe, self-cancelling residual (the walking loop's own unrelated 1-token-too-few skip for an unrecognized bare flag exactly cancels against has_explicit_script's own one-token misclassification, for a SINGLE bare abbreviated script flag), while fixing has_explicit_script's bare-form recognition WITHOUT also reworking the walking loop's token-consumption count would have broken that symmetry and named the wrong (script-fragment) string in the denial reason. Confirmed live: the bare-form command still correctly denies (mutation-tested: reverting the whole fix does NOT change this case's outcome, only the attached form's).",
+      "notes": "Discovered by adversarial review of PR #65, round 1 (F037's clustered -i / --in-place= fix). Confirmed pre-existing on main, unrelated to F037's own changes -- a different bug class (long-option abbreviation, not clustered-short-flag or attached-long-form recognition). Reviewer's own framing: \"would not block\" F037 on this, lower reachability, candidate for its own future feature.\n\nFIXED: mechanically extracted GNU sed's full long-option universe from `gsed --help` (GNU sed 4.10, installed via `brew install gnu-sed` for F037), built SED_LONG_OPTIONS + _resolve_sed_long_flag()/_sed_long_flag_name() mirroring commit-gate.sh's F032 pattern (GIT_COMMIT_LONG_OPTIONS/_resolve_long_flag()). The in-place-presence guard now recognizes any unambiguous abbreviation of --in-place, bare or with an attached =SUFFIX (confirmed against real gsed: --i, --in-p, --i=.bak all genuinely in-place edit). SCOPE NARROWED from the ticket's own note during implementation: has_explicit_script's --expression=/--file= recognition is extended ONLY for the ATTACHED abbreviated form (--exp=script), not a bare one (--exp script) -- proved via mutation testing that the bare form is a safe, self-cancelling residual (the walking loop's own unrelated 1-token-too-few skip for an unrecognized bare flag exactly cancels against has_explicit_script's own one-token misclassification, for a SINGLE bare abbreviated script flag), while fixing has_explicit_script's bare-form recognition WITHOUT also reworking the walking loop's token-consumption count would have broken that symmetry and named the wrong (script-fragment) string in the denial reason. Confirmed live: the bare-form command still correctly denies (mutation-tested: reverting the whole fix does NOT change this case's outcome, only the attached form's). [SUPERSEDED, see ROUND 2 below -- this cancellation argument is FALSE whenever the flag's value is not a flagless token (starts with \"-\", or is exactly \"--\"); it does not generalize, and was disproven by adversarial review with a live, real-gsed-confirmed fail-open.]\n\nROUND 2 (adversarial review of PR #71): the ABOVE scope-narrowing reasoning was WRONG, not merely under-tested -- it is a real, live fail-open, not just a mis-naming edge case. Reviewer constructed and confirmed against real gsed 4.10: `sed -i --fi -x.sed <out-of-scope>` and `sed -i --fi -- <out-of-scope>` (with a file literally named \"--\" holding a script) both genuinely in-place edit, and the hook (round-1 code) silently ALLOWED both -- reachable even against round 1's OWN newly-recognized --in-place, since `sed --in-place --fi -x.sed <out-of-scope>` hits the identical gap one flag later. The cancellation argument's unstated precondition: it only holds when the flag's value is itself a flagless token, so the (round-1, unfixed) walking loop's `view.startswith(\"-\"): i += 1` branch never fires on it. A value that looks like a flag (leading \"-\", or exactly \"--\") breaks that precondition, and the two 'off by one' errors stop cancelling and start compounding -- the REAL target gets swallowed as the implicit script instead, not just mis-named. FIXED by building _sed_consumes_next_as_script() (bare or attached, exact or abbreviated) as ONE shared predicate used identically at all four sites that need to agree on 'does this flag consume 2 tokens or 1': _separator_index(), the flag_positions walk, has_explicit_script, and the main token-walking loop. Reviewer's own mutation testing (independently reproduced): all four fail-open shapes now DENY and name the real file (confirmed with a fresh mutation-test round: reverting round 2's fix reintroduces exactly 8 failures across exactly these cases, nothing else). Bonus: the symmetric fix also corrects a genuine PRE-EXISTING false positive (`sed --fi -i.bak file1 file2` was wrongly DENIED -- the unrecognized `--fi` left \"-i.bak\" looking like a flag position that IN_PLACE_CLUSTER_PATTERN then mismatched as enabling in-place mode, even though real gsed treats \"-i.bak\" as --file's own script-file value and performs no in-place edit at all -- the same class PR #52 round 4 already fixed for the exact-spelling form, reintroduced via abbreviation). Reviewer also found the identical abbreviation-comparison gap in cp_mv_targets()'s own TARGET_DIRECTORY_FLAGS (a different function, out of F041's scope) -- filed separately as F048 per the reviewer's own recommendation, not folded into this fix.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [
@@ -1385,6 +1385,27 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F040",
+      "spec": null
+    },
+    {
+      "id": "F048",
+      "description": "skills/harness-init/enforce-scope.sh.template's TARGET_DIRECTORY_FLAGS = (\"-t\", \"--target-directory\") and the `startswith(\"--target-directory=\")` check (cp_mv_targets()) compare against the EXACT long-option string only, not any unambiguous GNU getopt_long abbreviation of it -- the same abbreviation-recognition gap F041 just fixed for sed's --in-place/--expression/--file, but in a different function (cp_mv_targets(), not sed_inplace_targets()). CONFIRMED against real GNU coreutils 9.11: `cp --targ=DIR src.txt` and `cp --t DIR src.txt` (bare, space-separated) both genuinely redirect the destination via -t's own mechanism, and `mv --targ=DIR src.txt`/`mv --t DIR src.txt` behave identically -- --target-directory is the only cp/mv long option starting with \"--t\" (no ambiguity to resolve), so every prefix from \"--t\" up is unambiguous. Every one of these is wrongly ALLOWED today (the real destination is never recognized as a flag-driven target at all, so it falls through to the ordinary last-flagless-token logic and the true -t/--target-directory destination is missed).",
+      "priority": 32,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #71 (F041), while checking for the same abbreviation-comparison bug class elsewhere in the file after finding it in sed_inplace_targets(). Reviewer explicitly recommended filing this as its own feature rather than expanding F041's scope, since it's a different function (cp_mv_targets(), not sed_inplace_targets()) with its own TARGET_DIRECTORY_FLAGS/_attached_value_raw() call sites. Independently confirmed live before filing: `gcp --targ=out src.txt` genuinely copies into out/ via real GNU cp 9.11.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F041",
       "spec": null
     }
   ]
