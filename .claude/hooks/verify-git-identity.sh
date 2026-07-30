@@ -3,9 +3,17 @@
 # Runs before Bash tool calls that contain git push/pull/clone.
 # Exit code 0 = allow
 # Exit code 2 = block (identity mismatch)
+# Failure posture: fail-open. Missing harness.json, or a harness.json with no recorded
+# git_identity, allows the command (exit 0) rather than blocking it; only an actually
+# detected mismatch blocks (exit 2). Residual: an incomplete harness.json silently
+# disables identity verification.
 
 # Read hook input from stdin
 INPUT=$(cat)
+
+# Anchor to the project root so the hook works from any working directory
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 
 # Extract the command from tool input
 COMMAND=$(echo "$INPUT" | python3 -c "

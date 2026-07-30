@@ -9,10 +9,17 @@
 #   Stage 2: full_test  — complete suite with coverage
 # Failing at Stage 1 avoids the cost of a full test run.
 # correction_cycles is incremented in features.json on any rejection.
+# Formatting: this hook's features.json writes own indent=2, a trailing
+# newline, and atomic replacement (.tmp + mv); only the targeted feature
+# is modified.
+# Failure posture: fail-closed for the core gate -- a missing .harness/init.sh or any
+# smoke/full test failure rejects completion (exit 2). Fail-open/best-effort for the
+# correction_cycles bookkeeping side effect: a harness_state.py write failure there is
+# noted on stderr but never changes the accept/reject verdict.
 
 set -euo pipefail
 
-PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$PROJECT_ROOT"
 
 # Read hook input from stdin
@@ -40,29 +47,26 @@ if [ ! -f ".harness/init.sh" ]; then
     exit 2
 fi
 
-# Increment correction_cycles for all in-progress features.
-# This tracks how many times the quality gate rejected completion —
-# useful for retrospectives and dynamic model selection.
+# Increment correction_cycles for the targeted in-progress feature via the
+# shared state module. This tracks how many times the quality gate rejected
+# completion — useful for retrospectives and dynamic model selection.
+STATE_MODULE=".claude/hooks/harness_state.py"
 increment_correction_cycles() {
-    if [ -f ".harness/features.json" ]; then
-        python3 - "$FEATURE_ID" <<'PYEOF'
-import json, sys
-target_id = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else None
-try:
-    with open('.harness/features.json', 'r') as f:
-        data = json.load(f)
-    changed = False
-    for feature in data.get('features', []):
-        if feature.get('status') == 'in-progress':
-            if target_id is None or feature.get('id') == target_id:
-                feature['correction_cycles'] = feature.get('correction_cycles', 0) + 1
-                changed = True
-    if changed:
-        with open('.harness/features.json', 'w') as f:
-            json.dump(data, f, indent=2)
-except Exception as e:
-    pass  # Don't fail the hook on JSON errors
-PYEOF
+    if [ -z "$FEATURE_ID" ]; then
+        echo "verify-task-quality: no feature_id in task metadata or subject;" \
+             "skipping the correction_cycles update." >&2
+        return 0
+    fi
+    if [ ! -f ".harness/features.json" ]; then
+        return 0
+    fi
+    # Clear any tmp orphaned by an earlier killed run: the guarded mv below
+    # must only ever promote a tmp that THIS invocation wrote.
+    rm -f .harness/features.json.tmp
+    python3 "$STATE_MODULE" increment-correction-cycles .harness/features.json "$FEATURE_ID" \
+        2>&1 || true
+    if [ -f ".harness/features.json.tmp" ]; then
+        mv .harness/features.json.tmp .harness/features.json
     fi
 }
 
@@ -87,6 +91,70 @@ FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
     increment_correction_cycles
     exit 2
 }
+
+# Coverage target gate: compare the targeted feature's own recorded `coverage`
+# number against its `coverage_target` (falls back to 95). Skipped entirely when
+# coverage isn't a number yet (e.g. this repo's own descriptive strings) --
+# proportional: don't punish projects without numeric coverage tooling.
+if [ -n "$FEATURE_ID" ] && [ -f ".harness/features.json" ]; then
+    COVERAGE_RESULT=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
+import json
+import sys
+
+path, feature_id = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+match = next((f for f in data.get("features", []) if f.get("id") == feature_id), None)
+if match is None:
+    sys.exit(0)
+coverage = match.get("coverage")
+if not isinstance(coverage, (int, float)) or isinstance(coverage, bool):
+    sys.exit(0)
+target = match.get("coverage_target")
+if not isinstance(target, int) or isinstance(target, bool):
+    target = 95
+if coverage < target:
+    print(f"{coverage}|{target}")
+PYEOF
+)
+    if [ -n "$COVERAGE_RESULT" ]; then
+        ACHIEVED="${COVERAGE_RESULT%%|*}"
+        TARGET="${COVERAGE_RESULT##*|}"
+        echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%."
+        increment_correction_cycles
+        exit 2
+    fi
+fi
+
+# Claim-matched proof: warn (never block) when this feature accepts with no
+# proof recorded, or with proof whose evidence_type doesn't match its declared
+# qa_binding. Reads both fields directly off the feature object -- no external
+# lookup, no re-parsing of prose.
+if [ -n "$FEATURE_ID" ] && [ -f ".harness/features.json" ]; then
+    PROOF_WARNING=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
+import json
+import sys
+
+path, feature_id = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+match = next((f for f in data.get("features", []) if f.get("id") == feature_id), None)
+if match is None:
+    sys.exit(0)
+proof = match.get("proof")
+qa_binding = match.get("qa_binding")
+if not proof:
+    print(f"WARN: {feature_id} accepted with no proof recorded.")
+elif qa_binding and proof.get("evidence_type") != qa_binding:
+    print(
+        f"WARN: {feature_id}'s proof.evidence_type "
+        f"'{proof.get('evidence_type')}' does not match its declared "
+        f"qa_binding '{qa_binding}'. Fix the proof or the binding."
+    )
+PYEOF
+)
+    [ -n "$PROOF_WARNING" ] && echo "$PROOF_WARNING"
+fi
 
 # Remind about stale in-progress features
 if [ -f ".harness/features.json" ]; then

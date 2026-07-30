@@ -1154,6 +1154,36 @@ else
   fail "ht: verify-task-quality has no mv-based atomic write"
 fi
 
+# F047: this repo runs on its own harness, so its OWN live .claude/hooks/*.sh
+# are what actually gate every teammate spawned in THIS repo -- not the
+# templates in skills/harness-init/, which are the distributable source. A
+# fix landing in a template does nothing for this repo's own teammates until
+# the installed copy is re-synced (confirmed live: a reviewer teammate hit
+# F046's exact stdout-only bug via THIS repo's own stale installed hook,
+# after F046's fix had already merged into the template). This guard fails
+# loudly the moment the two drift apart again, rather than relying on someone
+# noticing during the next unrelated review.
+for HOOK_NAME in enforce-scope.sh check-remaining-tasks.sh verify-task-quality.sh verify-git-identity.sh commit-gate.sh; do
+  if diff -q "$TEMPLATES_DIR/$HOOK_NAME.template" "$REPO_ROOT/.claude/hooks/$HOOK_NAME" > /dev/null 2>&1; then
+    pass "ht: this repo's installed $HOOK_NAME matches its template (F047)"
+  else
+    fail "ht: this repo's installed $HOOK_NAME has drifted from its template (F047) -- re-copy it"
+  fi
+done
+if diff -q "$TEMPLATES_DIR/harness_state.py.template" "$REPO_ROOT/.claude/hooks/harness_state.py" > /dev/null 2>&1; then
+  pass "ht: this repo's installed harness_state.py matches its template (F047)"
+else
+  fail "ht: this repo's installed harness_state.py has drifted from its template (F047) -- re-copy it"
+fi
+# statusline.sh is sourced from this plugin's own hooks/statusline.sh, not from a
+# skills/harness-init/*.sh.template (there is no statusline template) -- the drift
+# check for it compares against that source instead.
+if diff -q "$REPO_ROOT/hooks/statusline.sh" "$REPO_ROOT/.claude/hooks/statusline.sh" > /dev/null 2>&1; then
+  pass "ht: this repo's installed statusline.sh matches the plugin's own copy (F047)"
+else
+  fail "ht: this repo's installed statusline.sh has drifted from the plugin's own copy (F047) -- re-copy it"
+fi
+
 DIR_HS="$WORK/ht-scope"
 make_fixture "$DIR_HS"
 install_hooks "$DIR_HS"
