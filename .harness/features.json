@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 60,
-  "passing": 50,
+  "passing": 51,
   "features": [
     {
       "id": "F001",
@@ -1707,7 +1707,7 @@
       "id": "F060",
       "description": "A teammate scoped to `.claude/` can edit its own scope definition (`.claude/teammate-scope.txt`) and the enforcement hooks themselves (`.claude/hooks/*.sh`, including enforce-scope.sh/commit-gate.sh/verify-git-identity.sh) -- confirmed live (review-pr91-f058): both a Write to `.claude/teammate-scope.txt` and to `.claude/hooks/enforce-scope.sh` return ALLOW under a `.claude/` scope. This is a strictly larger hole than F058's harness.json gap: a teammate could widen its own declared scope, or edit the very hook meant to enforce it, and have that edit take effect on its NEXT tool call in the same session. Not a one-line LEAD_OWNED addition like F058, though: adding `.claude/hooks/*.sh` to LEAD_OWNED unconditionally would block a teammate LEGITIMATELY assigned to work on the hooks themselves, which happens routinely in this repo (most of this session's own feature work touches these exact files). Needs a real design decision before implementation -- e.g. protect only `.claude/teammate-scope.txt` (a teammate should never need to edit its own scope definition, regardless of what it's assigned) while leaving `.claude/hooks/*.sh` governed by ordinary scope (so a teammate explicitly assigned scope covering `.claude/hooks/` can still work on them), or some other rule that distinguishes 'my own enforcement boundary' from 'code I was assigned to change'.",
       "priority": 43,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         ".claude/hooks/enforce-scope.sh",
@@ -1717,12 +1717,14 @@
         "F058"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by review-pr91-f058 while checking whether harness.json was the complete target for F058's fix, or whether anything else deserved the same protection -- confirmed live before filing (not just asserted): a `.claude/`-scoped teammate gets ALLOW on both a Write to `.claude/teammate-scope.txt` and to `.claude/hooks/enforce-scope.sh`. Explicitly NOT folded into F058 by the reviewer's own recommendation, since it needs a design decision (see description) rather than a mechanical extension of the existing LEAD_OWNED pattern -- the design question itself (what exactly to protect, and how to distinguish a teammate's own enforcement boundary from code it was legitimately assigned to touch) is the first thing to resolve before any implementation starts.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by review-pr91-f058 while checking whether harness.json was the complete target for F058's fix, or whether anything else deserved the same protection -- confirmed live before filing (not just asserted): a `.claude/`-scoped teammate gets ALLOW on both a Write to `.claude/teammate-scope.txt` and to `.claude/hooks/enforce-scope.sh`. Explicitly NOT folded into F058 by the reviewer's own recommendation, since it needs a design decision (see description) rather than a mechanical extension of the existing LEAD_OWNED pattern -- the design question itself (what exactly to protect, and how to distinguish a teammate's own enforcement boundary from code it was legitimately assigned to touch) is the first thing to resolve before any implementation starts.\n\nFIXED: resolved the design question exactly as the filing itself narrowed it -- added .claude/teammate-scope.txt to LEAD_OWNED (both the bash-side case statement and the python-side set), mirroring F058's mechanism exactly, and deliberately left .claude/hooks/*.sh ungoverned by this fix (ordinary scope still applies to them, so a teammate explicitly assigned scope covering .claude/hooks/ can still work on them). Confirmed this doesn't affect the LEAD's own ability to create/rewrite the file for teammates: enforce-scope.sh exits 0 unconditionally whenever no .claude/teammate-scope.txt exists for the CURRENT session, which is true for the lead (no scope file of its own) -- the LEAD_OWNED check only ever runs for a TEAMMATE session that already has one. Ground-truthed live before and after: built a throwaway fixture with scope=.claude/ (so LEAD_OWNED is the only thing that can produce a deny, the same discriminating-fixture reasoning F058's DIR_HL used) -- before the fix, both a Write and a Bash redirect to teammate-scope.txt returned ALLOW; after, both correctly DENY with the lead-owned JSON form, while a Write to .claude/hooks/enforce-scope.sh under the SAME scope still ALLOWs (hooks remain ordinary-scope-governed, exactly as designed). Added 9 new test assertions using a dedicated fixture (DIR_HC, mirroring F058's DIR_HL): Edit and Bash-write denial for teammate-scope.txt, plus 2 no-regression checks (an in-scope .claude/hooks/ file still passes; an ordinary in-scope .claude/ file still passes) proving the fix is narrowly targeted, not a whole-directory lockout. Mutation-tested by reverting both enforce-scope.sh copies: exactly 3 of the 9 new assertions failed (the discriminating deny-json/invariant-name ones), nothing else. Full suite 1327/1327. Resynced .claude/hooks/enforce-scope.sh from the template per F047's drift guard.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "added .claude/teammate-scope.txt to LEAD_OWNED via the same mechanism as F058's harness.json fix, deliberately declining to touch .claude/hooks/*.sh -- the design question the feature's own filing had already narrowed to this exact resolution (protect the scope-definition file the teammate never legitimately edits; leave the hooks a teammate might legitimately be assigned to work on ordinary-scope-governed)"
+      ],
       "failure_reason": null,
       "discovered_via": "F058",
       "spec": null
