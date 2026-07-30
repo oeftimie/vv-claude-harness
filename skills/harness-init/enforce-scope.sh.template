@@ -270,25 +270,73 @@ ANSI_C_SIMPLE_ESCAPES = {
     "a": "\a", "b": "\b", "e": "\x1b", "f": "\f",
     "n": "\n", "r": "\r", "t": "\t", "v": "\v",
 }
-ANSI_C_ESCAPE_PATTERN = re.compile(r"\\(?:x([0-9A-Fa-f]{1,2})|([0-7]{1,3})|(.))")
+ANSI_C_ESCAPE_PATTERN = re.compile(
+    r"\\(?:x([0-9A-Fa-f]{1,2})|([0-7]{1,3})|c(.)"
+    r"|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})|(.))"
+)
 
 
 def _decode_ansi_c_escape(m):
     # One match alternative fires per call, per ANSI_C_ESCAPE_PATTERN's own
-    # three groups (hex, octal, single-char) -- verified against real bash
-    # 3.2.57 (`printf '%s' $'a\x2eb'`, `$'a\056b'`, `$'a\eb'`, `$'a\qb'`,
-    # `$'a\8b'`, `$'a\xzb'`): \xHH (1-2 hex digits, case-insensitive) and
-    # \nnn (1-3 octal digits) decode to that byte; \\, \', \", \a, \b, \e,
-    # \f, \n, \r, \t, \v decode to their usual meaning; any OTHER backslash
-    # escape (including \8/\9, not valid octal, and \x with no hex digit
-    # following) is left as a literal backslash followed by that character,
-    # UNCHANGED -- bash does not drop the backslash for an escape it
-    # doesn't recognize inside $'...'.
-    hexdigits, octdigits, other = m.group(1), m.group(2), m.group(3)
+    # six groups (hex, octal, control-char, 4-hex Unicode, 8-hex Unicode,
+    # single-char) -- verified against real bash 3.2.57 (`printf '%s'
+    # $'a\x2eb'`, `$'a\056b'`, `$'a\eb'`, `$'a\qb'`, `$'a\8b'`, `$'a\xzb'`):
+    # \xHH (1-2 hex digits, case-insensitive) and \nnn (1-3 octal digits)
+    # decode to that byte; \\, \', \", \a, \b, \e, \f, \n, \r, \t, \v
+    # decode to their usual meaning; any OTHER backslash escape (including
+    # \8/\9, not valid octal, and \x with no hex digit following) is left
+    # as a literal backslash followed by that character, UNCHANGED -- bash
+    # does not drop the backslash for an escape it doesn't recognize
+    # inside $'...'. \cX/\uHHHH/\UHHHHHHHH (F038) were a documented,
+    # unverified-in-this-environment residual until now: this repo's bash
+    # 3.2.57 does not decode \u/\U at all (confirmed: `$'a.b'` prints
+    # literally, backslash intact), so the traversal risk was inert on
+    # THIS machine specifically -- but installing bash 5.3.15 via Homebrew
+    # to check directly (rather than leaving it "believed added around
+    # bash 4.2, unverified") confirmed ./\U0000002e both genuinely
+    # decode to "." on any bash new enough, a live, not merely theoretical,
+    # bypass class identical to F033's own. \cX decodes on BOTH bash
+    # versions already (found by adversarial review of PR #57), using
+    # `ord(X.upper()) & 0x1F` -- verified against 10 characters spanning
+    # letters, digits, and punctuation (bash's actual formula masks to the
+    # low 5 bits; a naive "XOR 0x40" convention some documentation implies
+    # gives the WRONG byte for any character below 0x40, e.g. "?" (0x3F)
+    # -- confirmed empirically: real bash decodes \c? to 0x1F, not the
+    # 0x7F a XOR-based implementation would wrongly produce). \cX can only
+    # ever produce a non-printable control byte (0x00-0x1F), never "."
+    # (0x2e) or "/" (0x2f), so it is not independently traversal-
+    # exploitable the way \u/\U are -- implemented anyway for completeness
+    # now that the pattern is being extended regardless. \u/\U are both
+    # GREEDY up to their digit cap (4 for \u, 8 for \U), matching \x's own
+    # greedy 1-2 digit behavior -- confirmed empirically (`\u2b` consumes
+    # BOTH hex-looking characters as one 2-digit codepoint 0x2B ('+'), not
+    # \u2 followed by literal "b"), and the resulting codepoint is encoded
+    # the same way Python's own str type stores it (chr()), which downstream
+    # scope-pattern string comparisons consume directly with no further
+    # byte-level re-encoding needed. A \U value exceeding Unicode's own
+    # max codepoint (0x10FFFF) is a documented residual left undecoded
+    # (real bash uses an extended, pre-RFC-3629 UTF-8 byte encoding for
+    # these that Python's chr() cannot represent) -- confirmed real bash
+    # still encodes something for \U11000000 (out of range) and
+    # \U0000D800 (a raw surrogate codepoint), but neither can ever spell
+    # "." or "/" regardless of exact byte representation, so left
+    # unresolved rather than replicating bash's own extended encoding.
+    hexdigits, octdigits, ctrlchar, u4, u8, other = (
+        m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6)
+    )
     if hexdigits is not None:
         return chr(int(hexdigits, 16))
     if octdigits is not None:
         return chr(int(octdigits, 8) & 0xFF)
+    if ctrlchar is not None:
+        return chr(ord(ctrlchar.upper()) & 0x1F)
+    if u4 is not None:
+        return chr(int(u4, 16))
+    if u8 is not None:
+        try:
+            return chr(int(u8, 16))
+        except ValueError:
+            return "\\U" + u8
     return ANSI_C_SIMPLE_ESCAPES.get(other, "\\" + other)
 
 
