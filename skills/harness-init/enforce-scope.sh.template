@@ -7,13 +7,17 @@
 # denial paths added for that feature -- lead-owned state files, and Bash write
 # commands -- use the hookSpecificOutput.permissionDecision:"deny" JSON form (exit 0)
 # instead, per cross-harness reconciliation (OVI-51).
-# Failure posture: fail-open. If PROJECT_ROOT can't be resolved, the scope file is
+# Failure posture: fail-open for ENVIRONMENT failures, fail-closed for per-segment
+# ANALYSIS failures (F042). If PROJECT_ROOT can't be resolved, the scope file is
 # unreadable, or the tool-input JSON can't be parsed, the action is ALLOWED, not
 # blocked. Residual: a broken environment silently disables enforcement rather than
 # blocking everything. Bash coverage is pattern-based and evadable by construction
 # (compound commands, command substitution/subshells, and a write hidden inside a
 # heredoc body fed to a nested interpreter are known false-negative surfaces) --
 # the goal is stopping accidental drift, not defeating an adversarial teammate.
+# Once a segment's own analysis begins, though, an exception anywhere in it (a
+# decoder crash, or anything else _check_segment() can't handle) denies that
+# segment unconditionally instead -- see main()'s own comment for why.
 # Straightforward single/double/ANSI-C quoting of a separator or a write target is
 # handled (see mask_quotes()/unquote_token()); nested or otherwise unusual quoting
 # is not attempted. Known false-positive residual: redirect-target extraction
