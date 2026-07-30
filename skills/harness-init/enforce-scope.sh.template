@@ -727,6 +727,82 @@ def cp_mv_targets(tokens):
 
 SED_SCRIPT_VALUE_FLAGS = ("-e", "-f", "--expression", "--file")
 
+# The full set of long options GNU sed recognizes, used as the
+# disambiguation universe for _resolve_sed_long_flag() (F041) -- mirroring
+# commit-gate.sh's GIT_COMMIT_LONG_OPTIONS/_resolve_long_flag() (F032).
+# Mechanically extracted from `gsed --help` (GNU sed 4.10, installed via
+# `brew install gnu-sed` specifically to ground-truth this), not assembled
+# from memory: --quiet/--silent are both listed as -n's long form; the
+# rest are one option each. GNU sed accepts any prefix of a long option
+# that uniquely identifies it among this FULL set (confirmed: `gsed --xyz`
+# errors "unrecognized option"; `gsed --f=x` errors "ambiguous option: f
+# (could be --file or --follow-symlinks)"), the same unambiguous-prefix
+# rule real git uses. Before this, sed_inplace_targets()'s in-place-
+# presence guard recognized only the exact string "--in-place" or the
+# attached "--in-place=" prefix -- confirmed against real gsed that
+# --i, --in, --in-p, --in-pla, --in-plac (bare) and --i=.bak, --in-p=.bak
+# (attached, abbreviated) all genuinely perform a real in-place edit,
+# since --in-place is the only long option starting with "--i" (no
+# ambiguity to resolve), and every one of these was wrongly ALLOWED
+# (F041). The identical abbreviation gap also affects has_explicit_script's
+# own --expression=/--file= recognition below, but ONLY the ATTACHED form
+# ("--exp=script") is fixed there, not a bare abbreviated form ("--exp
+# script") -- confirmed both are real GNU sed syntax, but the bare form is
+# a documented, deliberate residual: has_explicit_script only decides
+# whether ONE flagless token gets swallowed as an implicit script, and the
+# main token-walking loop's OWN 2-token skip for -e/-f/--expression/--file
+# (SED_SCRIPT_VALUE_FLAGS, unchanged by this fix) already fails to skip a
+# bare abbreviated flag's value the same way has_explicit_script used to
+# fail to recognize it -- the two "wrong by one token" errors cancel
+# exactly for a single bare abbreviated script flag (verified via mutation
+# testing: reverting this entire fix does not change which target gets
+# denied for `sed -i --exp 's/a/b/' out-of-scope-file`, only for the
+# ATTACHED form). Fixing has_explicit_script's bare-form recognition
+# WITHOUT also reworking the walking loop's own token-consumption count
+# would break that symmetry and make the denial name the wrong (script
+# fragment) string instead of the real file -- not worth the added
+# surface for a case real, but not shown to be a fail-open, only a
+# find-the-wrong-string edge case with 2+ bare abbreviated script flags.
+SED_LONG_OPTIONS = (
+    "--quiet", "--silent", "--debug", "--expression", "--file",
+    "--follow-symlinks", "--in-place", "--line-length", "--posix",
+    "--regexp-extended", "--separate", "--sandbox", "--unbuffered",
+    "--null-data", "--help", "--version",
+)
+
+
+def _resolve_sed_long_flag(view):
+    # Resolves a "--xxx" token to its full long-option name if it's an
+    # exact match or an UNAMBIGUOUS prefix of exactly one entry in
+    # SED_LONG_OPTIONS, mirroring commit-gate.sh's _resolve_long_flag()
+    # (F032). Returns None on no match or an ambiguous prefix -- in the
+    # ambiguous case, real GNU sed itself errors out and nothing runs, so
+    # treating it as "not a recognized flag" here is always safe, never a
+    # bypass. Operates on the flag-name part only: callers split off any
+    # attached "=value" suffix before calling this, since GNU's own
+    # abbreviation resolution happens on the option name, not the value
+    # (confirmed: `gsed --i=.bak` and `gsed --in-place=.bak` resolve
+    # identically).
+    if view in SED_LONG_OPTIONS:
+        return view
+    matches = [o for o in SED_LONG_OPTIONS if o.startswith(view)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _sed_long_flag_name(tok):
+    # Splits a (possibly _flag_view-unquoted) token into its flag-name part
+    # -- everything before the first "=" -- and resolves THAT against
+    # SED_LONG_OPTIONS, so both the bare form ("--in-place") and the
+    # attached form ("--in-place=.bak", or an abbreviation of either) are
+    # recognized identically (F041). Returns None for a non-"--" token
+    # without ever calling _resolve_sed_long_flag on it, since a short
+    # flag or a plain filename could otherwise coincidentally prefix-match
+    # (e.g. an empty string is a prefix of everything).
+    if not tok.startswith("--"):
+        return None
+    return _resolve_sed_long_flag(tok.split("=", 1)[0])
+
+
 # Matches a short-flag cluster ending in "i" (F037): both GNU's and BSD/
 # macOS's own argument-less short flags may precede "i" in the same token
 # (`-ri`, `-ni`, `-Ei`, `-nsi`, ... on GNU; `-ai.bak`, `-Hi.bak`, `-ali.bak`
@@ -902,15 +978,17 @@ def sed_inplace_targets(tokens):
             fi += 1
     if not any(
         IN_PLACE_CLUSTER_PATTERN.match(_flag_view(pre_separator_args[idx]))
-        or _flag_view(pre_separator_args[idx]) == "--in-place"
-        or _flag_view(pre_separator_args[idx]).startswith("--in-place=")
+        or _sed_long_flag_name(_flag_view(pre_separator_args[idx])) == "--in-place"
         for idx in flag_positions
     ):
         return []
     has_explicit_script = any(
         _flag_view(pre_separator_args[idx]) in SED_SCRIPT_VALUE_FLAGS
-        or _flag_view(pre_separator_args[idx]).startswith("--expression=")
-        or _flag_view(pre_separator_args[idx]).startswith("--file=")
+        or (
+            "=" in _flag_view(pre_separator_args[idx])
+            and _sed_long_flag_name(_flag_view(pre_separator_args[idx]))
+            in ("--expression", "--file")
+        )
         for idx in flag_positions
     )
     targets = []

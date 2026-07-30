@@ -3034,6 +3034,84 @@ assert_rc0 "$RC" "hs2 (F040): a backslash-escaped rm on an in-scope target passe
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F040): in-scope backslash-escaped rm has no deny fields"
 
+# F041: sed_inplace_targets()'s in-place-presence guard recognized only the
+# exact string "--in-place" or the attached "--in-place=" prefix, not GNU
+# sed's own unambiguous long-option ABBREVIATION feature. Confirmed against
+# real gsed 4.10: --i, --in-p (bare) and --i=.bak (attached, abbreviated)
+# all genuinely perform a real in-place edit, since --in-place is the only
+# GNU sed long option starting with "--i".
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed --i 's/a/b/' src/other/f041a.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): abbreviated bare --i exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F041): abbreviated bare --i denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041a.txt" \
+  "hs2 (F041): abbreviated bare --i denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed --in-p 's/a/b/' src/other/f041b.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): abbreviated bare --in-p exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F041): abbreviated bare --in-p denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041b.txt" \
+  "hs2 (F041): abbreviated bare --in-p denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed --i=.bak 's/a/b/' src/other/f041c.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): abbreviated attached --i=.bak exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F041): abbreviated attached --i=.bak denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041c.txt" \
+  "hs2 (F041): abbreviated attached --i=.bak denial names the real target"
+
+# The identical abbreviation gap also affects has_explicit_script's own
+# --expression=/--file= recognition in the same function, but only the
+# ATTACHED form ("--exp=script") is fixed here, not a bare abbreviated
+# form ("--exp script") -- see this function's own SED_LONG_OPTIONS
+# comment for why the bare form is a deliberate, safe residual (the two
+# "wrong by one token" errors it would otherwise introduce cancel exactly
+# for a single bare abbreviated script flag). This test pins that the
+# bare form REMAINS correctly denied (unchanged behavior, not a new fix):
+# real gsed genuinely in-place edits via `sed -i --exp 's/a/b/' file`.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i --exp 's/a/b/' src/other/f041d.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): -i with abbreviated bare --exp script exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F041): -i with abbreviated bare --exp denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041d.txt" \
+  "hs2 (F041): -i with abbreviated bare --exp denial names the real target"
+
+# The ATTACHED form is the one this fix actually changes: before it, this
+# exact command was wrongly ALLOWED (the real file target was swallowed
+# as the implicit script slot and never checked at all) -- confirmed
+# against real gsed that `sed -i --exp='s/a/b/' file` genuinely in-place
+# edits.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed -i --exp='s/a/b/' src/other/f041e.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): -i with abbreviated attached --exp= exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F041): -i with abbreviated attached --exp= denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f041e.txt" \
+  "hs2 (F041): -i with abbreviated attached --exp= denial names the real target"
+
+# No new false positive: an in-scope abbreviated --i must still be allowed,
+# and an AMBIGUOUS abbreviation (--f, which real GNU sed itself rejects as
+# ambiguous between --file and --follow-symlinks) must not be misread as
+# unlocking the in-place guard.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed --i 's/a/b/' src/parser/f041f.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): an in-scope abbreviated --i passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F041): in-scope abbreviated --i has no deny fields"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sed --f script.sed src/other/f041g.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F041): an ambiguous --f passes, rc 0 (real sed errors, no in-place edit)"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F041): ambiguous --f has no deny fields (not misread as --in-place)"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
