@@ -869,7 +869,15 @@ def sed_inplace_targets(tokens):
     # flags may precede "i" in a cluster and why (a GNU/BSD flavor
     # difference this repo's own platform makes relevant, not an
     # arbitrary choice).
-    if not tokens or tokens[0] != "sed":
+    # Compares _flag_view(tokens[0]), not the raw token, for the same reason
+    # as every other flag/name comparison in this function (F035) -- a
+    # backslash-escaped or quoted "sed" (`\sed -i ...`, `"sed" -i ...`) is
+    # ordinary shell, not adversarial, and real bash still runs sed. The raw
+    # comparison never matched those spellings, so this function returned []
+    # (no targets) and the in-place edit went entirely unchecked, confirmed
+    # live against a src/parser/-scoped fixture (F040, discovered alongside
+    # write_targets()'s identical bug in its own cp/mv/tee/rm dispatch).
+    if not tokens or _flag_view(tokens[0]) != "sed":
         return []
     args = tokens[1:]
     pre_separator_args = args[: _separator_index(args)]
@@ -1063,9 +1071,23 @@ def write_targets(segment):
     targets = redirect_targets(segment)
     command_tokens = split_tokens(strip_redirects(segment))
     if command_tokens:
-        if command_tokens[0] in ("cp", "mv"):
+        # Compares _flag_view(command_tokens[0]), not the raw token, for the
+        # same reason cp_mv_targets()/sed_inplace_targets() compare _flag_view
+        # of their OWN flag tokens (F035): a backslash-escaped or quoted
+        # command name (`\rm src/other/f.txt`, `"rm" src/other/f.txt`, `'rm'
+        # src/other/f.txt`) is ordinary, everyday shell -- a common
+        # alias-bypass idiom, not an adversarial technique -- and real bash
+        # runs it as plain rm regardless of the escaping/quoting. The raw
+        # comparison here never matched any of those spellings, so command
+        # recognition failed entirely and NO target was ever extracted for
+        # cp/mv/tee/rm (confirmed live: rc=0, no denial, against a fixture
+        # scoped to src/parser/). This is a command-NAME recognition check,
+        # not a target-VALUE extraction, so there is no double-unquote risk:
+        # the command name itself is never returned as a target (F040).
+        command_name = _flag_view(command_tokens[0])
+        if command_name in ("cp", "mv"):
             targets = targets + cp_mv_targets(command_tokens[1:])
-        elif command_tokens[0] in ("tee", "rm"):
+        elif command_name in ("tee", "rm"):
             targets = targets + all_flagless_tokens(command_tokens[1:])
         else:
             targets = targets + sed_inplace_targets(command_tokens)
