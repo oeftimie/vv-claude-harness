@@ -3206,6 +3206,122 @@ assert_rc0 "$RC" "hs2 (F041): an ambiguous --f passes, rc 0 (real sed errors, no
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F041): ambiguous --f has no deny fields (not misread as --in-place)"
 
+# F042: a decoder exception (currently none are known -- F038 rounds 2-3
+# hardened the only two found so far -- but this hook's own design is
+# fail-OPEN on ANY exception, an input-controlled lever this defense-in-
+# depth removes for the NEXT unknown one) must not silently disable
+# enforcement for a whole command. Since no live crasher exists today,
+# these tests use a fixture with a DELIBERATELY fault-injected copy of
+# enforce-scope.sh (a single extra line making _decode_ansi_c_escape()
+# raise for the otherwise-inert "\Q" escape) to simulate "the next unknown
+# exception type" the same way F038's own two real crashers behaved,
+# without depending on a live 0-day existing in the current decoder.
+#
+# ROUND 1 of this fix fell back to comparing attacker-controlled RAW/
+# undecoded text against scope patterns on a decoder exception, reasoning
+# it "essentially never" matches a real scope prefix. Adversarial review
+# of PR #73 disproved that: an attacker who controls where the crash
+# lands can trivially place it AFTER an in-scope-looking prefix (e.g.
+# "src/parser/"), making the raw fallback text itself look in-scope --
+# the exact same construction round 1's own tests used to prove
+# "processing continues past the crash" was ALSO a genuine bypass.
+# ROUND 2 (this version) denies UNCONDITIONALLY on any analysis failure,
+# never comparing fallback text against scope at all -- there is no text
+# to fall back to that isn't equally attacker-controlled.
+#
+# The injection step's own exit status is checked (`|| fail ...`), not
+# silently ignored: run-tests.sh has `set -u` but not `set -e`, so an
+# injection that silently fails to apply (e.g. because a future refactor
+# renamed the marker line) would otherwise leave DIR_HS_F042 running the
+# PRISTINE hook -- and since "\Q" is inert without the injection, every
+# assertion below would still pass anyway, testing nothing (found by
+# adversarial review of PR #73: confirmed live that a deliberately broken
+# marker still yields "0 failed" without this guard).
+DIR_HS_F042="$WORK/ht-scope-f042"
+make_fixture "$DIR_HS_F042"
+install_hooks "$DIR_HS_F042"
+printf 'src/parser/\n' > "$DIR_HS_F042/.claude/teammate-scope.txt"
+if ! python3 - "$DIR_HS_F042/.claude/hooks/enforce-scope.sh" <<'PYEOF'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+marker = '    return ANSI_C_SIMPLE_ESCAPES.get(other, "\\\\" + other)'
+assert text.count(marker) == 1, "F042 fault-injection marker not found or not unique"
+injected = (
+    '    if other == "Q":\n'
+    '        raise ValueError("test-injected-decoder-failure")\n'
+    + marker
+)
+open(path, "w").write(text.replace(marker, injected))
+PYEOF
+then
+  fail "hs2 (F042): fault-injection setup failed -- all F042 tests below would be vacuous"
+fi
+
+# A decoder crash reachable via a PLAIN redirect target (>/>>, which
+# bypasses every earlier _flag_view() call -- unlike cp/mv/tee/rm/sed
+# targets, whose OWN flag/command-name recognition already calls the
+# same decoder first) must deny the whole segment, not silently allow
+# the real out-of-scope target alongside it.
+OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
+  "$(bash_command_json "echo x > src/parser/\$'\Qtrigger'.txt 2> src/other/f042a.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F042): a decoder crash on a redirect target exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F042): decoder-crash-on-redirect-target denial uses JSON deny form"
+assert_contains "$OUT" "could not be safely analyzed" \
+  "hs2 (F042): decoder-crash-on-redirect-target denial states analysis failure, not a normal scope violation"
+
+# A decoder crash during COMMAND-NAME recognition (_flag_view(command_
+# tokens[0]), called before any target list even exists -- e.g. for
+# cp/mv/tee/rm/sed) must also deny, not propagate uncaught out of main()
+# (which would leave stdout empty and silently ALLOW the whole command).
+OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
+  "$(bash_command_json "src/parser/\$'\Qcmd' arg1 arg2")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F042): a decoder crash during command-name recognition exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F042): command-name-recognition-crash denial uses JSON deny form"
+assert_contains "$OUT" "could not be safely analyzed" \
+  "hs2 (F042): command-name-recognition-crash denial states analysis failure"
+
+# CRITICAL regression test (adversarial review of PR #73, round 1): a
+# crash positioned immediately AFTER a valid in-scope prefix must NOT be
+# silently allowed just because the raw/fallback text happens to start
+# with "src/parser/" -- confirmed live against round 1 of this fix that
+# this exact shape was a genuine bypass (the crash during command-name
+# recognition fell back to the whole raw segment, which itself starts
+# with the scope prefix, so it was wrongly ALLOWED even though the
+# command's own real redirect target is genuinely out of scope).
+OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
+  "$(bash_command_json "src/parser/\$'\Qx' > src/other/f042c.txt")")
+RC=$?
+assert_rc0 "$RC" \
+  "hs2 (F042): a crash positioned after a valid scope prefix still exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F042): crash-after-valid-prefix denial uses JSON deny form (NOT a silent allow)"
+
+# Same regression, via the redirect-target (layer 1 shape) instead of the
+# command-name (layer 2 shape): the crash-and-traversal sits inside a
+# $'...' span concatenated onto an unquoted "src/parser/" prefix, so the
+# raw fallback text ALSO starts with "src/parser/" -- must still deny.
+OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
+  "$(bash_command_json "echo x > src/parser/y\$'\Q\x2f\x2e\x2e\x2fother\x2fevil.txt'")")
+RC=$?
+assert_rc0 "$RC" \
+  "hs2 (F042): a redirect-target crash after a valid scope prefix still exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F042): redirect-target crash-after-valid-prefix denial uses JSON deny form"
+
+# No new false positive: an ordinary in-scope command with no crash-
+# inducing content anywhere must still be allowed.
+OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
+  "$(bash_command_json "echo x > src/parser/normal.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F042): an ordinary in-scope command with no crash passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F042): ordinary in-scope command has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then

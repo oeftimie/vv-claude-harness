@@ -7,13 +7,17 @@
 # denial paths added for that feature -- lead-owned state files, and Bash write
 # commands -- use the hookSpecificOutput.permissionDecision:"deny" JSON form (exit 0)
 # instead, per cross-harness reconciliation (OVI-51).
-# Failure posture: fail-open. If PROJECT_ROOT can't be resolved, the scope file is
+# Failure posture: fail-open for ENVIRONMENT failures, fail-closed for per-segment
+# ANALYSIS failures (F042). If PROJECT_ROOT can't be resolved, the scope file is
 # unreadable, or the tool-input JSON can't be parsed, the action is ALLOWED, not
 # blocked. Residual: a broken environment silently disables enforcement rather than
 # blocking everything. Bash coverage is pattern-based and evadable by construction
 # (compound commands, command substitution/subshells, and a write hidden inside a
 # heredoc body fed to a nested interpreter are known false-negative surfaces) --
 # the goal is stopping accidental drift, not defeating an adversarial teammate.
+# Once a segment's own analysis begins, though, an exception anywhere in it (a
+# decoder crash, or anything else _check_segment() can't handle) denies that
+# segment unconditionally instead -- see main()'s own comment for why.
 # Straightforward single/double/ANSI-C quoting of a separator or a write target is
 # handled (see mask_quotes()/unquote_token()); nested or otherwise unusual quoting
 # is not attempted. Known false-positive residual: redirect-target extraction
@@ -1228,6 +1232,13 @@ def write_targets(segment):
     # so it covers every decode route (F031's backslash-unescape, F033's
     # \x/\nnn, F038's \c/\u/\U) that could produce an embedded NUL, not
     # just one specific escape spelling.
+    #
+    # A decoder exception here is NOT caught locally (F042): main()'s own
+    # per-segment try/except is the single place that decides what happens
+    # on ANY analysis failure, covering this call and everything else that
+    # processes this segment's targets -- see main()'s own comment for why
+    # an EARLIER version of this fix tried a per-target raw-text fallback
+    # here instead, and why that was a real bypass, not a residual.
     return [unquote_token(t).split("\0", 1)[0] for t in targets]
 
 
@@ -1274,37 +1285,105 @@ def main():
     project_root = sys.argv[2]
     patterns = sys.argv[3:]
     for segment in segments_of(command):
-        for target in write_targets(segment):
-            norm = normalize(target, project_root)
-            # normalize() runs before this check so equivalent spellings of
-            # an exempt path (`/dev//null`, `/dev/./null`)
-            # are recognized as the same exact string is_dev_exempt() checks
-            # against -- NOT to prevent traversal from laundering a real
-            # out-of-scope path INTO looking exempt: is_dev_exempt() is
-            # exact-set/pattern membership, not a prefix match, so
-            # `/dev/../etc/passwd` (which resolves to `/etc/passwd`) was
-            # never going to match regardless of ordering -- confirmed by
-            # mutation-testing this ordering claim itself (moving the check
-            # before normalize() changed zero assertions). An earlier
-            # version of this comment claimed the ordering was load-bearing
-            # against traversal laundering; that was true of round 1's
-            # broad `startswith("/dev/")` prefix check, but became false
-            # once this round narrowed the check to exact membership --
-            # found by adversarial review of PR #53, round 2. Ordering WOULD
-            # become load-bearing again if DEV_EXEMPT_EXACT/DEV_FD_PATTERN
-            # were ever widened back to a prefix-style match.
-            if is_dev_exempt(norm):
-                continue
-            if norm in LEAD_OWNED:
-                print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
+        try:
+            if _check_segment(segment, project_root, patterns):
                 return
-            if not any(norm.startswith(p) for p in patterns):
-                print(
-                    f"Bash write to '{norm}' is outside your assigned scope "
-                    f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
-                    f"{ANNOTATION}"
-                )
-                return
+        except Exception:
+            # ANY exception anywhere while analyzing this segment -- a
+            # decoder crash inside write_targets() (still none currently
+            # known; F038 rounds 2-3 closed the only two ever found, this
+            # is defense-in-depth against the next one), or anywhere else
+            # in normalize()/is_dev_exempt()/the scope-comparison below --
+            # means denying UNCONDITIONALLY, never comparing any
+            # attacker-controlled fallback text against scope (F042).
+            #
+            # An earlier version of this fix instead fell back to treating
+            # raw, undecoded text (either one target's raw token, or the
+            # whole raw segment) as if it were a real path to compare
+            # against scope patterns, reasoning that a still-escaped
+            # string "essentially never" matches a real scope-directory
+            # prefix. That reasoning was FALSE: the attacker chooses the
+            # raw text, and can trivially place an in-scope-looking prefix
+            # (e.g. "src/parser/") immediately before the crash-triggering
+            # escape, making the exact SAME construction this fix's own
+            # tests used to prove "processing continues past the crash"
+            # into a genuine bypass instead -- confirmed live (adversarial
+            # review of PR #73): `src/parser/$'\Qx' > src/other/evil.txt`
+            # silently ALLOWed the real out-of-scope redirect, because the
+            # raw segment fallback text happened to start with "src/parser/".
+            # Comparing ANY fallback text against scope patterns is
+            # unsound in general, since the fallback text is exactly the
+            # part of the input that couldn't be safely analyzed -- there
+            # is no text to fall back to that isn't also attacker-
+            # controlled. Denying unconditionally removes that lever
+            # entirely: a segment (or anything in it) that can't be
+            # analyzed is always treated as a violation, full stop, same
+            # as this hook already refuses to run rather than guess when
+            # PROJECT_ROOT/the scope file/the tool-input JSON can't be
+            # resolved (see this file's own header). This also closes a
+            # SEPARATE gap the per-target/per-segment split had: the
+            # final `print(f"Bash write to '{norm}' is outside...")` call
+            # below crashes with UnicodeEncodeError if `norm` ever
+            # contains a raw lone surrogate (the actual F038 round 2
+            # incident -- a surrogate reaching PRINT, not a ValueError
+            # from chr() itself, which F038's own fix already prevents by
+            # returning literal escape text instead of a real surrogate
+            # character) -- that print() call sits INSIDE this same
+            # try/except now, not in a separate uncovered path.
+            #
+            # A one-line stderr note is added here (F042 round 2): before
+            # this fix, ANY decoder crash left a visible Python traceback
+            # on stderr; the earlier per-target/per-segment fallback made
+            # that failure completely silent, removing the only signal
+            # that anything went wrong (found by adversarial review of PR
+            # #73). stderr is never captured into DENY_REASON, so this
+            # costs nothing operationally.
+            print(f"enforce-scope: segment analysis failed, denying: {segment!r}", file=sys.stderr)
+            print(
+                f"Bash write target in {segment!r} could not be safely analyzed "
+                f"(best-effort, pattern-based check; treating as outside your "
+                f"assigned scope). {ANNOTATION}"
+            )
+            return
+
+
+def _check_segment(segment, project_root, patterns):
+    # Returns True once a real scope decision has been printed for this
+    # segment (main() must stop entirely at that point, not keep scanning
+    # later segments) -- False means this segment raised no violation, so
+    # main()'s own loop should move on to the next one.
+    for target in write_targets(segment):
+        norm = normalize(target, project_root)
+        # normalize() runs before this check so equivalent spellings of
+        # an exempt path (`/dev//null`, `/dev/./null`)
+        # are recognized as the same exact string is_dev_exempt() checks
+        # against -- NOT to prevent traversal from laundering a real
+        # out-of-scope path INTO looking exempt: is_dev_exempt() is
+        # exact-set/pattern membership, not a prefix match, so
+        # `/dev/../etc/passwd` (which resolves to `/etc/passwd`) was
+        # never going to match regardless of ordering -- confirmed by
+        # mutation-testing this ordering claim itself (moving the check
+        # before normalize() changed zero assertions). An earlier
+        # version of this comment claimed the ordering was load-bearing
+        # against traversal laundering; that was true of round 1's
+        # broad `startswith("/dev/")` prefix check, but became false
+        # once this round narrowed the check to exact membership --
+        # found by adversarial review of PR #53, round 2. Ordering WOULD
+        # become load-bearing again if DEV_EXEMPT_EXACT/DEV_FD_PATTERN
+        # were ever widened back to a prefix-style match.
+        if is_dev_exempt(norm):
+            continue
+        if norm in LEAD_OWNED:
+            print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
+            return True
+        if not any(norm.startswith(p) for p in patterns):
+            print(
+                f"Bash write to '{norm}' is outside your assigned scope "
+                f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
+                f"{ANNOTATION}"
+            )
+            return True
+    return False
 
 
 main()
