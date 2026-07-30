@@ -1246,7 +1246,33 @@ def split_tokens(segment):
 # filename on stdin) genuinely runs rm, and treating "xargs CMD ..." as "this
 # segment can end up running CMD ..." is the same order of approximation
 # this hook already makes elsewhere (best-effort, not a full shell parser).
+# Other real exec-wrappers (nohup, exec, nice, time, setsid, stdbuf, timeout,
+# busybox, doas) are NOT included -- a documented, deliberate residual (not
+# an oversight): the feature this set closes named exactly these four,
+# extending it further is a scope decision for a future feature, not silently
+# assumed complete here (found by adversarial review of PR #76).
 COMMAND_WRAPPERS = ("sudo", "env", "command", "xargs")
+
+# Each wrapper's own short flags that take a value as a SEPARATE argument
+# token (as opposed to attached, e.g. "-uroot"/"-n1", which the walk below
+# already handles correctly without this set, since it only ever consumes
+# ONE token for those). Without this, `sudo -u root rm file`, `xargs -n 1 rm
+# file`, and `env -u FOO rm file` were all wrongly treated as invoking the
+# FLAG'S OWN VALUE ("root"/"1"/"FOO") as the command name, silently allowing
+# the real rm -- confirmed against real bash that `env -u FOO rm`/`echo f |
+# xargs -n 1 rm` both genuinely delete the target file (found by adversarial
+# review of PR #76, which noted the code's own prior claim that wrapper
+# flags are "fully skipped" was true only for the attached form). Sourced
+# from this platform's own `sudo`/`env`/`xargs` --help output (BSD/macOS,
+# this repo's stated platform) plus the reviewer's own cross-checked list;
+# not independently verified against every GNU/Linux coreutils version --
+# a disclosed, not silent, residual for any flag this set is missing.
+WRAPPER_VALUE_FLAGS = {
+    "sudo": ("-u", "-g", "-h", "-p", "-r", "-t", "-U", "-C", "-D", "-R", "-T"),
+    "env": ("-u", "-C", "-S", "-P"),
+    "xargs": ("-E", "-I", "-J", "-L", "-n", "-P", "-s", "-a", "-d"),
+    "command": (),
+}
 
 VAR_ASSIGNMENT_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
@@ -1283,9 +1309,13 @@ def _resolve_command_tokens(tokens):
             continue
         name = os.path.basename(view.lstrip("(\\"))
         if name in COMMAND_WRAPPERS:
+            value_flags = WRAPPER_VALUE_FLAGS.get(name, ())
             i += 1
             while i < n and _flag_view(tokens[i]).startswith("-"):
-                i += 1
+                if _flag_view(tokens[i]) in value_flags and i + 1 < n:
+                    i += 2
+                else:
+                    i += 1
             continue
         return name, tokens[i + 1:]
     return None, []

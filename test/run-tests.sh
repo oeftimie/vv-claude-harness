@@ -3162,6 +3162,57 @@ assert_rc0 "$RC" "hs2 (F044): an all-wrapper token list with no real command pas
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F044): all-wrapper token list has no deny fields (no crash, bounded loop)"
 
+# A wrapper flag that takes its value as a SEPARATE argument token (as
+# opposed to attached, e.g. "-uroot") was wrongly treated as making the
+# FLAG'S OWN VALUE the command name, since the original wrapper-flag skip
+# only ever consumed one token per flag -- confirmed against real bash
+# that `sudo -u root rm`, `env -u FOO rm`, `env -C /tmp rm`, and
+# `echo f | xargs -n 1 rm` all genuinely delete the target file (found by
+# adversarial review of PR #76, which also noted the code's own prior
+# claim that wrapper flags are "fully skipped" was true only for the
+# attached form).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sudo -u root rm src/other/f044p.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): sudo -u root rm (separate-arg flag value) exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F044): sudo -u root rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f044p.txt" \
+  "hs2 (F044): sudo -u root rm denial names the real target, not 'root'"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "xargs -n 1 rm src/other/f044q.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): xargs -n 1 rm (separate-arg flag value) exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F044): xargs -n 1 rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f044q.txt" \
+  "hs2 (F044): xargs -n 1 rm denial names the real target, not '1'"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "env -u FOO rm src/other/f044r.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): env -u FOO rm (separate-arg flag value) exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F044): env -u FOO rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f044r.txt" \
+  "hs2 (F044): env -u FOO rm denial names the real target, not 'FOO'"
+
+# No new false positive: the attached form (which already worked before
+# this specific fix) must still be recognized correctly, and a
+# separate-arg wrapper flag on an IN-SCOPE target must still be allowed.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "env -uFOO rm src/other/f044t.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): attached-form env -uFOO rm still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F044): attached-form env -uFOO rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f044t.txt" \
+  "hs2 (F044): attached-form env -uFOO rm denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "sudo -u root rm src/parser/f044v.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): sudo -u root rm on an in-scope target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F044): in-scope sudo -u root rm has no deny fields"
+
 # F041: sed_inplace_targets()'s in-place-presence guard recognized only the
 # exact string "--in-place" or the attached "--in-place=" prefix, not GNU
 # sed's own unambiguous long-option ABBREVIATION feature. Confirmed against
