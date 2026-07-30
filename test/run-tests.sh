@@ -2430,6 +2430,57 @@ assert_deny_json "$OUT" "hs2 (F036): mid-command '>&word' denial uses JSON deny 
 assert_contains "$OUT" "write to 'src/other/f.txt'" \
   "hs2 (F036): mid-command '>&word' denial names the real sed target, not the mangled decoy"
 
+# F036 round 2 (PR #63 round-1 review, findings N1/N2): an earlier version
+# claimed EVERY fd-prefixed '>&word' form (`2>&outfile.txt`) is a hard bash
+# syntax error with nothing to strip. True for fd 0/2/3+, FALSE for fd 1:
+# `1>&outfile.txt` is a real, long-standing bash extension that genuinely
+# writes the file (confirmed against real bash and bash's own redir.c).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'echo HI 1>&src/other/out.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036 r2): fd=1-prefixed '1>&word' file redirect exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F036 r2): fd=1-prefixed '1>&word' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/out.txt'" \
+  "hs2 (F036 r2): fd=1-prefixed '1>&word' denial names the real target"
+
+# N2: without FD_PREFIX on strip_redirects()'s new alternative, the leading
+# "1" survived unstripped as a bogus phantom argument, and the denial named
+# it ('1') instead of the real sed target -- the same failure mode the
+# plain mid-command test above exists to prevent, one fd prefix away.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -i "s/a/b/" 1>&src/parser/decoy.txt src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036 r2): mid-command fd=1-prefixed '1>&word' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F036 r2): mid-command fd=1-prefixed '1>&word' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/f.txt'" \
+  "hs2 (F036 r2): mid-command fd=1-prefixed '1>&word' denial names the real target, not '1'"
+
+# N3: the fd-dup alternative's `(?:\d+|-)` is greedy but was unanchored, so
+# it could match just a PREFIX of a longer digit-LEADING word ('>&12abc' ->
+# stripped only '>&12', leaving 'abc' as a phantom argument). Real bash
+# genuinely writes to a file named "12abc" for `echo HI >&12abc` (confirmed
+# empirically) -- it is NOT purely digits, so it's a real file redirect,
+# not fd-duplication. The digits have to be the FIRST characters right
+# after ">&" to exercise the prefix-match bug at all, which under the
+# fixture's normal "src/parser/" scope pattern can never simultaneously be
+# an in-scope path (nothing starting with a digit matches "src/parser/") --
+# so this needs its own dedicated scope file ("12abc") that treats a
+# digit-leading path as in-scope, letting redirect_targets()'s own
+# (already-correct) detection of the redirect stay silent while isolating
+# whether strip_redirects() left a phantom "abc" leftover to confuse the
+# real (out-of-scope) sed target lookup that follows.
+DIR_HS_N3="$WORK/ht-scope-n3-digit-prefix"
+make_fixture "$DIR_HS_N3"
+install_hooks "$DIR_HS_N3"
+printf '12abc\n' > "$DIR_HS_N3/.claude/teammate-scope.txt"
+OUT=$(run_hook "$DIR_HS_N3" enforce-scope.sh \
+  "$(bash_command_json 'sed -i "s/a/b/" >&12abcXYZ src/other/f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F036 r2): mid-command '>&12abcXYZ' (digit-prefixed non-digit word) exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F036 r2): mid-command '>&12abcXYZ' denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/f.txt'" \
+  "hs2 (F036 r2): mid-command '>&12abcXYZ' denial names the real sed target, not a truncated leftover"
+
 # A real background/AND '&' NOT glued to a '>' must still act as a segment
 # separator, unchanged from before.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \

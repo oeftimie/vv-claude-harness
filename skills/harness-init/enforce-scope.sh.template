@@ -449,13 +449,31 @@ def redirect_targets(segment):
     # its UNQUOTED value, not the raw/masked text: `>&'1'` is STILL
     # fd-duplication in real bash (quoting doesn't change the classification,
     # confirmed empirically), so checking the masked capture (a NUL run for
-    # a quoted span) would wrongly treat it as a real target. No fd-prefix
-    # form is recognized here (`2>&outfile.txt`) -- real bash treats that as
-    # a hard "ambiguous redirect" syntax error and writes nothing at all, so
-    # there is no real target to protect; the negative-lookahead complexity
-    # to specifically exclude it would buy nothing (an fd-prefixed word this
-    # hook mistakes for a target still just denies a command that already
-    # can't run -- an over-cautious but safe outcome, not a bypass).
+    # a quoted span) would wrongly treat it as a real target. This pattern
+    # deliberately matches `>&word` with ANY preceding fd digit (or none) --
+    # an earlier version of this fix claimed EVERY fd-prefixed word form
+    # (`2>&outfile.txt`) is a hard "ambiguous redirect" syntax error, so no
+    # fd-prefix handling was needed; that claim is true for fd 0, 2, and
+    # 3+, but FALSE for fd 1 specifically: `1>&outfile.txt` is a real,
+    # long-standing bash extension (confirmed against real bash and bash's
+    # own redir.c: a dedicated `redirector == 1` branch converts it to the
+    # same r_err_and_out redirect as `&>`) that genuinely writes the file,
+    # capturing both stdout and stderr -- found by adversarial review of PR
+    # #63, round 1. This function's own pattern was never anchored to "no
+    # fd prefix" in the first place (it just looks for `>&` anywhere in the
+    # segment), so `1>&outfile.txt` was already correctly caught here even
+    # under the old, wrong justification; strip_redirects() below is the
+    # function that actually needed the fix once this was understood.
+    # Digit-or-dash classification also has a known, narrow, non-regression
+    # residual: it decides on unquote_token()'s output, which strips
+    # backslashes as well as quotes, but real bash classifies fd-dup-vs-file
+    # on the word BEFORE backslash/quote removal -- `>&'\1'` genuinely
+    # creates a file named "1" in real bash (confirmed), which this check
+    # wrongly treats as fd-duplication and allows. Reachable target is only
+    # ever a bare digit-named file or "-" in the cwd (never a real path,
+    # since "/" can't satisfy .isdigit()), and main allowed every `>&word`
+    # unconditionally, so this is not a regression -- found by the same
+    # review round, not fixed here.
     for m in re.finditer(r">&\s*([^\s<>|&;]+)", masked):
         raw_word = segment[m.start(1):m.end(1)]
         view_word = unquote_token(raw_word)
@@ -789,24 +807,41 @@ def strip_redirects(segment):
     # match any word would silently create a NEW unstripped-redirect gap,
     # the opposite of this fix's purpose (found by adversarial review of
     # PR #53, round 1). A THIRD alternative below closes that gap properly
-    # (F036): `>&word` (no fd prefix -- real bash treats an fd-prefixed
-    # form here, `2>&outfile.txt`, as a hard "ambiguous redirect" syntax
-    # error that writes nothing at all, so there is nothing to strip) is
-    # matched and removed like any other real redirect, regardless of
-    # whether `word` turns out to be digits/"-" (redirect_targets() is
-    # what decides whether a given occurrence is a real target worth
-    # denying; this function's only job is removing redirect text so the
-    # command's OWN arguments parse cleanly, so the two functions can
-    # disagree about "is this fd-dup or a file" without a bug -- stripping
-    # a genuine `>&1` here too is harmless, since the plain fd-dup
-    # alternative already strips it first at the same position).
+    # (F036): `>&word` is matched and removed like any other real redirect,
+    # regardless of whether `word` turns out to be digits/"-"
+    # (redirect_targets() is what decides whether a given occurrence is a
+    # real target worth denying; this function's only job is removing
+    # redirect text so the command's OWN arguments parse cleanly, so the
+    # two functions can disagree about "is this fd-dup or a file" without a
+    # bug -- stripping a genuine `>&1` here too is harmless, since the
+    # plain fd-dup alternative already strips it first at the same
+    # position). This alternative DOES take the same optional FD_PREFIX as
+    # the plain-redirect alternative -- an earlier version of this fix
+    # omitted it, on the reasoning that an fd-prefixed word form
+    # (`2>&outfile.txt`) is always a hard bash syntax error with nothing to
+    # strip. That reasoning is right for fd 0, 2, and 3+, but wrong for fd
+    # 1: `1>&outfile.txt` is a genuine, long-standing bash extension that
+    # writes the file (confirmed against real bash and bash's own
+    # `redir.c`, which special-cases `redirector == 1`) -- without
+    # FD_PREFIX here, the leading "1" survived unstripped as a bogus
+    # flagless argument, which could shadow the real target in a
+    # last-flagless-token context (cp/mv) or just report the wrong target
+    # in a denial (found by adversarial review of PR #63, round 1). The
+    # fd-dup alternative's own `(?:\d+|-)` is anchored with a trailing
+    # negative lookahead ensuring it only matches a COMPLETE digit/dash
+    # word, not a prefix of a longer one -- without it, `>&12abc` (a real
+    # file redirect to "12abc", confirmed against real bash) let the greedy
+    # `\d+` consume just "12", stripping only `>&12` and leaving "abc" as a
+    # phantom trailing argument; the fallback `>&word` alternative below now
+    # correctly claims the whole match once the fd-dup alternative can't
+    # (found by the same review round).
     masked = mask_quotes(segment)
     kept = []
     last = 0
     FD_PREFIX = r"(?:(?:^|(?<=\s))\d+)?"
     pattern = (
-        FD_PREFIX + r">&(?:\d+|-)|"
-        + r">&\s*[^\s<>|&;]+|"
+        FD_PREFIX + r">&(?:\d+|-)(?![^\s<>|&;])|"
+        + FD_PREFIX + r">&\s*[^\s<>|&;]+|"
         + FD_PREFIX + r">>?\s*[^\s<>|&;]+"
     )
     for m in re.finditer(pattern, masked):
