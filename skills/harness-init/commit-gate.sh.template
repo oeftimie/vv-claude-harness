@@ -327,6 +327,65 @@ def mask_quotes(command):
     return QUOTE_SPAN_PATTERN.sub(repl, command)
 
 
+ANSI_C_SIMPLE_ESCAPES = {
+    "\\": "\\", "'": "'", '"': '"',
+    "a": "\a", "b": "\b", "e": "\x1b", "f": "\f",
+    "n": "\n", "r": "\r", "t": "\t", "v": "\v",
+}
+ANSI_C_ESCAPE_PATTERN = re.compile(
+    r"\\(?:x([0-9A-Fa-f]{1,2})|([0-7]{1,3})|c(.)"
+    r"|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})|(.))"
+)
+
+
+def _decode_ansi_c_escape(m):
+    # Ported verbatim from enforce-scope.sh.template's own decoder (F038),
+    # since this hook's own unquote_token() (below) had the identical gap:
+    # a $'...' wrapper was stripped with a plain regex substitution that
+    # never decoded what was INSIDE it, so an escaped spelling of "git"
+    # (`$'\x67it'`) reached is_git_token() undecoded and failed to match --
+    # which, because is_git_token() is the ONLY thing deciding whether a
+    # segment is git-shaped at all, silently disabled this hook's ENTIRE
+    # analysis (both the compound-stage-and-commit check and the secret
+    # scan) for that segment, not just a cosmetic miss (F051, adversarial
+    # review of PR #77). See enforce-scope.sh.template's own copy of this
+    # function for the full formula verification, version-split notes
+    # (bash 3.2.57 vs 5.3.15's differing \c? behavior), and the surrogate/
+    # multi-char-uppercase crash history (F038 rounds 1-3) -- reproduced
+    # here unchanged since the decode logic itself is bash-version
+    # behavior, not specific to either hook.
+    hexdigits, octdigits, ctrlchar, u4, u8, other = (
+        m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6)
+    )
+    if hexdigits is not None:
+        return chr(int(hexdigits, 16))
+    if octdigits is not None:
+        return chr(int(octdigits, 8) & 0xFF)
+    if ctrlchar is not None:
+        upper = ctrlchar.upper()
+        if upper == "?":
+            return "\x7f"
+        if len(upper) != 1:
+            upper = ctrlchar
+        return chr(ord(upper) & 0x1F)
+    if u4 is not None:
+        return _unicode_escape_or_literal(u4, "u")
+    if u8 is not None:
+        return _unicode_escape_or_literal(u8, "U")
+    return ANSI_C_SIMPLE_ESCAPES.get(other, "\\" + other)
+
+
+def _unicode_escape_or_literal(hexdigits, prefix):
+    # Ported alongside _decode_ansi_c_escape() (F051); see
+    # enforce-scope.sh.template's own copy for the full incident this
+    # closes (a lone surrogate crashing this hook's own denial-printing
+    # step into a silent no-op).
+    codepoint = int(hexdigits, 16)
+    if 0xD800 <= codepoint <= 0xDFFF or codepoint > 0x10FFFF:
+        return "\\" + prefix + hexdigits
+    return chr(codepoint)
+
+
 def unquote_token(token):
     # Strips quote characters from a single ALREADY-TOKENIZED word -- never
     # used to re-segment or re-tokenize, only to normalize a token (which may
@@ -335,8 +394,85 @@ def unquote_token(token):
     # string. Safe here specifically because split_tokens() has already
     # resolved token boundaries using mask_quotes(); this function never
     # looks at whitespace or separators (F025, PR #44).
-    token = re.sub(r"\$'((?:[^'\\]|\\.)*)'", r"\1", token)
-    return token.replace("'", "").replace('"', "")
+    #
+    # A $'...' span's inner text is now decoded per bash's ANSI-C quoting
+    # grammar in this SAME substitution, and a bare backslash outside
+    # quotes is now stripped too (both ported from enforce-scope.sh.
+    # template's own unquote_token(), F033/F038 and F031 respectively) --
+    # this function previously only stripped the $'...' WRAPPER without
+    # decoding what was inside it, and never touched an interior backslash
+    # at all, so `g\it`/`\g\i\t`/`$'\x67it'` all reached is_git_token()
+    # still spelling something other than the bare string "git", silently
+    # disabling this hook's entire analysis for that segment (F051, found
+    # by adversarial review of PR #77). Confirmed live before this fix:
+    # `g\it commit -a -m "test"` and `$'\x67it' commit -a -m "test"` both
+    # silently ALLOWed a real compound-stage-and-commit violation, and
+    # with a real secret staged, `g\it commit -m "add config"` silently
+    # ALLOWed it through where the bare `git commit -m "add config"`
+    # correctly denied secret-assignment.
+    token = re.sub(
+        r"\$'((?:[^'\\]|\\.)*)'",
+        lambda m: ANSI_C_ESCAPE_PATTERN.sub(_decode_ansi_c_escape, m.group(1)),
+        token,
+    )
+    token = token.replace("'", "").replace('"', "")
+    return re.sub(r"\\(.)", r"\1", token)
+
+
+def _flag_view(tok):
+    # A SEPARATE view from unquote_token(), used ONLY for decisions that
+    # STOP the flag scan or SKIP a token as an opaque value (the "--"
+    # pathspec-separator check, and every "this flag takes a bare value,
+    # skip the next token" decision) -- never for the flag-string MATCH
+    # itself, where over-recognizing due to unquote_token()'s own blanket
+    # backslash-strip is safe-directional (a false DENY, never a false
+    # ALLOW). Unlike unquote_token(), this does NOT strip a bare backslash
+    # outside quotes: real bash treats a backslash INSIDE single or double
+    # quotes as a literal character, not an escape, but unquote_token()'s
+    # final backslash-strip line (ported from enforce-scope.sh's own
+    # accepted residual there, F031/F051) is quote-context-BLIND -- it
+    # strips a backslash the same way whether it came from inside a quote
+    # (where it should stay literal) or from an entirely unquoted token
+    # (where real bash DOES strip it). That residual is genuinely harmless
+    # in enforce-scope.sh (it only ever changes a PATH VALUE compared
+    # against a scope prefix), but dangerous here: `git commit -m x '\--'
+    # -i tracked.txt` passes git the LITERAL 3-character pathspec "\--"
+    # (single quotes preserve everything, confirmed against real git:
+    # errors "pathspec '\--' did not match" unless a file literally named
+    # "--" happens to exist and be tracked, in which case the command
+    # genuinely stages AND commits tracked.txt via -i in one step) -- NOT
+    # the 2-character string "--", so it must not be treated as the real
+    # pathspec separator. unquote_token()'s own blanket backslash-strip
+    # reduced it to plain "--" anyway, which the (pre-this-fix) separator
+    # check then wrongly treated as ending the flag scan before it ever
+    # reached the real -i -- a genuine fail-open this PR's own escape-
+    # decoding fix introduced as a side effect (F051 round 2, adversarial
+    # review of PR #79). has_staging_flag()'s long-flag/short-flag-cluster
+    # bare-value skips use this view for the same reason (see
+    # _consumes_next_token()). segment_subcommand()'s own GIT_FLAGS_WITH_VALUE
+    # 2-token skip and generic "-"-prefix 1-token skip were NOT converted:
+    # they only ever run on tokens BEFORE the subcommand, and confirmed
+    # against real git, any token whose raw form has this same
+    # backslash-preserved-by-quotes shape (`git '\-C' commit ...`, `git
+    # '\--' commit ...`) makes real git reject the whole invocation
+    # ("'\-C' is not a git command") before anything is staged or committed
+    # -- unlike the post-subcommand case above, where git tolerates the
+    # divergent token as an ordinary pathspec and keeps parsing later
+    # flags. Not independently reachable, so left on the raw token.
+    # Not stripping the backslash here means a rare unquoted-and-escaped
+    # separator (`\--`, no quotes at all -- where real bash DOES strip the
+    # backslash, giving a genuine "--") is no longer recognized as one
+    # either, over-denying instead of under-denying: an accepted,
+    # documented trade in the safe direction, not a new bypass (confirmed:
+    # such a token doesn't even start with "-" once viewed this way, so it
+    # falls through as an ordinary non-flag token, extending the scan
+    # rather than truncating it).
+    tok = re.sub(
+        r"\$'((?:[^'\\]|\\.)*)'",
+        lambda m: ANSI_C_ESCAPE_PATTERN.sub(_decode_ansi_c_escape, m.group(1)),
+        tok,
+    )
+    return tok.replace("'", "").replace('"', "")
 
 
 def split_tokens(segment):
@@ -502,9 +638,19 @@ def parse_command(command):
     joined = join_continuations(command)
     parsed = []
     for seg in command_segments(joined):
-        tokens = [unquote_token(t) for t in split_tokens(seg)]
+        raw_tokens = split_tokens(seg)
+        tokens = [unquote_token(t) for t in raw_tokens]
+        # views[i] is _flag_view(raw_tokens[i]) -- computed from the RAW,
+        # still-quoted token, never from tokens[i] (which has ALREADY had
+        # its quotes AND backslashes stripped by this point, so calling
+        # _flag_view() on tokens[i] instead of raw_tokens[i] would be a
+        # no-op: the very distinction it exists to preserve is already
+        # gone). has_staging_flag() uses this parallel list -- not tokens
+        # -- for its one dangerous "does this consume the next token"
+        # decision (F051 round 2, adversarial review of PR #79).
+        views = [_flag_view(t) for t in raw_tokens]
         sc, idx = segment_subcommand(tokens)
-        parsed.append((tokens, sc, idx))
+        parsed.append((tokens, sc, idx, views))
     return parsed
 
 
@@ -560,12 +706,32 @@ def _scan_short_flag_cluster(tok):
     return False, False
 
 
-def has_staging_flag(tokens):
+def _consumes_next_token(view):
+    # True if VIEW (always _flag_view()'s output, never the raw/fully-
+    # unquoted token) represents a flag that consumes the NEXT token as an
+    # opaque, bare value -- either a long flag (exact or an unambiguous
+    # abbreviation) resolving to VALUE_TAKING_LONG_FLAGS, or a short-flag
+    # cluster ending in a required-value flag. Isolated into its own
+    # function so has_staging_flag() can call it with EXACTLY the
+    # conservative view, never the fully backslash-stripped token, for
+    # this one specific decision (F051 round 2; see _flag_view()'s own
+    # comment for why this decision specifically is the dangerous
+    # direction and the flag-MATCH checks elsewhere in this file are not).
+    if view.startswith("--") and len(view) > 2 and "=" not in view:
+        return _resolve_long_flag(view) in VALUE_TAKING_LONG_FLAGS
+    if view.startswith("-") and not view.startswith("--") and len(view) > 1:
+        _, took_bare_value = _scan_short_flag_cluster(view)
+        return took_bare_value
+    return False
+
+
+def has_staging_flag(tokens, views):
     i = 0
     n = len(tokens)
     while i < n:
         tok = tokens[i]
-        if tok == "--":
+        view = views[i]
+        if view == "--":
             break  # everything after this is a pathspec, never a flag
         if tok in STAGING_FLAGS:
             return True
@@ -579,36 +745,44 @@ def has_staging_flag(tokens):
             # abbreviation resolution also catches a real staging flag
             # abbreviated (`--inc` -> --include), a related gap the fixed
             # exact-match STAGING_FLAGS check above never covered either.
+            # This match is against the fully-unquoted `tok`, not `view`,
+            # deliberately: over-recognizing an abbreviation due to
+            # unquote_token()'s own blanket backslash-strip only makes
+            # this branch DENY more eagerly, never less -- safe-
+            # directional, unlike the "consumes next token" decision below
+            # (see _consumes_next_token()'s own comment).
             resolved = _resolve_long_flag(tok)
             if resolved in STAGING_FLAGS:
                 return True
-            if resolved in VALUE_TAKING_LONG_FLAGS:
-                # Same "opaque next-token value" rule as the short-flag
-                # case below, for a bare (possibly abbreviated) long
-                # flag's space-separated value (F032).
-                i += 1
         elif tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
-            is_staging, took_bare_value = _scan_short_flag_cluster(tok)
+            is_staging, _ = _scan_short_flag_cluster(tok)
             if is_staging:
                 return True
-            # A bare value-taking flag (e.g. "-m", or a cluster ending on
-            # one like "-sm") takes its value from the NEXT token, whatever
-            # that token's own content looks like -- it is opaque data,
-            # never itself a flag or the "--" pathspec separator (F027).
-            if took_bare_value:
-                i += 1
+        # A bare value-taking flag (e.g. "-m", or a cluster ending on one
+        # like "-sm", or an abbreviated long flag like "--mess") takes its
+        # value from the NEXT token, whatever that token's own content
+        # looks like -- it is opaque data, never itself a flag or the "--"
+        # pathspec separator (F027). This decision is made against `view`
+        # exclusively, never `tok`: wrongly believing a token consumes the
+        # next one, when real bash/git would not (e.g. a single-quoted
+        # literal pathspec that unquote_token()'s own backslash-strip
+        # happens to reduce to a real flag's spelling), skips past
+        # whatever REAL flag follows it -- the fail-open F051 round 2
+        # exists to close.
+        if _consumes_next_token(view):
+            i += 1
         i += 1
     return False
 
 
 def check_compound_stage_and_commit(parsed):
-    subcommands = [sc for _, sc, _ in parsed]
+    subcommands = [sc for _, sc, _, _ in parsed]
     has_stage = any(sc in ("add", "stage") for sc in subcommands)
     commit_present = any(sc == "commit" for sc in subcommands)
     if has_stage and commit_present:
         return DENY_COMPOUND
-    for tokens, sc, idx in parsed:
-        if sc == "commit" and has_staging_flag(tokens[idx + 1:]):
+    for tokens, sc, idx, views in parsed:
+        if sc == "commit" and has_staging_flag(tokens[idx + 1:], views[idx + 1:]):
             return DENY_COMPOUND
     return None
 
@@ -714,7 +888,7 @@ def main():
     project_root = sys.argv[2]
 
     parsed = parse_command(command)
-    if not any(sc == "commit" for _, sc, _ in parsed):
+    if not any(sc == "commit" for _, sc, _, _ in parsed):
         return
 
     reason = check_compound_stage_and_commit(parsed)
