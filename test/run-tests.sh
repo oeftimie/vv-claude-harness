@@ -3805,7 +3805,7 @@ fi
 # implementation feature must not re-message the lead on every repeat -- that
 # discipline has to live in the agent definition, since only it knows the role.
 if grep -q "Send that decline message only once per review assignment" "$REPO_ROOT/agents/reviewer.md" \
-  && grep -q "lead is expected to shut you down" "$REPO_ROOT/agents/reviewer.md"; then
+  && grep -q "Phase 5 teardown, after all teammates' work is" "$REPO_ROOT/agents/reviewer.md"; then
   pass "hs2 (F055): reviewer.md dedups the TeammateIdle decline instead of re-messaging the lead"
 else
   fail "hs2 (F055): reviewer.md missing the TeammateIdle decline-dedup instruction"
@@ -3917,6 +3917,8 @@ assert_contains "$STDERR_ONLY" "F003" "ht: the claimable feature id is on stderr
 # claim-it instruction does not apply to a role with no Edit/Write tools.
 assert_contains "$STDERR_ONLY" "no Edit/Write tools" \
   "ht (F055): guidance states the claim instruction doesn't apply to non-implementer roles"
+assert_contains "$STDERR_ONLY" "does not apply to you" \
+  "ht (F055): guidance's non-implementer carve-out is actionable, not just descriptive"
 
 python3 - "$DIR_HR/.harness/features.json" <<'PYEOF'
 import json
