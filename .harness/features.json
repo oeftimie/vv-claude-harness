@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 58,
+  "total_features": 59,
   "passing": 46,
   "features": [
     {
@@ -1665,6 +1665,29 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F053",
+      "spec": null
+    },
+    {
+      "id": "F059",
+      "description": "The Agent Teams protocol (rules/agent-teams-protocol.md's Lead Agent Responsibilities) only documents team-WIDE shutdown: step 15 sends shutdown_request to ALL teammates, after step 10 synthesizes ALL teammates' work, at Phase 5 teardown. There is no documented per-teammate on-completion shutdown -- a teammate whose own assigned work is done (e.g. a reviewer whose review has been delivered and acted on) has no path to being released before the ENTIRE team reaches Phase 5, even if every other teammate still has features to implement. Confirmed via exhaustive grep for 'shutdown' across rules/, skills/, agents/ during F055's round-2 review: 5 hits total, all describing team-wide shutdown, none describing per-teammate early release. Consequence (observed live during F055's own review, review-pr89-f055's TeammateIdle hook kept re-firing on it 6 consecutive times after its review was delivered): a teammate with nothing left to claim spins silently (post-F055) or spams the lead (pre-F055) for the remainder of the session's team-wide work, rather than being released. This is a coordination semantics change affecting every teammate type, not just reviewers, so it needs its own spec and review rather than being folded into F055's narrower fix (F055 only made the interim behavior less noisy; it did not, and per its own scope could not, add an actual release path).",
+      "priority": 42,
+      "status": "pending",
+      "scope": [
+        "rules/agent-teams-protocol.md",
+        "skills/harness-continue/SKILL.md"
+      ],
+      "depends_on": [
+        "F055"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Recommended by review-pr89-f055-2 during F055's round-2 review (not filed by them -- correctly declined to fold a coordination-semantics change into an unrelated PR, and explicitly recommended filing it as its own feature rather than letting the idea die in a PR comment thread, citing F055 itself as the precedent for that pattern). Not yet scoped in detail: the concrete design (a new per-teammate SendMessage pattern? a lead-side rule to proactively check TaskList and release idle-with-nothing-claimable teammates rather than waiting for Phase 5?) needs its own investigation before implementation starts.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F055",
       "spec": null
     }
   ]
