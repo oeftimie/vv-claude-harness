@@ -35,7 +35,8 @@ Constraints:
   repeat of the same nudge afterward, do not re-message the lead — just end your turn.
   The lead shuts teammates down at Phase 5 teardown, after all teammates' work is
   synthesized (Lead Agent Responsibilities, steps 10 and 15 in
-  rules/agent-teams-protocol.md) — not the moment your individual review lands. Until
+  ${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md) — not the moment your individual
+  review lands. Until
   then the nudge will keep re-firing; ending your turn is the correct response each
   time, not a sign you are stuck.
 - Bash remains open by instruction, not by construction: unlike Edit/Write, nothing
