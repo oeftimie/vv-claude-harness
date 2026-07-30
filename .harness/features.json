@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 39,
-  "passing": 24,
+  "passing": 25,
   "features": [
     {
       "id": "F001",
@@ -497,7 +497,7 @@
       "id": "F014",
       "description": "[OVI-54] P3.1: MLD builder telemetry (.harness/mld/) with a hard non-injection guarantee \u2014 Add lead-only MLD telemetry: at session end append .harness/mld/YYYY-MM-DD-<id>.md with Mistakes/Learnings/Desires sections, with a hard guarantee that session-start never reads mld/ (tested across all SessionStart sources). Add rules/mld-review.md defining the review cadence and disposition, and document committing mld/ by default.",
       "priority": 14,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "rules/task-completion.md",
         "skills/harness-continue/SKILL.md",
@@ -512,12 +512,16 @@
         "F003"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-54. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test 852/852 is the gate)",
+      "notes": "Linear: OVI-54. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation. Implemented as: (1) hooks/session-start.sh prints the session_id from its stdin payload as `Session: <id>` so the lead has a stable name for its mld filename, without ever referencing .harness/mld/ itself; (2) hooks/session-end.sh adds an informational (non-blocking) discipline note when no .harness/mld/<today>-*.md exists, mirroring the existing proof-note pattern rather than the hard-blocking Meta-Session gap, since the spec only calls the session-start non-read guarantee \"hard\" -- the write step is a softer, reviewed-on-its-own-cadence discipline; (3) skills/harness-continue/SKILL.md documents the MLD write step (lead-only) in both Step 5a (single-session) and Phase 5.5 (Agent Teams) Session End procedures; (4) rules/mld-review.md (new) defines the review cadence and four-way disposition (promote/escalate/action/discard) plus the commit-by-default note; (5) rules/task-completion.md gets a matching checklist item. The \"hard\" non-injection guarantee is enforced two ways: F006's pre-existing doctor.py check_mld_non_injection already static-greps the plugin's session-start.sh for the literal substring \"mld\" (built ahead of this feature); this feature adds (a) a permanent regression test asserting the real shipped session-start.sh source never contains that substring, and (b) a dynamic test running the real hook across all 4 SessionStart matcher sources (startup/resume/clear/compact, per hooks/hooks.json) with .harness/mld/ populated with a marker file, asserting the marker never leaks into stdout under any of them. Both were mutation-tested: (a) reverting the session_id print and forcing the discipline-note's MLD_FOUND flag true each failed only their own targeted assertions; (b) editing a throwaway copy of session-start.sh to `cat` .harness/mld/*.md caused all 4 dynamic-source assertions plus the static regression test to fail together, confirming both catch a real non-injection regression. Not touched (out of scope per the verified spec): README.md's project directory tree doesn't yet list .harness/mld/ as a scaffolded entry -- left as a documentation follow-up rather than expanding this feature's scope. ROUND 2 (adversarial review of PR #62): found session_id -- externally supplied, echoed unsanitized into the orientation block -- was a genuine injection vector on two axes: a newline injected arbitrary lines directly under the orientation header (the most authoritative position in this hook's output, indistinguishable from harness-authored content), and a \"/\"/\"..\" let it escape its intended telemetry directory once the lead used it verbatim in a later filename. Fixed with one sanitization line (tr -cd to a safe charset, length-capped) that closes both at once; mutation-tested (removing it fails exactly the 2 security-relevant assertions). Also fixed: an explicit JSON `session_id: null` printed the literal string \"None\" (Python's .get(k, default) doesn't apply the default when the key exists with value null) -- changed to `.get(k) or \"\"`. session-end.sh's discipline note pointed at \"rules/mld-review.md for the write step\", which was both circular (that file defers back to harness-continue) and a bare-relative path that doesn't resolve in a user's project (rules/ ships with the plugin) -- repointed at /harness-continue's Session End step directly. My own first attempt at documenting the session_id sanitization fix violated the exact non-injection invariant it was fixing (the comment explaining the fix contained the literal lowercase substring the doctor.py check scans for) -- caught immediately by the new mldsrc regression test, which is exactly what it's for; fixed by keeping the directory unnamed in session-start.sh and adding a one-line pointer in the file header instead. \"Append\" was corrected to \"Write\" in two places (SKILL.md, and this feature's own description's spirit) since the file is one-per-session, not accumulated into. Disclosed scope boundary, unchanged from round 1 plus one addition: neither harness-init's scaffolding nor README.md's directory tree create/list .harness/mld/ -- consequence is that /harness-doctor's non-injection check is inert (returns no finding either way) until a project's FIRST mld file exists, since the check short-circuits on a missing directory; the dynamic and static tests in test/run-tests.sh cover the shipped plugin unconditionally regardless, so the guarantee itself still holds -- this is a left-out scaffolding step, not a gap in the guarantee's enforcement.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Considered having the SessionEnd hook itself author the MLD file content -- rejected: SessionEnd fires when the session actually terminates, after the model's last turn, so it cannot produce reflective prose; the lead must write it during the conversation (mirroring how the Meta-Session retrospective is lead-authored into context_summary.md, with the hook only auditing presence).",
+        "Considered making the missing-mld-entry note a hard SESSION_INCOMPLETE gap like the Meta-Session check -- rejected: the spec calls only the session-start non-read guarantee \"hard\"; MLD's own review cadence (rules/mld-review.md) is explicitly NOT per-session, so gating every session on it would be a heavier bar than the feature asked for.",
+        "Round 2 fixes (adversarial review of PR #62), mutation-tested: (1) session_id sanitized via tr -cd 'A-Za-z0-9._-' | cut -c1-64 right after extraction, closing both the newline-injection and path-traversal findings with one line; verified against the exact reported payloads (a newline-plus-fake-heading string, and \"../../../../etc/passwd\") plus a JSON-null session_id. (2) session_id extraction changed to `.get(\"session_id\") or \"\"` so an explicit JSON null doesn't print the string \"None\". (3) session-end.sh's discipline note re-pointed from a circular, non-resolving \"rules/mld-review.md\" reference to \"/harness-continue's Session End step\". (4) Added assert_rc0 to the md3 test for consistency with md1/md2. (5) \"Append\" -> \"Write\" in SKILL.md (the file is one-per-session, not accumulated into)."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {
