@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 57,
+  "total_features": 58,
   "passing": 45,
   "features": [
     {
@@ -1642,6 +1642,27 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F054",
+      "spec": null
+    },
+    {
+      "id": "F057",
+      "description": "Claude Code's own hooks docs (code.claude.com/docs/en/hooks) say of exit 0: 'For most events, stdout is written to the debug log but not shown in the transcript.' This raises whether verify-task-quality.sh.template's exit-0 ACCEPT-path warnings (the 'no proof recorded' / evidence_type-mismatch warning, and the 'still marked in-progress' reminder) are actually visible to a teammate today, or whether they silently land in a debug log nobody reads -- the same class of silent-message problem F046/F053 fixed for exit-2 BLOCKING messages, but for the exit-0 accept path instead. Not yet verified for TaskCompleted specifically: the docs' own 'for most events' qualifier is doing real work, and there is no per-event table for exit-0 stdout visibility the way there is for exit-2 blocking behavior.",
+      "priority": 41,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/verify-task-quality.sh.template",
+        ".claude/hooks/verify-task-quality.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Raised by review-pr86-f053 (and repeated when their duplicate/stale messages crossed) as a sibling investigation to F053, explicitly flagged as unverified rather than acted on: 'For most events, stdout is written to the debug log but not shown in the transcript' could mean verify-task-quality.sh's exit-0 accept-path warnings are as invisible as F053's exit-2 messages were before that fix. Needs direct verification (does a teammate actually see this text after a TaskCompleted accept with a warning?) before deciding whether a fix is even needed -- this is a research/verification step, not a presumed bug.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F053",
       "spec": null
     }
   ]
