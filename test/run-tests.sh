@@ -3213,6 +3213,62 @@ assert_rc0 "$RC" "hs2 (F044): sudo -u root rm on an in-scope target passes, rc 0
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F044): in-scope sudo -u root rm has no deny fields"
 
+# Round 2's exact-flag-only value check missed two further live shapes:
+# a CLUSTERED short flag ending in a value-taking one (env's own "-i" and
+# "-u" combined into "-iu"), and a LONG option given its value as a
+# separate argument -- confirmed against real bash that `env -iu FOO rm`
+# and `xargs --max-args 1 rm` both genuinely delete the target file
+# (found by adversarial review of PR #76 round 2).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "env -iu FOO rm src/other/f044w.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): clustered env -iu FOO rm exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F044): clustered env -iu FOO rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f044w.txt" \
+  "hs2 (F044): clustered env -iu FOO rm denial names the real target, not 'FOO'"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "xargs -0n 1 rm src/other/f044x.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): clustered xargs -0n 1 rm exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F044): clustered xargs -0n 1 rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f044x.txt" \
+  "hs2 (F044): clustered xargs -0n 1 rm denial names the real target, not '1'"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "xargs --max-args 1 rm src/other/f044y.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): long-option xargs --max-args 1 rm exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F044): long-option xargs --max-args 1 rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f044y.txt" \
+  "hs2 (F044): long-option xargs --max-args 1 rm denial names the real target, not '1'"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "env --unset FOO rm src/other/f044z.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): long-option env --unset FOO rm exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F044): long-option env --unset FOO rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f044z.txt" \
+  "hs2 (F044): long-option env --unset FOO rm denial names the real target, not 'FOO'"
+
+# No new false positive: the attached long form (which already worked
+# before this specific fix) must still be recognized correctly, and a
+# clustered value-taking flag on an IN-SCOPE target must still be allowed.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "env --unset=FOO rm src/other/f044ee.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): attached long-form env --unset=FOO rm still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F044): attached long-form env --unset=FOO rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f044ee.txt" \
+  "hs2 (F044): attached long-form env --unset=FOO rm denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "env -iu FOO rm src/parser/f044ff.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F044): clustered env -iu FOO rm on an in-scope target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F044): in-scope clustered env -iu FOO rm has no deny fields"
+
 # F041: sed_inplace_targets()'s in-place-presence guard recognized only the
 # exact string "--in-place" or the attached "--in-place=" prefix, not GNU
 # sed's own unambiguous long-option ABBREVIATION feature. Confirmed against

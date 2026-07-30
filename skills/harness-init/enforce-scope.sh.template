@@ -1253,28 +1253,63 @@ def split_tokens(segment):
 # assumed complete here (found by adversarial review of PR #76).
 COMMAND_WRAPPERS = ("sudo", "env", "command", "xargs")
 
-# Each wrapper's own short flags that take a value as a SEPARATE argument
-# token (as opposed to attached, e.g. "-uroot"/"-n1", which the walk below
-# already handles correctly without this set, since it only ever consumes
-# ONE token for those). Without this, `sudo -u root rm file`, `xargs -n 1 rm
-# file`, and `env -u FOO rm file` were all wrongly treated as invoking the
-# FLAG'S OWN VALUE ("root"/"1"/"FOO") as the command name, silently allowing
-# the real rm -- confirmed against real bash that `env -u FOO rm`/`echo f |
-# xargs -n 1 rm` both genuinely delete the target file (found by adversarial
-# review of PR #76, which noted the code's own prior claim that wrapper
-# flags are "fully skipped" was true only for the attached form). Sourced
-# from this platform's own `sudo`/`env`/`xargs` --help output (BSD/macOS,
-# this repo's stated platform) plus the reviewer's own cross-checked list;
-# not independently verified against every GNU/Linux coreutils version --
-# a disclosed, not silent, residual for any flag this set is missing.
+# Each wrapper's own flags (short AND long form) that take a value as a
+# SEPARATE argument token (as opposed to attached, e.g. "-uroot"/"-n1"/
+# "--user=root", which the walk below already handles correctly without
+# this set, since an attached value is part of the SAME token and never
+# needs an extra one consumed). Without this, `sudo -u root rm file`,
+# `xargs -n 1 rm file`, and `env -u FOO rm file` were all wrongly treated
+# as invoking the FLAG'S OWN VALUE ("root"/"1"/"FOO") as the command name,
+# silently allowing the real rm -- confirmed against real bash that
+# `env -u FOO rm`/`echo f | xargs -n 1 rm` both genuinely delete the
+# target file (found by adversarial review of PR #76 round 2, which noted
+# the round-1 comment's claim that wrapper flags are "fully skipped" was
+# true only for the attached form). Round 2 of that same review confirmed
+# TWO further live gaps a short-flag-only set missed: a CLUSTERED short
+# flag ending in a value-taking one (`env -iu FOO rm`, `xargs -0n 1 rm`
+# -- handled by _is_wrapper_value_flag()'s own cluster check below, not by
+# widening this set) and a LONG option given its value as a separate
+# argument (`xargs --max-args 1 rm`, `env --unset FOO rm` -- handled by
+# including the long form directly in this set, same as the short one).
+# Sourced from this platform's own `sudo`/`env`/`xargs` --help output
+# (BSD/macOS, this repo's stated platform) plus the reviewer's own
+# cross-checked GNU-coreutils list; not independently verified against
+# every GNU/Linux coreutils version or every possible long-option spelling
+# -- a disclosed, not silent, residual for any flag this set is missing.
 WRAPPER_VALUE_FLAGS = {
-    "sudo": ("-u", "-g", "-h", "-p", "-r", "-t", "-U", "-C", "-D", "-R", "-T"),
-    "env": ("-u", "-C", "-S", "-P"),
-    "xargs": ("-E", "-I", "-J", "-L", "-n", "-P", "-s", "-a", "-d"),
+    "sudo": (
+        "-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt",
+        "-r", "-t", "-U", "-C", "--close-from", "-D", "--chdir",
+        "-R", "--chroot", "-T",
+    ),
+    "env": ("-u", "--unset", "-C", "--chdir", "-S", "--split-string", "-P"),
+    "xargs": (
+        "-E", "--eof", "-I", "--replace", "-J", "-L", "--max-lines",
+        "-n", "--max-args", "-P", "--max-procs", "-s", "--max-chars",
+        "-a", "--arg-file", "-d", "--delimiter",
+    ),
     "command": (),
 }
 
 VAR_ASSIGNMENT_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _is_wrapper_value_flag(view, value_flags):
+    # True if `view` is a flag position that consumes the NEXT token as a
+    # separate-argument value: either an exact match against `value_flags`
+    # (covers both a bare short flag like "-u" and any long option
+    # registered there like "--user"), or a CLUSTERED short-flag token
+    # (e.g. "-iu") whose LAST character is itself one of the short flags
+    # in `value_flags` -- confirmed against real bash that `env -iu FOO`
+    # and `xargs -0n 1` both genuinely consume the following token as the
+    # clustered flag's value, the same way a bare "-u"/"-n" would (F044
+    # round 3, adversarial review of PR #76 round 2).
+    if view in value_flags:
+        return True
+    if view.startswith("--") or not view.startswith("-") or len(view) <= 2:
+        return False
+    last_flag = "-" + view[-1]
+    return last_flag in value_flags
 
 
 def _resolve_command_tokens(tokens):
@@ -1312,7 +1347,7 @@ def _resolve_command_tokens(tokens):
             value_flags = WRAPPER_VALUE_FLAGS.get(name, ())
             i += 1
             while i < n and _flag_view(tokens[i]).startswith("-"):
-                if _flag_view(tokens[i]) in value_flags and i + 1 < n:
+                if _is_wrapper_value_flag(_flag_view(tokens[i]), value_flags) and i + 1 < n:
                     i += 2
                 else:
                     i += 1
