@@ -2916,6 +2916,47 @@ assert_deny_json "$OUT" "hs2 (F038 r2): \c? denial uses JSON deny form"
 assert_contains "$OUT" '\u007fx.txt' \
   "hs2 (F038 r2): \c? decodes via the modern-bash DEL (0x7F) special case"
 
+# F039: real bash truncates a WORD at its first embedded NUL byte when
+# building an argv element (argv strings are NUL-terminated C strings, so
+# a NUL can never survive into a real target filename). This hook's
+# target pipeline previously processed the WHOLE decoded string, NUL and
+# all -- confirmed against real bash: `echo x > $'src/other/bad.txt
+# \x00/../../parser/ok.txt'` genuinely creates "src/other/bad.txt"
+# (truncated at the NUL, out of scope), but this hook resolved the
+# "../.." AFTER the NUL too, landing on the in-scope-looking
+# "src/parser/ok.txt" -- wrongly ALLOWED. Confirmed pre-existing on main
+# before F033 too, not a regression; F033 just made it more directly
+# reachable once \x00 genuinely decodes to a real NUL byte.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/other/bad.txt\x00/../../parser/ok.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F039): a NUL-truncated traversal via \x00 exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F039): NUL-truncated traversal denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/bad.txt'" \
+  "hs2 (F039): NUL-truncated traversal denial names the real (truncated) target"
+
+# The same fix must apply regardless of which escape spelling produced the
+# embedded NUL -- an octal \000 escape is a different decode path
+# (ANSI_C_ESCAPE_PATTERN's octal group, not \xHH) through the same
+# unquote_token() call.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/other/bad2.txt\000/../../parser/ok.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F039): a NUL-truncated traversal via octal \000 exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F039): octal-NUL traversal denial uses JSON deny form"
+assert_contains "$OUT" "write to 'src/other/bad2.txt'" \
+  "hs2 (F039): octal-NUL traversal denial names the real (truncated) target"
+
+# No new false positive: an in-scope target with trailing text after an
+# embedded NUL (never reached in real bash, and now never reached by this
+# hook either) must still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/good.txt\x00extra'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F039): an in-scope NUL-truncated target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F039): in-scope NUL-truncated target has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
