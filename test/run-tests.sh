@@ -3206,6 +3206,85 @@ assert_rc0 "$RC" "hs2 (F041): an ambiguous --f passes, rc 0 (real sed errors, no
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F041): ambiguous --f has no deny fields (not misread as --in-place)"
 
+# F042: a decoder exception (currently none are known -- F038 rounds 2-3
+# hardened the only two found so far -- but this hook's own design is
+# fail-OPEN on ANY exception, an input-controlled lever this defense-in-
+# depth removes for the NEXT unknown one) must not silently disable
+# enforcement for a whole command. Since no live crasher exists today,
+# these tests use a fixture with a DELIBERATELY fault-injected copy of
+# enforce-scope.sh (a single extra line making _decode_ansi_c_escape()
+# raise for the otherwise-inert "\Q" escape) to simulate "the next unknown
+# exception type" the same way F038's own two real crashers behaved,
+# without depending on a live 0-day existing in the current decoder.
+DIR_HS_F042="$WORK/ht-scope-f042"
+make_fixture "$DIR_HS_F042"
+install_hooks "$DIR_HS_F042"
+printf 'src/parser/\n' > "$DIR_HS_F042/.claude/teammate-scope.txt"
+python3 - "$DIR_HS_F042/.claude/hooks/enforce-scope.sh" <<'PYEOF'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+marker = '    return ANSI_C_SIMPLE_ESCAPES.get(other, "\\\\" + other)'
+assert text.count(marker) == 1, "F042 fault-injection marker not found or not unique"
+injected = (
+    '    if other == "Q":\n'
+    '        raise ValueError("test-injected-decoder-failure")\n'
+    + marker
+)
+open(path, "w").write(text.replace(marker, injected))
+PYEOF
+
+# Layer 1 (per-target fallback in write_targets()'s own final decode
+# pass): a PLAIN redirect target (>/>>, via redirect_targets()) reaches
+# that final pass WITHOUT any earlier _flag_view()/unquote_token() call
+# touching it first (unlike cp/mv/tee/rm/sed targets, which all_flagless_
+# tokens()/cp_mv_targets()/sed_inplace_targets() already run through
+# _flag_view() internally, so a decoder crash on THEIR content fires
+# there first, not in write_targets()'s own list). Two redirects in one
+# segment: the first target's raw fallback text happens to still start
+# with "src/parser/" (the crash lands INSIDE a $'...'-quoted span that's
+# concatenated onto an unquoted "src/parser/" prefix, so the pre-decode
+# raw text used as the fallback is unaffected by what's inside the span)
+# -- proving the crash on target 1 doesn't stop target 2 (a genuine,
+# unrelated out-of-scope redirect in the SAME segment) from still being
+# checked with full precision.
+OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
+  "$(bash_command_json "echo x > src/parser/\$'\Qtrigger'.txt 2> src/other/f042a.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F042): a decoder crash on one redirect target exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F042): decoder-crash-on-one-target denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f042a.txt" \
+  "hs2 (F042): decoder-crash-on-one-target denial names the OTHER (real) target, not the crashed one"
+# Discriminates the per-target fallback from the coarser segment-level one:
+# a segment-level fallback would name the WHOLE raw segment text, which
+# also happens to END in "src/other/f042a.txt" (so a bare substring check
+# alone can't tell them apart) -- checking the segment's own leading text
+# is absent proves target-level precision was actually used, not merely
+# that SOME denial fired.
+assert_not_contains "$OUT" "echo x >" \
+  "hs2 (F042): decoder-crash-on-one-target denial does NOT fall back to the whole raw segment"
+
+# Layer 2 (segment-level backstop in main()): a decoder crash during
+# COMMAND-NAME recognition (_flag_view(command_tokens[0]), called before
+# any target list even exists) would, uncaught, propagate all the way out
+# of main() -- killing the WHOLE hook invocation (empty stdout, silent
+# ALLOW) for the ENTIRE compound command, not just the one segment that
+# crashed. A compound command with TWO segments: segment 1's command name
+# crashes but its raw-WHOLE-SEGMENT-text fallback happens to still start
+# with "src/parser/" (same concatenation trick as layer 1, at segment
+# granularity), so it does not itself trigger a denial -- proving
+# execution reaches segment 2 (after the `;`), a genuine, unrelated
+# out-of-scope write that must still be caught.
+OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
+  "$(bash_command_json "src/parser/\$'\Qcmd' arg1 arg2 ; rm src/other/f042b.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F042): a decoder crash during command-name recognition exits 0 (JSON deny)"
+assert_deny_json "$OUT" \
+  "hs2 (F042): command-name-recognition-crash denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f042b.txt" \
+  "hs2 (F042): command-name-recognition-crash denial names the LATER segment's real target"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then

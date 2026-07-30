@@ -1228,7 +1228,33 @@ def write_targets(segment):
     # so it covers every decode route (F031's backslash-unescape, F033's
     # \x/\nnn, F038's \c/\u/\U) that could produce an embedded NUL, not
     # just one specific escape spelling.
-    return [unquote_token(t).split("\0", 1)[0] for t in targets]
+    #
+    # unquote_token() is wrapped PER TARGET, not applied to the whole list in
+    # one comprehension, so a decoder exception on ONE target falls back to
+    # that target's RAW, undecoded text instead of aborting the ENTIRE scan
+    # (F042). _decode_ansi_c_escape() has already been hardened against two
+    # specific exception types found by adversarial review (F038 round 2's
+    # surrogate ValueError, round 3's multi-char-uppercase TypeError), both
+    # discovered by constructing a malicious TARGET path -- there is no
+    # reason to believe those are the last two, and this hook's own
+    # fail-open-on-any-exception design (documented in this file's header)
+    # is meant to cover ENVIRONMENT failures (unreadable scope file,
+    # unparseable JSON), not an input-controlled lever that silently
+    # disables enforcement for a WHOLE command because ONE of several
+    # targets in it happens to crash the decoder. The raw-text fallback is
+    # safe-directional, not merely inert: a still-escaped/quoted string
+    # (e.g. containing a literal `\` or `$'`) essentially never matches a
+    # real scope-directory prefix via normalize()'s plain startswith()
+    # comparison, so a target that fails to decode is very likely DENIED,
+    # not silently allowed -- the opposite of what an uncaught exception
+    # does today.
+    result = []
+    for t in targets:
+        try:
+            result.append(unquote_token(t).split("\0", 1)[0])
+        except Exception:
+            result.append(t)
+    return result
 
 
 def normalize(path, project_root):
@@ -1274,7 +1300,40 @@ def main():
     project_root = sys.argv[2]
     patterns = sys.argv[3:]
     for segment in segments_of(command):
-        for target in write_targets(segment):
+        # write_targets()'s own per-target decode fallback (F042, above)
+        # only covers the FINAL unquote_token() pass over the collected
+        # target list -- it can't help if a decoder exception is thrown
+        # EARLIER, while write_targets() is still figuring out what the
+        # targets even are: _flag_view() (used throughout
+        # cp_mv_targets()/sed_inplace_targets()/all_flagless_tokens() for
+        # flag and command-name RECOGNITION, not target extraction) calls
+        # the SAME unquote_token()/_decode_ansi_c_escape() decoder on every
+        # token it inspects, well before any target list exists to iterate
+        # over. Deliberately NOT given the same "fall back to this token's
+        # raw text" treatment as the per-target case: a raw (still-escaped)
+        # token used for FLAG comparison would essentially never match an
+        # exact flag string like "-i"/"--in-place", so treating a
+        # recognition-time decode failure as "flag not present" risks
+        # silently DISABLING a real in-place/script-value guard instead of
+        # over-denying -- the opposite safety direction from a target-value
+        # decode failure. Rather than attempt that different, riskier
+        # fallback per call site (there are several: _flag_view() itself,
+        # the `view_word` site, and any function that calls either), this
+        # wraps the WHOLE write_targets(segment) call: on ANY exception
+        # anywhere in it, fall back to treating the RAW, unparsed segment
+        # text itself as a single write target. A raw shell segment (e.g.
+        # `sed -i --fi -x.sed src/other/f.txt`) essentially never matches a
+        # real scope-directory prefix either, so this is safe-directional
+        # the same way the per-target fallback is -- and critically, it
+        # means a crash while processing segment N no longer prevents
+        # segment N+1 (a later part of the SAME compound command, e.g.
+        # after a `;` or `&&`) from being checked at all, which an uncaught
+        # exception anywhere in write_targets() would otherwise do (F042).
+        try:
+            segment_targets = write_targets(segment)
+        except Exception:
+            segment_targets = [segment]
+        for target in segment_targets:
             norm = normalize(target, project_root)
             # normalize() runs before this check so equivalent spellings of
             # an exempt path (`/dev//null`, `/dev/./null`)
