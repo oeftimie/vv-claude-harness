@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 43,
-  "passing": 29,
+  "passing": 30,
   "features": [
     {
       "id": "F001",
@@ -1190,19 +1190,21 @@
       "id": "F039",
       "description": "skills/harness-init/enforce-scope.sh.template's target-extraction pipeline does not truncate a token at an embedded NUL byte the way real bash truncates a word at its first NUL when building argv. CONFIRMED: `echo x > $'src/other/bad.txt\\x00/../../parser/ok.txt'` -- real bash decodes \\x00 to a genuine NUL byte and truncates the argument there, so the real write target is 'src/other/bad.txt' (OUT of scope), but this hook's normalize()/scope-check pipeline processes the WHOLE string (NUL and all), resolving the '..' segments after the NUL and landing on 'src/parser/ok.txt' (IN scope) -- wrongly ALLOWED. CONFIRMED as pre-existing on origin/main BEFORE F033 too (not a regression from F033's own fix); F033 makes this specific route more direct since \\x00 now genuinely decodes to a real NUL byte inside a $'...' span, where previously the literal 4-character string '\\x00' just stayed as inert text. Likely fix: truncate the token at the first NUL character (if any) immediately after unquote_token() finishes decoding, before normalize() or the scope-prefix comparison ever see it.",
       "priority": 23,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by adversarial review of PR #57 (F033), explicitly confirmed as a pre-existing bypass unchanged by that PR (verified ALLOW on both origin/main before F033 and the F033 branch) -- filed alongside F038 per the reviewer's own recommendation, same general vulnerability class (a shell-level string transformation this hook's pipeline doesn't replicate before the scope check runs).",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by adversarial review of PR #57 (F033), explicitly confirmed as a pre-existing bypass unchanged by that PR (verified ALLOW on both origin/main before F033 and the F033 branch) -- filed alongside F038 per the reviewer's own recommendation, same general vulnerability class (a shell-level string transformation this hook's pipeline doesn't replicate before the scope check runs). Implemented exactly as the ticket's own likely-fix suggested: write_targets()'s final list comprehension now truncates each unquote_token()-decoded target at its first embedded NUL (`.split(\"\\0\", 1)[0]`), applied AFTER decoding completes and BEFORE normalize()/the scope-prefix comparison ever see it -- this single choke point covers every decode route that could produce an embedded NUL (F031's backslash-unescape, F033's \\x/\\nnn, F038's \\c/\\u/\\U), not just the \\x00 spelling the ticket's own reproduction used. Verified the octal \\000 spelling produces the identical bypass through a DIFFERENT decode path (ANSI_C_ESCAPE_PATTERN's octal group) before fixing, confirming the single-choke-point fix genuinely covers both, not just the one form tested.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Ground-truthed the exact reproduction against real bash before implementing: `echo x > $'src/other/bad.txt\\x00/../../parser/ok.txt'` genuinely creates a file named exactly \"src/other/bad.txt\" (confirmed via `ls`), not the untruncated string. Confirmed the hook wrongly ALLOWed this exact command before the fix (rc 0, empty stdout), and correctly denies naming the real truncated target after. Mutation-tested: reverting the `.split(\"\\0\", 1)[0]` truncation fails exactly its 4 new assertions (both the \\x00 and octal \\000 traversal cases), nothing else."
+      ],
       "failure_reason": null,
       "discovered_via": "F033",
       "spec": null
