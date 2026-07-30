@@ -166,6 +166,7 @@ fi
 # proof recorded, or with proof whose evidence_type doesn't match its declared
 # qa_binding. Reads both fields directly off the feature object -- no external
 # lookup, no re-parsing of prose.
+PROOF_WARNING=""
 if [ -n "$FEATURE_ID" ] && [ -f ".harness/features.json" ]; then
     PROOF_WARNING=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
 import json
@@ -189,10 +190,10 @@ elif qa_binding and proof.get("evidence_type") != qa_binding:
     )
 PYEOF
 )
-    [ -n "$PROOF_WARNING" ] && echo "$PROOF_WARNING"
 fi
 
 # Remind about stale in-progress features
+IN_PROGRESS_NOTE=""
 if [ -f ".harness/features.json" ]; then
     IN_PROGRESS=$(python3 -c "
 import json, sys
@@ -202,9 +203,47 @@ in_progress = [f for f in data.get('features', []) if f['status'] == 'in-progres
 print(len(in_progress))
 " 2>/dev/null || echo "0")
     if [ "$IN_PROGRESS" -gt 0 ]; then
-        echo "Note: $IN_PROGRESS feature(s) still marked in-progress. Update features.json if your feature is complete."
+        IN_PROGRESS_NOTE="Note: $IN_PROGRESS feature(s) still marked in-progress. Update features.json if your feature is complete."
     fi
 fi
 
-# All checks passed
+# All checks passed. Claude Code's own hooks docs (code.claude.com/docs/en/hooks)
+# say TaskCompleted is not one of the three exit-0 exceptions (UserPromptSubmit,
+# UserPromptExpansion, SessionStart) where stdout is shown as context -- "for
+# most events, stdout is written to the debug log but not shown in the
+# transcript," confirmed via direct fetch for TaskCompleted specifically before
+# writing this fix (F057, raised as a sibling investigation to F046/F053's
+# identical exit-2 stdout-discard defect, but on this exit-0 accept path
+# instead). The two warnings above used to reach this point via plain `echo`
+# (stdout), which this docs page says lands only in the debug log for
+# TaskCompleted -- a teammate accepting a task with no proof recorded, or with
+# a stale in-progress sibling feature, never actually saw either warning. The
+# same docs page documents `systemMessage` as a universal JSON output field
+# ("warning message shown to the user") that IS surfaced regardless of event
+# or exit code -- unlike `additionalContext`, which is delivered via
+# hookSpecificOutput and is documented only for a specific set of events
+# (SessionStart, Setup, SubagentStart, UserPromptSubmit, UserPromptExpansion,
+# PreToolUse, PostToolUse, PostToolUseFailure, PostToolBatch, Stop,
+# SubagentStop) that does not include TaskCompleted -- it would silently
+# no-op here. Both warnings are combined into ONE systemMessage (not two
+# separate echoes) since only a single JSON object can be emitted per hook
+# invocation.
+SYSTEM_MESSAGE=""
+if [ -n "$PROOF_WARNING" ] && [ -n "$IN_PROGRESS_NOTE" ]; then
+    SYSTEM_MESSAGE="$PROOF_WARNING"$'\n'"$IN_PROGRESS_NOTE"
+elif [ -n "$PROOF_WARNING" ]; then
+    SYSTEM_MESSAGE="$PROOF_WARNING"
+elif [ -n "$IN_PROGRESS_NOTE" ]; then
+    SYSTEM_MESSAGE="$IN_PROGRESS_NOTE"
+fi
+
+if [ -n "$SYSTEM_MESSAGE" ]; then
+    python3 -c "
+import json
+import sys
+
+print(json.dumps({\"systemMessage\": sys.argv[1]}))
+" "$SYSTEM_MESSAGE"
+fi
+
 exit 0
