@@ -5286,6 +5286,22 @@ for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh"; do
   fi
 done
 
+# The *.sh.template loop below already guards against a stray NUL byte
+# (F039); these hooks/*.sh files ship directly with the plugin to every
+# user (not copied per-project like the templates) and were a gap in that
+# guard's coverage -- a NUL here is silently invisible the same way (bash
+# strips it and the hook still runs, so nothing fails loudly; confirmed by
+# inserting one into a throwaway copy of session-start.sh and observing
+# zero test failures) -- found by adversarial review of PR #68, round 2.
+for SCRIPT in "$HOOKS_DIR"/*.sh; do
+  BASE=$(basename "$SCRIPT")
+  if python3 -c "import sys; sys.exit(1 if b'\x00' in open(sys.argv[1], 'rb').read() else 0)" "$SCRIPT"; then
+    pass "n: $BASE contains no literal NUL byte"
+  else
+    fail "n: $BASE contains a literal NUL byte"
+  fi
+done
+
 SYNTAX_DIR="$WORK/template-syntax"
 mkdir -p "$SYNTAX_DIR"
 for TPL in "$TEMPLATES_DIR"/*.sh.template; do
