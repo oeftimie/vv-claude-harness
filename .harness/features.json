@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 60,
-  "passing": 48,
+  "passing": 49,
   "features": [
     {
       "id": "F001",
@@ -1657,19 +1657,21 @@
       "id": "F057",
       "description": "Claude Code's own hooks docs (code.claude.com/docs/en/hooks) say of exit 0: 'For most events, stdout is written to the debug log but not shown in the transcript.' This raises whether verify-task-quality.sh.template's exit-0 ACCEPT-path warnings (the 'no proof recorded' / evidence_type-mismatch warning, and the 'still marked in-progress' reminder) are actually visible to a teammate today, or whether they silently land in a debug log nobody reads -- the same class of silent-message problem F046/F053 fixed for exit-2 BLOCKING messages, but for the exit-0 accept path instead. Not yet verified for TaskCompleted specifically: the docs' own 'for most events' qualifier is doing real work, and there is no per-event table for exit-0 stdout visibility the way there is for exit-2 blocking behavior.",
       "priority": 41,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/verify-task-quality.sh.template",
         ".claude/hooks/verify-task-quality.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Raised by review-pr86-f053 (and repeated when their duplicate/stale messages crossed) as a sibling investigation to F053, explicitly flagged as unverified rather than acted on: 'For most events, stdout is written to the debug log but not shown in the transcript' could mean verify-task-quality.sh's exit-0 accept-path warnings are as invisible as F053's exit-2 messages were before that fix. Needs direct verification (does a teammate actually see this text after a TaskCompleted accept with a warning?) before deciding whether a fix is even needed -- this is a research/verification step, not a presumed bug.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Raised by review-pr86-f053 (and repeated when their duplicate/stale messages crossed) as a sibling investigation to F053, explicitly flagged as unverified rather than acted on: 'For most events, stdout is written to the debug log but not shown in the transcript' could mean verify-task-quality.sh's exit-0 accept-path warnings are as invisible as F053's exit-2 messages were before that fix. Needs direct verification (does a teammate actually see this text after a TaskCompleted accept with a warning?) before deciding whether a fix is even needed -- this is a research/verification step, not a presumed bug.\n\nVERIFIED, then FIXED: fetched code.claude.com/docs/en/hooks directly and asked specifically about TaskCompleted's own exit-0 stdout contract, not just the general 'for most events' prose. Confirmed: TaskCompleted is NOT one of the three documented exceptions (UserPromptSubmit, UserPromptExpansion, SessionStart) where stdout becomes visible context -- its stdout on exit 0 genuinely lands only in the debug log, confirming the suspected defect was real (the same class F046/F053 fixed for exit-2 blocking messages, on the exit-0 accept path instead). Also fetched the docs' own documented fix mechanism: `systemMessage`, a universal JSON output field ('warning message shown to the user') visible regardless of event or exit code -- unlike `additionalContext`, which is restricted to SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop and would silently no-op here. FIXED: both accept-path warnings (the no-proof-recorded/evidence-mismatch warning, and the stale-in-progress reminder) are now collected into variables instead of echoed directly, then combined (since only ONE JSON object can be emitted per hook invocation) into a single `{\"systemMessage\": \"...\"}` object printed once at the very end of the accept path. Reproduced live against a throwaway fixture before designing the test suite: confirmed both warnings combine into one valid JSON object when both apply, and stdout is genuinely empty when neither applies (no spurious JSON). Added 5 new test assertions: 2 that parse the ACTUAL JSON structure (not just a substring match anywhere in output, which a regression back to plain `echo` would still satisfy since the same words would still appear in stderr/stdout combined captures -- this is why the assertions parse json.loads() on a STDOUT-ONLY capture, separate from the existing combined-capture substring checks), 1 confirming both warnings combine into a single object, 2 for the clean-accept no-spurious-output case. Mutation-tested by reverting both hook copies: exactly the 2 new JSON-structure assertions failed, nothing else (the existing substring-based assertions from before this fix correctly still passed under the reverted code too, since the warning text is present either way -- only the new assertions distinguish 'text somewhere in the output' from 'a real systemMessage the user will actually see'). Full suite 1315/1315. Resynced .claude/hooks/verify-task-quality.sh from the template per F047's drift guard.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "wrapped both accept-path warnings in a single systemMessage JSON field (the documented, universal exit-0 visibility mechanism), rather than additionalContext (restricted to a different set of events, would silently no-op for TaskCompleted) or leaving them as plain echo (confirmed genuinely invisible for this specific event via direct docs fetch, not assumed from the general prose)"
+      ],
       "failure_reason": null,
       "discovered_via": "F053",
       "spec": null
