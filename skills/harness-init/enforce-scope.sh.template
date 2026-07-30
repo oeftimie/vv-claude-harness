@@ -17,7 +17,11 @@
 # the goal is stopping accidental drift, not defeating an adversarial teammate.
 # Once a segment's own analysis begins, though, an exception anywhere in it (a
 # decoder crash, or anything else _check_segment() can't handle) denies that
-# segment unconditionally instead -- see main()'s own comment for why.
+# segment unconditionally instead -- see main()'s own comment for why. The same
+# split applies one layer up, at the FILE_PATH/COMMAND extraction near the top of
+# this file (F043): the JSON itself failing to parse stays fail-open, but anything
+# that goes wrong AFTER a successful parse (a raw surrogate crashing the final
+# print(), or any other unexpected shape) fails closed instead.
 # Straightforward single/double/ANSI-C quoting of a separator or a write target is
 # handled (see mask_quotes()/unquote_token()); nested or otherwise unusual quoting
 # is not attempted. Known false-positive residual: redirect-target extraction
@@ -158,7 +162,7 @@ except Exception:
 " "$PROJECT_ROOT" 2>/dev/null)
 FILE_PATH_RC=$?
 if [ "$FILE_PATH_RC" -eq 1 ]; then
-    echo "Edit blocked: file_path could not be safely extracted from tool input (best-effort check; treating as outside your assigned scope). $ANNOTATION"
+    echo "Edit blocked: file_path could not be safely extracted from tool input (treating as outside your assigned scope). $ANNOTATION"
     exit 2
 fi
 
