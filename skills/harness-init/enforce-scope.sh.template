@@ -360,9 +360,30 @@ def _decode_ansi_c_escape(m):
     if octdigits is not None:
         return chr(int(octdigits, 8) & 0xFF)
     if ctrlchar is not None:
-        if ctrlchar.upper() == "?":
+        upper = ctrlchar.upper()
+        if upper == "?":
             return "\x7f"
-        return chr(ord(ctrlchar.upper()) & 0x1F)
+        if len(upper) != 1:
+            # ANSI_C_ESCAPE_PATTERN's c(.) captures ANY single character, and
+            # for 102 distinct Unicode characters str.upper() returns TWO
+            # characters (e.g. U+00DF, the German sharp s, uppercases to the
+            # two-character string "SS"), which
+            # made ord() raise TypeError -- crashing this hook's Python
+            # subprocess, which this hook's own fail-open design (see header)
+            # then turns into a SILENT ALLOW for the entire command, not just
+            # a missed decode: `$'src/parser/\c<that char>q.txt'` anywhere in
+            # a compound command let an UNRELATED, plain-ASCII, ordinarily-
+            # denied out-of-scope write elsewhere in the SAME command through
+            # too, confirmed live on main (found by adversarial review of PR
+            # #67, the exact same fail-open class the surrogate fix above
+            # closes, recurring one branch over with a different exception
+            # type no source-range guard on \u/\U could ever have caught).
+            # Falling back to the ORIGINAL (non-uppercased) character instead
+            # of crashing diverges from real bash's own byte-wise result for
+            # these characters, but \cX can never spell "." or "/" on either
+            # reading, so only not-crashing matters here.
+            upper = ctrlchar
+        return chr(ord(upper) & 0x1F)
     if u4 is not None:
         return _unicode_escape_or_literal(u4, "u")
     if u8 is not None:

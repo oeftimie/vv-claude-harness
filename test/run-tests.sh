@@ -2854,6 +2854,40 @@ assert_deny_json "$OUT" "hs2 (F038 r2): \U lone-surrogate denial uses JSON deny 
 assert_contains "$OUT" "src/other/" \
   "hs2 (F038 r2): \U lone-surrogate denial names the real out-of-scope target"
 
+# An out-of-range \U codepoint (above Unicode's own max, 0x10FFFF) shares
+# the SAME _unicode_escape_or_literal() guard as the surrogate case above,
+# but had zero coverage of its own: dropping just the "or codepoint >
+# 0x10FFFF" half of that guard's condition still passed the full suite,
+# yet crashes the hook live (`chr() arg not in range(0x110000)`) the same
+# way the surrogate half did (found by adversarial review of PR #67,
+# round 2).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/other/\U00110000x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038 r2): an out-of-range \U escape exits 0 (JSON deny, not a crash)"
+assert_deny_json "$OUT" "hs2 (F038 r2): out-of-range \U denial uses JSON deny form"
+assert_contains "$OUT" "src/other/" \
+  "hs2 (F038 r2): out-of-range \U denial names the real out-of-scope target"
+
+# F038 round 2 (adversarial review of PR #67, round 2): the SAME
+# crash-to-silent-ALLOW class recurred one branch over, in \cX itself --
+# no surrogate needed at all. ANSI_C_ESCAPE_PATTERN's c(.) captures ANY
+# single character, and for 102 distinct Unicode characters str.upper()
+# returns TWO characters (e.g. U+00DF, the German sharp s, uppercases to
+# "SS"), which made ord() raise TypeError. Confirmed live on main before
+# this fix: an UNRELATED, plain-ASCII, ordinarily-denied out-of-scope
+# write elsewhere in the SAME compound command was silently ALLOWED
+# because of an unrelated \c<that character> earlier in the command --
+# no traversal, no surrogate, just an ordinary multi-byte UTF-8 character
+# after \c.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo a > \$'src/parser/\cßq.txt' ; echo x > src/other/pwned.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038 r2): a multi-char-uppercase \c escape exits 0 (JSON deny, not a crash)"
+assert_deny_json "$OUT" "hs2 (F038 r2): multi-char-uppercase \c denial uses JSON deny form"
+assert_contains "$OUT" "src/other/pwned.txt" \
+  "hs2 (F038 r2): multi-char-uppercase \c denial still catches the unrelated real out-of-scope write"
+
 # F038 round 2: the \cX formula IS observable through this hook's own
 # ALLOW/DENY interface, despite an earlier round's claim otherwise -- the
 # JSON-encoded denial message renders a control byte as a distinct,
