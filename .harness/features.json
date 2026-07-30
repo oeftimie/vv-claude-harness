@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 59,
-  "passing": 46,
+  "passing": 47,
   "features": [
     {
       "id": "F001",
@@ -1606,7 +1606,7 @@
       "id": "F056",
       "description": "cp_mv_targets() (and its last_flagless_token() fallback) walk tokens in ORDER and treat the LAST flagless argument as the destination -- but real GNU cp/mv permute argv, so a value-consuming long or short option (--suffix VALUE, -S VALUE, --backup, etc.) placed AFTER both operands still consumes the token that follows it as ITS value, not as a new flagless operand. CONFIRMED against real GNU cp 9.11: `cp src/parser/a.txt src/other/d --suffix src/parser/x` genuinely copies into `src/other/d` (the true destination), yet cp_mv_targets() reads the tokens left-to-right with no notion of 'this later flag consumes the next token', so it returns `src/parser/x` (the --suffix VALUE, an ordinary in-scope-looking path here) as the destination -- the REAL destination (`src/other/d`) is never checked at all. Same shape with the short form `-S src/parser/x`. Confirmed present identically on `main` and on the F048 branch (not a regression introduced by that work).",
       "priority": 39,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         ".claude/hooks/enforce-scope.sh",
@@ -1614,12 +1614,14 @@
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by review-pr82-f048 while verifying F048's own fix, explicitly checking whether it introduced or worsened this -- confirmed identical behavior on main and the F048 branch, so filed separately (discovered_via F048) rather than folded into that PR, mirroring how F048 itself was split out of F041's own discovery. Independently reproduced by the lead against real GNU cp 9.11 before filing (`gcp f.txt d1 --suffix .BAK --backup` genuinely creates `d1/f.txt.BAK`, confirming argv permutation is real GNU behavior, not a misreading).",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by review-pr82-f048 while verifying F048's own fix, explicitly checking whether it introduced or worsened this -- confirmed identical behavior on main and the F048 branch, so filed separately (discovered_via F048) rather than folded into that PR, mirroring how F048 itself was split out of F041's own discovery. Independently reproduced by the lead against real GNU cp 9.11 before filing (`gcp f.txt d1 --suffix .BAK --backup` genuinely creates `d1/f.txt.BAK`, confirming argv permutation is real GNU behavior, not a misreading).\n\nFIXED: cp_mv_targets() rewritten from a plain enumerate() walk to an explicit index-managed while loop (mirroring sed_inplace_targets()'s own token-walking style), which builds the token list handed to last_flagless_token() by SKIPPING both a value-consuming flag and its consumed value, rather than relying on last_flagless_token() to filter the unmodified full token list afterward. Mechanically determined the exact flag set to fix (beyond -t/--target-directory, already handled) by testing every CP_MV_LONG_OPTIONS entry with an optional-vs-mandatory-looking value shape against real GNU cp 9.11 as two separate tokens: -S/--suffix, --no-preserve, and --sparse all genuinely consume the following token as their own value (command succeeds using only the remaining flagless tokens); --update, --context, --preserve, --backup, and --reflink (all optional/attached-only per their own --help bracket notation, [=X]) do NOT (each errors 'cannot stat' on the following token, proving it's left as an ordinary operand) -- confirms the general GNU getopt_long rule that an optional-argument long option can never accept a separate-token value (ambiguous with the next real operand), so no flag-by-flag guessing was needed beyond checking which of the two bracket forms each option uses. Also confirmed against real GNU cp that a value which itself LOOKS like a flag (e.g. `cp --suffix -t src dest`, where the literal suffix is \"-t\") is unconditionally consumed as the value, never re-parsed as a new flag -- the fix's index-skip (i += 2, never revisiting the skipped index) matches this; an initial design that filtered a marked set of indices AFTER an unmodified scanning loop would have gotten this specific case wrong, so the loop itself is index-managed, not just its output filtered. Added 17 new test assertions mirroring the existing F048/hs2 style (bare forms of --suffix/-S/--no-preserve/--sparse after both operands; a value that looks like -t; no-regression checks for --update/--preserve/--backup/--reflink still NOT being treated as value-consuming; an in-scope destination past a --suffix VALUE still passing cleanly). Mutation-tested by reverting both the template and its resynced live copy: exactly 7 of the 17 new assertions failed (the assert_deny_json/assert_contains(destination) ones -- the assert_rc0 lines in the same tests don't discriminate for this JSON-deny-style hook, consistent with how the existing F048 tests are structured), nothing else. Full suite 1291/1291. Resynced .claude/hooks/enforce-scope.sh from the template per F047's drift guard.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "rewrote cp_mv_targets()'s plain enumerate() walk into an explicit index-managed while loop (mirroring sed_inplace_targets()'s established style) that skips a value-consuming flag's value token by index (never re-visiting it), rather than filtering the full token list after an unmodified scan -- the index-skip approach was required, not just cleaner, once real GNU cp's own value-is-unconditionally-consumed-even-if-flag-shaped behavior was confirmed empirically"
+      ],
       "failure_reason": null,
       "discovered_via": "F048",
       "spec": null
