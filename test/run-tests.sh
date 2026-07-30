@@ -4247,6 +4247,45 @@ else
   fail "ht: SKILL.md settings block -- $SETTINGS_BLOCK_ERRORS"
 fi
 
+# F054: this repo runs on its own harness, so its OWN live .claude/settings.json
+# is what actually WIRES the installed hooks (F047's own resync fixed their
+# CONTENT, but wiring is a separate concern this checks) -- confirmed live that
+# enforce-scope.sh and commit-gate.sh were never invoked on the Bash matcher
+# at all, so the entire F023-F046 Bash-scope-enforcement arc, and every commit-
+# gate check, were installed but inert in this repo. Mirrors the SKILL.md check
+# above, but against the actual live file, not the distributable example.
+LIVE_SETTINGS_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import json
+import os
+import sys
+
+root = sys.argv[1]
+with open(os.path.join(root, ".claude", "settings.json")) as fh:
+    text = fh.read()
+    data = json.loads(text)
+
+if "bash .claude/hooks/" in text:
+    print("live settings.json still invokes a hook cwd-relative (bash .claude/hooks/...)")
+if text.count('\\"$CLAUDE_PROJECT_DIR\\"/.claude/hooks/') < 5:
+    print("live settings.json lacks the CLAUDE_PROJECT_DIR-absolute invocation form")
+if '"Bash(bash .claude/hooks/*.sh)"' in text:
+    print("live settings.json's permissions allowlist still lists the cwd-relative hook form")
+
+bash_hooks = []
+for entry in data.get("hooks", {}).get("PreToolUse", []):
+    if entry.get("matcher") == "Bash":
+        bash_hooks = [h["command"] for h in entry.get("hooks", [])]
+for name in ("enforce-scope.sh", "commit-gate.sh", "verify-git-identity.sh"):
+    if not any(name in cmd for cmd in bash_hooks):
+        print(f"live settings.json's Bash matcher is missing {name}")
+PYEOF
+)
+if [ -z "$LIVE_SETTINGS_ERRORS" ]; then
+  pass "ht (F054): this repo's live settings.json wires enforce-scope.sh/commit-gate.sh on Bash"
+else
+  fail "ht (F054): live settings.json -- $LIVE_SETTINGS_ERRORS"
+fi
+
 echo ""
 echo "== harness_state.py =="
 
