@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 59,
-  "passing": 47,
+  "passing": 48,
   "features": [
     {
       "id": "F001",
@@ -1630,7 +1630,7 @@
       "id": "F058",
       "description": "enforce-scope.sh.template's LEAD_OWNED set (and the mirrored Edit/Write case statement) protects exactly three files -- .harness/features.json, .harness/context_summary.md, .harness/claude-progress.txt -- regardless of a teammate's own scope. .harness/harness.json is NOT in this set: it's protected only by the ordinary scope check, so a teammate scoped to `.harness/` (or to harness.json specifically) can edit it directly via Edit/Write or Bash. CONFIRMED live: with scope=`.harness/`, both a Write to .harness/harness.json and a Bash redirect (`> .harness/harness.json`) return ALLOW, while the same scope still denies a Write to features.json (genuinely lead-owned, denied regardless of scope). harness.json now holds git identity config, prep/stamp config, and (as of F054) a security-relevant commit-gate.sh secret-scan exemption list -- all things a scoped teammate arguably shouldn't be able to edit unilaterally the way it can edit its own assigned source files. This is a genuine behavior change (adding a file to LEAD_OWNED denies ALL teammates editing it, not just out-of-scope ones), so it needs its own feature and review, not a fold-in to whatever last touched harness.json's schema.",
       "priority": 40,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/enforce-scope.sh.template",
         ".claude/hooks/enforce-scope.sh",
@@ -1638,12 +1638,14 @@
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered by review-pr87-f054 while verifying F054's own claim that harness.json is lead-owned -- that claim was false (never true; F054's own comments and notes invented it rather than reflecting existing behavior), and the reviewer correctly flagged it as a security claim inside a security hook that ships to every downstream harness user via the template. Independently confirmed live by the lead (Write and Bash-redirect both ALLOW under a .harness/ scope, contrasted against features.json's genuine LEAD_OWNED denial) before filing. F054's own claim was corrected to describe the ACTUAL (weaker) guarantee rather than left false; this feature is the real fix, deliberately scoped separately per the reviewer's own recommendation (their option (a) vs. the smaller, in-scope option (b) F054 itself took).",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Discovered by review-pr87-f054 while verifying F054's own claim that harness.json is lead-owned -- that claim was false (never true; F054's own comments and notes invented it rather than reflecting existing behavior), and the reviewer correctly flagged it as a security claim inside a security hook that ships to every downstream harness user via the template. Independently confirmed live by the lead (Write and Bash-redirect both ALLOW under a .harness/ scope, contrasted against features.json's genuine LEAD_OWNED denial) before filing. F054's own claim was corrected to describe the ACTUAL (weaker) guarantee rather than left false; this feature is the real fix, deliberately scoped separately per the reviewer's own recommendation (their option (a) vs. the smaller, in-scope option (b) F054 itself took).\n\nFIXED: added .harness/harness.json to both protection sites -- the bash-side Edit/Write case statement and the python-side LEAD_OWNED set used for Bash-command coverage -- mirroring the existing 3 entries exactly. Ground-truthed the bug live before fixing (built a throwaway fixture with scope=.harness/ specifically, since the existing DIR_HS fixture's scope is src/parser/ and would deny harness.json anyway as merely out-of-scope, which wouldn't discriminate this fix from ordinary scope enforcement): both a Write and a Bash redirect to harness.json returned ALLOW (rc 0, no deny JSON) before the fix, matching the feature's own filing exactly. Re-verified live after the fix: both now correctly DENY with the same lead-owned JSON-deny form features.json uses, while an ordinary in-scope .harness/ file (not harness.json itself) still passes cleanly -- the fix targets the one file, not the whole directory. Confirmed the lead's own session is unaffected: this hook exits 0 unconditionally whenever no .claude/teammate-scope.txt exists (line 77), which is true for a lead session and is pre-existing, unchanged behavior -- LEAD_OWNED only ever applies to teammates, which is the entire point of the name. Added 7 new test assertions using a dedicated fixture (DIR_HL, scope=.harness/) so the LEAD_OWNED override is the only thing that can produce a deny in the test, not incidental out-of-scope enforcement. Mutation-tested by reverting both enforce-scope.sh copies: exactly 3 of the 7 new assertions failed (the discriminating deny-json/invariant-name ones -- the assert_rc0 lines and the no-regression check don't discriminate for this mutation, consistent with the established F048/F056 test-structure convention), nothing else. Full suite 1310/1310. Resynced .claude/hooks/enforce-scope.sh from the template per F047's drift guard.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "added .harness/harness.json to LEAD_OWNED (python set) and the mirrored bash case statement, exactly matching the existing 3-entry pattern -- no new mechanism needed, just closing the gap in an already-established one"
+      ],
       "failure_reason": null,
       "discovered_via": "F054",
       "spec": null
