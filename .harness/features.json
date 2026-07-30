@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 54,
+  "total_features": 55,
   "passing": 39,
   "features": [
     {
@@ -1547,6 +1547,29 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F047",
+      "spec": null
+    },
+    {
+      "id": "F055",
+      "description": "check-remaining-tasks.sh.template's TeammateIdle guidance has no concept of teammate ROLE: it re-nudges any idle teammate toward the next claimable feature for as long as ANY feature is claimable, regardless of whether that teammate is an implementer (for whom this is correct) or a reviewer/other non-implementer role with no further review assigned (for whom claiming an unrelated feature would itself be scope creep under the agent-teams protocol). CONFIRMED live, twice: review-pr69-f040 hit this originally (leading to F046's filing), and review-pr81-f047 hit it again after F046's stdout-to-stderr fix was live and working correctly -- the hook fired exactly to spec (rc=2, correct guidance on stderr) but a reviewer with a completed, delivered review had no way to signal 'done, nothing claimable is mine' short of messaging the lead directly or violating scope by self-claiming an implementation feature. The TeammateIdle payload itself carries no teammate identity (an existing, confirmed constraint), so the hook cannot distinguish roles on its own -- role-aware behavior would need to live in the agent definitions (e.g. a reviewer's own definition recognizing 'my assignment is done, message the lead and go idle' rather than treating check-remaining-tasks.sh's nudge as instruction to claim new work), not in this shared hook.",
+      "priority": 38,
+      "status": "pending",
+      "scope": [
+        "agents/reviewer.md",
+        "skills/harness-init/check-remaining-tasks.sh.template"
+      ],
+      "depends_on": [
+        "F046"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Raised by review-pr81-f047 (not filed by them -- explicitly deferred the filing decision to the lead, correctly declining to self-claim an unrelated implementation feature as a workaround, which would itself be the scope creep the agent-teams protocol prohibits). This is the second live occurrence of the same root cause that led to F046 being filed (review-pr69-f040 hit it first). depends_on F046 since it builds on the stderr-delivery fix; F046's own notes already flagged this as 'a separate design question, not addressed by this fix.'",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F046",
       "spec": null
     }
   ]
