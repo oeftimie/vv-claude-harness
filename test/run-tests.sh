@@ -1259,6 +1259,40 @@ RC=$?
 assert_rc0 "$RC" "hs2: Bash write to a lead-owned state file exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: Bash lead-owned write denial uses JSON deny form"
 
+# F058: .harness/harness.json was NOT in LEAD_OWNED before this fix -- it was
+# protected only by the ordinary scope check, so a teammate scoped to .harness/
+# itself (unlike DIR_HS above, whose scope is src/parser/ and would deny
+# harness.json anyway as merely out-of-scope, which wouldn't discriminate this
+# fix from ordinary scope enforcement) could edit it directly. This fixture's
+# scope deliberately covers .harness/ so the LEAD_OWNED override is the ONLY
+# thing that can produce a deny here -- confirmed live before the fix that both
+# a Write and a Bash redirect to harness.json under this exact scope returned
+# ALLOW (rc 0, no deny JSON), unlike features.json's genuine denial.
+DIR_HL="$WORK/ht-harness-json-lead-owned"
+make_fixture "$DIR_HL"
+install_hooks "$DIR_HL"
+printf '.harness/\n' > "$DIR_HL/.claude/teammate-scope.txt"
+
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.harness/harness.json")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F058): Edit to harness.json exits 0 (JSON deny, not exit 2)"
+assert_deny_json "$OUT" "hs2 (F058): harness.json Edit denial uses the JSON deny form"
+assert_contains "$OUT" "lead-owned" "hs2 (F058): harness.json Edit denial names the invariant"
+
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(bash_command_json 'echo x > .harness/harness.json')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F058): Bash write to harness.json exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F058): harness.json Bash write denial uses JSON deny form"
+
+# No new false positive: an ordinary in-scope .harness/ file must still be
+# allowed cleanly -- the fix targets harness.json specifically, not the whole
+# directory.
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.harness/some-other-file.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F058): an ordinary in-scope .harness/ file still passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F058): ordinary in-scope .harness/ file has no deny fields"
+
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'tee src/other/escaped.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2: Bash tee to an out-of-scope target exits 0 (JSON deny)"
@@ -5551,11 +5585,13 @@ assert_not_contains "$OUT" "permissionDecision" "cg: .env.example exemption has 
 # SHAPED synthetic fixture data to test a scanner like this one (discovered
 # live: once this hook was wired onto the Bash matcher, this repo's own
 # test/run-tests.sh could no longer be committed at all). Opt-in via
-# harness.json's secret_scan_exempt_paths array -- NOT a hard security
-# boundary: harness.json is protected only by the ordinary scope check, not
-# enforce-scope.sh's own LEAD_OWNED set, so a teammate scoped to `.harness/`
-# could add its own exemption here (found by adversarial review of PR #87;
-# a stronger LEAD_OWNED guarantee is tracked separately).
+# harness.json's secret_scan_exempt_paths array -- harness.json is in
+# enforce-scope.sh's own LEAD_OWNED set as of F058: no teammate can add its
+# own exemption here regardless of its assigned scope (F054 originally
+# shipped a false claim that this was already true, found by adversarial
+# review of PR #87; closed for real by F058). Still not a defense against
+# the lead's own unwise exemption -- LEAD_OWNED protects against teammates
+# only.
 DIR_CG_EXEMPTCFG="$WORK/commit-gate-exempt-config"
 make_fixture "$DIR_CG_EXEMPTCFG"
 install_hooks "$DIR_CG_EXEMPTCFG"

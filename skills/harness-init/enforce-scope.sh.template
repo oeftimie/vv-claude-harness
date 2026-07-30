@@ -196,7 +196,16 @@ fi
 
 if [ -n "$FILE_PATH" ]; then
     case "$FILE_PATH" in
-        .harness/features.json|.harness/context_summary.md|.harness/claude-progress.txt)
+        # .harness/harness.json added by F058: it was NOT lead-owned before this --
+        # only protected by the ordinary scope check below, so a teammate scoped to
+        # .harness/ (or to harness.json specifically) could edit it directly like any
+        # other assigned file (confirmed live before this fix: both a Write and a Bash
+        # redirect to it returned ALLOW under a .harness/ scope, unlike features.json's
+        # genuine denial). harness.json holds git identity config, prep/stamp config,
+        # and (as of F054) commit-gate.sh's secret-scan exemption list -- security-
+        # relevant configuration a scoped teammate shouldn't be able to edit
+        # unilaterally the way it edits its own assigned source files (F058).
+        .harness/features.json|.harness/context_summary.md|.harness/claude-progress.txt|.harness/harness.json)
             deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION"
             ;;
     esac
@@ -238,6 +247,10 @@ LEAD_OWNED = {
     ".harness/features.json",
     ".harness/context_summary.md",
     ".harness/claude-progress.txt",
+    # Added by F058 -- see the mirrored Edit/Write case statement above for the
+    # full rationale (git identity, prep/stamp config, and the F054 secret-scan
+    # exemption list are all security-relevant configuration this file holds).
+    ".harness/harness.json",
 }
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
 
