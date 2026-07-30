@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 60,
-  "passing": 49,
+  "passing": 50,
   "features": [
     {
       "id": "F001",
@@ -1680,7 +1680,7 @@
       "id": "F059",
       "description": "The Agent Teams protocol (rules/agent-teams-protocol.md's Lead Agent Responsibilities) only documents team-WIDE shutdown: step 15 sends shutdown_request to ALL teammates, after step 10 synthesizes ALL teammates' work, at Phase 5 teardown. There is no documented per-teammate on-completion shutdown -- a teammate whose own assigned work is done (e.g. a reviewer whose review has been delivered and acted on) has no path to being released before the ENTIRE team reaches Phase 5, even if every other teammate still has features to implement. Confirmed via exhaustive grep for 'shutdown' across rules/, skills/, agents/ during F055's round-2 review: 5 hits total, all describing team-wide shutdown, none describing per-teammate early release. Consequence (observed live during F055's own review, review-pr89-f055's TeammateIdle hook kept re-firing on it 6 consecutive times after its review was delivered): a teammate with nothing left to claim spins silently (post-F055) or spams the lead (pre-F055) for the remainder of the session's team-wide work, rather than being released. This is a coordination semantics change affecting every teammate type, not just reviewers, so it needs its own spec and review rather than being folded into F055's narrower fix (F055 only made the interim behavior less noisy; it did not, and per its own scope could not, add an actual release path).",
       "priority": 42,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "rules/agent-teams-protocol.md",
         "skills/harness-continue/SKILL.md"
@@ -1689,12 +1689,16 @@
         "F055"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Recommended by review-pr89-f055-2 during F055's round-2 review (not filed by them -- correctly declined to fold a coordination-semantics change into an unrelated PR, and explicitly recommended filing it as its own feature rather than letting the idea die in a PR comment thread, citing F055 itself as the precedent for that pattern). Not yet scoped in detail: the concrete design (a new per-teammate SendMessage pattern? a lead-side rule to proactively check TaskList and release idle-with-nothing-claimable teammates rather than waiting for Phase 5?) needs its own investigation before implementation starts.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (shell suite, no coverage tooling; full_test is the gate -- count omitted here since it drifts on every sibling feature merge; see the header total_features/passing fields for the current count)",
+      "notes": "Recommended by review-pr89-f055-2 during F055's round-2 review (not filed by them -- correctly declined to fold a coordination-semantics change into an unrelated PR, and explicitly recommended filing it as its own feature rather than letting the idea die in a PR comment thread, citing F055 itself as the precedent for that pattern). Not yet scoped in detail: the concrete design (a new per-teammate SendMessage pattern? a lead-side rule to proactively check TaskList and release idle-with-nothing-claimable teammates rather than waiting for Phase 5?) needs its own investigation before implementation starts.\n\nFIXED: added a lead-side rule, 'Early release for role-limited teammates', to rules/agent-teams-protocol.md as unnumbered prose immediately after the Lead Agent Responsibilities list (deliberately NOT a new numbered step -- inserting one would renumber steps 10-16 and silently break agents/reviewer.md's own citation of 'steps 10 and 15', added during F055). The rule applies ONLY to a teammate whose ROLE makes it structurally unable to act on ANY currently claimable work (a reviewer, no Edit/Write tools by construction, is the clear case); it explicitly does NOT apply to an implementer between features, which must remain a legitimate TeammateIdle reassignment target for as long as the team runs -- preserving the existing 'no wasted capacity' design the protocol already values, per F059's own filing note. Added the matching lead-side guidance to skills/harness-continue/SKILL.md's Phase 3 Monitor step, alongside the existing SendMessage-handling bullets. Also updated agents/reviewer.md (recorded as a scope_expansion, not silently folded in): F055's round-2 text ('the lead shuts teammates down at Phase 5 teardown... not the moment your individual review lands') was accurate when written, but F059 makes it WRONG in the other direction -- the lead is now EXPECTED to release a reviewer promptly. Left unfixed, this would have been the identical stale-claim-after-a-sibling-fix defect class F058's round-1 review caught in commit-gate.sh's comments, just self-inflicted this time instead of needing a reviewer to catch it. Added 4 new test/run-tests.sh assertions pinning: the new protocol rule and its implementer carve-out both present; the SKILL.md Phase 3 guidance and its carve-out both present; reviewer.md's stale claim is gone and the corrected one is present. Also updated 1 pre-existing F055 assertion whose asserted phrase ('Phase 5 teardown, after all teammates' work is') I legitimately removed -- retargeted to check for the new, still-true reasoning ('role-limited teammate') instead of weakening the test to tautology. Hit a real gotcha during test-writing: two of my first-draft grep patterns failed because the target phrase happened to straddle a prose line-wrap in the source file (grep matches single lines only) -- fixed by choosing shorter substrings that fall entirely within one line, not by reflowing prose to fit the test. Mutation-tested by reverting all three prose files: exactly 4 assertions failed (the pre-existing F055 one plus the 3 new F059 ones), nothing else. Full suite 1318/1318. No hook templates touched -- pure documentation/protocol change, no live-copy resync needed.",
       "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "scope_expansions": [
+        "agents/reviewer.md"
+      ],
+      "approaches_tried": [
+        "documented a lead-side rule restricted to structurally role-limited teammates (reviewers), explicitly excluding implementers between features -- rather than a blanket 'release any idle teammate' rule, which would have silently regressed the existing TeammateIdle reassignment design implementers rely on for 'no wasted capacity'"
+      ],
       "failure_reason": null,
       "discovered_via": "F055",
       "spec": null
