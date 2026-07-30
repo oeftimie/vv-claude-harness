@@ -2975,6 +2975,65 @@ assert_rc0 "$RC" "hs2 (F039): an in-scope NUL-truncated target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F039): in-scope NUL-truncated target has no deny fields"
 
+# F040: write_targets()'s cp/mv/tee/rm dispatch compared command_tokens[0]
+# RAW against the known command-name tuples, so a backslash-escaped or
+# quoted command name -- an everyday shell idiom, not an adversarial
+# technique -- evaded recognition entirely and no target was extracted at
+# all. Confirmed live against a src/parser/-scoped fixture before fixing:
+# rc=0 with no permissionDecision field whatsoever.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json '\rm src/other/f040a.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F040): a backslash-escaped rm exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F040): backslash-escaped rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f040a.txt" \
+  "hs2 (F040): backslash-escaped rm denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json '"rm" src/other/f040b.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F040): a double-quoted rm exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F040): double-quoted rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f040b.txt" \
+  "hs2 (F040): double-quoted rm denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "'rm' src/other/f040c.txt")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F040): a single-quoted rm exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F040): single-quoted rm denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f040c.txt" \
+  "hs2 (F040): single-quoted rm denial names the real target"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json '\cp src/parser/a.txt src/other/f040d.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F040): a backslash-escaped cp exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F040): backslash-escaped cp denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f040d.txt" \
+  "hs2 (F040): backslash-escaped cp denial names the real target"
+
+# sed_inplace_targets() has the identical bug in its OWN internal command-
+# name guard (tokens[0] != "sed"), a separate call site from write_targets()'s
+# dispatch -- both need the fix, confirmed by inspecting sed_inplace_targets()
+# directly (F040).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json '"sed" -i "s/a/b/" src/other/f040e.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F040): a double-quoted sed -i exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F040): double-quoted sed -i denial uses JSON deny form"
+assert_contains "$OUT" "src/other/f040e.txt" \
+  "hs2 (F040): double-quoted sed -i denial names the real target"
+
+# No new false positive: a backslash-escaped rm on an IN-SCOPE target must
+# still be allowed.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json '\rm src/parser/f040f.txt')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F040): a backslash-escaped rm on an in-scope target passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F040): in-scope backslash-escaped rm has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
