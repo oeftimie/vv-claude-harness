@@ -3822,6 +3822,49 @@ assert_contains "$OUT" "Fix with: git config user.name" \
 assert_contains "$OUT" "impostor@example.com" \
   "hg: email-mismatch message names the current (wrong) email"
 
+# F050: the COMMAND extraction had the identical raw-lone-surrogate fail-
+# open F043 fixed in enforce-scope.sh.template -- a raw lone UTF-16
+# surrogate arriving directly in the input JSON parses fine but crashes the
+# extraction script's own print() with UnicodeEncodeError, and the old
+# single 2>/dev/null swallowed that, leaving COMMAND empty so the
+# push/pull/clone/fetch grep never matched regardless of the real command,
+# silently skipping this hook's identity check entirely.
+SURROGATE_PUSH_JSON='{"tool_input":{"command":"git push origin main\ud800"}}'
+OUT=$(run_hook "$DIR_HG" verify-git-identity.sh "$SURROGATE_PUSH_JSON")
+RC=$?
+assert_rc2 "$RC" "hg (F050): a raw surrogate in command is blocked, not silently allowed"
+assert_contains "$OUT" "could not be safely extracted" \
+  "hg (F050): surrogate-in-command denial states extraction failure"
+
+# No regression: this hook's own documented fail-open contract for a
+# genuinely unparseable tool-input document must be unchanged.
+OUT=$(run_hook "$DIR_HG" verify-git-identity.sh '{not valid json at all')
+RC=$?
+assert_rc0 "$RC" "hg (F050): genuinely unparseable JSON still exits 0 (stays fail-open)"
+
+# No new false positive: when NO identity is configured at all (this
+# hook's OWN existing fail-open contract), a surrogate-bearing command
+# must still be allowed -- the extraction-failure block only applies once
+# there is a real identity to protect.
+DIR_HG_NOIDENT="$WORK/ht-identity-none"
+make_fixture "$DIR_HG_NOIDENT"
+install_hooks "$DIR_HG_NOIDENT"
+python3 - "$DIR_HG_NOIDENT/.harness/harness.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+data.pop("git_identity", None)
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_hook "$DIR_HG_NOIDENT" verify-git-identity.sh "$SURROGATE_PUSH_JSON")
+RC=$?
+assert_rc0 "$RC" "hg (F050): no identity configured + surrogate command still allows, rc 0"
+
 DIR_HR="$WORK/ht-remaining"
 make_fixture "$DIR_HR"
 install_hooks "$DIR_HR"
@@ -3972,6 +4015,68 @@ else
   fail "ht: features.json changed on an untargeted rejection"
 fi
 assert_contains "$OUT" "no feature_id" "ht: untargeted rejection notes the missing feature_id"
+
+# F050: the FEATURE_ID extraction had the identical raw-lone-surrogate
+# fail-open F043 fixed in enforce-scope.sh.template. Unlike enforce-scope.sh
+# and commit-gate.sh, a crash here does NOT gain new blocking power (this
+# hook's own documented posture is fail-open/best-effort for the
+# correction_cycles bookkeeping) -- it's applied for consistency and so a
+# crash-during-extraction is distinguishable, via its own stderr note, from
+# a genuinely absent feature_id.
+DIR_HQ3S="$WORK/ht-quality-surrogate-featureid"
+make_fixture "$DIR_HQ3S"
+install_hooks "$DIR_HQ3S"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ3S/.harness/init.sh"
+SUM_BEFORE=$(cksum < "$DIR_HQ3S/.harness/features.json")
+OUT=$(run_hook "$DIR_HQ3S" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F003\ud800"}}}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht (F050): a surrogate-bearing feature_id still rejects (smoke test failed), exits 2"
+SUM_AFTER=$(cksum < "$DIR_HQ3S/.harness/features.json")
+if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
+  pass "ht (F050): features.json is byte-identical after a surrogate-feature_id rejection"
+else
+  fail "ht (F050): features.json changed after a surrogate-feature_id rejection"
+fi
+assert_contains "$OUT" "could not be safely extracted" \
+  "ht (F050): surrogate-feature_id rejection states extraction failure specifically"
+
+# No regression: a genuinely valid feature_id must still be picked up and
+# used for the correction_cycles bookkeeping exactly as before.
+DIR_HQ3V="$WORK/ht-quality-valid-featureid"
+make_fixture "$DIR_HQ3V"
+install_hooks "$DIR_HQ3V"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ3V/.harness/init.sh"
+python3 - "$DIR_HQ3V/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["status"] = "in-progress"
+        feature["correction_cycles"] = 0
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_hook "$DIR_HQ3V" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc2 "$RC" "ht (F050): a valid feature_id still rejects (smoke test failed), exits 2"
+F003_CYCLES=$(python3 -c "
+import json
+data = json.load(open('$DIR_HQ3V/.harness/features.json'))
+for f in data['features']:
+    if f['id'] == 'F003':
+        print(f['correction_cycles'])
+")
+if [ "$F003_CYCLES" = "1" ]; then
+  pass "ht (F050): a valid feature_id still increments correction_cycles as before"
+else
+  fail "ht (F050): valid feature_id's correction_cycles is $F003_CYCLES, expected 1"
+fi
 
 DIR_HQ4="$WORK/ht-quality-stale-tmp"
 make_fixture "$DIR_HQ4"
@@ -5203,6 +5308,36 @@ assert_contains "$CG_STDERR_CONTENT" "UnicodeDecodeError" \
   "cg: scanning exception logs the exception type name"
 assert_not_contains "$CG_STDERR_CONTENT" "invalid utf8 bytes" \
   "cg: scanning exception does not leak line content to stderr"
+
+# F050: the COMMAND extraction near the top of this hook had the identical
+# raw-lone-surrogate fail-open F043 fixed in enforce-scope.sh.template's own
+# FILE_PATH/COMMAND extraction. A raw lone UTF-16 surrogate arriving
+# directly in the input JSON is perfectly valid JSON -- json.load() decodes
+# it with no error -- but crashes the final print(command) with
+# UnicodeEncodeError once stdout isn't a tty. Before this fix, the single
+# 2>/dev/null on that command substitution swallowed the traceback, COMMAND
+# came back empty, and main()'s own "if not any(sc == 'commit' ...): return"
+# treated an empty command as not a commit segment at all -- silently
+# allowing the exact compound-stage-and-commit AND secret-scan bypass this
+# gate exists to close.
+DIR_CG_SURROGATE="$WORK/commit-gate-surrogate"
+make_fixture "$DIR_CG_SURROGATE"
+install_hooks "$DIR_CG_SURROGATE"
+CG_SURROGATE_JSON='{"tool_input":{"command":"git commit -a -m wip\ud800"}}'
+OUT=$(run_hook "$DIR_CG_SURROGATE" commit-gate.sh "$CG_SURROGATE_JSON")
+RC=$?
+assert_rc0 "$RC" "cg (F050): a raw surrogate in command exits 0 (JSON deny), not silently allowed"
+assert_deny_json "$OUT" "cg (F050): surrogate-in-command denial uses JSON deny form"
+assert_contains "$OUT" "could not be safely extracted" \
+  "cg (F050): surrogate-in-command denial states extraction failure"
+
+# No regression: this hook's own documented fail-open contract for a
+# genuinely unparseable tool-input document must be unchanged.
+OUT=$(run_hook "$DIR_CG_SURROGATE" commit-gate.sh '{not valid json at all')
+RC=$?
+assert_rc0 "$RC" "cg (F050): genuinely unparseable JSON still exits 0 (stays fail-open)"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg (F050): unparseable JSON has no deny fields (unchanged environment-failure contract)"
 
 # Non-git-commit commands must be a pure no-op (never denied, never scanned).
 DIR_CG_NOOP="$WORK/commit-gate-noop"
