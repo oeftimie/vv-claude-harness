@@ -219,8 +219,13 @@ if [ -n "$FILE_PATH" ]; then
         # the hooks, which a teammate explicitly scoped to .claude/hooks/ can be
         # legitimately assigned to modify (this repo's own sweep does exactly that
         # routinely). Protecting only the scope-definition file, not the whole
-        # .claude/ directory or the hooks, is the narrowest fix that closes the
-        # self-widening hole without blocking real hook-development work (F060).
+        # .claude/ directory or the hooks, closes the MOST DIRECT self-widening
+        # route without blocking real hook-development work -- two others remain
+        # deliberately open: a teammate scoped to .claude/ can still rewrite
+        # .claude/hooks/enforce-scope.sh itself, or edit .claude/settings.json to
+        # remove the hook wiring outright, disarming enforcement entirely. Both
+        # residuals are accepted for the same reason (a teammate can be
+        # legitimately assigned that scope), not fixed here (F060).
         .claude/teammate-scope.txt)
             deny_json "teammate-scope.txt is lead-owned; report via SendMessage instead. $ANNOTATION"
             ;;
