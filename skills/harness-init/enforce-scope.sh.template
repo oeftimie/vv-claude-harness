@@ -667,6 +667,26 @@ def redirect_targets(segment):
 
 TARGET_DIRECTORY_FLAGS = ("-t", "--target-directory")
 
+# The only other cp/mv options (beyond -t/--target-directory, handled separately
+# since they name the destination rather than merely consuming a value) that take
+# a MANDATORY value as a SEPARATE token when not attached via "=" -- confirmed
+# against real GNU cp/mv 9.11: `cp --suffix .bak a b`, `cp -S .bak a b`, `cp
+# --no-preserve mode a b`, and `cp --sparse always a b` all genuinely consume the
+# following token as the flag's own value (the command succeeds using only the
+# TWO remaining flagless arguments as source/dest); `cp --update all a b`, `cp
+# --context x a b`, `cp --preserve mode a b`, `cp --backup numbered a b`, and `cp
+# --reflink auto a b` do NOT (each errors "cannot stat" on the following token,
+# proving it was left as an ordinary flagless argument, never consumed) -- the
+# distinguishing factor is GNU getopt_long's own optional-vs-mandatory-argument
+# rule: every one of the non-consuming flags takes its value ONLY via an
+# attached "=value" ("[=X]" in --help), and GNU getopt_long can never treat a
+# separate following token as an optional argument's value (it would be
+# ambiguous with the next real operand), while these three take a value that is
+# genuinely mandatory ("=X" with no brackets in --help), so a bare separate
+# token is unambiguously theirs. -S is --suffix's short form; --no-preserve and
+# --sparse have no short form.
+CP_MV_VALUE_ONLY_LONG = ("--suffix", "--no-preserve", "--sparse")
+
 
 def _flag_view(tok):
     # Unquoted view of a token for FLAG RECOGNITION only (cp_mv_targets()/
@@ -792,10 +812,19 @@ def cp_mv_targets(tokens):
     # and DIR is the sole write target -- an earlier version didn't look for
     # any of these forms at all, so an out-of-scope -t destination was never
     # checked (found by adversarial review of PR #42/F023, reported as
-    # F024). Clustered short flags (`-rt DIR`, -r and -t combined) are not
-    # recognized, a documented residual (see header). The scan stops at a
-    # literal "--" (end of flag parsing): without this, a real filename that
-    # happens to start with "-t" after "--" (e.g. `mv -- -t.txt dest.txt`)
+    # F024). Clustered short flags (`-rt DIR`, -r and -t combined; likewise
+    # `-rS VALUE`, -r and -S combined, since F056 gave -S the same
+    # value-consuming recognition as -t) are not recognized, a documented
+    # residual (see header) -- confirmed against real GNU cp that `cp
+    # src/parser/a.txt src/other/d -rS src/parser/x` still writes to
+    # src/other/d (the real destination) while this function, both before
+    # and after F056, returns the wrong token (src/parser/x) since neither
+    # -t nor -S is recognized once clustered with another short flag. F056
+    # narrows this residual's reach (bare -S is now handled) without closing
+    # it for the clustered form, identically to the pre-existing -rt gap.
+    # The scan stops at a literal "--" (end of flag parsing): without this, a
+    # real filename that happens to start with "-t" after "--" (e.g. `mv --
+    # -t.txt dest.txt`)
     # was misread as the -t flag itself, string-sliced into a bogus target
     # ".txt", and the REAL destination (dest.txt, via the last_flagless_token
     # fallback, never reached because this loop already returned) went
@@ -831,22 +860,63 @@ def cp_mv_targets(tokens):
     # of them was wrongly ALLOWED before this (F048, discovered alongside
     # F041's identical gap in sed_inplace_targets(), filed separately since
     # it's a different function with its own flag set and call sites).
-    for i, tok in enumerate(tokens):
+    #
+    # Real GNU cp/mv PERMUTE argv: a value-consuming option is free to appear
+    # AFTER both operands, and it still consumes the token immediately
+    # following it as ITS OWN value, never as a new flagless operand -- this
+    # function used to walk tokens with a plain enumerate() and no notion of
+    # "this flag consumes the next token", so `cp src other-real-dest --suffix
+    # not-the-dest` fell through to last_flagless_token() on the UNFILTERED
+    # token list, which returned "not-the-dest" (--suffix's own value, an
+    # ordinary-looking path) as the destination while the REAL destination
+    # (other-real-dest) was never checked at all (confirmed against real GNU
+    # cp 9.11; identically reachable via -S, --no-preserve, and --sparse,
+    # CP_MV_VALUE_ONLY_LONG above) (F056, discovered by review-pr82-f048 while
+    # verifying F048 didn't introduce or worsen it -- confirmed present
+    # identically on main). Fixed by switching to an explicit index-managed
+    # while loop (mirroring sed_inplace_targets()'s own token-walking style)
+    # that skips BOTH the flag token and its consumed value when building the
+    # token list handed to last_flagless_token(), so a value that merely looks
+    # like a flagless path is never treated as one -- consuming the value via
+    # an index skip, not a filter pass afterward, also matters for a value
+    # that itself looks like a FLAG (e.g. `cp --suffix -t src dest`, where
+    # "-t" is the literal suffix, not a target-directory flag): confirmed
+    # against real GNU cp that the token immediately after a value-consuming
+    # flag is unconditionally that flag's value, never re-parsed as a new
+    # flag, matching how a manual index skip (i += 2, never re-visiting the
+    # skipped index) behaves, unlike a filter-after-the-fact approach would if
+    # it left the main scanning loop free to re-inspect that same token.
+    remaining = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
         view = _flag_view(tok)
         if view == "--":
+            remaining.extend(tokens[i:])
             break
         if view in TARGET_DIRECTORY_FLAGS and i + 1 < len(tokens):
             return [tokens[i + 1]]
         if view.startswith("--"):
             flag_name = view.split("=", 1)[0]
-            if _resolve_cp_mv_long_flag(flag_name) == "--target-directory":
+            resolved = _resolve_cp_mv_long_flag(flag_name)
+            if resolved == "--target-directory":
                 if "=" in view:
                     return [_attached_value_raw(tok, len(flag_name) + 1)]
                 if i + 1 < len(tokens):
                     return [tokens[i + 1]]
+            elif resolved in CP_MV_VALUE_ONLY_LONG and "=" not in view and i + 1 < len(tokens):
+                remaining.append(tok)
+                i += 2
+                continue
+        elif view == "-S" and i + 1 < len(tokens):
+            remaining.append(tok)
+            i += 2
+            continue
         elif view.startswith("-t") and len(view) > 2:
             return [_attached_value_raw(tok, 2)]
-    last = last_flagless_token(tokens)
+        remaining.append(tok)
+        i += 1
+    last = last_flagless_token(remaining)
     return [last] if last else []
 
 
