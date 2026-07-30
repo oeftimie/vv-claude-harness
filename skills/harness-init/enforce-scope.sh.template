@@ -615,6 +615,33 @@ def cp_mv_targets(tokens):
 
 SED_SCRIPT_VALUE_FLAGS = ("-e", "-f", "--expression", "--file")
 
+# Matches a short-flag cluster ending in "i" (F037): both GNU's and BSD/
+# macOS's own argument-less short flags may precede "i" in the same token
+# (`-ri`, `-ni`, `-Ei`, `-nsi`, ... on GNU; `-ai.bak`, `-Hi.bak`, `-ali.bak`
+# on BSD/macOS's own /usr/bin/sed, confirmed against it directly -- this
+# repo's own stated platform, and this same function already accommodates
+# a BSD idiom elsewhere, the `-i ''` empty-suffix skip below). "e"/"f" are
+# excluded on both flavors since they take their OWN argument and consume
+# the REST of the token once encountered, so "-fi" is -f's value "i" (a
+# file literally named "i"), never -f combined with -i (confirmed against
+# real GNU sed: `sed -fi file` prints to stdout, unmodified). "l" is a
+# genuine, irreconcilable conflict between the two flavors and included
+# here as a deliberate choice, not an oversight: BSD's `-l` takes no
+# argument (line-buffered output; confirmed via `sed -li.bak ...`
+# genuinely in-place edits), but GNU's `-l N` takes a MANDATORY numeric
+# one (confirmed via `gsed -li file`: prints to stdout, unmodified -- "i"
+# is consumed as -l's line-length value, not a flag). Including "l"
+# closes the real BSD fail-open at the cost of over-denying an unusual
+# GNU combination (`sed -li... ` intending -l's own value, not -i) --
+# accepted, same class as this hook's other documented safe-direction
+# residuals, since a fail-open is worse than an over-caution and BSD/macOS
+# is the platform this repo itself runs on. "a"/"H" (BSD-only, confirmed
+# via `sed -ai.bak`/`sed -Hi.bak`) cost nothing on GNU either way: real
+# GNU sed rejects them outright as invalid options, so a command using
+# them can never reach GNU's own in-place logic regardless of what this
+# hook decides (found by adversarial review of PR #65, round 1).
+IN_PLACE_CLUSTER_PATTERN = re.compile(r"^-[nrEsuzalH]*i")
+
 
 def _separator_index(args):
     # Returns the index of the first literal "--" that acts as a REAL
@@ -718,20 +745,53 @@ def sed_inplace_targets(tokens):
     # an unquoted one, and leaving it raw while flags were view-aware
     # silently swallowed the real destination that follows (found by
     # adversarial review of PR #59, F035).
+    # In-place presence used to recognize only a BARE "-i", an attached
+    # short-flag suffix ("-i" as a literal prefix, e.g. "-i.bak"), or an
+    # EXACT "--in-place" -- missing two real, ordinary invocation shapes
+    # (F037): CLUSTERED short flags where -i is not first in the token
+    # (`sed -ri 's/a/b/' file`, `sed -ni 's/a/b/p' file`), and the attached
+    # long-form suffix `--in-place=.bak`. Both are more reachable in
+    # ordinary usage than anything F029 fixed (no unusual quoting or "--"
+    # needed, just an everyday flag-combining habit). See
+    # IN_PLACE_CLUSTER_PATTERN's own comment above for exactly which short
+    # flags may precede "i" in a cluster and why (a GNU/BSD flavor
+    # difference this repo's own platform makes relevant, not an
+    # arbitrary choice).
     if not tokens or tokens[0] != "sed":
         return []
     args = tokens[1:]
     pre_separator_args = args[: _separator_index(args)]
+    # The two presence-checking any() guards below only scan FLAG
+    # positions, not positions consumed as a preceding -e/-f/--expression/
+    # --file's own VALUE -- mirrors the main token-walking loop's own skip
+    # logic further down, so a value that merely LOOKS like a flag can't
+    # be misread as one. Without this, `sed -f -i.bak file` (a real file
+    # named "-i.bak" used as -f's own script-file argument, confirmed
+    # against real gsed: prints to stdout, unmodified, no in-place edit
+    # happens at all) was wrongly treated as specifying -i, over-denying
+    # an ordinary read command that writes nothing (found by adversarial
+    # review of PR #52, round 4; folded into this fix per that review's
+    # own note).
+    flag_positions = []
+    fi = 0
+    while fi < len(pre_separator_args):
+        flag_positions.append(fi)
+        if _flag_view(pre_separator_args[fi]) in SED_SCRIPT_VALUE_FLAGS:
+            fi += 2
+        else:
+            fi += 1
     if not any(
-        _flag_view(t) == "-i" or _flag_view(t).startswith("-i") or _flag_view(t) == "--in-place"
-        for t in pre_separator_args
+        IN_PLACE_CLUSTER_PATTERN.match(_flag_view(pre_separator_args[idx]))
+        or _flag_view(pre_separator_args[idx]) == "--in-place"
+        or _flag_view(pre_separator_args[idx]).startswith("--in-place=")
+        for idx in flag_positions
     ):
         return []
     has_explicit_script = any(
-        _flag_view(t) in SED_SCRIPT_VALUE_FLAGS
-        or _flag_view(t).startswith("--expression=")
-        or _flag_view(t).startswith("--file=")
-        for t in pre_separator_args
+        _flag_view(pre_separator_args[idx]) in SED_SCRIPT_VALUE_FLAGS
+        or _flag_view(pre_separator_args[idx]).startswith("--expression=")
+        or _flag_view(pre_separator_args[idx]).startswith("--file=")
+        for idx in flag_positions
     )
     targets = []
     consumed_implicit_script = has_explicit_script
