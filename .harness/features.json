@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 43,
+  "total_features": 45,
   "passing": 31,
   "features": [
     {
@@ -1294,6 +1294,48 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F038",
+      "spec": null
+    },
+    {
+      "id": "F044",
+      "description": "skills/harness-init/enforce-scope.sh.template's command-name recognition (write_targets()'s cp/mv/tee/rm dispatch, sed_inplace_targets()'s own sed-name guard) fully closed F040's quoting/backslash-escaping gap, but command-name INDIRECTION is a separate, still-open bypass on the same call sites: `/bin/rm`, `./rm`, `sudo rm`, `env rm`, `command rm`, `xargs rm`, and `FOO=1 rm` are all wrongly ALLOWED (no target extracted at all), since none of these tokens equals the bare command-name strings the dispatch compares against, even after _flag_view() normalization. CONFIRMED live (F040 PR #69 review): `FOO=1 rm src/other/h.txt` really deletes the out-of-scope file in real bash, and the hook allows it silently on both main (pre-F040) and the F040 branch (post-fix) alike -- this bug is pre-existing and outside F040's scope, not a regression it introduced. Arguably wider than F040 itself, since it defeats the SAME extractors via a completely different evasion class (indirection rather than quoting). Precedent for a fix already exists in this repo: skills/harness-init/commit-gate.sh.template's is_git_token() handles the path form via `os.path.basename(tok.lstrip(\"(\\\\\"))`; the env-var-prefix and wrapper-command forms (sudo/env/command/xargs) would need their own handling.",
+      "priority": 28,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #69 (F040), while sweeping for other command-recognition bypasses in the same functions F040 just fixed. Confirmed live pre- and post-F040 (pre-existing, not a regression): /bin/rm, ./rm, sudo rm, env rm, command rm, xargs rm, FOO=1 rm all silently bypass write_targets()'s cp/mv/tee/rm recognition entirely.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F040",
+      "spec": null
+    },
+    {
+      "id": "F045",
+      "description": "skills/harness-init/commit-gate.sh.template's is_git_token() recognizes `\\git`, `(git`, and path forms like `/usr/bin/git`, but NOT a quoted command name (`\"git\"` or `'git'`) -- the mirror-image of the gap F040 just closed in enforce-scope.sh's command-name recognition. CONFIRMED at the function level: extracting is_git_token() and unit-testing it directly shows `\"git\"` -> False and `'git'` -> False (should be True). NOT YET CONFIRMED end-to-end through the real hook: a plain `git commit -m x` (the simplest possible input) did not trigger the gate at all in the reviewer's fixture during the F040 PR #69 review, so reachability of this specific quoted-command-name gap through the actual commit-gate.sh entry point is unverified -- flagged as likely, not confirmed, pending a dedicated fixture that first establishes a baseline case where the gate demonstrably fires.",
+      "priority": 29,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/commit-gate.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered by adversarial review of PR #69 (F040), as a sibling-file check for the same command-name-recognition bug class F040 just fixed in enforce-scope.sh. Reviewer explicitly could not confirm end-to-end reachability (the gate itself did not fire on a plain `git commit -m x` in their fixture) -- first task for whoever picks this up is establishing why the gate isn't firing at all before assessing the quoted-name gap's real severity.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F040",
       "spec": null
     }
   ]
