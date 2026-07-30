@@ -44,9 +44,17 @@
 #      project whose own test suite deliberately stages secret-SHAPED fixture
 #      data to test a scanner like this one (F054, discovered live: this
 #      repo's own test/run-tests.sh could no longer be committed once this
-#      hook was wired onto the Bash matcher). harness.json is lead-owned
-#      (enforce-scope.sh denies a teammate editing it directly), so this
-#      exemption list can't be self-granted by a scoped teammate. Denial names the
+#      hook was wired onto the Bash matcher). harness.json is protected only
+#      by the ORDINARY scope check (unlike features.json/context_summary.md/
+#      claude-progress.txt, which enforce-scope.sh's own LEAD_OWNED set
+#      denies regardless of scope) -- a teammate scoped to `.harness/` or to
+#      harness.json specifically can edit this exemption list itself (found
+#      by adversarial review of PR #87; a stronger, LEAD_OWNED guarantee is
+#      tracked separately, since making it true is a real behavior change
+#      beyond this feature's own remit). Exempting a path wholesale means a
+#      REAL secret that later lands in that same file is also no longer
+#      caught -- an accepted cost for a project's own known, synthetic test
+#      fixtures, not a residual to close. Denial names the
 #      finding class, file, and line number -- NEVER the matched value or line
 #      content, to avoid writing a candidate secret into the transcript or hook
 #      logs. Pattern set is tuned by editing this copied-then-project-owned file
@@ -916,8 +924,13 @@ def secret_scan_exempt_paths(project_root):
     # from the secret scan -- for a project whose own test suite must stage
     # secret-SHAPED synthetic fixture data to test a scanner like this one
     # (F054). Mirrors style_gate_enabled()'s own read-harness.json-or-
-    # default-off pattern. harness.json is lead-owned, so a scoped teammate
-    # can't grant itself an exemption this way.
+    # default-off pattern. NOT a hard security boundary: harness.json is
+    # protected only by the ordinary scope check, not enforce-scope.sh's own
+    # LEAD_OWNED set, so a teammate scoped to `.harness/` (or to harness.json
+    # itself) can add its own path here (found by adversarial review of
+    # PR #87). This exemption is a tuning knob for a project's own known,
+    # synthetic test fixtures, not a defense against a teammate who already
+    # has write access to harness.json.
     path = os.path.join(project_root, ".harness", "harness.json")
     try:
         with open(path) as fh:
