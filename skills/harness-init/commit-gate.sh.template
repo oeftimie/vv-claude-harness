@@ -133,12 +133,6 @@ INPUT=$(cat)
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 
-COMMAND=$(echo "$INPUT" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-print(data.get('tool_input', {}).get('command', ''))
-" 2>/dev/null)
-
 deny_json() {
     python3 - "$1" <<'PYEOF'
 import json
@@ -154,6 +148,44 @@ print(json.dumps({
 PYEOF
     exit 0
 }
+
+# The JSON parse itself is in its OWN try/except, exiting 2 on failure: a
+# genuinely unparseable tool-input document is this hook's own documented
+# fail-open contract (see the header). Everything AFTER a successful
+# parse -- extracting the field and printing it -- is a SEPARATE try/except
+# that exits 1 instead (F050, the identical two-stage split F043 already
+# wrote and ground-truthed for enforce-scope.sh.template): a raw lone
+# UTF-16 surrogate (0xD800-0xDFFF) arriving directly in the input JSON is
+# perfectly valid JSON -- json.load() decodes it into a real Python str
+# with no error -- but crashes the FINAL print(command) with
+# UnicodeEncodeError once stdout isn't a tty. Before this fix, the single
+# `2>/dev/null` on this whole command substitution swallowed that
+# traceback, COMMAND came back empty, and main()'s own `if not any(sc ==
+# "commit" ...): return` treated an empty command as "not a commit
+# segment at all" -- silently allowing a real `git commit -a -m wip` with
+# a trailing surrogate straight past compound-stage-and-commit AND the
+# secret scan both (confirmed live: the control command correctly denies,
+# the identical command with a trailing surrogate exits 0 with completely
+# empty output). Two distinct exit codes (not "any nonzero") are required:
+# an uncaught exception's default exit code is 1 regardless of which
+# try/except raised it, so a single except-and-exit(1) around BOTH stages
+# would make a genuinely unparseable document fail closed too, silently
+# reversing this hook's own documented fail-open contract.
+COMMAND=$(echo "$INPUT" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(2)
+try:
+    print(data.get('tool_input', {}).get('command', ''))
+except Exception:
+    sys.exit(1)
+" 2>/dev/null)
+COMMAND_RC=$?
+if [ "$COMMAND_RC" -eq 1 ]; then
+    deny_json "command could not be safely extracted from tool input (best-effort, pattern-based check; treating as a compound-stage-and-commit risk out of caution)."
+fi
 
 DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" <<'PYEOF'
 import fnmatch

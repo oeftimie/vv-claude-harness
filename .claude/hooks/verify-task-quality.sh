@@ -25,21 +25,51 @@ cd "$PROJECT_ROOT"
 # Read hook input from stdin
 INPUT=$(cat)
 
-# Try to extract feature ID from task metadata (if TaskCreate used metadata.feature_id)
+# Try to extract feature ID from task metadata (if TaskCreate used
+# metadata.feature_id). The JSON parse is in its OWN try/except (exit 2 on
+# failure); extracting/printing the field is a SEPARATE try/except that
+# exits 1 instead (F050, the identical two-stage split F043 wrote for
+# enforce-scope.sh.template) -- a raw lone UTF-16 surrogate in the input
+# JSON parses fine but crashes the final print() with UnicodeEncodeError,
+# and the old single `2>/dev/null || echo ""` swallowed that the same way
+# it swallows a genuinely absent feature_id. Unlike enforce-scope.sh.template
+# and commit-gate.sh.template, a crash here does NOT gain any new blocking
+# power: this hook's own documented posture is fail-open/best-effort for the
+# correction_cycles bookkeeping (a missing feature_id already just skips the
+# update, "noted on stderr" below, never changes the accept/reject verdict),
+# and the coverage gate itself is separately self-reported and already
+# trivially skippable via a bogus or omitted feature_id -- closing the
+# surrogate specifically here would be a false sense of soundness, not a
+# real fix, without addressing that broader gap too (out of scope for this
+# feature). The two-stage split is applied anyway for consistency and so a
+# crash-during-extraction is distinguishable (via its own stderr note) from
+# a genuinely absent feature_id, rather than because it changes the gate.
 FEATURE_ID=$(echo "$INPUT" | python3 -c "
 import json, sys
-data = json.load(sys.stdin)
-# Check task metadata first, then fall back to parsing task subject for 'FXXX:'
-metadata = data.get('task', {}).get('metadata', {})
-feature_id = metadata.get('feature_id', '')
-if not feature_id:
-    subject = data.get('task', {}).get('subject', '')
-    if ':' in subject:
-        candidate = subject.split(':')[0].strip()
-        if candidate.startswith('F') and candidate[1:].isdigit():
-            feature_id = candidate
-print(feature_id)
-" 2>/dev/null || echo "")
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(2)
+try:
+    # Check task metadata first, then fall back to parsing task subject for 'FXXX:'
+    metadata = data.get('task', {}).get('metadata', {})
+    feature_id = metadata.get('feature_id', '')
+    if not feature_id:
+        subject = data.get('task', {}).get('subject', '')
+        if ':' in subject:
+            candidate = subject.split(':')[0].strip()
+            if candidate.startswith('F') and candidate[1:].isdigit():
+                feature_id = candidate
+    print(feature_id)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null) || FEATURE_ID_RC=$?
+FEATURE_ID_RC="${FEATURE_ID_RC:-0}"
+if [ "$FEATURE_ID_RC" -eq 1 ]; then
+    echo "verify-task-quality: feature_id could not be safely extracted from task metadata;" \
+         "skipping the correction_cycles update." >&2
+    FEATURE_ID=""
+fi
 
 if [ ! -f ".harness/init.sh" ]; then
     echo "Task rejected: .harness/init.sh not found. Cannot verify tests pass."
