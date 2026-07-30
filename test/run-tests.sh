@@ -2759,6 +2759,56 @@ assert_rc0 "$RC" "hs2 (F033): an unrecognized \$'...' escape passes through lite
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F033): unrecognized \$'...' escape has no deny fields"
 
+# F038: ANSI_C_ESCAPE_PATTERN decoded \x/\nnn (F033) but not \cX/\u/\U,
+# all real bash $'...' escape forms. A traversal segment spelled with \u or
+# \U would be left as literal, undecoded text (the "unrecognized escape"
+# fallback), so normalize() never sees a real ".." to resolve. Installed
+# bash 5.3.15 via Homebrew to check directly, rather than leaving this
+# "believed added around bash 4.2, unverified" (this repo's own bash 3.2.57
+# does not decode \u/\U at all, confirmed: the literal text passes through
+# unchanged) -- confirmed \u002e and \U0000002e BOTH genuinely decode to
+# "." on bash 5.3.15, a live, not merely theoretical, bypass identical to
+# F033's own on any bash new enough.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/\u002e\u002e/other/x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038): a \u-escaped '..'-traversal inside \$'...' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F038): \u-escaped traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2 (F038): \u-escaped traversal denial names the real, resolved out-of-scope path"
+
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/\U0000002e\U0000002e/other/x.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038): a \U-escaped '..'-traversal inside \$'...' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F038): \U-escaped traversal denial uses JSON deny form"
+assert_contains "$OUT" "src/other/x.txt" \
+  "hs2 (F038): \U-escaped traversal denial names the real, resolved out-of-scope path"
+
+# \cX (control-char) decodes on both bash versions already -- verified
+# using `ord(X.upper()) & 0x1F`, not a naive "XOR 0x40" convention some
+# documentation implies (confirmed empirically: real bash decodes \c? to
+# 0x1F, which XOR-0x40 would wrongly compute as 0x7F). Can only ever
+# produce a non-printable control byte (0x00-0x1F), never "." or "/", so
+# not independently traversal-exploitable -- this pins the decode itself,
+# not a security property: the control bytes survive into the target
+# string but the path stays in-scope (no traversal possible from them).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/\cA\cAtest.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038): a \c-escaped in-scope path passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F038): \c-escaped in-scope path has no deny fields (control bytes aren't traversal)"
+
+# No new false positive: an ordinary \u/\U escape decoding to a harmless
+# in-scope character must still pass cleanly.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json "echo x > \$'src/parser/caf\u0065.txt'")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F038): a \u-escaped ordinary character in an in-scope \$'...' path passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F038): \u-escaped ordinary character has no deny fields"
+
 for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
