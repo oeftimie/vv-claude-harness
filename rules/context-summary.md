@@ -39,7 +39,19 @@ Create once, update continuously.
 <!-- Coordination insights that apply across features — NOT domain-specific.
      Written by the retrospective step at session end. These transfer to new
      projects: harness-init can import them as starting context.
-     Examples: when to use Opus, how to scope work, when plan_approval pays off. -->
+     Examples: when to use Opus, how to scope work, when plan_approval pays off.
+     Each entry carries a disposition marker set by Phase 5.5's promotion pass
+     (see skills/harness-continue/SKILL.md), so a pattern stops being restated
+     verbatim across sessions once it has a place to live:
+       - (promoted-to: X) -- already landed as a rule/hook/schema/agent/skill
+         change; X names it (e.g. "promoted-to: rules/agent-teams-protocol.md
+         Dynamic overrides"). Keep the entry as a one-line historical pointer,
+         not the full original prose.
+       - (backlog) -- filed as a row in .harness/HARNESS_BACKLOG.md, not yet
+         promoted; still worth restating until it lands somewhere durable.
+       - (watching) -- below the promotion score threshold (fewer than 3
+         distinct sessions have re-observed it); noted here so a future
+         session's retrospective can recognize a repeat and bump the score. -->
 - (none yet)
 
 ## Meta-Session [DATE]
@@ -55,6 +67,18 @@ Create once, update continuously.
 ## Closed Work Streams
 <!-- Completed features. Reference only if dependency exists. -->
 - [Feature]: completed [date], see [PR/commit]
+```
+
+Example:
+
+```markdown
+## Meta-Patterns
+- Ground-truthing a reviewer's finding before fixing it caught real bugs
+  every time it was tried this session. (promoted-to: rules/agent-teams-
+  protocol.md's "verify before acting" clause)
+- Opus reviewers occasionally cite a line number one off from the real
+  diff hunk; worth double-checking before treating a citation as ground
+  truth. (watching)
 ```
 
 **Update when:** a decision is made, a pattern is discovered, a gotcha is encountered, a work stream completes, active context shifts, or a session retrospective completes.

@@ -569,3 +569,34 @@
   instruction to keep working through everything from Linear without waiting for
   check-ins.
 - Blockers: none.
+
+## Session 28 - 2026-08-01 (F015/OVI-55: promotion ladder + ablation pass)
+- Feature: F015 - promotion ladder + ablation pass in the Phase 5.5 retrospective
+- Status: complete
+- Documentation/skill-content only, no code. Added two mandatory passes to
+  harness-continue's Phase 5.5: a Promotion pass classifying each Meta-Pattern/
+  corroborated-MLD entry to its smallest durable owner (7-rung ladder:
+  spawn-prompt tweak -> rule file edit -> hook change -> schema field -> agent
+  definition -> plugin skill -> not-yet), and an Ablation pass giving every
+  control that fired this session a retain/revise/remove verdict.
+- New .harness/HARNESS_BACKLOG.md schema (date/observation/proposed
+  owner/evidence pointer/score/status/last_seen). Promotion requires score>=3
+  from distinct sessions; candidates decay to retired after 60 days stale; a
+  hard-capped 15-line "Learned conventions" section is the only permitted
+  always-on promotion target; gap entries get their own row type with a 3+
+  promotion threshold. rules/context-summary.md documents the new Meta-Patterns
+  disposition marker (promoted-to/backlog/watching) with a worked example.
+- P3.1 (corroborated MLD entries) hasn't shipped in this repo -- documented as
+  optional input, skipped gracefully when absent.
+- Self-caught a cross-reference bug before finishing: a "rule below" pointer
+  was wrong (the rule is above, in Step 5a) -- same read-it-back discipline
+  that caught F013's step-ordering bug.
+- Tests: 1400/1400 passing (full_test is the gate; +11 F015 assertions incl.
+  an AC7 "stated exactly once" guard, mutation-tested).
+- AC3's dry-run transcript is documented in the PR description (a classified
+  pattern + an ablation verdict), not committed as a file -- HARNESS_BACKLOG.md
+  is a per-project runtime artifact, not plugin distribution content.
+- Next: F016-F021 (six remaining Linear OVI-44 sub-issues) and F063
+  (discovered_via F013), per Ovidiu's standing instruction to keep working
+  through everything from Linear without waiting for check-ins.
+- Blockers: none.

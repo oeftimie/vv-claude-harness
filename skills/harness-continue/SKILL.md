@@ -383,10 +383,66 @@ Write findings to `## Meta-Patterns` for insights that generalize beyond this se
 
 ```markdown
 ## Meta-Patterns
-- [Insight that applies to future sessions, not just this domain]
+- [Insight that applies to future sessions, not just this domain] (backlog)
 ```
 
-Do NOT write domain-specific decisions here — those go in the Domain sections. Meta-Patterns are coordination insights: when to use Opus, how to scope, when to require plan approval.
+Do NOT write domain-specific decisions here — those go in the Domain sections. Meta-Patterns are coordination insights: when to use Opus, how to scope, when to require plan approval. Each entry carries a disposition marker (`promoted-to: X` | `backlog` | `watching`) at the end of the line; see `${CLAUDE_PLUGIN_ROOT}/rules/context-summary.md` for what each marker means and a worked example. The promotion pass below is what sets and updates these markers.
+
+**Promotion pass (mandatory).** This closes the loop the retrospective used to leave open: a lesson written to `## Meta-Patterns` above stayed prose forever, and no control was ever retired. Classify each Meta-Pattern entry from this session (and each corroborated MLD entry, when P3.1's corroboration marker is present in `.harness/mld/` -- skip this input if that mechanism isn't shipped yet) to its smallest durable owner, using the vv-native promotion ladder, smallest first:
+
+| Rung | What it means | Example |
+|---|---|---|
+| spawn-prompt tweak | Fix the wording of a future teammate spawn prompt | A teammate forgot to verify git identity because the spawn prompt never said to; add the line |
+| rule file edit | Add or tighten a rule in `rules/*.md` | A commit-hygiene lesson gets folded into `agent-teams-protocol.md` |
+| hook change | A mechanical check catches this instead of relying on instructions | `enforce-scope.sh` gains a new denied pattern after a near-miss |
+| schema field | A schema (e.g. `feature.schema.json`) gains a field to track this going forward | `qa_binding` added to catch a claim/proof-type mismatch |
+| agent definition | A teammate or reviewer agent's own `.md` definition changes | `reviewer.md` gains a new review dimension |
+| plugin skill | A whole skill's `SKILL.md` changes structurally | A skill's phase ordering is corrected after a self-contradiction is found |
+| not-yet | Not enough evidence yet to commit to a fix | A one-off oddity, not yet a repeated pattern |
+
+For each classified item, append (or update) a row in `.harness/HARNESS_BACKLOG.md` (schema below) rather than leaving the classification stranded only in Meta-Patterns prose. Set the corresponding Meta-Patterns entry's disposition marker to match: `promoted-to: <owner>` once actually landed, `backlog` while the row exists but isn't yet applied, `watching` while below the promotion threshold.
+
+**Ablation pass (mandatory).** List every control that fired this session -- a hook rejection, a plan-approval gate, a warning -- and judge it:
+- **retain**: it caught something real, or its absence would have let something real through.
+- **revise**: it fired, but too noisely or too narrowly to trust as-is.
+- **remove**: it fired zero times this session, or every time it fired it was pure friction (no real defect behind it).
+
+Append a `retain` / `revise` / `remove` verdict with its reason as a row in `.harness/HARNESS_BACKLOG.md` for anything not simply `retain` -- put the verdict and its reason in `proposed owner` (e.g. `revise (too noisy; narrow the matcher)`), the same column a `gap` row's type goes in, since an ablation row isn't proposing a promotion destination. Removing a control that no longer earns its carrying cost is a healthy, expected outcome of this pass, not a failure to report defensively.
+
+**`.harness/HARNESS_BACKLOG.md`** (lead-owned; create it the first time either pass produces a candidate). One table:
+
+```markdown
+# Harness Backlog
+
+Candidates the Phase 5.5 promotion and ablation passes have surfaced. Not
+auto-applied: a human or a dedicated session executes a row, then marks it
+promoted. Cross-project pattern aggregation is a future extension, not done
+here -- this file is per-project.
+
+| date | observation | proposed owner | evidence pointer | score | status | last_seen |
+|---|---|---|---|---|---|---|
+| 2026-03-23 | Reviewers occasionally cite an off-by-one line number | not-yet | Meta-Session 2026-03-23 | 1 | candidate | 2026-03-23 |
+```
+
+- `score`: count of DISTINCT sessions/episodes that independently produced this same observation. A brand-new row starts at 1.
+- `status`: `candidate` | `promoted` | `retired`.
+- `last_seen`: date of the most recent session that re-observed this pattern.
+
+On a repeat occurrence of the SAME observation in a later session, bump that row's `score` and `last_seen` instead of appending a duplicate row.
+
+**Promotion threshold**: a candidate needs `score >= 3` (three distinct sessions) before it is promoted into an actual rule/hook/schema/agent/skill change. A single-session promotion (`score` still 1) is allowed only with an explicit override reason recorded in the row (for example: "clear regression risk, promoting at score 1 rather than waiting").
+
+**Decay and retirement** (part of the ablation pass): any `candidate` row whose `last_seen` is more than 60 days old gets `status` flipped to `retired`, keeping a one-line reason -- never silently deleted, never moved to a separate archive.
+
+**Gap entries**: when this session's work fit no existing vv role, scope, or skill and had to be improvised, log a `gap`-type row in the same table (`proposed owner` = `gap`, describing what didn't fit). Three or more similar `gap` rows are themselves a promotion candidate for a new agent or skill -- classify that pattern through the normal ladder above.
+
+**Bounded always-on canon**: a promotion that would land in ALWAYS-loaded context (`templates/CLAUDE.md`'s own invariants, or a SessionStart rule pointer) goes into exactly one "Learned conventions" section, hard-capped at 15 lines total. Exceeding the cap requires evicting the lowest-`score` line first, not silently growing past it. Everything else -- anything that isn't needed in every single session -- goes to `context_summary.md`'s Domain sections instead; this cap exists so always-on context stays bounded even as the backlog grows.
+
+**Linear filing alternative**: if `.harness/harness.json` has a `prep` block with a Linear workspace configured, offer to file promotion/ablation candidates as Linear issues instead of appending to `HARNESS_BACKLOG.md` (reuse the same MCP tool-discovery `harness-issue-prep` already does). Never do both for the same candidate.
+
+**Single-session mode**: run the abbreviated ladder per the existing minimum-retrospective rule in Step 5a above -- classification only; the ablation pass is optional.
+
+**First session on a project**: no retrospective history exists yet -- both passes emit "no data, skipping" and stop; never fabricate a classification or an ablation verdict to fill the section.
 
 **MLD telemetry (lead-only, mandatory)**: the lead — never a teammate — writes `.harness/mld/YYYY-MM-DD-<session-id>.md` with `## Mistakes` / `## Learnings` / `## Desires` sections before Phase 5 teardown. Same format and rationale as Step 5a's Session End procedure; see `${CLAUDE_PLUGIN_ROOT}/rules/mld-review.md`.
 

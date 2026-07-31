@@ -548,7 +548,7 @@
       "id": "F015",
       "description": "[OVI-55] P3.2: Promotion ladder + ablation pass in the Phase 5.5 retrospective \u2014 Add two mandatory retrospective passes to harness-continue Phase 5.5: a promotion pass classifying each pattern/MLD entry to its smallest durable owner, and an ablation pass retiring controls that no longer earn their cost, with candidates written to a new .harness/HARNESS_BACKLOG.md. Amendment adds candidate lifecycle (score/status/last_seen), 60-day decay, a capped canon, and gap entries.",
       "priority": 15,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-continue/SKILL.md",
         "rules/context-summary.md",
@@ -560,12 +560,15 @@
         "F003"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-55. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "test_file": "test/run-tests.sh (F015 section)",
+      "coverage": "n/a (shell/python fixture suite, no coverage tool)",
+      "notes": "Linear: OVI-55 (incl. Amendment 1, cross-harness reconciliation). Documentation/skill-content feature, no code -- adds a mandatory Promotion pass (classifies each Meta-Pattern/corroborated-MLD entry to its smallest durable owner via a 7-rung ladder) and Ablation pass (retain/revise/remove verdict on every control that fired this session) to harness-continue Phase 5.5, writing candidates to a new .harness/HARNESS_BACKLOG.md schema (date/observation/proposed owner/evidence pointer/score/status/last_seen). Promotion requires score>=3 from distinct sessions (single-session override allowed with an explicit reason); candidates decay to retired after 60 days stale; a hard-capped 15-line \"Learned conventions\" section is the only permitted always-on promotion target; gap entries (work fitting no existing role/scope/skill) get their own row type with a 3+ promotion threshold. rules/context-summary.md documents the new Meta-Patterns disposition marker (promoted-to/backlog/watching) with a worked example. P3.1 (corroborated MLD entries) has not shipped in this repo yet -- documented as an optional input, skipped gracefully when absent, matching the spec's \"consumes P3.1 entries when present\" (not hard-dependency) framing. AC3's dry-run transcript is in the PR description, not a committed file (HARNESS_BACKLOG.md is a per-project runtime artifact the skill creates when it actually runs, not plugin distribution content -- not created in this repo's own .harness/ as part of implementing the capability).",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Read the full existing Phase 5.5 section end-to-end before editing, to place the two new mandatory passes at the exact point the spec calls for (\"after the existing Meta-Session entry\") without disturbing the existing Meta-Session / Meta-Patterns write-up the spec says to leave alone.",
+        "Mutation-tested the AC7 \"stated exactly once\" guard by duplicating the cap phrase and confirming the count-based check correctly flips from pass to fail."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {
