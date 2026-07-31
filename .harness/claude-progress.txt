@@ -540,3 +540,32 @@
 - Next: F013/OVI-63 (Ovidiu's "go" covered both F012 and F013). F015-F021 remain
   deferred until F013 lands.
 - Blockers: none.
+
+## Session 27 - 2026-08-01 (F013/OVI-63: mechanical stamp for /harness-init)
+- Feature: F013 - mechanical stamp for /harness-init (+ upgrade mode)
+- Status: complete
+- Implemented per the full Linear spec (OVI-63, fetched via get_issue): scripts/stamp.sh
+  emits every framework-fixed file (settings.json rendered from a template, 7 hooks
+  copied byte-verbatim then chmod +x, harness.json/features.json skeletons) from a
+  KEY=VALUE answers file. mode=new aborts on any collision, writing nothing; mode=upgrade
+  refreshes only byte-identical-to-a-fresh-stamp files and skips+reports anything that
+  differs, never silently overwriting a customization.
+- harness-init/SKILL.md Steps 3/3.5/3.6 shrink to calling the stamp (AC1: zero remaining
+  inline "hooks" JSON). Caught and fixed a real step-ordering bug: a build-hook
+  confirmation step was drafted to run physically after the step it needed to precede --
+  folded into the start of Step 3 instead of renumbering every subsequent step (which
+  would have had a real blast radius, since INSTALL.md and harness-doctor's fixes.py both
+  point at "Step 3.6" by number).
+- Tests: 1385/1385 passing on main-bound branch (full_test is the gate; +19 assertions
+  incl. a pre-existing test redirected to the new template file it now checks).
+  Mutation-tested 3 behaviors; the first mutation round exposed 2 weakly-discriminating
+  assertions (fixed with an explicit "says aborted" check and an mtime-unchanged check).
+  Directly verified AC3 (a stamped project passes harness-doctor clean) by hand before
+  encoding it as a test.
+- Considered and declined: wiring harness-doctor's --fix to delegate to stamp.sh (a
+  Dependencies-section consequence noted in the spec, not an acceptance criterion; out
+  of this feature's declared scope).
+- Next: F015-F021 (the seven remaining Linear OVI-44 sub-issues), per Ovidiu's standing
+  instruction to keep working through everything from Linear without waiting for
+  check-ins.
+- Blockers: none.

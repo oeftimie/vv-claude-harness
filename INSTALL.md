@@ -135,8 +135,10 @@ initialized under v3, run without the plugin's install mechanism):
    hook now covers post-compaction recovery, so it is redundant).
 2. Copy the plugin statusline: `cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.sh"
    .claude/hooks/` (ask Claude to run it — the plugin root path is visible in-session).
-3. Add the `statusLine`, `env`, and `permissions` wiring to `.claude/settings.json` per
-   harness-init Step 3.6.
+3. Add the `statusLine`, `env`, and `permissions` wiring to `.claude/settings.json`: see
+   `skills/harness-init/templates/settings.json.tmpl` for the canonical wiring (it is a
+   template, not pasteable JSON -- its `{{PLACEHOLDER}}` spots need substituting), or run
+   `scripts/stamp.sh` with `mode=upgrade` to apply it mechanically.
 4. Append `.harness/SESSION_INCOMPLETE` to `.gitignore`.
 5. Copy the shared state module: `cp "${CLAUDE_PLUGIN_ROOT}/skills/harness-init/harness_state.py.template"
    .claude/hooks/harness_state.py && chmod +x .claude/hooks/harness_state.py` — `verify-task-quality.sh`

@@ -188,7 +188,9 @@ def check_settings(project_dir):
         if not present(settings):
             findings.append(_with_drift(project_dir, ".claude/settings.json", Finding(
                 f".claude/settings.json is missing {label}",
-                "see skills/harness-init/SKILL.md Step 3.6 for the exact block to add",
+                "see skills/harness-init/templates/settings.json.tmpl for the canonical "
+                "wiring (a template, not pasteable JSON), or run scripts/stamp.sh with "
+                "mode=upgrade",
                 fix_id="add_settings_wiring",
             )))
     if "PostCompact" in settings.get("hooks", {}):
