@@ -471,7 +471,7 @@
       "id": "F013",
       "description": "[OVI-63] S3: Mechanical stamp for /harness-init (+ upgrade mode) \u2014 Add scripts/stamp.sh that deterministically emits every framework-fixed file (settings.json from templates, byte-verbatim hooks, harness.json/features.json skeletons, gitignore line) from an answers file with new/upgrade collision handling, moving the 5 inline settings JSON variants into skills/harness-init/templates/ and shrinking harness-init SKILL.md Steps 3/3.5/3.6 to gather-answers-and-stamp.",
       "priority": 13,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "scripts/stamp.sh",
         "skills/harness-init/SKILL.md",
@@ -483,12 +483,16 @@
         "F009"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-63. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation. CROSS-REFERENCE (added 2026-07-25 during F011/OVI-64 prep): F011/OVI-64 (commit-content gate) added its own .claude/settings.json PreToolUse Bash wiring for commit-gate.sh directly to skills/harness-init/SKILL.md Step 3.6 -- not deferred to this feature. When implementing scripts/stamp.sh's move of the 5 inline settings JSON variants into skills/harness-init/templates/, account for the commit-gate.sh entry F011 already added to Step 3.6 -- do not silently duplicate or overwrite it. Also recorded as a Linear comment on OVI-63 (2026-07-25).",
+      "test_file": "test/run-tests.sh (F013 section + ht: settings.json.tmpl check)",
+      "coverage": "n/a (shell/python fixture suite, no coverage tool)",
+      "notes": "Linear: OVI-63. Implemented per the full Linear spec (fetched via get_issue). scripts/stamp.sh emits every framework-fixed file from a KEY=VALUE answers file (project_name, stack, team_mode, mode): .claude/settings.json rendered from templates/settings.json.tmpl (placeholder substitution for the stack-specific PostToolUse block and the team_mode-driven Agent Teams env flag), 7 files copied byte-verbatim then chmod +x (4 gate hooks, harness_state.py, commit-gate.sh, the plugin shared statusline.sh), and harness.json/features.json skeletons rendered from their own .tmpl files. mode=new aborts (writing nothing) on any collision; mode=upgrade refreshes only byte-identical-to-a-fresh-stamp copies and skips+reports anything that differs (never silently overwrites a customization) -- Setlist's unmodified-copies refresh rule. harness-init/SKILL.md Steps 3/3.5/3.6 rewritten to call the stamp instead of embedding JSON (AC1: zero remaining \"hooks\" occurrences); found and fixed a genuine step-ordering bug during implementation -- the build-hook confirmation gate must run BEFORE the stamp, so it was folded into the start of Step 3 rather than left as a separately-numbered step appearing after it. Considered, then declined as out of declared scope: wiring harness-doctor's --fix to delegate to stamp.sh in upgrade mode (the spec's Dependencies section notes this as a future consequence, not an acceptance criterion; skills/harness-doctor/fixes.py is not in this feature's scope list).",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Verified every acceptance criterion by direct execution before writing any test assertions: ran stamp.sh mode=new/upgrade by hand against fixture directories, confirmed collision-abort/refresh/skip behavior, and ran harness-doctor directly against a stamped-plus-context_summary.md project to confirm AC3 (doctor-clean) before encoding any of it as a test.",
+        "Mutation-tested 3 distinct behaviors independently: the collision-abort guard (caught 4 assertions incl. a new mtime-unchanged check added after the first mutation round showed 2 assertions were only weakly discriminating), and the upgrade-mode byte-identical comparison (caught exactly the 2 customization-safety assertions, confirming the most safety-critical property is genuinely tested).",
+        "Fixed a pre-existing test (\"ht: SKILL.md settings block\") that broke because it read inline JSON this feature deliberately removed -- redirected it to read the new templates/settings.json.tmpl, preserving the original test intent (hooks invoked via , not cwd-relative) against its new home."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {

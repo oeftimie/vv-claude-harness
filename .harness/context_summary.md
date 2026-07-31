@@ -7,9 +7,9 @@ This file is referenced in CLAUDE.md and loaded every session.
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped, each through the standard TDD + mutation-test + adversarial-review-to-APPROVE loop. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
 - Freshest arc (F055-F062, prior session, see Meta-Session 2026-07-31 below): the LEAD_OWNED protection family (harness.json, teammate-scope.txt, .harness/mld/) plus TeammateIdle/shutdown coordination fixes (F055, F059) plus one pure-research feature that resolved to documentation instead of code (F061).
 - **Correction, 2026-07-31**: the long-repeated "F012/F013 blocked awaiting Ovidiu's answers" claim (carried across many session handoffs since session 11) was stale, not current. `features.json`'s own `spec` field showed `verdict: "PASS"` for both, sha256(description) matched the stored hash exactly (no drift), and direct Linear queries (`get_issue`, `list_comments`) on OVI-53 and OVI-63 showed zero open-question comment threads. Ovidiu confirmed to proceed once this was surfaced. Lesson: a claim repeated across many handoffs with no fresh evidence is a signal to re-verify, not to re-relay.
-- F012/OVI-53 (portable readiness-stamp signing) shipped this session. Tests: 1355/1355 passing on main (full_test is the gate; +13 F012 assertions). Notable catch: the actual Linear spec text (fetched via `get_issue`, not the terse local `features.json` description mirror) specified a flat, presence-gated `prep.kick_command` -- the first implementation pass had nested it as `prep.runner.kick_command` with a leftover `enabled` flag, caught only by re-checking against the real spec source before committing. Full detail in F012's own `notes`/`approaches_tried`.
-- F013/OVI-63 is next in priority order (Ovidiu confirmed continuing past F012 in the same "go").
-- Deferred, ready to resume after F013: F015-F021 (the seven remaining Linear OVI-44 sub-issues) were deliberately held until the local-bug chain finished. It has.
+- F012/OVI-53 (portable readiness-stamp signing) shipped, merged to main (PR #98). Notable catch: the actual Linear spec text (fetched via `get_issue`, not the terse local `features.json` description mirror) specified a flat, presence-gated `prep.kick_command` -- the first implementation pass had nested it as `prep.runner.kick_command` with a leftover `enabled` flag, caught only by re-checking against the real spec source before committing. Full detail in F012's own `notes`/`approaches_tried`.
+- F013/OVI-63 (mechanical stamp for /harness-init) implemented. Tests: 1385/1385 (full_test is the gate; +19 assertions incl. the pre-existing "ht: settings block" test redirected to the new template file it now checks). `scripts/stamp.sh` emits every framework-fixed file (settings.json, 7 byte-verbatim hooks, harness.json/features.json skeletons) from a KEY=VALUE answers file with new/upgrade collision handling; harness-init/SKILL.md Steps 3/3.5/3.6 shrink to calling it (AC1: zero remaining inline `"hooks"` JSON). Caught and fixed a real step-ordering bug during implementation: a build-hook confirmation step was drafted to run physically after the stamp step it needed to precede, contradicting the file's own "follow steps in order" rule -- folded into the start of Step 3 instead of left as a misordered separate step. Full detail in F013's own `notes`/`approaches_tried`.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F015-F021 (the seven remaining Linear OVI-44 sub-issues) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge) as F012/F013.
 - No other locally-discovered work is queued.
 
 ## Cross-Cutting Concerns
@@ -851,5 +851,59 @@ This file is referenced in CLAUDE.md and loaded every session.
   artifact, not just to a bugfix diff. (3) Ground-truthing a long-repeated
   "blocked" claim before acting on it (see Active Context correction
   above) prevented relaying stale state as if it were current.
+- Plan approval: not applicable -- single-session implementation, no
+  teammates spawned.
+
+## Meta-Session 2026-08-01 (F013/OVI-63: mechanical stamp for /harness-init)
+- Scope accuracy: held the declared scope exactly (scripts/stamp.sh,
+  skills/harness-init/SKILL.md, skills/harness-init/templates/,
+  test/run-tests.sh); zero scope_expansions. Explicitly considered and
+  declined one adjacent change -- wiring harness-doctor's --fix to
+  delegate to stamp.sh in upgrade mode, which the spec's own Dependencies
+  section notes as a future consequence, not an acceptance criterion, and
+  skills/harness-doctor/fixes.py was never in this feature's scope list.
+- Design decisions made without a full spec spelling them out, each
+  recorded as an assumption in F013's own notes rather than silently
+  picked: team_mode drives a real settings.json toggle
+  (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS "0"/"1") rather than being a
+  no-op key, chosen because harness-doctor's SETTINGS_WIRING_CHECKS
+  requires the key to be non-null regardless of value, and because a
+  real toggle is more useful than a decorative one; harness-init's own
+  answers-file-writing instructions hardcode team_mode=teams (preserving
+  the pre-existing always-on behavior) rather than asking a new question,
+  since "Interview/UX changes to harness-init" was explicitly out of
+  scope.
+- A real bug caught only by writing the SKILL.md prose out and reading it
+  top-to-bottom: the "confirm the build hook" step was drafted as its own
+  numbered step placed AFTER the step whose action it needed to precede,
+  directly contradicting this same file's "Follow these steps in order"
+  rule at the top. Folding it into the start of the step it needed to
+  precede, rather than renumbering every subsequent step to reorder
+  them, kept the fix local -- INSTALL.md and harness-doctor's fixes.py
+  both point at "Step 3.6" by number, so renumbering would have had a
+  real blast radius outside this feature's declared scope for a purely
+  cosmetic reason.
+- Model calibration: single-session, no sub-agents spawned for
+  implementation.
+- Discovery lineage: none -- F013 was a pre-existing Linear-tracked
+  feature (OVI-63), not discovered mid-work.
+- Approach patterns: (1) every acceptance criterion was verified by
+  direct hand-execution against real fixture directories BEFORE any test
+  assertion was written for it (mode=new/upgrade collision behavior,
+  harness-doctor run directly against a stamped project) -- the same
+  ground-truth-first discipline applied to this feature's own shipped
+  artifact, not just to a reviewer's finding. (2) Mutation-testing caught
+  a real test-quality gap on the first attempt: the collision-abort
+  mutation initially only failed 1 of 3 related assertions, revealing
+  that 2 "does the abort message list this path" checks were only weakly
+  discriminating (a path substring appearing anywhere in ANY output,
+  including a non-abort success message, would satisfy them) -- fixed by
+  adding an explicit "says aborted" check and an mtime-unchanged check,
+  after which the same mutation correctly failed all 4 related
+  assertions. (3) A pre-existing test broke as a direct, expected
+  consequence of this feature's own change (removing inline settings
+  JSON) -- fixed by redirecting it to the new template file rather than
+  deleting it, preserving the original test's intent against its new
+  home.
 - Plan approval: not applicable -- single-session implementation, no
   teammates spawned.
