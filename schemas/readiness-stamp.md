@@ -52,14 +52,38 @@ pass gets no stamp.
 
 ## HMAC recipe
 
-- Key: macOS Keychain generic password, service `vv-harness-stamp`. One-time setup by the
-  human, never automated:
-  `security add-generic-password -a "$USER" -s vv-harness-stamp -w "$(openssl rand -hex 32)"`
+- **Key resolution chain** (first source that yields a key wins; the mint
+  (`harness-issue-prep`) and any consumer that recomputes the HMAC (an external runner, or
+  `harness-issue-debug`'s `resume` disposition) use the identical chain, in this order):
+  1. macOS Keychain generic password, service `vv-harness-stamp`. macOS-only; absent on
+     Linux/CI and unsupported on Windows (Windows is out of scope for this recipe
+     entirely -- use source 2 or 3 there). One-time setup by the human, never automated:
+     `security add-generic-password -a "$USER" -s vv-harness-stamp -w "$(openssl rand -hex 32)"`
+  2. A file named by the `VV_HARNESS_STAMP_KEY_FILE` environment variable. MUST be mode
+     `0600`; any looser mode is refused outright (not silently accepted), naming the exact
+     `chmod 600` fix rather than falling through to a weaker source. An existing but EMPTY
+     key file is treated as no key from this source (falls through to source 3), not an
+     error -- only a wrong PERMISSION is a hard stop.
+  3. The `VV_HARNESS_STAMP_KEY` environment variable. DISCOURAGED: environment variables
+     leak into child processes and logs more readily than a file or the Keychain.
+     Documented as a last resort for environments where neither of the above is
+     practical (e.g. some CI secret stores that only expose env vars).
+
+  None of the three yields a key -> degrade to local-only mode exactly as today's
+  missing-`prep` path (spec normalized and written back; unstamped).
 - Message: `spec_hash|base_sha|lane|repo` (pipe-joined, exactly that order, UTF-8).
-- Algorithm: HMAC-SHA256, lowercase hex digest.
-- The key is shared between the mint and the consumer on the same machine. Anyone with
-  Linear access but without the key cannot forge readiness; anyone who edits the issue
-  description after stamping breaks `spec_hash` and the stamp dies with it.
+- Algorithm: HMAC-SHA256, lowercase hex digest, computed via python3's stdlib
+  `hmac`/`hashlib`. The `security` binary is used ONLY to fetch the key from Keychain in
+  resolution step 1 above -- never to compute the HMAC itself, on any platform.
+- Key provisioning (for the file or env-var sources): generate a key the same way as the
+  Keychain setup command above, e.g. `openssl rand -hex 32`.
+- The key is shared between the mint and the consumer on the same machine (or, for a
+  Linux/CI consumer where the Keychain source never applies, via whichever of resolution
+  steps 2 or 3 both sides are configured to use). Anyone with Linear access but without
+  the key cannot forge readiness; anyone who edits the issue description after stamping
+  breaks `spec_hash` and the stamp dies with it.
+- Key hygiene: no code path in any of the three resolution steps prints or logs the raw
+  key -- only the derived HMAC ever appears in output or a transcript.
 
 ## Consumer verification rules (what a runner MUST check before acting)
 

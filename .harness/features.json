@@ -432,7 +432,7 @@
       "id": "F012",
       "description": "[OVI-53] P2.3: Portable readiness-stamp signing (Linux/CI parity for the spec gate) \u2014 Make readiness-stamp HMAC signing portable off macOS: implement a secret resolution chain (Keychain, then a 0600 key file, then env var), compute HMAC via python3 stdlib, generalize the runner kick to a configurable prep.kick_command, enforce key hygiene/redaction, and exercise mint+verify against all 6 consumer rules on ubuntu CI.",
       "priority": 12,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "schemas/readiness-stamp.md",
         "skills/harness-issue-prep/SKILL.md",
@@ -445,12 +445,18 @@
         "F003"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-53. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "test_file": "test/run-tests.sh (F012 section)",
+      "coverage": "n/a (shell/python fixture suite, no coverage tool)",
+      "notes": "Linear: OVI-53. Implemented per the full Linear spec (re-fetched via get_issue, not just the local description mirror): a 3-source secret resolution chain (Keychain, then VV_HARNESS_STAMP_KEY_FILE at mode 0600, then discouraged VV_HARNESS_STAMP_KEY), python3-stdlib HMAC computation, and prep.kick_command (flat, presence-gated, no separate enabled flag) replacing the hardcoded launchctl-only Step 8. Deliberately did NOT create a shared scripts/ file for resolve_stamp_key() -- F013/OVI-63 owns introducing the plugin's first standalone script (scripts/stamp.sh); doing so here would preempt that architecture. The snippet is duplicated independently in harness-issue-prep Step 7 and harness-issue-debug's resume-disposition HMAC, matching the pre-existing pattern. Left the pre-existing prep.stamp.keychain_service-documented-but-never-read discrepancy alone (out of scope; F012 spec says the Keychain step is unchanged).",
       "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "scope_expansions": [
+        "INSTALL.md's Optional: spec gate for an external runner section (kickstart_label example, macOS-specific framing) was not in the declared scope list but would have gone stale once Step 8 was generalized -- updated to match the new flat prep.kick_command shape and to note stamp signing now works on Linux/CI."
+      ],
+      "approaches_tried": [
+        "Extracted the ACTUAL Step 7 python snippet from the edited SKILL.md via regex for testing, rather than hand-writing a parallel re-implementation in run-tests.sh -- proves the shipped instructions work, not a derivation that could silently drift from them.",
+        "Ground-truthed the config key shape (prep.kick_command, flat) against the full Linear issue text via get_issue before finalizing, catching and correcting an initial implementation that had nested it as prep.runner.kick_command with a leftover enabled flag -- the local features.json description field is a terse summary, not the authoritative spec text.",
+        "Mutation-tested by reverting the 0600 permission check in the shipped snippet and confirming exactly the 2 permission-related assertions failed (all 11 others stayed green), then restored -- proves the new tests discriminate rather than being vacuously true."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {

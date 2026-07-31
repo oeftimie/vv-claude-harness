@@ -4,10 +4,12 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped, each through the standard TDD + mutation-test + adversarial-review-to-APPROVE loop. Tests: 1342/1342 passing on main (full_test is the gate). Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
-- Freshest arc (F055-F062, this session, see Meta-Session 2026-07-31 below): the LEAD_OWNED protection family (harness.json, teammate-scope.txt, .harness/mld/) plus TeammateIdle/shutdown coordination fixes (F055, F059) plus one pure-research feature that resolved to documentation instead of code (F061).
-- Blocked, unchanged: F012/OVI-53 and F013/OVI-63 both await Ovidiu's answers to open spec-verification questions from an earlier session; no Linear-tracked work possible until he responds.
-- Deferred, ready to resume: F015-F021 (the seven remaining Linear OVI-44 sub-issues) were deliberately held until the local-bug chain finished. It has. Next session should either get F012/F013's answers or start F015 via `harness-issue-prep`.
+- The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped, each through the standard TDD + mutation-test + adversarial-review-to-APPROVE loop. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
+- Freshest arc (F055-F062, prior session, see Meta-Session 2026-07-31 below): the LEAD_OWNED protection family (harness.json, teammate-scope.txt, .harness/mld/) plus TeammateIdle/shutdown coordination fixes (F055, F059) plus one pure-research feature that resolved to documentation instead of code (F061).
+- **Correction, 2026-07-31**: the long-repeated "F012/F013 blocked awaiting Ovidiu's answers" claim (carried across many session handoffs since session 11) was stale, not current. `features.json`'s own `spec` field showed `verdict: "PASS"` for both, sha256(description) matched the stored hash exactly (no drift), and direct Linear queries (`get_issue`, `list_comments`) on OVI-53 and OVI-63 showed zero open-question comment threads. Ovidiu confirmed to proceed once this was surfaced. Lesson: a claim repeated across many handoffs with no fresh evidence is a signal to re-verify, not to re-relay.
+- F012/OVI-53 (portable readiness-stamp signing) shipped this session. Tests: 1355/1355 passing on main (full_test is the gate; +13 F012 assertions). Notable catch: the actual Linear spec text (fetched via `get_issue`, not the terse local `features.json` description mirror) specified a flat, presence-gated `prep.kick_command` -- the first implementation pass had nested it as `prep.runner.kick_command` with a leftover `enabled` flag, caught only by re-checking against the real spec source before committing. Full detail in F012's own `notes`/`approaches_tried`.
+- F013/OVI-63 is next in priority order (Ovidiu confirmed continuing past F012 in the same "go").
+- Deferred, ready to resume after F013: F015-F021 (the seven remaining Linear OVI-44 sub-issues) were deliberately held until the local-bug chain finished. It has.
 - No other locally-discovered work is queued.
 
 ## Cross-Cutting Concerns
@@ -811,3 +813,43 @@ This file is referenced in CLAUDE.md and loaded every session.
   small, single-concern diff.
 - Plan approval: not applicable this session -- no plan-approval-required
   teammates were spawned (all sub-agents were read-only reviewers).
+
+## Meta-Session 2026-07-31 (F012/OVI-53: portable readiness-stamp signing)
+- Scope accuracy: held the declared scope (schemas/readiness-stamp.md,
+  skills/harness-issue-prep/SKILL.md, skills/harness-issue-debug/SKILL.md,
+  test/run-tests.sh) exactly, plus one disclosed scope_expansion:
+  INSTALL.md's kickstart_label example would have gone stale once Step 8
+  was generalized, so it was updated in the same pass rather than left to
+  rot (the class of mistake multiple F055-F062 reviews caught -- "sibling
+  doc left stale after a fix" -- avoided proactively this time instead of
+  caught in review).
+- Spec grounding: the local features.json `description` field is a terse
+  paraphrase, not the authoritative spec. Re-fetching OVI-53 via
+  `get_issue` before finalizing caught that the actual spec text specifies
+  a FLAT, presence-gated `prep.kick_command` -- the first implementation
+  pass had nested it as `prep.runner.kick_command` with a leftover
+  `enabled` flag (a plausible-looking but wrong reading of the terse local
+  summary alone). Lesson for future Linear-sourced features: when a
+  feature's local description is a summary rather than the full spec
+  (signaled by a `notes` field like "Full spec re-verified per-issue"),
+  re-fetch the actual issue before implementing config surface details,
+  not just before the initial spec-verification pass.
+- Model calibration: single-session, no sub-agents spawned for
+  implementation (no team needed for a scope this size); this entry
+  documents implementation only -- PR review (Opus reviewer round(s)) is
+  covered separately once the PR is filed and reviewed.
+- Discovery lineage: none -- F012 was a pre-existing Linear-tracked
+  feature (OVI-53), not discovered mid-work.
+- Approach patterns: (1) test-by-extraction (pulling the actual shipped
+  python snippet out of the SKILL.md via regex, rather than hand-writing a
+  parallel re-implementation in run-tests.sh) proved the real instructions
+  work, not a derivation that could silently drift from them. (2)
+  Mutation-testing the shipped snippet itself (reverting the 0600
+  permission check, confirming exactly the 2 related assertions failed,
+  restoring) proved the new tests discriminate rather than being
+  vacuously true -- the same discipline applied to a spec's own shipped
+  artifact, not just to a bugfix diff. (3) Ground-truthing a long-repeated
+  "blocked" claim before acting on it (see Active Context correction
+  above) prevented relaying stale state as if it were current.
+- Plan approval: not applicable -- single-session implementation, no
+  teammates spawned.

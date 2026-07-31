@@ -32,7 +32,7 @@ No `prep` key at all: announce local-only mode up front (features.json output on
 stamp, no label, no kickstart) and proceed. A partial block (some sub-keys missing) is
 not an error: announce specifically which capabilities are off. `prep.linear` absent
 disables labeling; `prep.stamp` absent disables stamping (Step 7 becomes a no-op);
-`prep.runner` absent or `enabled: false` disables Step 8.
+`prep.kick_command` absent disables Step 8.
 
 ## Step 2: Acquire the spec
 
@@ -182,24 +182,91 @@ git ls-remote <repo_url> HEAD | cut -f1
 If this fails or returns nothing, use the literal string `unknown`; consumers treat drift
 checks as skipped-with-note in that case (`${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`).
 
-Compute the HMAC:
+Compute the HMAC. The key resolution chain (Keychain, then a `VV_HARNESS_STAMP_KEY_FILE`
+key file, then the discouraged `VV_HARNESS_STAMP_KEY` env var; full rationale in
+`${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`'s HMAC recipe) is identical here and in
+`harness-issue-debug`'s `resume`-disposition HMAC:
 
 ```bash
 python3 - "$SPEC_HASH" "$BASE_SHA" "$LANE" "$REPO" <<'PYEOF'
-import hmac, hashlib, subprocess, sys
-key = subprocess.check_output(
-    ["security", "find-generic-password", "-s", "vv-harness-stamp", "-w"]
-).strip()
+import hmac
+import hashlib
+import os
+import sys
+from subprocess import CalledProcessError, DEVNULL, check_output
+
+
+def get_stamp_key():
+    # 1. macOS Keychain. Absent on Linux/CI and unsupported on Windows; falls
+    # through on any failure (CalledProcessError: no matching item;
+    # FileNotFoundError: no `security` binary at all, e.g. non-macOS) or an
+    # empty result.
+    try:
+        key = check_output(
+            ["security", "find-generic-password", "-s", "vv-harness-stamp", "-w"],
+            stderr=DEVNULL,
+        ).strip()
+        if key:
+            return key
+    except (CalledProcessError, FileNotFoundError, OSError):
+        pass
+    # 2. A file named by VV_HARNESS_STAMP_KEY_FILE. MUST be mode 0600 -- a
+    # looser mode is refused outright (sys.exit(1)), not silently accepted or
+    # silently skipped to the next source, since a misconfigured permission is
+    # a user error worth surfacing directly. An EXISTING but EMPTY file is
+    # treated as no key from this source (falls through to source 3) -- only
+    # the permission check is a hard stop.
+    key_file = os.environ.get("VV_HARNESS_STAMP_KEY_FILE")
+    if key_file:
+        try:
+            mode = os.stat(key_file).st_mode & 0o777
+        except OSError as exc:
+            print(f"VV_HARNESS_STAMP_KEY_FILE={key_file} unreadable: {exc}", file=sys.stderr)
+            sys.exit(1)
+        if mode != 0o600:
+            print(
+                f"VV_HARNESS_STAMP_KEY_FILE={key_file} has mode {oct(mode)}, refusing -- "
+                f"fix with: chmod 600 {key_file}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        with open(key_file, "rb") as fh:
+            key = fh.read().strip()
+        if key:
+            return key
+    # 3. VV_HARNESS_STAMP_KEY env var, discouraged (leaks into child processes
+    # and logs) -- a last resort for environments where neither above is
+    # practical.
+    env_key = os.environ.get("VV_HARNESS_STAMP_KEY")
+    if env_key:
+        return env_key.encode("utf-8")
+    return None
+
+
+key = get_stamp_key()
+if key is None:
+    sys.exit(2)
 msg = "|".join(sys.argv[1:5]).encode("utf-8")
 print(hmac.new(key, msg, hashlib.sha256).hexdigest())
 PYEOF
 ```
 
-On Keychain failure (the `security` call errors, no key found): print the setup command
-below, skip stamping entirely, and finish in a normalized-but-unstamped state:
+Exit code 1 means a configured key file has the wrong permissions -- report the exact
+`chmod` fix from stderr to the user and stop; do not proceed past it or silently fall back
+to a weaker source.
+
+Exit code 2 means no key was found from any of the three sources: print the setup
+guidance below (all three ways to provide one, since Linux/CI has no Keychain at all),
+skip stamping entirely, and finish in a normalized-but-unstamped state:
 
 ```bash
+# macOS Keychain:
 security add-generic-password -a "$USER" -s vv-harness-stamp -w "$(openssl rand -hex 32)"
+# Key file (any platform):
+openssl rand -hex 32 > /path/to/key && chmod 600 /path/to/key
+# then set VV_HARNESS_STAMP_KEY_FILE=/path/to/key
+# Env var (discouraged, last resort):
+export VV_HARNESS_STAMP_KEY=$(openssl rand -hex 32)
 ```
 
 On success, assemble the stamp JSON (shape in `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`), with `ts` in
@@ -229,15 +296,22 @@ it).
 
 ## Step 8: Kickstart (optional)
 
-If `prep.runner.enabled` is `true`, nudge the external runner's launchd job:
+If `prep.kick_command` is configured, execute it verbatim to nudge the external runner:
 
 ```bash
-launchctl kickstart -k "gui/$(id -u)/<kickstart_label>"
+bash -c "$KICK_COMMAND"
 ```
 
-using `prep.runner.kickstart_label`. Any failure here is a one-line note in the final
-report, never fatal to the run: the runner's own poll cycle is the fallback path, and a
-missed kickstart only delays pickup, it does not lose the stamp.
+`kick_command` is a plain string, executed as-is; it is not limited to any particular
+runner mechanism. Example macOS value (a launchd job's kickstart):
+`launchctl kickstart -k "gui/$(id -u)/<kickstart_label>"` -- one possible value among
+any shell command. If `prep.kick_command` is absent, skip this step; its presence is
+what enables Step 8, there is no separate on/off flag. Treat `kick_command` as
+trusted-input-only: it executes verbatim via `bash -c`, so a hostile `harness.json`
+(e.g. from a cloned repo) runs arbitrary commands on the next prep. Any failure here
+is a one-line note in the final report, never fatal to the run: the runner's own poll
+cycle is the fallback path, and a missed kickstart only delays pickup, it does not
+lose the stamp.
 
 ## Step 9: Report
 
@@ -256,6 +330,7 @@ If run inside a harness project (a `.harness/` directory exists), append one lin
 |---|---|
 | No Linear MCP, or a required capability is missing | Paste mode: spec is verified and normalized in conversation; write-back is manual; no stamp, no label |
 | No `prep` key in `harness.json` | Local-only mode: `features.json` gets the normalized description and `spec` object; no stamp, no label, no kickstart |
-| Keychain lookup fails at Step 7 | Spec is normalized and written back; setup command is printed; run ends unstamped |
+| No key resolved from any source at Step 7 (exit 2) | Spec is normalized and written back; setup guidance for all three key sources is printed; run ends unstamped |
+| Key file has wrong permissions at Step 7 (exit 1) | Stamping aborted with the exact `chmod` fix reported; spec stays normalized but unstamped until re-run |
 | RV loop cap (5 cycles) hit | Spec stays unnormalized; still-open questions posted as a plain comment (remote) or written to `notes` (local); `needs_prep_label` applied if configured; unstamped |
 | User declines the Step 5 diff confirmation | Nothing is written back; no normalization, no stamp, no label; the run ends where the human stopped it |

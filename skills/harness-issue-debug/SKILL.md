@@ -94,24 +94,71 @@ Disposition is exactly one of:
 
 - **`resume`**: the branch is pushed and the confirmed findings are addressed. This is the
   only disposition that authorizes the runner to act again, so it is the only one that
-  carries an `hmac`. Compute it with the same recipe and Keychain service
-  (`vv-harness-stamp`) as the readiness stamp:
+  carries an `hmac`. Compute it with the same recipe and key resolution chain (Keychain,
+  then `VV_HARNESS_STAMP_KEY_FILE`, then the discouraged `VV_HARNESS_STAMP_KEY`; full
+  rationale in `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`'s HMAC recipe) as the
+  readiness stamp:
 
   ```bash
   python3 - "$SPEC_HASH" "$BRANCH" "resume" <<'PYEOF'
-  import hmac, hashlib, subprocess, sys
-  key = subprocess.check_output(
-      ["security", "find-generic-password", "-s", "vv-harness-stamp", "-w"]
-  ).strip()
+  import hmac
+  import hashlib
+  import os
+  import sys
+  from subprocess import CalledProcessError, DEVNULL, check_output
+
+
+  def get_stamp_key():
+      # Same chain as harness-issue-prep's Step 7 -- see that skill's own
+      # comments, or schemas/readiness-stamp.md's HMAC recipe, for the full
+      # rationale behind each source and the exit-code contract below.
+      try:
+          key = check_output(
+              ["security", "find-generic-password", "-s", "vv-harness-stamp", "-w"],
+              stderr=DEVNULL,
+          ).strip()
+          if key:
+              return key
+      except (CalledProcessError, FileNotFoundError, OSError):
+          pass
+      key_file = os.environ.get("VV_HARNESS_STAMP_KEY_FILE")
+      if key_file:
+          try:
+              mode = os.stat(key_file).st_mode & 0o777
+          except OSError as exc:
+              print(f"VV_HARNESS_STAMP_KEY_FILE={key_file} unreadable: {exc}", file=sys.stderr)
+              sys.exit(1)
+          if mode != 0o600:
+              print(
+                  f"VV_HARNESS_STAMP_KEY_FILE={key_file} has mode {oct(mode)}, refusing -- "
+                  f"fix with: chmod 600 {key_file}",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          with open(key_file, "rb") as fh:
+              key = fh.read().strip()
+          if key:
+              return key
+      env_key = os.environ.get("VV_HARNESS_STAMP_KEY")
+      if env_key:
+          return env_key.encode("utf-8")
+      return None
+
+
+  key = get_stamp_key()
+  if key is None:
+      sys.exit(2)
   msg = "|".join(sys.argv[1:4]).encode("utf-8")
   print(hmac.new(key, msg, hashlib.sha256).hexdigest())
   PYEOF
   ```
 
   `spec_hash` here is the value from the issue's current `vv-harness-readiness-stamp v1`
-  comment, the same hash the original stamp authorized; do not compute a new one. If the
-  Keychain key is unreadable, do not post a `resume` disposition; report the failure and
-  offer `reprep` or `abandon` instead.
+  comment, the same hash the original stamp authorized; do not compute a new one. Exit
+  code 1 means a configured key file has the wrong permissions -- report the exact
+  `chmod` fix from stderr; do not post `resume` and do not silently fall back to a weaker
+  source. Exit code 2 means no key was found from any of the three sources -- do not post
+  a `resume` disposition; report the failure and offer `reprep` or `abandon` instead.
 - **`reprep`**: the spec, not the code, turned out to be the problem. Post the comment
   with no `hmac`, then run `harness-issue-prep ISSUE-KEY` to fix the spec and re-stamp it.
 - **`abandon`**: the runner should stop trying and a human decides the issue's fate. Post
@@ -130,4 +177,5 @@ the deliverable, not a running consumer.
 | Runner mode, no park comment found | Say so, offer local-style manual debugging, post no resolution comment |
 | Runner mode, park comment json does not parse | Same as above: report it, fall back, post nothing |
 | Runner mode, repo not cloned and user has no path | Ask again or stop; do not clone speculatively |
-| Runner mode, `resume` disposition but Keychain key unreadable | Do not post `resume`; report the failure and offer `reprep` or `abandon` |
+| Runner mode, `resume` disposition but no key resolved from any source (exit 2) | Do not post `resume`; report the failure and offer `reprep` or `abandon` |
+| Runner mode, `resume` disposition but key file has wrong permissions (exit 1) | Do not post `resume`; report the exact `chmod` fix, do not silently fall back |
