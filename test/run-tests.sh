@@ -6288,7 +6288,7 @@ fi
 # the two could silently drift, defeating the point of a single hard cap).
 # grep -c counts matching LINES, not occurrences, so two mentions on the same
 # line would silently pass; grep -o extracts each match, giving a true count.
-CANON_CAP_COUNT=$(grep -o "15 lines\|15-line" "$HC_SKILL" | wc -l | tr -d ' ')
+CANON_CAP_COUNT=$(grep -oi "15 lines\|15-line\|fifteen lines" "$HC_SKILL" | wc -l | tr -d ' ')
 if [ "$CANON_CAP_COUNT" -eq 1 ]; then
   pass "f015: the bounded-canon 15-line cap is stated exactly once (AC7)"
 else
