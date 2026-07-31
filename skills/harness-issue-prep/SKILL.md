@@ -309,9 +309,9 @@ any shell command. If `prep.kick_command` is absent, skip this step; its presenc
 what enables Step 8, there is no separate on/off flag. Treat `kick_command` as
 trusted-input-only: it executes verbatim via `bash -c`, so a hostile `harness.json`
 (e.g. from a cloned repo) runs arbitrary commands on the next prep. Any failure here
-is a one-line note in the final
-report, never fatal to the run: the runner's own poll cycle is the fallback path, and a
-missed kickstart only delays pickup, it does not lose the stamp.
+is a one-line note in the final report, never fatal to the run: the runner's own poll
+cycle is the fallback path, and a missed kickstart only delays pickup, it does not
+lose the stamp.
 
 ## Step 9: Report
 
