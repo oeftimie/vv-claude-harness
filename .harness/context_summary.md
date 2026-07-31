@@ -8,8 +8,9 @@ This file is referenced in CLAUDE.md and loaded every session.
 - Freshest arc (F055-F062, prior session, see Meta-Session 2026-07-31 below): the LEAD_OWNED protection family (harness.json, teammate-scope.txt, .harness/mld/) plus TeammateIdle/shutdown coordination fixes (F055, F059) plus one pure-research feature that resolved to documentation instead of code (F061).
 - **Correction, 2026-07-31**: the long-repeated "F012/F013 blocked awaiting Ovidiu's answers" claim (carried across many session handoffs since session 11) was stale, not current. `features.json`'s own `spec` field showed `verdict: "PASS"` for both, sha256(description) matched the stored hash exactly (no drift), and direct Linear queries (`get_issue`, `list_comments`) on OVI-53 and OVI-63 showed zero open-question comment threads. Ovidiu confirmed to proceed once this was surfaced. Lesson: a claim repeated across many handoffs with no fresh evidence is a signal to re-verify, not to re-relay.
 - F012/OVI-53 (portable readiness-stamp signing) shipped, merged to main (PR #98). Notable catch: the actual Linear spec text (fetched via `get_issue`, not the terse local `features.json` description mirror) specified a flat, presence-gated `prep.kick_command` -- the first implementation pass had nested it as `prep.runner.kick_command` with a leftover `enabled` flag, caught only by re-checking against the real spec source before committing. Full detail in F012's own `notes`/`approaches_tried`.
-- F013/OVI-63 (mechanical stamp for /harness-init) implemented. Tests: 1385/1385 (full_test is the gate; +19 assertions incl. the pre-existing "ht: settings block" test redirected to the new template file it now checks). `scripts/stamp.sh` emits every framework-fixed file (settings.json, 7 byte-verbatim hooks, harness.json/features.json skeletons) from a KEY=VALUE answers file with new/upgrade collision handling; harness-init/SKILL.md Steps 3/3.5/3.6 shrink to calling it (AC1: zero remaining inline `"hooks"` JSON). Caught and fixed a real step-ordering bug during implementation: a build-hook confirmation step was drafted to run physically after the stamp step it needed to precede, contradicting the file's own "follow steps in order" rule -- folded into the start of Step 3 instead of left as a misordered separate step. Full detail in F013's own `notes`/`approaches_tried`.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F015-F021 (the seven remaining Linear OVI-44 sub-issues) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge) as F012/F013.
+- F013/OVI-63 (mechanical stamp for /harness-init) shipped, merged to main (PR #99, 2 review rounds -- round 1 caught a real JSON-injection/crash bug via unescaped project_name substitution, fixed with json.dumps-based escaping). Full detail in F013's own `notes`/`approaches_tried`. Filed F063 (discovered_via F013, harness-doctor/fixes.py wiring drift, pre-existing and out of scope) as a follow-up.
+- F015/OVI-55 (promotion ladder + ablation pass in Phase 5.5) implemented. Documentation/skill-content only, no code: harness-continue's Phase 5.5 gains mandatory Promotion and Ablation passes writing to a new `.harness/HARNESS_BACKLOG.md` schema (score/status/last_seen lifecycle, 60-day decay, gap entries, a hard-capped 15-line always-on canon). Full detail in F015's own `notes`/`approaches_tried`.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F016-F021 (six remaining Linear OVI-44 sub-issues) and F063 (discovered_via F013) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
 - No other locally-discovered work is queued.
 
 ## Cross-Cutting Concerns
@@ -909,5 +910,39 @@ This file is referenced in CLAUDE.md and loaded every session.
   JSON) -- fixed by redirecting it to the new template file rather than
   deleting it, preserving the original test's intent against its new
   home.
+- Plan approval: not applicable -- single-session implementation, no
+  teammates spawned.
+
+## Meta-Session 2026-08-01 (F015/OVI-55: promotion ladder + ablation pass)
+- Scope accuracy: held the declared scope exactly
+  (skills/harness-continue/SKILL.md, rules/context-summary.md,
+  test/run-tests.sh); zero scope_expansions.
+- Design decisions made without the spec spelling them out, recorded as
+  assumptions in F015's own notes: P3.1 (corroborated MLD entries) has
+  not shipped in this repo -- the Promotion pass instructions treat it
+  as optional input, skipped gracefully when the corroboration marker
+  isn't present, matching the spec's own "consumes P3.1 entries when
+  present" (not a hard dependency) framing rather than blocking on an
+  undelivered sibling feature.
+- AC3 (dry-run producing a classified pattern + ablation verdict) was
+  satisfied as a PR-description transcript, not a committed file --
+  .harness/HARNESS_BACKLOG.md is a per-project runtime artifact the
+  skill creates when a real retrospective actually runs, not plugin
+  distribution content, so it wasn't created in this repo's own
+  .harness/ as part of implementing the capability itself.
+- A self-caught cross-reference bug: a "run the abbreviated ladder per
+  the existing minimum-retrospective rule below" pointer was wrong --
+  that rule lives in Step 5a, well ABOVE Phase 5.5 in the same file, not
+  below it. Caught by reading the new content back top-to-bottom before
+  finishing, the same discipline that caught F013's step-ordering bug
+  last session.
+- Model calibration: single-session, no sub-agents spawned for
+  implementation.
+- Discovery lineage: none -- F015 was a pre-existing Linear-tracked
+  feature (OVI-55), not discovered mid-work.
+- Approach patterns: mutation-tested the AC7 "stated exactly once" guard
+  (duplicated the cap phrase, confirmed the count-based check flips from
+  pass to fail) -- the same discipline applied to a prose/documentation
+  assertion, not just a code assertion, confirming it generalizes.
 - Plan approval: not applicable -- single-session implementation, no
   teammates spawned.
