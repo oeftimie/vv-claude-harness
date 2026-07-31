@@ -1330,6 +1330,27 @@ assert_rc0 "$RC" "hs2 (F062): a file merely named like mld (not under the real p
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F062): mld-lookalike filename has no deny fields (prefix match, not substring match)"
 
+# The two assertions above (a second filename, and an mld-lookalike) only
+# exercise the Edit/Write path (edit_json -> the bash `case` statement), where
+# a substring-vs-prefix bug is structurally impossible (bash `case` patterns
+# are shell globs natively). The python-side is_lead_owned_prefix() -- the
+# only genuinely NEW mechanism this feature adds -- hand-writes startswith()
+# and is NOT exercised by either assertion above, so a python-side prefix bug
+# (e.g. a dropped trailing slash, which would wrongly deny .harness/mldxyz/...
+# too) would pass the suite undetected (found by adversarial review of PR #96:
+# reverting the trailing slash on LEAD_OWNED_PREFIXES, or hardcoding
+# is_lead_owned_prefix() to an exact match on the one tested filename, both
+# left the suite green). Mirror the same two assertions through the Bash path.
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh \
+  "$(bash_command_json 'echo x > .harness/mld/some-other-name.md')")
+assert_deny_json "$OUT" "hs2 (F062): Bash-path denial applies to any filename under the prefix"
+
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(bash_command_json 'echo x > .harness/mld-notes.md')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F062): Bash write to an mld-lookalike file still passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F062): Bash-path mld-lookalike has no deny fields (prefix, not substring)"
+
 # F060: .claude/teammate-scope.txt was NOT in LEAD_OWNED before this fix -- a
 # teammate scoped to .claude/ could edit its OWN scope definition directly
 # (confirmed live before the fix: both a Write and a Bash redirect to it

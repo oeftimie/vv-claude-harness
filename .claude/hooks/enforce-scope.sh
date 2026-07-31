@@ -247,7 +247,18 @@ if [ -n "$FILE_PATH" ]; then
         # severity than harness.json/teammate-scope.txt (telemetry a teammate could
         # pollute or fabricate, not security-relevant configuration or an enforcement
         # boundary), but the same criterion applies: a file only the lead legitimately
-        # writes, never a teammate.
+        # writes, never a teammate. Documented residual (found by adversarial review of
+        # PR #96): a bare-directory destination WITHOUT a trailing slash (`cp f
+        # .harness/mld`, `mv f .harness/mld`, `rm -rf .harness/mld`) normalizes to
+        # `.harness/mld` (no trailing "/"), which matches neither this glob arm nor
+        # the mirrored python prefix check, so a file landing INSIDE the directory via
+        # one of these forms is not caught -- `cp -t .harness/mld/ f` (trailing slash
+        # preserved) correctly DENIES, so the two spellings disagree. Accepted, not
+        # fixed: this is a deliberate-evasion-only route (the natural path a teammate
+        # takes is Write, or a `>`-redirect, both covered), and `.harness/` itself can
+        # already be `rm -rf`'d wholesale regardless of this fix, so directory-level
+        # destruction is a broader, pre-existing hole this narrower feature doesn't
+        # attempt to close.
         .harness/mld/*)
             deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION"
             ;;
@@ -311,6 +322,8 @@ LEAD_OWNED_PREFIXES = (".harness/mld/",)
 
 def is_lead_owned_prefix(norm):
     return any(norm.startswith(p) for p in LEAD_OWNED_PREFIXES)
+
+
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
 
 # A narrow, enumerated allowlist of ordinary character-device sinks (never
