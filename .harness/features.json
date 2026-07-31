@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 62,
+  "total_features": 63,
   "passing": 53,
   "features": [
     {
@@ -1788,6 +1788,30 @@
       ],
       "failure_reason": null,
       "discovered_via": "F060",
+      "spec": null
+    },
+    {
+      "id": "F063",
+      "description": "skills/harness-doctor/fixes.py's CANONICAL_WIRING (the settings.json wiring block its add_settings_wiring fixer applies) has drifted from the real wiring: its PreToolUse Bash matcher lists only verify-git-identity.sh, missing enforce-scope.sh and commit-gate.sh, both of which skills/harness-init/templates/settings.json.tmpl (F013/OVI-63) wires. This predates F013 (it was already stale against the old inline block on main) but was surfaced during F013's PR #99 review. Fix CANONICAL_WIRING to match the current wiring, and consider (per OVI-63's own Dependencies note, \"OVI-51: settings template is the single owner of the wiring block\") having add_settings_wiring delegate to scripts/stamp.sh mode=upgrade instead of maintaining a second hand-written copy of the block.",
+      "priority": 64,
+      "status": "pending",
+      "scope": [
+        "skills/harness-doctor/fixes.py",
+        "skills/harness-doctor/doctor.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F013"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered during PR #99 (F013/OVI-63) round-1 review as a pre-existing, unrelated drift -- not fixed there since skills/harness-doctor/fixes.py was never in F013's declared scope.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F013",
       "spec": null
     }
   ]
