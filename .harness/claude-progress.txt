@@ -460,3 +460,55 @@
   from F003's/F008's/F009's/F010's fixed templates; draft CHANGELOG catch-up
   once a version bump is confirmed with Ovidiu.
 - Blockers: F012/F013 only (see above); no blockers on the local-bug loop.
+
+## Sessions 19-25 - 2026-07-29 to 2026-07-31 (F035-F062 shipped; local-discovery chain closed)
+- F035-F054 (20 features, no Linear issue): all shipped in earlier windows
+  of this same multi-session arc, each through the standard TDD +
+  mutation-test + adversarial-review-to-APPROVE loop. Full detail is in
+  each feature's own features.json `notes` field (not duplicated here) --
+  highlights: F035/F040-F048 closed the remaining enforce-scope.sh/
+  commit-gate.sh quoting, escaping, and abbreviation-resolution gaps
+  (mirroring real git/GNU-getopt_long behavior); F049-F054 covered a
+  sed backup-suffix write-target gap, a raw command-name comparison
+  bypass, and the F054 secret-scan-exemption mechanism (which itself
+  needed a round-3 correction after a false "harness.json is lead-owned"
+  claim was caught and corrected -- that correction is what filed F058).
+- F055-F062 (this session, 2026-07-31): the LEAD_OWNED protection family
+  plus TeammateIdle/shutdown coordination fixes. F055: role-aware
+  TeammateIdle guidance (agents/reviewer.md dedup instruction + hook
+  stderr wording), 2 review rounds. F056: cp_mv_targets() argv-permutation
+  destination bypass (--suffix/-S/--no-preserve/--sparse value-consuming
+  flags), 4 rounds -- the deepest single-feature cycle of the session,
+  see Meta-Session 2026-07-31 in context_summary.md for why. F057:
+  verify-task-quality.sh's exit-0 accept-path warnings were genuinely
+  invisible to teammates (confirmed via direct docs fetch), fixed via the
+  documented `systemMessage` JSON field, 2 rounds. F058: .harness/
+  harness.json made genuinely LEAD_OWNED, 3 rounds (stale commit-gate.sh
+  comments caught twice, plus a comment reflow claim that hadn't actually
+  landed). F059: per-teammate early release for role-limited teammates --
+  investigation redirected this from a code fix to a documented lead
+  judgment rule in rules/agent-teams-protocol.md, 2 rounds. F060:
+  .claude/teammate-scope.txt made genuinely LEAD_OWNED, 3 rounds (a false
+  "lead is unaffected" claim, then an overclaimed-completeness comment).
+  F061: investigated whether a hook can distinguish the lead's session
+  from a teammate's -- confirmed via direct docs fetch that no such
+  mechanism exists; resolved as a documented "Known limitation" rather
+  than a workaround, confirmed with Ovidiu before shipping the redirected
+  scope; 4 rounds, the most self-referential chain of the session (each
+  round's own restated justification became the next round's finding).
+  F062: .harness/mld/ made genuinely LEAD_OWNED via the first prefix-style
+  LEAD_OWNED entry (mld files are dated/session-named, not a fixed path),
+  2 rounds -- round 1 found the actual new mechanism had zero
+  discriminating test coverage, reproduced as a live false positive
+  before fixing. This closes the entire local-discovery chain that
+  started with F023.
+- Tests: 1342/1342 passing on main as of this entry (full_test is the
+  gate; no coverage tool for this shell suite).
+- Blocked, unchanged since session 11: F012/OVI-53 and F013/OVI-63 both
+  await Ovidiu's answers to open spec-verification questions from an
+  earlier session; no Linear-tracked work possible until he responds.
+- Next: F015-F021 (the seven remaining Linear OVI-44 sub-issues) were
+  deliberately deferred until the local-bug chain finished. It has --
+  next session should either get F012/F013's answers from Ovidiu or start
+  F015 via `harness-issue-prep`. No other locally-discovered work queued.
+- Blockers: F012/F013 only (see above); no blockers on Linear re-engagement.

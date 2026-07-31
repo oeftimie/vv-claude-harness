@@ -4,19 +4,11 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- F011/OVI-64 shipped: PR #40 merged @ 07ba2e4 after 6 adversarial review rounds (unusually many, warranted by risk=ELEVATED); Linear OVI-64 Done.
-- F023-F034 and F032 (nine locally-discovered bugs, no Linear issue) all shipped across sessions 12-18, each through the standard TDD + mutation-test + adversarial-review-to-APPROVE loop: F023/F025 (quoted-token masking bypasses in enforce-scope.sh/commit-gate.sh), F024 (enforce-scope.sh multi-target masking), F026 (".." path traversal), F027 (space-separated -m value misread), F028 (quoted-path truncation), F029/F031/F033 (enforce-scope.sh "--" separator, backslash-escape, and ANSI-C-escape decoding gaps), F030/F034 (commit-gate.sh and enforce-scope.sh both denying/being bypassed by `2>&1`/`&>`/`&>>` fd-duplication idioms), F032 (commit-gate.sh long-flag value forms + abbreviation resolution, mirroring real git's unambiguous-prefix rule). Full per-feature detail is in the per-feature Meta-Session entries and `.harness/claude-progress.txt`'s consolidated Sessions 15-18 entry.
-- Tests: 823/823 passing on main (full_test is the gate; no coverage tool for this shell suite).
-- Recurring pattern across this whole arc: fixing one hook's bug routinely surfaced the same bug class in a sibling hook, or a narrower residual in the same function -- each review round's own findings fed the next feature's filing.
-- Open, internally discovered, no Linear issue (all `pending` in features.json):
-  - F035 (priority 19, discovered_via F028): enforce-scope.sh's cp_mv_targets()/sed_inplace_targets() don't recognize a QUOTED "--" or quoted flag the way an unquoted one is recognized. Fix pushed as PR #59, round 2 (round 1 closed 2 of 4 "--"-recognition call sites; round 2 closed the other 2 plus 8 mutation-coverage gaps, and filed F040). Round-2 review verdict not yet received; reviewer pinged.
-  - F036 (priority 20, discovered_via F030): enforce-scope.sh redirect_targets()/strip_redirects() gap on `>&word`-shaped redirects.
-  - F037 (priority 21, discovered_via F029): sed_inplace_targets() doesn't recognize GNU/BSD `-i`'s clustered or long-form (`--in-place=`) spellings.
-  - F038 (priority 22, discovered_via F033): ANSI_C_ESCAPE_PATTERN doesn't decode `\c`/`\u`/`\U` escapes (confirmed non-exploitable: produces non-printable bytes only, never `.`/`/`).
-  - F039 (priority 23, discovered_via F033): enforce-scope.sh's target-extraction pipeline doesn't truncate on an embedded NUL the way real argv parsing would.
-  - F040 (discovered_via F035, filed on the F035 branch, not yet in main's features.json): write_targets() compares command_tokens[0] raw against the cp/mv/tee/rm/sed name sets, so `\rm`, `"rm"`, `'rm'` all evade recognition entirely.
-- Blocked, unchanged since session 11: F012/OVI-53 and F013/OVI-63 both await Ovidiu's answers to open spec-verification questions from an earlier session; no Linear-tracked work possible until he responds. F014-F021 not yet started.
-- Next up: resolve PR #59 (F035) once its round-2 verdict lands, then F036-F040 in the same loop. Also still deferred: refresh live .claude/hooks/*.sh from F003's/F008's/F009's/F010's fixed templates.
+- The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped, each through the standard TDD + mutation-test + adversarial-review-to-APPROVE loop. Tests: 1342/1342 passing on main (full_test is the gate). Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
+- Freshest arc (F055-F062, this session, see Meta-Session 2026-07-31 below): the LEAD_OWNED protection family (harness.json, teammate-scope.txt, .harness/mld/) plus TeammateIdle/shutdown coordination fixes (F055, F059) plus one pure-research feature that resolved to documentation instead of code (F061).
+- Blocked, unchanged: F012/OVI-53 and F013/OVI-63 both await Ovidiu's answers to open spec-verification questions from an earlier session; no Linear-tracked work possible until he responds.
+- Deferred, ready to resume: F015-F021 (the seven remaining Linear OVI-44 sub-issues) were deliberately held until the local-bug chain finished. It has. Next session should either get F012/F013's answers or start F015 via `harness-issue-prep`.
+- No other locally-discovered work is queued.
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -130,6 +122,27 @@ This file is referenced in CLAUDE.md and loaded every session.
   state — a one-line grep beats a wasted round-trip.
 - Small independent-edit batches (docs, hook guards, rule text) fit single-session
   mode regardless of file count; reserve teams for genuinely parallel feature work.
+- Ground-truth a reviewer's OWN restated claim too, not just the original code under
+  review -- a "corrected" claim can itself be wrong (F061's round 2->3: a reviewer
+  disproved my claim by inspecting real on-disk state, then my OWN correction
+  overcorrected into a different false claim, caught only by re-deriving from source
+  a second time rather than trusting either restatement).
+- A grep-based test that pins a prose change must be checked against the file's
+  ACTUAL line-wrapping, not just semantic equivalence -- a target phrase can silently
+  straddle a wrap point after an edit (several F059/F062-family test assertions hit
+  this: a true, present phrase still failed `grep -q` because it spanned two lines).
+  Verify the exact grep target resolves after every prose edit, independent of any
+  semantic-equivalence reasoning.
+- When a discovered follow-up's investigation shows the original filed scope doesn't
+  fit (a guessed code fix turns out to need documentation instead, or vice versa),
+  confirm the redirection with the user before shipping it into distributed content
+  -- a scope-TYPE pivot (not just a scope expansion) is a decision the user should
+  see, not just a fact to record after the fact (F061).
+- A test that only exercises the structurally-safer of two code paths a fix touches
+  gives false confidence about the riskier one -- verify new assertions run through
+  EVERY path the fix changes, not just the one where the bug class is impossible by
+  construction (F062: a bash glob case-arm can't have a substring bug, but the
+  paired hand-written python startswith() check can, and was untested).
 
 ## Meta-Session 2026-07-22
 - Scope accuracy: bootstrap session touched only .harness/ and .claude/ as planned; prep
@@ -738,3 +751,63 @@ This file is referenced in CLAUDE.md and loaded every session.
   Worth treating as a general heuristic for this class of hook (regex/
   token-pattern-based Bash-command scanners): don't stop at "looks right,"
   stop at "a dedicated adversarial round found nothing new to fix."
+
+## Meta-Session 2026-07-31 (F055-F062: TeammateIdle coordination + LEAD_OWNED family; closes the F023-originated local-discovery chain)
+- Scope accuracy: 6 of 8 features held their declared scope (with the usual
+  small scope_expansions for stale sibling comments -- see Discovery
+  lineage). Two did NOT: F059 and F061 were both filed as candidate CODE
+  fixes and resolved to pure DOCUMENTATION instead once investigated --
+  a scope-TYPE pivot, not just a scope expansion, and a pattern not seen
+  in any earlier session of this arc. F059 (per-teammate early release)
+  turned into a "Known limitation"-style lead judgment rule in
+  rules/agent-teams-protocol.md once it became clear the underlying
+  coordination gap needed a documented convention, not a mechanism. F061
+  (lead/teammate hook-blindness) turned into documentation after fetching
+  Claude Code's own hooks/agent-teams docs directly confirmed no
+  hook-facing discriminator field exists today -- confirmed with Ovidiu via
+  AskUserQuestion before shipping the redirected scope into the distributed
+  plugin, since a pivot from "add a mechanism" to "document a limitation"
+  changes what actually ships, not just which files change.
+- Model calibration: single-session throughout (all 8 features sequential,
+  well-scoped, no parallelism benefit); one Opus reviewer sub-agent spawned
+  per PR via the Agent tool (the same fallback pattern as every prior
+  session in this arc, not native Agent Teams). correction_cycles were
+  unusually high on two features -- F056 (4 rounds) and F061 (4 rounds) --
+  both worth flagging as a genuinely-needs-this-many-rounds class, not a
+  process failure: F056's rounds 2-4 each corrected a DIFFERENT accuracy
+  claim in the fix's own documentation/tests (a non-discriminating test
+  suite, then a claimed-but-unlanded comment reflow, twice); F061's rounds
+  2-4 were a self-referential chain where each round's own restated
+  justification became the next round's finding (round 2 disproved my
+  original claim by inspecting real ~/.claude/teams/*/config.json files on
+  disk; round 3 caught that my OWN correction had swapped one false claim
+  for another; round 4 caught that my OWN round-3 note ABOUT round 2's fix
+  was itself inaccurate -- a claim-about-a-claim mismatch).
+- Discovery lineage: F059 discovered_via F055 (found live during F055's own
+  review: a reviewer's TeammateIdle hook re-fired 6 times after its review
+  was delivered, with no path to release before team-wide Phase 5). F058
+  discovered_via F054 (a false "harness.json is lead-owned" claim, caught
+  and corrected in F054, filed here as the real fix). F060 discovered_via
+  F058 (review-pr91-f058 found harness.json wasn't the only unprotected
+  lead-only file). F061 AND F062 both discovered_via F060 -- a single
+  review round surfacing two independent siblings at once, one a platform
+  research question (F061) and one a mechanical follow-up needing a new
+  matching primitive (F062, the first prefix-style LEAD_OWNED entry, since
+  every prior entry was a fixed path and .harness/mld/ files are
+  dated/session-named).
+- Approach patterns that worked: (1) Ground-truthing a reviewer's finding
+  BEFORE fixing it caught real bugs every single time it was tried this
+  session (never once turned out to be a false alarm) -- most notably
+  F062's finding that the actual new mechanism (a hand-written python
+  prefix check) had zero discriminating test coverage, reproduced as a live
+  false positive (an unrelated file wrongly denied) before writing the fix.
+  (2) Mutation-testing a reviewer's OWN recommended fix, not just the
+  original bug, closed F062 cleanly in one round after the finding. (3)
+  Filing new features the moment a review round surfaces a genuine
+  follow-up (F059, F061, F062 all originated this way), rather than
+  folding an unrelated behavior change into the PR under review, kept
+  every PR's diff reviewable in isolation -- the F054->F058->F060->
+  {F061,F062} chain is now 4 features deep and each step was still a
+  small, single-concern diff.
+- Plan approval: not applicable this session -- no plan-approval-required
+  teammates were spawned (all sub-agents were read-only reviewers).
