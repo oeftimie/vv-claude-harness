@@ -1293,6 +1293,43 @@ assert_rc0 "$RC" "hs2 (F058): an ordinary in-scope .harness/ file still passes, 
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F058): ordinary in-scope .harness/ file has no deny fields"
 
+# F062: .harness/mld/ is documented lead-only (skills/harness-continue/SKILL.md:
+# "the lead -- never a teammate -- writes .harness/mld/YYYY-MM-DD-<session-id>.md")
+# but was unprotected before this fix -- confirmed live that a teammate scoped to
+# .harness/ gets ALLOW on a Write here. The FIRST prefix-style LEAD_OWNED entry:
+# mld files are dated/session-named, not a fixed path, so exact-set membership
+# (every prior LEAD_OWNED entry) can't express it. Reuses DIR_HL (scope=.harness/)
+# so the LEAD_OWNED override is the ONLY thing that can produce a deny here, the
+# same discriminating-fixture reasoning as F058's own use of this fixture.
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.harness/mld/2026-07-31-abc12345.md")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F062): Edit to .harness/mld/ exits 0 (JSON deny, not exit 2)"
+assert_deny_json "$OUT" "hs2 (F062): .harness/mld/ Edit denial uses the JSON deny form"
+assert_contains "$OUT" "lead-owned" "hs2 (F062): .harness/mld/ Edit denial names the invariant"
+
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh \
+  "$(bash_command_json 'echo x > .harness/mld/2026-07-31-abc12345.md')")
+RC=$?
+assert_rc0 "$RC" "hs2 (F062): Bash write to .harness/mld/ exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F062): .harness/mld/ Bash write denial uses JSON deny form"
+
+# Prefix matching must cover any filename under .harness/mld/, not just one
+# specific dated example -- otherwise this would silently be an exact-match
+# fix mislabeled as prefix-based.
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.harness/mld/some-other-name.md")")
+RC=$?
+assert_deny_json "$OUT" "hs2 (F062): .harness/mld/ denial applies to any filename under the prefix, not just one example"
+
+# No new false positive: an ordinary in-scope .harness/ file (including one
+# that merely starts with "mld" as a substring, not the real directory) must
+# still be allowed cleanly -- the fix targets the .harness/mld/ PREFIX, not
+# any path containing those characters.
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.harness/mld-notes.md")")
+RC=$?
+assert_rc0 "$RC" "hs2 (F062): a file merely named like mld (not under the real prefix) still passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F062): mld-lookalike filename has no deny fields (prefix match, not substring match)"
+
 # F060: .claude/teammate-scope.txt was NOT in LEAD_OWNED before this fix -- a
 # teammate scoped to .claude/ could edit its OWN scope definition directly
 # (confirmed live before the fix: both a Write and a Bash redirect to it
