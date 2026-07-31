@@ -121,9 +121,17 @@ def read(path):
         return fh.read()
 
 
-def substitute(text, mapping):
-    for key, value in mapping.items():
+def substitute(text, raw_json_values, string_values):
+    # raw_json_values are already-valid JSON text (e.g. an array literal) and are
+    # inserted verbatim. string_values are arbitrary strings (e.g. a project name
+    # that might contain quotes or backslashes) and MUST be JSON-encoded before
+    # insertion -- the templates place these placeholders with no surrounding
+    # quotes for exactly this reason, so a raw string.replace() can never produce
+    # structurally-broken (or, worse, injected) JSON.
+    for key, value in raw_json_values.items():
         text = text.replace("{{" + key + "}}", value)
+    for key, value in string_values.items():
+        text = text.replace("{{" + key + "}}", json.dumps(value))
     return text
 
 
@@ -133,18 +141,21 @@ if posttooluse_fragment:
 
 settings_text = substitute(
     read(f"{templates_dir}/settings.json.tmpl"),
-    {"ENV_TEAMS_FLAG": env_teams_flag, "POSTTOOLUSE_HOOKS": posttooluse_json},
+    {"POSTTOOLUSE_HOOKS": posttooluse_json},
+    {"ENV_TEAMS_FLAG": env_teams_flag},
 )
 json.loads(settings_text)
 
 harness_text = substitute(
     read(f"{templates_dir}/harness.json.tmpl"),
+    {},
     {"PROJECT_NAME": project_name, "STACK": stack, "CREATED": created},
 )
 json.loads(harness_text)
 
 features_text = substitute(
     read(f"{templates_dir}/features.json.tmpl"),
+    {},
     {"PROJECT_NAME": project_name, "CREATED": created},
 )
 json.loads(features_text)

@@ -97,6 +97,21 @@ On success this writes, byte-verbatim or rendered from a template in
   step and Step 6, respectively, are the decisions that fill them).
 - `.gitignore` gains `.harness/SESSION_INCOMPLETE`, appended idempotently.
 
+**`.harness/features.json`'s feature schema.** Each feature's shape (the 16 fields, which
+are required vs. optional, the status enum) is defined once in
+`${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json` and illustrated with the one worked
+example in the Feature Schema section of
+`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. `scripts/validate-features.py`
+enforces it in the test suite.
+
+The done-definition (passing / done / shipped) and the optional claim-matched-proof
+fields (`qa_binding`, `proof`, `coverage_target`, `delivered`, `design_contract`) are
+defined once, in the Feature Schema section of
+`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md` — see that section rather than
+this one for the current definition.
+
+A feature may also carry a `spec` verification object; see the Feature Schema section of the Agent Teams protocol.
+
 Then finish the pieces the stamp deliberately leaves to a decision:
 
 **1. Fill in `git_identity`** with the identity confirmed in Step 2:
@@ -117,20 +132,6 @@ with open(".harness/harness.json", "w") as f:
     json.dump(data, f, indent=2)
 PYEOF
 ```
-
-Each feature's shape (the 16 fields, which are required vs. optional, the status enum) is
-defined once in `${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json` and illustrated with the
-one worked example in the Feature Schema section of
-`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. `scripts/validate-features.py`
-enforces it in the test suite.
-
-The done-definition (passing / done / shipped) and the optional claim-matched-proof
-fields (`qa_binding`, `proof`, `coverage_target`, `delivered`, `design_contract`) are
-defined once, in the Feature Schema section of
-`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md` — see that section rather than
-this one for the current definition.
-
-A feature may also carry a `spec` verification object; see the Feature Schema section of the Agent Teams protocol.
 
 **2. Write `.harness/context_summary.md`** -- this carries real project judgment (domain,
 constraints, architecture), never zero-decision content, so it stays hand-authored:

@@ -5341,14 +5341,15 @@ write_stamp_answers "$STAMP_ANSWERS_UPGRADE" upgrade
 STAMP_UPGRADE_OUT=$("$STAMP_SH" "$STAMP_ANSWERS_UPGRADE" "$STAMP_PROJECT")
 STAMP_UPGRADE_RC=$?
 assert_rc0 "$STAMP_UPGRADE_RC" "f013: mode=upgrade exits 0 even with customizations present"
-assert_contains "$STAMP_UPGRADE_OUT" ".claude/hooks/enforce-scope.sh" \
-  "f013: mode=upgrade reports the customized hook"
-assert_contains "$STAMP_UPGRADE_OUT" ".harness/harness.json" \
-  "f013: mode=upgrade reports the customized harness.json"
 if echo "$STAMP_UPGRADE_OUT" | grep -A20 "^skipped" | grep -q "enforce-scope.sh"; then
   pass "f013: the customized hook is listed under skipped, not written or refreshed"
 else
   fail "f013: the customized hook should be listed under skipped"
+fi
+if echo "$STAMP_UPGRADE_OUT" | grep -A20 "^skipped" | grep -q "harness.json"; then
+  pass "f013: the customized harness.json is listed under skipped, not written or refreshed"
+else
+  fail "f013: the customized harness.json should be listed under skipped"
 fi
 if echo "$STAMP_UPGRADE_OUT" | grep -A20 "^refreshed" | grep -q "commit-gate.sh"; then
   pass "f013: an untouched hook is refreshed (byte-identical overwrite)"
@@ -5367,6 +5368,22 @@ if [ "$STAMP_HOOKS_COUNT" -eq 0 ]; then
   pass "f013: skills/harness-init/SKILL.md has no remaining inline settings JSON"
 else
   fail "f013: skills/harness-init/SKILL.md still has $STAMP_HOOKS_COUNT inline \"hooks\" occurrence(s)"
+fi
+
+# Nothing should still point at the now-deleted "Step 3.6 inline block" -- both
+# INSTALL.md's manual-upgrade instructions and harness-doctor's user-facing
+# finding message must point at the real settings.json.tmpl file instead
+# (caught in PR #99 round 1 review: both were left dangling after this
+# feature deleted the content they referenced).
+if grep -q "Step 3.6" "$REPO_ROOT/INSTALL.md"; then
+  fail "f013: INSTALL.md still points at the deleted Step 3.6 inline block"
+else
+  pass "f013: INSTALL.md does not point at the deleted Step 3.6 inline block"
+fi
+if grep -q "Step 3.6" "$REPO_ROOT/skills/harness-doctor/doctor.py"; then
+  fail "f013: doctor.py still points at the deleted Step 3.6 inline block"
+else
+  pass "f013: doctor.py does not point at the deleted Step 3.6 inline block"
 fi
 
 # AC3: a stamped project (plus the skill-authored context_summary.md, which
@@ -5402,6 +5419,63 @@ if [ "$STAMP_DOCTOR_RC" -eq 0 ] && [ "$STAMP_DOCTOR_OUT" = "healthy" ]; then
   pass "f013: a stamped project passes harness-doctor clean (AC3)"
 else
   fail "f013: a stamped project should pass harness-doctor clean, got rc=$STAMP_DOCTOR_RC out=$STAMP_DOCTOR_OUT"
+fi
+
+# A project name containing a double quote must not corrupt or crash the render
+# (caught in PR #99 round 1 review: raw string.replace() into a quoted JSON
+# placeholder let a quote in the value break the surrounding JSON structure).
+STAMP_QUOTE_PROJECT="$WORK/f013-quote-project"
+mkdir -p "$STAMP_QUOTE_PROJECT"
+STAMP_ANSWERS_QUOTE="$STAMP_DIR/answers-quote.txt"
+cat > "$STAMP_ANSWERS_QUOTE" <<'EOF'
+project_name=My "Cool" App
+stack=python
+team_mode=teams
+mode=new
+EOF
+"$STAMP_SH" "$STAMP_ANSWERS_QUOTE" "$STAMP_QUOTE_PROJECT" >/dev/null
+STAMP_QUOTE_RC=$?
+assert_rc0 "$STAMP_QUOTE_RC" "f013: a project_name containing a double quote does not crash the stamp"
+STAMP_QUOTE_PROJECT_FIELD=$(python3 -c "
+import json
+print(json.load(open('$STAMP_QUOTE_PROJECT/.harness/harness.json'))['project'])
+" 2>/dev/null)
+if [ "$STAMP_QUOTE_PROJECT_FIELD" = 'My "Cool" App' ]; then
+  pass "f013: the quoted project name round-trips correctly through harness.json"
+else
+  fail "f013: expected project field 'My \"Cool\" App', got '$STAMP_QUOTE_PROJECT_FIELD'"
+fi
+
+# An adversarial project_name attempting to inject a sibling JSON key must not
+# succeed -- the injected text must land as a literal (escaped) string value,
+# never as structurally-separate JSON.
+STAMP_INJECT_PROJECT="$WORK/f013-inject-project"
+mkdir -p "$STAMP_INJECT_PROJECT"
+STAMP_ANSWERS_INJECT="$STAMP_DIR/answers-inject.txt"
+cat > "$STAMP_ANSWERS_INJECT" <<'EOF'
+project_name=Evil", "stack": "pwned
+stack=python
+team_mode=teams
+mode=new
+EOF
+"$STAMP_SH" "$STAMP_ANSWERS_INJECT" "$STAMP_INJECT_PROJECT" >/dev/null
+STAMP_INJECT_ERRORS=$(python3 - "$STAMP_INJECT_PROJECT" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(f"{path}/.harness/harness.json") as fh:
+    data = json.load(fh)
+if data.get("stack") != "python":
+    print(f"stack field was overwritten by the injection attempt: {data.get('stack')!r}")
+if 'Evil", "stack": "pwned' not in data.get("project", ""):
+    print(f"the adversarial text should survive as a literal string value: {data.get('project')!r}")
+PYEOF
+)
+if [ -z "$STAMP_INJECT_ERRORS" ]; then
+  pass "f013: an adversarial project_name cannot inject a sibling JSON key"
+else
+  fail "f013: JSON injection -- $STAMP_INJECT_ERRORS"
 fi
 
 echo ""
