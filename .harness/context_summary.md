@@ -855,13 +855,17 @@ This file is referenced in CLAUDE.md and loaded every session.
   teammates spawned.
 
 ## Meta-Session 2026-08-01 (F013/OVI-63: mechanical stamp for /harness-init)
-- Scope accuracy: held the declared scope exactly (scripts/stamp.sh,
-  skills/harness-init/SKILL.md, skills/harness-init/templates/,
-  test/run-tests.sh); zero scope_expansions. Explicitly considered and
-  declined one adjacent change -- wiring harness-doctor's --fix to
-  delegate to stamp.sh in upgrade mode, which the spec's own Dependencies
-  section notes as a future consequence, not an acceptance criterion, and
-  skills/harness-doctor/fixes.py was never in this feature's scope list.
+- Scope accuracy: the initial implementation held the declared scope exactly
+  (scripts/stamp.sh, skills/harness-init/SKILL.md,
+  skills/harness-init/templates/, test/run-tests.sh). Round 1 review then
+  found this PR had left two dangling pointers (INSTALL.md,
+  skills/harness-doctor/doctor.py) to the Step 3.6 inline block it deleted --
+  fixed in the same PR, outside the declared scope list, and recorded as a
+  scope_expansion on F013 rather than left silently untracked. Explicitly
+  considered and declined one adjacent change -- wiring harness-doctor's
+  --fix to delegate to stamp.sh in upgrade mode, which the spec's own
+  Dependencies section notes as a future consequence, not an acceptance
+  criterion; filed as F063 instead of folded in.
 - Design decisions made without a full spec spelling them out, each
   recorded as an assumption in F013's own notes rather than silently
   picked: team_mode drives a real settings.json toggle
