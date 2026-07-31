@@ -512,3 +512,31 @@
   next session should either get F012/F013's answers from Ovidiu or start
   F015 via `harness-issue-prep`. No other locally-discovered work queued.
 - Blockers: F012/F013 only (see above); no blockers on Linear re-engagement.
+
+## Session 26 - 2026-07-31 (F012/OVI-53: portable readiness-stamp signing)
+- Feature: F012 - portable readiness-stamp signing (Linux/CI parity for the spec gate)
+- Status: complete
+- Corrected a stale claim first: the "F012/F013 blocked awaiting Ovidiu's answers"
+  claim repeated since session 11 was ground-truthed and found stale (spec.verdict
+  already PASS for both, no hash drift, zero open Linear comment threads). Reported
+  this to Ovidiu; he confirmed to proceed ("go").
+- Implemented per the full Linear spec (OVI-53, re-fetched via get_issue -- the local
+  features.json description is a terse summary, not the authoritative text): a
+  3-source secret resolution chain (Keychain, then VV_HARNESS_STAMP_KEY_FILE at mode
+  0600, then discouraged VV_HARNESS_STAMP_KEY env var), python3-stdlib HMAC
+  computation, and a flat, presence-gated prep.kick_command replacing the hardcoded
+  launchctl-only Step 8.
+- Caught and corrected one real spec-conformance bug before commit: the first
+  implementation pass nested the new config key as prep.runner.kick_command with a
+  leftover enabled flag, only caught by re-checking the actual Linear issue text
+  against the local terse summary before finalizing.
+- Tests: 1355/1355 passing on main (full_test is the gate; +13 new F012 assertions,
+  test-by-extraction from the real shipped SKILL.md snippet, not a parallel
+  re-implementation). Mutation-tested by reverting the 0600 permission check and
+  confirming exactly the 2 related assertions failed; restored.
+- Scope expansion: INSTALL.md's kickstart_label example updated to match the
+  generalized prep.kick_command (not in the original scope list, but would have
+  gone stale otherwise).
+- Next: F013/OVI-63 (Ovidiu's "go" covered both F012 and F013). F015-F021 remain
+  deferred until F013 lands.
+- Blockers: none.
