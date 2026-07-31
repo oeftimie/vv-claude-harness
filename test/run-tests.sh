@@ -5493,6 +5493,31 @@ else
   fail "mnt (F061): the limitation callout is missing the worktree-isolation caveat"
 fi
 
+# F061 round 2 (review of PR #95): the file's own plan_approval_response entry
+# uses a DUAL placement (an inline blockquote AND a ## Known Limitations
+# bullet) -- F061's original callout had only the inline form, so a reader who
+# goes straight to Known Limitations wouldn't find it. Pin the bullet
+# specifically, distinct from the inline callout checked above.
+if grep -q "Lead/teammate hook blindness (F061)" "$PROTOCOL_MD"; then
+  pass "mnt (F061): a Known Limitations bullet points to the inline callout"
+else
+  fail "mnt (F061): missing the Known Limitations bullet for F061"
+fi
+
+# F061's retirement condition named a check (re-fetch the hooks docs for a new
+# discriminator field) that no existing maintenance probe performs -- probe
+# item 3 covers TaskCompleted/TeammateIdle/SessionStart/SessionEnd PAYLOAD
+# SHAPE regressions, not PreToolUse hook input for a NEW field's addition.
+# Pin that the retirement condition is actually wired to a probe, not just
+# stated and left unchecked.
+RUNBOOK_MD="$REPO_ROOT/docs/maintenance-runbook.md"
+if grep -q "Lead/teammate hook-blindness limitation (F061)" "$RUNBOOK_MD" \
+  && grep -q "record it here as FIXED" "$RUNBOOK_MD"; then
+  pass "mnt (F061): the maintenance runbook has a probe wired to F061's retirement condition"
+else
+  fail "mnt (F061): the maintenance runbook has no probe for F061's retirement condition"
+fi
+
 if grep -q "[Rr]etirement condition" "$REPO_ROOT/README.md"; then
   pass "mnt: README.md's plan_approval_response mention carries a retirement condition"
 else

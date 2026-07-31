@@ -560,6 +560,10 @@ Don't optimize for cost at the expense of quality. The point of model mixing is 
   the implicit-team model introduced in Claude Code v2.1.178+. Agent Teams is experimental (gated
   by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) and may break across CLI versions; the
   worktree-subagent fallback mode (harness-continue, Step 4) covers that case.
+- **Lead/teammate hook blindness (F061)**: while `.claude/teammate-scope.txt` exists,
+  `enforce-scope.sh` gates the lead's own actions too, since no hook-facing field or
+  environment variable distinguishes the lead's session from a teammate's — see
+  Mechanical Scope Enforcement above for the fallback and retirement condition.
 
 ## Integration with Harness
 
