@@ -6194,6 +6194,90 @@ else
 fi
 
 echo ""
+echo "== F015: promotion ladder + ablation pass =="
+
+HC_SKILL="$REPO_ROOT/skills/harness-continue/SKILL.md"
+CTX_RULE="$REPO_ROOT/rules/context-summary.md"
+
+# AC1: harness-continue contains both passes with the classification table,
+# and mentions HARNESS_BACKLOG.md (same grep-lint style as existing content
+# checks in this file, e.g. the F059/F061 checks just above).
+if grep -q "Promotion pass" "$HC_SKILL" && grep -q "Ablation pass" "$HC_SKILL" \
+  && grep -q "spawn-prompt tweak" "$HC_SKILL" && grep -q "not-yet" "$HC_SKILL"; then
+  pass "f015: harness-continue/SKILL.md has both the promotion and ablation passes with the ladder table"
+else
+  fail "f015: harness-continue/SKILL.md is missing the promotion pass, ablation pass, or ladder table"
+fi
+if grep -q "HARNESS_BACKLOG.md" "$HC_SKILL"; then
+  pass "f015: harness-continue/SKILL.md mentions HARNESS_BACKLOG.md (AC1)"
+else
+  fail "f015: harness-continue/SKILL.md does not mention HARNESS_BACKLOG.md"
+fi
+
+# AC2: rules/context-summary.md documents the disposition marker, with an example.
+if grep -q "disposition marker" "$CTX_RULE" && grep -q "promoted-to" "$CTX_RULE" \
+  && grep -q "backlog" "$CTX_RULE" && grep -q "watching" "$CTX_RULE"; then
+  pass "f015: rules/context-summary.md documents the disposition marker (promoted-to/backlog/watching)"
+else
+  fail "f015: rules/context-summary.md is missing the disposition marker documentation"
+fi
+if grep -q "^Example:" "$CTX_RULE"; then
+  pass "f015: rules/context-summary.md has a worked example of the disposition marker (AC2)"
+else
+  fail "f015: rules/context-summary.md is missing a worked example"
+fi
+
+# AC5: backlog table schema documents the 3 lifecycle columns and the score>=3 rule.
+if grep -q "| score | status | last_seen |" "$HC_SKILL"; then
+  pass "f015: the backlog table schema documents score/status/last_seen (AC5)"
+else
+  fail "f015: the backlog table schema is missing the score/status/last_seen columns"
+fi
+if grep -q "score >= 3" "$HC_SKILL"; then
+  pass "f015: the promotion threshold (score >= 3) is documented (AC5)"
+else
+  fail "f015: the score >= 3 promotion threshold is not documented"
+fi
+
+# AC6: retrospective text contains the decay/retire rule.
+if grep -q "60 days" "$HC_SKILL" && grep -q "retired" "$HC_SKILL"; then
+  pass "f015: the 60-day decay/retirement rule is documented (AC6)"
+else
+  fail "f015: the decay/retirement rule is missing"
+fi
+
+# AC7: the bounded-canon cap is stated EXACTLY once (a second copy would mean
+# the two could silently drift, defeating the point of a single hard cap).
+CANON_CAP_COUNT=$(grep -c "hard-capped at 15 lines\|hard cap.*15 lines\|15 lines total" "$HC_SKILL")
+if [ "$CANON_CAP_COUNT" -eq 1 ]; then
+  pass "f015: the bounded-canon 15-line cap is stated exactly once (AC7)"
+else
+  fail "f015: the bounded-canon cap should be stated exactly once, found $CANON_CAP_COUNT"
+fi
+
+# AC8: the gap entry type is documented with its promotion threshold (3+ similar gaps).
+if grep -q "gap.*type\|gap-type\|\`gap\`-type" "$HC_SKILL" && grep -q "[Tt]hree or more similar\|3+ similar" "$HC_SKILL"; then
+  pass "f015: the gap entry type is documented with its 3+ promotion threshold (AC8)"
+else
+  fail "f015: the gap entry type or its promotion threshold is missing"
+fi
+
+# AC4: no new always-on context -- the ladder/backlog machinery must live only
+# in the skill (loaded when harness-continue runs), never in a file that's
+# injected on every session start. templates/CLAUDE.md and the SessionStart
+# hook are the two always-on surfaces in this plugin.
+if grep -q "HARNESS_BACKLOG" "$REPO_ROOT/templates/CLAUDE.md" 2>/dev/null; then
+  fail "f015: templates/CLAUDE.md (always-on) should not reference the backlog machinery directly"
+else
+  pass "f015: templates/CLAUDE.md carries no new always-on reference to the backlog machinery (AC4)"
+fi
+if grep -q "HARNESS_BACKLOG" "$HOOKS_DIR/session-start.sh"; then
+  fail "f015: session-start.sh (always-on) should not reference the backlog machinery directly"
+else
+  pass "f015: session-start.sh carries no new always-on reference to the backlog machinery (AC4)"
+fi
+
+echo ""
 echo "== commit-gate.sh =="
 
 run_commit_gate() {
