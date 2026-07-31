@@ -273,7 +273,9 @@ failing:
   what enables Step 8 -- there is no separate on/off flag. The `launchctl kickstart`
   line above is just one example value (a macOS launchd runner); any shell command
   works. Absent, Step 8 is skipped. A failed kickstart is a one-line note, never fatal;
-  the runner's own poll cycle is the fallback path.
+  the runner's own poll cycle is the fallback path. Treat this value as trusted-input
+  only: it runs verbatim, so a `harness.json` from an untrusted source (e.g. a cloned
+  repo) executes arbitrary commands on the next prep.
 
 See [schemas/readiness-stamp.md](./schemas/readiness-stamp.md) for the stamp format, the
 canonical hashing recipe, and the HMAC recipe the Keychain key feeds.

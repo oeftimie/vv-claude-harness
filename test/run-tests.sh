@@ -1026,12 +1026,17 @@ fi
 python3 -c "compile(open('$DIR_STAMP/resolve_and_hmac.py').read(), 'step7', 'exec')" 2>/dev/null
 assert_rc0 "$?" "f012: the extracted Step 7 snippet is syntactically valid python"
 
-# Resolution-chain scenarios, run against the REAL extracted snippet with a
-# real-but-empty PATH (no `security` binary reachable, simulating both Linux/CI and
-# this repo's own confirmed-persistent sandboxed-Keychain-block environment --
-# context_summary.md -- so "Keychain absent" is exercised identically either way).
+# Resolution-chain scenarios, run against the REAL extracted snippet with PATH
+# pointed at an empty directory -- genuinely no `security` binary reachable (a
+# real "/usr/bin:/bin"-style PATH still finds it on macOS: /usr/bin/security
+# exists there, so that would only pass locally by accident of this sandbox
+# also blocking the Keychain call). python3 is invoked by absolute path since
+# an empty PATH can't resolve a bare command name.
+NOBIN_DIR="$DIR_STAMP/nobin"
+mkdir -p "$NOBIN_DIR"
+PYTHON3_BIN=$(command -v python3)
 run_stamp_key() {
-  env -i PATH="/usr/bin:/bin" HOME="$HOME" "$@" python3 "$DIR_STAMP/resolve_and_hmac.py" \
+  env -i PATH="$NOBIN_DIR" HOME="$HOME" "$@" "$PYTHON3_BIN" "$DIR_STAMP/resolve_and_hmac.py" \
     fixed-spec-hash fixed-base-sha code myorg/myrepo
 }
 
@@ -1070,10 +1075,77 @@ else
   fail "f012: expected the key-file HMAC to win when both file and env are set"
 fi
 
+# The resume-disposition HMAC snippet in harness-issue-debug/SKILL.md is meant to
+# carry the identical key-resolution chain, but it lives inside a markdown list (every
+# line, including the heredoc terminator, carries a 2-space indent) and takes 3 args
+# instead of 4 -- so it needs its own extraction (dedented) and its own run of the
+# same scenarios, not just a grep for the absence of a raw-key print.
+python3 - "$REPO_ROOT" "$DIR_STAMP" <<'PYEOF'
+import re
+import sys
+import textwrap
+
+repo_root, work = sys.argv[1], sys.argv[2]
+text = open(f"{repo_root}/skills/harness-issue-debug/SKILL.md").read()
+match = re.search(
+    r'  python3 - "\$SPEC_HASH" "\$BRANCH" "resume" <<\'PYEOF\'\n(.*?)\n  PYEOF',
+    text, re.DOTALL,
+)
+if not match:
+    print("DEBUG_SNIPPET_EXTRACT_FAILED")
+    sys.exit(0)
+with open(f"{work}/debug_resolve_and_hmac.py", "w") as fh:
+    fh.write(textwrap.dedent(match.group(1)))
+PYEOF
+if [ -f "$DIR_STAMP/debug_resolve_and_hmac.py" ]; then
+  pass "f012: harness-issue-debug's resume-disposition snippet extracted and dedented"
+else
+  fail "f012: could not extract harness-issue-debug's resume-disposition snippet"
+fi
+python3 -c "compile(open('$DIR_STAMP/debug_resolve_and_hmac.py').read(), 'debug-resume', 'exec')" 2>/dev/null
+assert_rc0 "$?" "f012: the extracted harness-issue-debug snippet is syntactically valid python"
+
+run_debug_stamp_key() {
+  env -i PATH="$NOBIN_DIR" HOME="$HOME" "$@" "$PYTHON3_BIN" "$DIR_STAMP/debug_resolve_and_hmac.py" \
+    fixed-spec-hash fixed-branch resume
+}
+
+run_debug_stamp_key >/dev/null 2>&1
+assert_rc2 "$?" "f012 (debug): no key from any source exits 2"
+
+DEBUG_OUT_FILE600=$(run_debug_stamp_key VV_HARNESS_STAMP_KEY_FILE="$DIR_STAMP/key600")
+assert_rc0 "$?" "f012 (debug): a 0600 key file is accepted, HMAC printed, rc 0"
+
+DEBUG_OUT_FILE644=$(run_debug_stamp_key VV_HARNESS_STAMP_KEY_FILE="$DIR_STAMP/key644" 2>&1)
+RC=$?
+if [ "$RC" -eq 1 ]; then pass "f012 (debug): a 0644 key file is refused, exit 1"; else fail "f012 (debug): a 0644 key file should be refused with exit 1, got rc=$RC"; fi
+assert_contains "$DEBUG_OUT_FILE644" "chmod 600" "f012 (debug): the 0644 refusal names the exact chmod fix"
+
+DEBUG_OUT_ENV_ONLY=$(run_debug_stamp_key VV_HARNESS_STAMP_KEY="env-key-value")
+DEBUG_OUT_FILE_PLUS_ENV=$(run_debug_stamp_key VV_HARNESS_STAMP_KEY_FILE="$DIR_STAMP/key600" VV_HARNESS_STAMP_KEY="env-key-value")
+if [ "$DEBUG_OUT_FILE_PLUS_ENV" = "$DEBUG_OUT_FILE600" ] && [ "$DEBUG_OUT_FILE_PLUS_ENV" != "$DEBUG_OUT_ENV_ONLY" ]; then
+  pass "f012 (debug): resolution order -- a valid key file wins over the env var, not the other way round"
+else
+  fail "f012 (debug): expected the key-file HMAC to win when both file and env are set"
+fi
+
+DEBUG_OUT_EMPTY_PLUS_ENV=$(run_debug_stamp_key VV_HARNESS_STAMP_KEY_FILE="$DIR_STAMP/keyempty" VV_HARNESS_STAMP_KEY="env-key-value")
+RC=$?
+if [ "$RC" -eq 0 ] && [ "$DEBUG_OUT_EMPTY_PLUS_ENV" = "$DEBUG_OUT_ENV_ONLY" ]; then
+  pass "f012 (debug): an empty (but correctly-permissioned) key file is treated as no key, env var used instead"
+else
+  fail "f012 (debug): empty key file should fall through to the env var, got rc=$RC"
+fi
+
 # Mint a stamp for a fixture spec using the real extracted snippet, then verify it
-# against all 6 consumer rules from schemas/readiness-stamp.md, plus 3 negative
-# cases proving the checker actually discriminates (not vacuously true).
-STAMP_CHECK_ERRORS=$(python3 - "$DIR_STAMP" <<'PYEOF'
+# against the 6 consumer rules from schemas/readiness-stamp.md -- rules 2, 3, and 4
+# fully mechanically checked; rule 1 covers only the stamp_version half (marker-line
+# parsing is a real consumer's job, not this fixture's, since it starts from an
+# already-parsed dict); rule 5 covers only the repo allow-list half (base_sha drift
+# is a real consumer's job against its own default branch); rule 6 (labels are hints
+# only) has nothing mechanical to check. Plus 3 negative cases proving the checker
+# actually discriminates (not vacuously true).
+STAMP_CHECK_ERRORS=$(python3 - "$DIR_STAMP" 2>&1 <<'PYEOF'
 import hashlib
 import hmac
 import json
@@ -1139,7 +1211,7 @@ def verify_stamp(stamp_, key_, current_title, current_desc, sv_floor, repo_allow
         return False, "rule5: repo not allow-listed"
     # Rule 6: labels are hints only -- nothing to check mechanically; the stamp
     # itself is what a real consumer trusts, which rules 1-5 already covered.
-    return True, "all 6 rules satisfied"
+    return True, "checked halves of all 6 rules satisfied"
 
 
 ok, reason = verify_stamp(stamp, key, FIXTURE_TITLE, FIXTURE_DESC, 1.0, {repo})
@@ -1178,7 +1250,7 @@ if real_hmac != stamp["hmac"]:
 PYEOF
 )
 if [ -z "$STAMP_CHECK_ERRORS" ]; then
-  pass "f012: a minted stamp passes all 6 consumer rules; 3 negative cases each fail the expected rule; HMAC cross-checked against the real extracted snippet"
+  pass "f012: a minted stamp passes the checked halves of all 6 consumer rules; 3 negative cases each fail the expected rule; HMAC cross-checked against the real extracted snippet"
 else
   fail "f012: stamp mint+verify -- $STAMP_CHECK_ERRORS"
 fi
@@ -1186,7 +1258,7 @@ fi
 # Field parity: the schema doc's own first JSON example must declare exactly the
 # same field set the mint step above actually produces -- catches the doc's
 # worked example drifting from the real shape (or vice versa) silently.
-FIELD_PARITY_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+FIELD_PARITY_ERRORS=$(python3 - "$REPO_ROOT" 2>&1 <<'PYEOF'
 import json
 import re
 import sys
@@ -1221,14 +1293,29 @@ else
   fail "f012: Step 8 should use flat prep.kick_command with no prep.runner nesting"
 fi
 
-# Key hygiene: no code path in either skill's resolution-chain snippet prints the
-# raw key -- only the derived HMAC. A bare `print(key)` (as opposed to printing
-# the hexdigest) would leak it into a transcript.
-for SKILL_FILE in harness-issue-prep harness-issue-debug; do
-  if grep -q "print(key)" "$REPO_ROOT/skills/$SKILL_FILE/SKILL.md"; then
-    fail "f012: $SKILL_FILE/SKILL.md has a code path that could print the raw key"
+# The prep.runner staleness guard above only covers harness-issue-prep/SKILL.md;
+# INSTALL.md and the schema doc document the same config surface and must not
+# silently regress to the old nested shape either.
+for STALE_CHECK_FILE in INSTALL.md schemas/readiness-stamp.md; do
+  if grep -q "prep.runner" "$REPO_ROOT/$STALE_CHECK_FILE"; then
+    fail "f012: $STALE_CHECK_FILE has a stale prep.runner reference"
   else
-    pass "f012: $SKILL_FILE/SKILL.md has no code path printing the raw key"
+    pass "f012: $STALE_CHECK_FILE has no stale prep.runner reference"
+  fi
+done
+
+# Key hygiene: no code path in either skill's resolution-chain snippet prints or
+# writes the raw key (or env_key) -- only the derived HMAC ever reaches output.
+# Catches print(key)/print(env_key), f-string interpolation ({key}/{env_key}), and
+# a direct .write(key) call, while not matching the legitimate
+# print(hmac.new(key, ...).hexdigest()) -- that starts with print(hmac.new(, not
+# print(key.
+KEY_LEAK_PATTERN='print\((key|env_key)\b|\{(key|env_key)\}|\.write\((key|env_key)\b'
+for SKILL_FILE in harness-issue-prep harness-issue-debug; do
+  if grep -Eq "$KEY_LEAK_PATTERN" "$REPO_ROOT/skills/$SKILL_FILE/SKILL.md"; then
+    fail "f012: $SKILL_FILE/SKILL.md has a code path that could print/write the raw key"
+  else
+    pass "f012: $SKILL_FILE/SKILL.md has no code path printing/writing the raw key"
   fi
 done
 

@@ -197,9 +197,10 @@ from subprocess import CalledProcessError, DEVNULL, check_output
 
 
 def get_stamp_key():
-    # 1. macOS Keychain (unchanged). Absent on Linux/CI; falls through on any
-    # failure (CalledProcessError: no matching item; FileNotFoundError: no
-    # `security` binary at all, e.g. non-macOS) or an empty result.
+    # 1. macOS Keychain. Absent on Linux/CI and unsupported on Windows; falls
+    # through on any failure (CalledProcessError: no matching item;
+    # FileNotFoundError: no `security` binary at all, e.g. non-macOS) or an
+    # empty result.
     try:
         key = check_output(
             ["security", "find-generic-password", "-s", "vv-harness-stamp", "-w"],
@@ -301,12 +302,14 @@ If `prep.kick_command` is configured, execute it verbatim to nudge the external 
 bash -c "$KICK_COMMAND"
 ```
 
-`kick_command` is a plain string, executed as-is -- it replaces the previous hardcoded
-`launchctl`-only behavior with a configurable one. Example macOS value (the runner's
-launchd job), now just one possible configuration rather than the only one:
-`launchctl kickstart -k "gui/$(id -u)/<kickstart_label>"`. If `prep.kick_command` is
-absent, skip this step (unchanged end state) -- its presence is what enables Step 8,
-there is no separate on/off flag. Any failure here is a one-line note in the final
+`kick_command` is a plain string, executed as-is; it is not limited to any particular
+runner mechanism. Example macOS value (a launchd job's kickstart):
+`launchctl kickstart -k "gui/$(id -u)/<kickstart_label>"` -- one possible value among
+any shell command. If `prep.kick_command` is absent, skip this step; its presence is
+what enables Step 8, there is no separate on/off flag. Treat `kick_command` as
+trusted-input-only: it executes verbatim via `bash -c`, so a hostile `harness.json`
+(e.g. from a cloned repo) runs arbitrary commands on the next prep. Any failure here
+is a one-line note in the final
 report, never fatal to the run: the runner's own poll cycle is the fallback path, and a
 missed kickstart only delays pickup, it does not lose the stamp.
 

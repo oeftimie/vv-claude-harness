@@ -55,8 +55,9 @@ pass gets no stamp.
 - **Key resolution chain** (first source that yields a key wins; the mint
   (`harness-issue-prep`) and any consumer that recomputes the HMAC (an external runner, or
   `harness-issue-debug`'s `resume` disposition) use the identical chain, in this order):
-  1. macOS Keychain generic password, service `vv-harness-stamp` (unchanged from v1).
-     One-time setup by the human, never automated:
+  1. macOS Keychain generic password, service `vv-harness-stamp`. macOS-only; absent on
+     Linux/CI and unsupported on Windows (Windows is out of scope for this recipe
+     entirely -- use source 2 or 3 there). One-time setup by the human, never automated:
      `security add-generic-password -a "$USER" -s vv-harness-stamp -w "$(openssl rand -hex 32)"`
   2. A file named by the `VV_HARNESS_STAMP_KEY_FILE` environment variable. MUST be mode
      `0600`; any looser mode is refused outright (not silently accepted), naming the exact
