@@ -994,6 +994,244 @@ else
   fail "v: readiness stamp schema -- $READINESS_STAMP_ERRORS"
 fi
 
+echo ""
+echo "== F012: portable readiness-stamp signing =="
+
+# Extract the ACTUAL Step 7 python snippet from harness-issue-prep/SKILL.md (not a
+# re-implementation) so this test proves the shipped instructions execute correctly,
+# not a separate copy that could silently drift from what's actually documented.
+DIR_STAMP="$WORK/f012-stamp"
+mkdir -p "$DIR_STAMP"
+python3 - "$REPO_ROOT" "$DIR_STAMP" <<'PYEOF'
+import re
+import sys
+
+repo_root, work = sys.argv[1], sys.argv[2]
+text = open(f"{repo_root}/skills/harness-issue-prep/SKILL.md").read()
+match = re.search(
+    r'python3 - "\$SPEC_HASH" "\$BASE_SHA" "\$LANE" "\$REPO" <<\'PYEOF\'\n(.*?)\nPYEOF',
+    text, re.DOTALL,
+)
+if not match:
+    print("STEP7_EXTRACT_FAILED")
+    sys.exit(0)
+with open(f"{work}/resolve_and_hmac.py", "w") as fh:
+    fh.write(match.group(1))
+PYEOF
+if [ -f "$DIR_STAMP/resolve_and_hmac.py" ]; then
+  pass "f012: Step 7's key-resolution+HMAC snippet extracted from harness-issue-prep/SKILL.md"
+else
+  fail "f012: could not extract Step 7's snippet from harness-issue-prep/SKILL.md"
+fi
+python3 -c "compile(open('$DIR_STAMP/resolve_and_hmac.py').read(), 'step7', 'exec')" 2>/dev/null
+assert_rc0 "$?" "f012: the extracted Step 7 snippet is syntactically valid python"
+
+# Resolution-chain scenarios, run against the REAL extracted snippet with a
+# real-but-empty PATH (no `security` binary reachable, simulating both Linux/CI and
+# this repo's own confirmed-persistent sandboxed-Keychain-block environment --
+# context_summary.md -- so "Keychain absent" is exercised identically either way).
+run_stamp_key() {
+  env -i PATH="/usr/bin:/bin" HOME="$HOME" "$@" python3 "$DIR_STAMP/resolve_and_hmac.py" \
+    fixed-spec-hash fixed-base-sha code myorg/myrepo
+}
+
+run_stamp_key >/dev/null 2>&1
+RC=$?
+assert_rc2 "$RC" "f012: no key from any source (no Keychain, no file, no env) exits 2"
+
+printf 'file-key-0600' > "$DIR_STAMP/key600"
+chmod 600 "$DIR_STAMP/key600"
+OUT_FILE600=$(run_stamp_key VV_HARNESS_STAMP_KEY_FILE="$DIR_STAMP/key600")
+RC=$?
+assert_rc0 "$RC" "f012: a 0600 key file is accepted, HMAC printed, rc 0"
+
+printf 'file-key-0644' > "$DIR_STAMP/key644"
+chmod 644 "$DIR_STAMP/key644"
+OUT_FILE644=$(run_stamp_key VV_HARNESS_STAMP_KEY_FILE="$DIR_STAMP/key644" 2>&1)
+RC=$?
+if [ "$RC" -eq 1 ]; then pass "f012: a 0644 key file is refused, exit 1"; else fail "f012: a 0644 key file should be refused with exit 1, got rc=$RC"; fi
+assert_contains "$OUT_FILE644" "chmod 600" "f012: the 0644 refusal names the exact chmod fix"
+
+: > "$DIR_STAMP/keyempty"
+chmod 600 "$DIR_STAMP/keyempty"
+OUT_EMPTY_PLUS_ENV=$(run_stamp_key VV_HARNESS_STAMP_KEY_FILE="$DIR_STAMP/keyempty" VV_HARNESS_STAMP_KEY="env-key-value")
+RC=$?
+OUT_ENV_ONLY=$(run_stamp_key VV_HARNESS_STAMP_KEY="env-key-value")
+if [ "$RC" -eq 0 ] && [ "$OUT_EMPTY_PLUS_ENV" = "$OUT_ENV_ONLY" ]; then
+  pass "f012: an empty (but correctly-permissioned) key file is treated as no key, env var used instead"
+else
+  fail "f012: empty key file should fall through to the env var, got rc=$RC out=$OUT_EMPTY_PLUS_ENV vs env-only=$OUT_ENV_ONLY"
+fi
+
+OUT_FILE_PLUS_ENV=$(run_stamp_key VV_HARNESS_STAMP_KEY_FILE="$DIR_STAMP/key600" VV_HARNESS_STAMP_KEY="env-key-value")
+if [ "$OUT_FILE_PLUS_ENV" = "$OUT_FILE600" ]; then
+  pass "f012: resolution order -- a valid key file wins over the env var, not the other way round"
+else
+  fail "f012: expected the key-file HMAC to win when both file and env are set"
+fi
+
+# Mint a stamp for a fixture spec using the real extracted snippet, then verify it
+# against all 6 consumer rules from schemas/readiness-stamp.md, plus 3 negative
+# cases proving the checker actually discriminates (not vacuously true).
+STAMP_CHECK_ERRORS=$(python3 - "$DIR_STAMP" <<'PYEOF'
+import hashlib
+import hmac
+import json
+import os
+import subprocess
+import sys
+
+work = sys.argv[1]
+key_path = os.path.join(work, "key600")
+key = open(key_path, "rb").read().strip()
+
+FIXTURE_TITLE = "F012 fixture: portable readiness-stamp signing"
+FIXTURE_DESC = "Fixture spec body used only by this test, never a real feature."
+spec_hash = hashlib.sha256((FIXTURE_TITLE + "\n" + FIXTURE_DESC).encode()).hexdigest()
+base_sha = "abc123def456"
+lane = "code"
+repo = "myorg/myrepo"
+
+
+def mint_hmac(spec_hash_, base_sha_, lane_, repo_, key_):
+    msg = "|".join([spec_hash_, base_sha_, lane_, repo_]).encode("utf-8")
+    return hmac.new(key_, msg, hashlib.sha256).hexdigest()
+
+
+stamp = {
+    "stamp_version": "1",
+    "issue": "ENG-999",
+    "spec_hash": spec_hash,
+    "base_sha": base_sha,
+    "verdict": "PASS",
+    "sv_version": "1.0",
+    "lane": lane,
+    "repo": repo,
+    "risk": "standard",
+    "stamper": "test-fixture",
+    "ts": "2026-07-31T00:00:00Z",
+    "hmac": mint_hmac(spec_hash, base_sha, lane, repo, key),
+}
+
+
+def verify_stamp(stamp_, key_, current_title, current_desc, sv_floor, repo_allowlist):
+    # Rule 1: stamp_version is "1" (marker-line/parse check folded in -- this
+    # function receives an already-parsed dict, matching a real consumer that
+    # already found the marker line and parsed the fenced json block).
+    if stamp_.get("stamp_version") != "1":
+        return False, "rule1: bad stamp_version"
+    # Rule 2: hmac recomputes correctly from the key and message fields.
+    expected_hmac = mint_hmac(
+        stamp_["spec_hash"], stamp_["base_sha"], stamp_["lane"], stamp_["repo"], key_
+    )
+    if not hmac.compare_digest(expected_hmac, stamp_["hmac"]):
+        return False, "rule2: hmac mismatch"
+    # Rule 3: spec_hash recomputes from the CURRENT title+description.
+    current_hash = hashlib.sha256((current_title + "\n" + current_desc).encode()).hexdigest()
+    if current_hash != stamp_["spec_hash"]:
+        return False, "rule3: spec_hash mismatch (post-stamp edit)"
+    # Rule 4: sv_version at or above the consumer's floor.
+    if float(stamp_["sv_version"]) < sv_floor:
+        return False, "rule4: sv_version below floor"
+    # Rule 5: repo allow-listed (base_sha drift threshold not exercised here --
+    # this fixture always sets a concrete base_sha, never "unknown").
+    if stamp_["repo"] not in repo_allowlist:
+        return False, "rule5: repo not allow-listed"
+    # Rule 6: labels are hints only -- nothing to check mechanically; the stamp
+    # itself is what a real consumer trusts, which rules 1-5 already covered.
+    return True, "all 6 rules satisfied"
+
+
+ok, reason = verify_stamp(stamp, key, FIXTURE_TITLE, FIXTURE_DESC, 1.0, {repo})
+if not ok:
+    print(f"positive case should have verified clean: {reason}")
+
+# Negative case A: wrong key -> rule 2 must fail.
+wrong_key = b"not-the-real-key"
+ok_a, reason_a = verify_stamp(stamp, wrong_key, FIXTURE_TITLE, FIXTURE_DESC, 1.0, {repo})
+if ok_a or "rule2" not in reason_a:
+    print(f"negative case A (wrong key) should fail rule 2, got ok={ok_a} reason={reason_a}")
+
+# Negative case B: description edited after stamping -> rule 3 must fail.
+ok_b, reason_b = verify_stamp(
+    stamp, key, FIXTURE_TITLE, FIXTURE_DESC + " EDITED AFTER STAMPING", 1.0, {repo}
+)
+if ok_b or "rule3" not in reason_b:
+    print(f"negative case B (post-stamp edit) should fail rule 3, got ok={ok_b} reason={reason_b}")
+
+# Negative case C: repo not in the consumer's allow-list -> rule 5 must fail.
+ok_c, reason_c = verify_stamp(stamp, key, FIXTURE_TITLE, FIXTURE_DESC, 1.0, {"someone/else"})
+if ok_c or "rule5" not in reason_c:
+    print(f"negative case C (repo not allow-listed) should fail rule 5, got ok={ok_c} reason={reason_c}")
+
+# Cross-check: the HMAC this python re-implementation computes must match the
+# HMAC the ACTUAL extracted Step 7 snippet computes for the identical inputs --
+# proves the verification logic above tests the real recipe, not a divergent one.
+real_hmac = subprocess.run(
+    ["python3", os.path.join(work, "resolve_and_hmac.py"), spec_hash, base_sha, lane, repo],
+    env={"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", ""),
+         "VV_HARNESS_STAMP_KEY_FILE": key_path},
+    capture_output=True, text=True,
+).stdout.strip()
+if real_hmac != stamp["hmac"]:
+    print(f"cross-check failed: extracted-snippet hmac {real_hmac!r} != re-implementation {stamp['hmac']!r}")
+PYEOF
+)
+if [ -z "$STAMP_CHECK_ERRORS" ]; then
+  pass "f012: a minted stamp passes all 6 consumer rules; 3 negative cases each fail the expected rule; HMAC cross-checked against the real extracted snippet"
+else
+  fail "f012: stamp mint+verify -- $STAMP_CHECK_ERRORS"
+fi
+
+# Field parity: the schema doc's own first JSON example must declare exactly the
+# same field set the mint step above actually produces -- catches the doc's
+# worked example drifting from the real shape (or vice versa) silently.
+FIELD_PARITY_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import json
+import re
+import sys
+
+repo_root = sys.argv[1]
+text = open(f"{repo_root}/schemas/readiness-stamp.md").read()
+match = re.search(r"```json\n(.*?)\n```", text, re.DOTALL)
+example = json.loads(match.group(1))
+expected_fields = {
+    "stamp_version", "issue", "spec_hash", "base_sha", "verdict", "sv_version",
+    "lane", "repo", "risk", "stamper", "ts", "hmac",
+}
+example_fields = set(example.keys())
+if example_fields != expected_fields:
+    missing = expected_fields - example_fields
+    extra = example_fields - expected_fields
+    print(f"field mismatch -- missing: {sorted(missing)}, extra: {sorted(extra)}")
+PYEOF
+)
+if [ -z "$FIELD_PARITY_ERRORS" ]; then
+  pass "f012: readiness-stamp.md's worked example has exactly the fields a minted stamp produces"
+else
+  fail "f012: field parity -- $FIELD_PARITY_ERRORS"
+fi
+
+# prep.kick_command: flat, presence-gated, generalized, executed verbatim (OVI-53
+# Specification item 3 -- not nested under a prep.runner block, no separate enabled flag).
+if grep -q "prep.kick_command" "$REPO_ROOT/skills/harness-issue-prep/SKILL.md" \
+  && ! grep -q "prep.runner" "$REPO_ROOT/skills/harness-issue-prep/SKILL.md"; then
+  pass "f012: Step 8's kickstart is generalized to a flat, presence-gated prep.kick_command"
+else
+  fail "f012: Step 8 should use flat prep.kick_command with no prep.runner nesting"
+fi
+
+# Key hygiene: no code path in either skill's resolution-chain snippet prints the
+# raw key -- only the derived HMAC. A bare `print(key)` (as opposed to printing
+# the hexdigest) would leak it into a transcript.
+for SKILL_FILE in harness-issue-prep harness-issue-debug; do
+  if grep -q "print(key)" "$REPO_ROOT/skills/$SKILL_FILE/SKILL.md"; then
+    fail "f012: $SKILL_FILE/SKILL.md has a code path that could print the raw key"
+  else
+    pass "f012: $SKILL_FILE/SKILL.md has no code path printing the raw key"
+  fi
+done
+
 SKILL_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import os
 import sys

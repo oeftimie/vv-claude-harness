@@ -224,11 +224,12 @@ breakdown view is available on subscription plans (Pro/Max/Team/Enterprise).
 
 ## Optional: spec gate for an external runner
 
-Everything below is optional and macOS-specific (it uses the Keychain and `launchctl`).
-Skip it entirely if you only use the spec gate locally: `/harness-init` Step 5.1 and
-`harness-issue-prep` work with no configuration, writing an unsigned `spec` field to
-`features.json`. Configure this section only if a separate, external issue-to-PR runner
-needs a trustworthy signal that a Linear issue is ready for unattended implementation.
+Everything below is optional. Skip it entirely if you only use the spec gate locally:
+`/harness-init` Step 5.1 and `harness-issue-prep` work with no configuration, writing an
+unsigned `spec` field to `features.json`. Configure this section only if a separate,
+external issue-to-PR runner needs a trustworthy signal that a Linear issue is ready for
+unattended implementation. Stamp signing works on Linux/CI as well as macOS (see the key
+resolution chain below); only the Keychain source is macOS-specific.
 
 Add a `prep` key to `.harness/harness.json`. Every sub-key is optional; a missing
 `prep` key, or a missing sub-key within it, degrades the relevant capability rather than
@@ -245,30 +246,34 @@ failing:
       "keychain_service": "vv-harness-stamp",
       "stamper": "<your name>"
     },
-    "runner": {
-      "kickstart_label": "com.you.linear-agent",
-      "enabled": false
-    }
+    "kick_command": "launchctl kickstart -k \"gui/$(id -u)/com.you.linear-agent\""
   }
 }
 ```
 
 - `prep.linear`: labels `harness-issue-prep` applies to a Linear issue as it moves through the
   gate. Omit it and labeling is skipped.
-- `prep.stamp`: enables minting a signed readiness stamp. Requires a one-time Keychain
-  setup, done by hand and never automated:
+- `prep.stamp`: enables minting a signed readiness stamp via a 3-source key resolution
+  chain (first source that yields a key wins): macOS Keychain, then a file named by the
+  `VV_HARNESS_STAMP_KEY_FILE` env var (must be mode `0600`), then the discouraged
+  `VV_HARNESS_STAMP_KEY` env var. The Keychain source is a one-time setup, done by hand
+  and never automated:
 
   ```bash
   security add-generic-password -a "$USER" -s vv-harness-stamp -w "$(openssl rand -hex 32)"
   ```
 
   `keychain_service` must match the service name used above (`vv-harness-stamp` by
-  default). If the key is unreadable at stamp time, `harness-issue-prep` aborts stamping (the
-  spec stays normalized, no label is applied) and prints this same setup command.
-- `prep.runner`: set `enabled: true` and `kickstart_label` to the `Label` in your
-  runner's launchd plist to have `harness-issue-prep` nudge it after a successful stamp
-  (`launchctl kickstart -k "gui/$(id -u)/<kickstart_label>"`). A failed kickstart is a
-  one-line note, never fatal; the runner's own poll cycle is the fallback path.
+  default). See [schemas/readiness-stamp.md](./schemas/readiness-stamp.md) for the file
+  and env-var sources, needed on Linux/CI where the Keychain doesn't exist. If none of
+  the three sources yields a key, `harness-issue-prep` aborts stamping (the spec stays
+  normalized, no label is applied) and prints setup guidance for all three.
+- `prep.kick_command`: a shell command that nudges your external runner after a
+  successful stamp, executed verbatim via `bash -c "$KICK_COMMAND"`. Its presence is
+  what enables Step 8 -- there is no separate on/off flag. The `launchctl kickstart`
+  line above is just one example value (a macOS launchd runner); any shell command
+  works. Absent, Step 8 is skipped. A failed kickstart is a one-line note, never fatal;
+  the runner's own poll cycle is the fallback path.
 
 See [schemas/readiness-stamp.md](./schemas/readiness-stamp.md) for the stamp format, the
 canonical hashing recipe, and the HMAC recipe the Keychain key feeds.
