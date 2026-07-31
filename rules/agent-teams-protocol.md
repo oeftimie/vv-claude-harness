@@ -391,6 +391,28 @@ This promotes scope enforcement from instructional to mechanical. This hook is t
 doc-grounded way to keep teammates inside their scope; subagents spawned with worktree
 isolation in the fallback mode don't need it (they have physical isolation instead).
 
+> **Known limitation (F061): the hook cannot tell the lead's own session from a
+> teammate's.** `enforce-scope.sh`'s only discriminator is whether
+> `.claude/teammate-scope.txt` EXISTS as a file -- a single shared project-root path,
+> checked identically regardless of who is asking. Confirmed via direct fetch of
+> code.claude.com/docs/en/hooks and code.claude.com/docs/en/agent-teams: hook input
+> carries no team-role or lead-vs-teammate field, and no environment variable
+> distinguishes the two either. Consequence: while ANY teammate scope file exists, the
+> LEAD's own actions are gated by it too -- it cannot rewrite `.claude/teammate-scope.txt`
+> at `TeammateIdle` reassignment, delete it at Phase 5 teardown, or write any
+> LEAD_OWNED file (`.harness/features.json`, `.harness/harness.json`, etc.), all via the
+> exact same mechanism meant to protect the project from teammates. This is a shared-
+> branch-mode-specific problem: worktree isolation would sidestep it (separate `.claude/`
+> per worktree, no collision) but is NOT platform-documented for genuine Agent Teams
+> teammates (see Worktree Isolation below) -- do not rely on it as a fix here. No clean
+> workaround exists today. **Fallback**: the human user can perform the blocked action
+> directly, outside Claude Code's own tool-execution pipeline (edit the file with a text
+> editor, or run the command in a plain terminal) -- PreToolUse hooks only gate the
+> agent's own tool calls, not out-of-band human action. **Retirement condition**: if
+> Claude Code's hooks ever document a lead-vs-teammate discriminator field in hook input
+> (recheck code.claude.com/docs/en/hooks), `enforce-scope.sh` can key off it directly and
+> this limitation retires.
+
 ## Conflict Resolution
 
 If two teammates need the same file:

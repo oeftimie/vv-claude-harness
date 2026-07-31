@@ -5474,6 +5474,25 @@ else
   fail "mnt (F059): agents/reviewer.md still asserts the pre-F059 Phase-5-only shutdown timing"
 fi
 
+# F061: enforce-scope.sh has no documented way to distinguish the lead's own
+# session from a teammate's (confirmed via direct fetch of Claude Code's own
+# hooks and agent-teams docs), so while any teammate scope file exists the
+# lead's own actions are gated by the same LEAD_OWNED mechanism. Pin the
+# limitation callout and its retirement condition, matching the established
+# Known-bug/retirement-condition convention already used for
+# plan_approval_response in this same file.
+if grep -q "Known limitation (F061)" "$PROTOCOL_MD" \
+  && grep -q "this limitation retires" "$PROTOCOL_MD"; then
+  pass "mnt (F061): agent-teams-protocol.md documents the lead/teammate-blindness limitation and its own retirement condition"
+else
+  fail "mnt (F061): agent-teams-protocol.md is missing the F061 limitation callout or its retirement condition"
+fi
+if grep -q "NOT platform-documented for genuine Agent Teams" "$PROTOCOL_MD"; then
+  pass "mnt (F061): the limitation callout correctly declines worktree isolation as a fix"
+else
+  fail "mnt (F061): the limitation callout is missing the worktree-isolation caveat"
+fi
+
 if grep -q "[Rr]etirement condition" "$REPO_ROOT/README.md"; then
   pass "mnt: README.md's plan_approval_response mention carries a retirement condition"
 else
