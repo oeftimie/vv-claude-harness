@@ -39,36 +39,83 @@ Store the confirmed identity in `.harness/harness.json`.
 
 ## Step 3: Create .harness/ Directory
 
-Create `.harness/` with these files:
+Never hand-transcribe the framework-fixed files below into a project -- run
+`${CLAUDE_PLUGIN_ROOT}/scripts/stamp.sh`, which emits every one of them deterministically
+from an answers file. Adapted from Setlist's two-phase bootstrap doctrine (Alex Ciortan,
+CC BY 4.0): "Never hand-write what a stamp can emit; never stamp what a decision shapes."
 
-**`.harness/harness.json`**:
+**First, confirm the build hook.** If the detected stack is one of `typescript`,
+`swift`, `python`, `go`, or `rust`, show the user the exact PostToolUse hook the stamp
+is about to wire in (the content of `skills/harness-init/templates/posttooluse-<stack>.json`
+-- it catches type/build errors after edits without blocking the agent, since hooks run
+async) and wait for confirmation before continuing. Any other stack: say plainly that no
+PostToolUse hook is available for it, and proceed.
 
-```json
-{
-  "project": "PROJECT_NAME",
-  "stack": "DETECTED_OR_SPECIFIED_STACK",
-  "created": "ISO_DATE",
-  "harness": "vv-harness",
-  "git_identity": {
-    "user_name": "DETECTED_NAME",
-    "user_email": "DETECTED_EMAIL",
-    "ssh_key": "KEY_FILE_OR_HOST_ALIAS",
-    "ssh_host": "github.com OR ALIAS"
-  },
-  "team_structure": null
-}
+Write the answers file:
+
+```bash
+mkdir -p /tmp/vv-harness-stamp
+cat > /tmp/vv-harness-stamp/answers.txt <<EOF
+project_name=PROJECT_NAME
+stack=DETECTED_OR_SPECIFIED_STACK
+team_mode=teams
+mode=new
+EOF
 ```
 
-**`.harness/features.json`**:
+`team_mode=teams` unconditionally enables the experimental Agent Teams env flag for every
+new project (matches this skill's existing behavior; Step 6 still decides per-project
+whether `team_structure` is actually populated -- this key does not add a new question).
+`mode=new` is correct here; `mode=upgrade` exists in `stamp.sh` for re-stamping an
+existing project and is not used by this skill.
 
-```json
-{
-  "project": "PROJECT_NAME",
-  "created": "ISO_DATE",
-  "total_features": 0,
-  "passing": 0,
-  "features": []
+Run the stamp from the project root:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/scripts/stamp.sh" /tmp/vv-harness-stamp/answers.txt .
+```
+
+If it aborts (mode=new found an existing file), stop and show the user exactly what it
+reported; do not work around the abort by deleting their files.
+
+On success this writes, byte-verbatim or rendered from a template in
+`skills/harness-init/templates/` -- never hand-transcribed:
+- `.claude/settings.json`: statusLine, env, permissions, and the full hook wiring
+  (PreToolUse scope/git-identity/commit-gate, TaskCompleted, TeammateIdle), plus the
+  stack-appropriate PostToolUse build-check block selected from
+  `templates/posttooluse-<stack>.json` when `stack` is `typescript`, `swift`, `python`,
+  `go`, or `rust`; any other stack gets no PostToolUse hook.
+- `.claude/hooks/{verify-task-quality.sh, check-remaining-tasks.sh, enforce-scope.sh,
+  verify-git-identity.sh, commit-gate.sh, harness_state.py, statusline.sh}`, all
+  executable. `harness_state.py` is the shared, stdlib-only `features.json` read/write
+  module that `verify-task-quality.sh` and `check-remaining-tasks.sh` consume (schema in
+  `${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json`). `commit-gate.sh` is a PreToolUse
+  Bash hook that fires only on `git commit`, denying compound stage-and-commit forms and
+  staged secret-shaped content (see the template's own header for the full check list).
+- `.harness/harness.json` and `.harness/features.json` skeletons with `project`/`stack`/
+  `created` filled in; `git_identity` and `team_structure` are left `null` here (this
+  step and Step 6, respectively, are the decisions that fill them).
+- `.gitignore` gains `.harness/SESSION_INCOMPLETE`, appended idempotently.
+
+Then finish the pieces the stamp deliberately leaves to a decision:
+
+**1. Fill in `git_identity`** with the identity confirmed in Step 2:
+
+```bash
+python3 - <<'PYEOF'
+import json
+
+with open(".harness/harness.json") as f:
+    data = json.load(f)
+data["git_identity"] = {
+    "user_name": "DETECTED_NAME",
+    "user_email": "DETECTED_EMAIL",
+    "ssh_key": "<key file or host alias>",
+    "ssh_host": "github.com OR ALIAS",
 }
+with open(".harness/harness.json", "w") as f:
+    json.dump(data, f, indent=2)
+PYEOF
 ```
 
 Each feature's shape (the 16 fields, which are required vs. optional, the status enum) is
@@ -85,7 +132,8 @@ this one for the current definition.
 
 A feature may also carry a `spec` verification object; see the Feature Schema section of the Agent Teams protocol.
 
-**`.harness/context_summary.md`**:
+**2. Write `.harness/context_summary.md`** -- this carries real project judgment (domain,
+constraints, architecture), never zero-decision content, so it stays hand-authored:
 
 ```markdown
 # Context Summary
@@ -120,7 +168,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - (none yet — first retrospective will populate this)
 ```
 
-**`.harness/claude-progress.txt`**:
+**3. Write `.harness/claude-progress.txt`**:
 
 ```
 # Claude Progress Log
@@ -134,7 +182,10 @@ This file is referenced in CLAUDE.md and loaded every session.
 - [List what you set up]
 ```
 
-**`.harness/init.sh`**: Read the `init.sh.template` file in this skill's directory. Copy it into `.harness/init.sh`, configure for the detected stack, and make executable with `chmod +x`.
+**4. Configure `.harness/init.sh`** for the detected stack -- the one genuinely
+decision-shaped file in this set, so the stamp does not touch it. Read the
+`init.sh.template` file in this skill's directory, copy it to `.harness/init.sh`,
+configure for the detected stack, and make it executable with `chmod +x`.
 
 The script accepts one optional argument: `smoke_test` or `full_test` (default: `full_test`).
 - `smoke_test` — compile/syntax check only, completes in <15s. Used by the `TaskCompleted` hook as a fast first-pass gate.
@@ -142,212 +193,14 @@ The script accepts one optional argument: `smoke_test` or `full_test` (default: 
 
 When configuring for the project's stack, ensure both targets work correctly.
 
-## Step 3.5: Configure Build Hooks
+## Step 3.6: Quality Gate Hooks (via the Stamp)
 
-Based on the detected stack, offer to add a PostToolUse hook to the project's `.claude/settings.json`. This catches type errors after edits without blocking the agent (hooks run async).
-
-Create `.claude/settings.json` (or merge into existing) with the appropriate hook:
-
-**TypeScript/Node.js**:
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"ts\" ] || [ \"$ext\" = \"tsx\" ]; then npx tsc --noEmit 2>&1 | head -20; fi; fi",
-            "async": true
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Swift/iOS/macOS**:
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"swift\" ]; then swift build 2>&1 | tail -10; fi; fi",
-            "async": true
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Python**:
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"py\" ]; then python -m py_compile \"$FILE\" 2>&1; fi; fi",
-            "async": true
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Go**:
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"go\" ]; then go build ./... 2>&1 | tail -10; fi; fi",
-            "async": true
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Rust**:
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ]; then ext=\"${FILE##*.}\"; if [ \"$ext\" = \"rs\" ]; then cargo check 2>&1 | tail -10; fi; fi",
-            "async": true
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Present the hook to the user and wait for confirmation before creating or modifying the file.
-
-## Step 3.6: Configure Quality Gate Hooks
-
-Set up Agent Teams quality enforcement hooks. Read the `.sh.template` files in this skill's directory and install them:
-
-1. Create `.claude/hooks/` directory: `mkdir -p .claude/hooks`
-2. Copy `harness_state.py.template` to `.claude/hooks/harness_state.py` — the shared,
-   stdlib-only `features.json` read/write module that `verify-task-quality.sh` and
-   `check-remaining-tasks.sh` consume (schema in
-   `${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json`).
-3. Copy `verify-task-quality.sh.template` to `.claude/hooks/verify-task-quality.sh`
-4. Copy `check-remaining-tasks.sh.template` to `.claude/hooks/check-remaining-tasks.sh`
-5. Copy `enforce-scope.sh.template` to `.claude/hooks/enforce-scope.sh`
-6. Copy `verify-git-identity.sh.template` to `.claude/hooks/verify-git-identity.sh`
-7. Copy `commit-gate.sh.template` to `.claude/hooks/commit-gate.sh` — a PreToolUse
-   Bash hook that fires only on `git commit`, denying compound stage-and-commit
-   forms and staged secret-shaped content (see the template's own header for the
-   full check list and fail-open posture).
-8. Copy the plugin's status line script into the project:
-   `cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.sh" .claude/hooks/statusline.sh`
-   — the plugin cache path changes on every plugin update, so the project keeps its own copy.
-9. Make all executable: `chmod +x .claude/hooks/*.sh .claude/hooks/harness_state.py`
-10. Append `.harness/SESSION_INCOMPLETE` to the project's `.gitignore` (create it if missing).
-    It is transient session state written by the plugin's SessionEnd hook.
-11. Add to `.claude/settings.json` (merge with the PostToolUse hooks from Step 3.5):
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/statusline.sh"
-  },
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-  },
-  "permissions": {
-    "allow": [
-      "Bash(bash .harness/init.sh*)",
-      "Bash(\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/*.sh*)",
-      "Bash(git config user.name)",
-      "Bash(git config user.email)",
-      "Bash(git rev-parse*)",
-      "Bash(git log*)",
-      "Bash(git status*)",
-      "Read(./.harness/**)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/enforce-scope.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/enforce-scope.sh"
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-git-identity.sh"
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/commit-gate.sh"
-          }
-        ]
-      }
-    ],
-    "TaskCompleted": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify-task-quality.sh"
-          }
-        ]
-      }
-    ],
-    "TeammateIdle": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-remaining-tasks.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+The stamp run in Step 3 already wrote and `chmod +x`'d every quality gate hook
+(`verify-task-quality.sh`, `check-remaining-tasks.sh`, `enforce-scope.sh`,
+`verify-git-identity.sh`, `commit-gate.sh`, `harness_state.py`, `statusline.sh`) and
+wired the full `.claude/settings.json` block (statusLine, env, permissions, and the
+PreToolUse/TaskCompleted/TeammateIdle hooks) -- there is nothing left to do here beyond
+the verification in Step 3.7.
 
 Do NOT wire a per-project PostCompact hook. The plugin's SessionStart hook (which fires
 with a `compact` source after compaction) already injects post-compaction recovery

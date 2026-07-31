@@ -4926,30 +4926,29 @@ assert_rc0 "$RC" "ht: acceptance with proof but no declared qa_binding exits 0"
 assert_not_contains "$OUT" "no proof recorded" "ht: legacy no-binding case has no no-proof warning"
 assert_not_contains "$OUT" "does not match" "ht: legacy no-binding case has no mismatch warning"
 
+# Post-F013/OVI-63, the settings block is no longer inline in SKILL.md -- it is
+# rendered by scripts/stamp.sh from skills/harness-init/templates/settings.json.tmpl,
+# which is now the source of truth this check reads.
 SETTINGS_BLOCK_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import os
-import re
 import sys
 
 root = sys.argv[1]
-text = open(os.path.join(root, "skills", "harness-init", "SKILL.md")).read()
-blocks = [b for b in re.findall(r"```json\n(.*?)\n```", text, re.DOTALL) if "statusLine" in b]
-if len(blocks) != 1:
-    print(f"expected exactly one settings block containing statusLine, found {len(blocks)}")
-    sys.exit()
-block = blocks[0]
+block = open(os.path.join(root, "skills", "harness-init", "templates", "settings.json.tmpl")).read()
+if "statusLine" not in block:
+    print("settings.json.tmpl is missing statusLine")
 if "bash .claude/hooks/" in block:
-    print("settings block still invokes hooks cwd-relative (bash .claude/hooks/...)")
+    print("settings.json.tmpl still invokes hooks cwd-relative (bash .claude/hooks/...)")
 if block.count('\\"$CLAUDE_PROJECT_DIR\\"/.claude/hooks/') < 5:
-    print("settings block lacks the CLAUDE_PROJECT_DIR-absolute invocation form")
+    print("settings.json.tmpl lacks the CLAUDE_PROJECT_DIR-absolute invocation form")
 if '"Bash(bash .claude/hooks/*.sh)"' in block:
     print("permissions allowlist still lists the cwd-relative hook form")
 PYEOF
 )
 if [ -z "$SETTINGS_BLOCK_ERRORS" ]; then
-  pass "ht: SKILL.md settings block invokes hooks via \$CLAUDE_PROJECT_DIR"
+  pass "ht: settings.json.tmpl invokes hooks via \$CLAUDE_PROJECT_DIR"
 else
-  fail "ht: SKILL.md settings block -- $SETTINGS_BLOCK_ERRORS"
+  fail "ht: settings.json.tmpl -- $SETTINGS_BLOCK_ERRORS"
 fi
 
 # F054: this repo runs on its own harness, so its OWN live .claude/settings.json
@@ -5190,6 +5189,219 @@ if [ -n "$NEXT_PLAIN" ] && [ "$NEXT_PLAIN" = "$NEXT_MODULE" ]; then
   pass "hs: next-claimable output is identical whether harness_state.py is present or not"
 else
   fail "hs: next-claimable output differs -- plain: '$NEXT_PLAIN' module: '$NEXT_MODULE'"
+fi
+
+echo ""
+echo "== F013: mechanical stamp for harness-init =="
+
+STAMP_SH="$REPO_ROOT/scripts/stamp.sh"
+STAMP_DOCTOR_PY="$REPO_ROOT/skills/harness-doctor/doctor.py"
+
+write_stamp_answers() {
+  cat > "$1" <<EOF
+project_name=Demo Project
+stack=python
+team_mode=teams
+mode=$2
+EOF
+}
+
+STAMP_DIR="$WORK/f013-stamp"
+mkdir -p "$STAMP_DIR"
+STAMP_ANSWERS_NEW="$STAMP_DIR/answers-new.txt"
+write_stamp_answers "$STAMP_ANSWERS_NEW" new
+
+STAMP_PROJECT="$STAMP_DIR/project"
+mkdir -p "$STAMP_PROJECT"
+"$STAMP_SH" "$STAMP_ANSWERS_NEW" "$STAMP_PROJECT" >/dev/null
+assert_rc0 "$?" "f013: mode=new stamp run exits 0 into a fresh directory"
+
+STAMP_EXPECTED_FILES="
+.claude/settings.json
+.harness/harness.json
+.harness/features.json
+.claude/hooks/verify-task-quality.sh
+.claude/hooks/check-remaining-tasks.sh
+.claude/hooks/enforce-scope.sh
+.claude/hooks/verify-git-identity.sh
+.claude/hooks/commit-gate.sh
+.claude/hooks/harness_state.py
+.claude/hooks/statusline.sh
+"
+STAMP_MISSING=""
+STAMP_NOT_EXEC=""
+while read -r REL; do
+  [ -z "$REL" ] && continue
+  if [ ! -f "$STAMP_PROJECT/$REL" ]; then
+    STAMP_MISSING="$STAMP_MISSING $REL"
+  elif [ "${REL#.claude/hooks/}" != "$REL" ] && [ ! -x "$STAMP_PROJECT/$REL" ]; then
+    STAMP_NOT_EXEC="$STAMP_NOT_EXEC $REL"
+  fi
+done <<EOF
+$STAMP_EXPECTED_FILES
+EOF
+if [ -z "$STAMP_MISSING" ]; then
+  pass "f013: mode=new produces the full expected file set"
+else
+  fail "f013: mode=new is missing:$STAMP_MISSING"
+fi
+if [ -z "$STAMP_NOT_EXEC" ]; then
+  pass "f013: every stamped .claude/hooks/ file is executable"
+else
+  fail "f013: not executable:$STAMP_NOT_EXEC"
+fi
+if grep -qxF '.harness/SESSION_INCOMPLETE' "$STAMP_PROJECT/.gitignore" 2>/dev/null; then
+  pass "f013: .gitignore gained .harness/SESSION_INCOMPLETE"
+else
+  fail "f013: .gitignore is missing .harness/SESSION_INCOMPLETE"
+fi
+
+STAMP_SETTINGS_ERRORS=$(python3 - "$STAMP_PROJECT/.claude/settings.json" 2>&1 <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    settings = json.load(fh)
+
+if "statusLine" not in settings:
+    print("missing statusLine")
+if settings.get("env", {}).get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") != "1":
+    print("env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS should be '1' for team_mode=teams")
+if not settings.get("permissions", {}).get("allow"):
+    print("missing permissions.allow")
+
+
+def hook_wired(event, script_name):
+    for entry in settings.get("hooks", {}).get(event, []):
+        for hook in entry.get("hooks", []):
+            if script_name in hook.get("command", ""):
+                return True
+    return False
+
+
+for script_name in ("enforce-scope.sh", "verify-git-identity.sh", "commit-gate.sh"):
+    if not hook_wired("PreToolUse", script_name):
+        print(f"PreToolUse missing {script_name}")
+if not hook_wired("TaskCompleted", "verify-task-quality.sh"):
+    print("TaskCompleted missing verify-task-quality.sh")
+if not hook_wired("TeammateIdle", "check-remaining-tasks.sh"):
+    print("TeammateIdle missing check-remaining-tasks.sh")
+
+posttooluse = settings.get("hooks", {}).get("PostToolUse", [])
+if not any("py_compile" in h.get("command", "") for entry in posttooluse for h in entry.get("hooks", [])):
+    print("PostToolUse missing the python build-check command for stack=python")
+PYEOF
+)
+if [ -z "$STAMP_SETTINGS_ERRORS" ]; then
+  pass "f013: settings.json parses and carries every wired block (incl. the python PostToolUse hook)"
+else
+  fail "f013: settings.json wiring -- $STAMP_SETTINGS_ERRORS"
+fi
+
+# Second mode=new run on the same (now-populated) directory must abort, listing
+# every collision, and write nothing. Each assert_contains below is only strong
+# together with the "aborted" check -- a path substring could otherwise appear
+# in a genuine written/refreshed success message too.
+STAMP_SECOND_MTIME_BEFORE=$(python3 -c "import os; print(os.path.getmtime('$STAMP_PROJECT/.claude/settings.json'))")
+STAMP_SECOND_OUT=$("$STAMP_SH" "$STAMP_ANSWERS_NEW" "$STAMP_PROJECT" 2>&1)
+STAMP_SECOND_RC=$?
+STAMP_SECOND_MTIME_AFTER=$(python3 -c "import os; print(os.path.getmtime('$STAMP_PROJECT/.claude/settings.json'))")
+assert_rc_nonzero "$STAMP_SECOND_RC" "f013: a second mode=new run on the same directory aborts"
+assert_contains "$STAMP_SECOND_OUT" "aborted" "f013: the message says it aborted"
+assert_not_contains "$STAMP_SECOND_OUT" "mode=new complete" \
+  "f013: an aborted run never reaches the completion message"
+assert_contains "$STAMP_SECOND_OUT" ".claude/settings.json" \
+  "f013: the abort message lists the colliding settings.json path"
+assert_contains "$STAMP_SECOND_OUT" ".claude/hooks/enforce-scope.sh" \
+  "f013: the abort message lists a colliding hook path"
+if [ "$STAMP_SECOND_MTIME_BEFORE" = "$STAMP_SECOND_MTIME_AFTER" ]; then
+  pass "f013: an aborted mode=new run writes nothing (settings.json mtime unchanged)"
+else
+  fail "f013: an aborted mode=new run should not touch any file, but settings.json's mtime changed"
+fi
+
+# Simulate real customizations (a hand-edited hook, and a real project's
+# harness.json with git_identity filled in) before running mode=upgrade.
+printf '\n# a hand-added customization\n' >> "$STAMP_PROJECT/.claude/hooks/enforce-scope.sh"
+python3 - "$STAMP_PROJECT/.harness/harness.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+data["git_identity"] = {"user_name": "Real User", "user_email": "real@example.com"}
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+PYEOF
+
+STAMP_ANSWERS_UPGRADE="$STAMP_DIR/answers-upgrade.txt"
+write_stamp_answers "$STAMP_ANSWERS_UPGRADE" upgrade
+STAMP_UPGRADE_OUT=$("$STAMP_SH" "$STAMP_ANSWERS_UPGRADE" "$STAMP_PROJECT")
+STAMP_UPGRADE_RC=$?
+assert_rc0 "$STAMP_UPGRADE_RC" "f013: mode=upgrade exits 0 even with customizations present"
+assert_contains "$STAMP_UPGRADE_OUT" ".claude/hooks/enforce-scope.sh" \
+  "f013: mode=upgrade reports the customized hook"
+assert_contains "$STAMP_UPGRADE_OUT" ".harness/harness.json" \
+  "f013: mode=upgrade reports the customized harness.json"
+if echo "$STAMP_UPGRADE_OUT" | grep -A20 "^skipped" | grep -q "enforce-scope.sh"; then
+  pass "f013: the customized hook is listed under skipped, not written or refreshed"
+else
+  fail "f013: the customized hook should be listed under skipped"
+fi
+if echo "$STAMP_UPGRADE_OUT" | grep -A20 "^refreshed" | grep -q "commit-gate.sh"; then
+  pass "f013: an untouched hook is refreshed (byte-identical overwrite)"
+else
+  fail "f013: an untouched hook should be listed under refreshed"
+fi
+if grep -q "a hand-added customization" "$STAMP_PROJECT/.claude/hooks/enforce-scope.sh"; then
+  pass "f013: the customized hook's content survived mode=upgrade untouched"
+else
+  fail "f013: the customized hook was overwritten -- upgrade mode must never clobber a customization"
+fi
+
+# AC1: no inline settings JSON remains in the skill doc.
+STAMP_HOOKS_COUNT=$(grep -c '"hooks"' "$REPO_ROOT/skills/harness-init/SKILL.md")
+if [ "$STAMP_HOOKS_COUNT" -eq 0 ]; then
+  pass "f013: skills/harness-init/SKILL.md has no remaining inline settings JSON"
+else
+  fail "f013: skills/harness-init/SKILL.md still has $STAMP_HOOKS_COUNT inline \"hooks\" occurrence(s)"
+fi
+
+# AC3: a stamped project (plus the skill-authored context_summary.md, which
+# stays out of the stamp's scope) passes harness-doctor clean.
+STAMP_DOCTOR_PROJECT="$WORK/f013-doctor-project"
+mkdir -p "$STAMP_DOCTOR_PROJECT"
+STAMP_ANSWERS_DOCTOR="$STAMP_DIR/answers-doctor.txt"
+write_stamp_answers "$STAMP_ANSWERS_DOCTOR" new
+"$STAMP_SH" "$STAMP_ANSWERS_DOCTOR" "$STAMP_DOCTOR_PROJECT" >/dev/null
+cat > "$STAMP_DOCTOR_PROJECT/.harness/context_summary.md" <<'EOF'
+# Context Summary
+
+## Active Context
+- Currently working on: project initialization
+
+## Cross-Cutting Concerns
+- none
+
+## Domain: Demo
+
+## Meta-Patterns
+- (none yet)
+EOF
+git -C "$STAMP_DOCTOR_PROJECT" -c init.defaultBranch=main init -q
+git -C "$STAMP_DOCTOR_PROJECT" config user.email "fixture@example.com"
+git -C "$STAMP_DOCTOR_PROJECT" config user.name "Fixture User"
+git -C "$STAMP_DOCTOR_PROJECT" config commit.gpgsign false
+git -C "$STAMP_DOCTOR_PROJECT" add -A
+git -C "$STAMP_DOCTOR_PROJECT" commit -q -m "stamped fixture"
+STAMP_DOCTOR_OUT=$(CLAUDE_PLUGIN_ROOT="$REPO_ROOT" python3 "$STAMP_DOCTOR_PY" "$STAMP_DOCTOR_PROJECT")
+STAMP_DOCTOR_RC=$?
+if [ "$STAMP_DOCTOR_RC" -eq 0 ] && [ "$STAMP_DOCTOR_OUT" = "healthy" ]; then
+  pass "f013: a stamped project passes harness-doctor clean (AC3)"
+else
+  fail "f013: a stamped project should pass harness-doctor clean, got rc=$STAMP_DOCTOR_RC out=$STAMP_DOCTOR_OUT"
 fi
 
 echo ""
@@ -7367,7 +7579,7 @@ fi
 echo ""
 echo "== shell syntax =="
 
-for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh"; do
+for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
   if bash -n "$SCRIPT"; then
     pass "n: bash -n $(basename "$SCRIPT")"
   else
