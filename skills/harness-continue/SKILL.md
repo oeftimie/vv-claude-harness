@@ -407,7 +407,7 @@ For each classified item, append (or update) a row in `.harness/HARNESS_BACKLOG.
 - **revise**: it fired, but too noisely or too narrowly to trust as-is.
 - **remove**: it fired zero times this session, or every time it fired it was pure friction (no real defect behind it).
 
-Append a `retain` / `revise` / `remove` verdict with its reason as a row in `.harness/HARNESS_BACKLOG.md` for anything not simply `retain`. Removing a control that no longer earns its carrying cost is a healthy, expected outcome of this pass, not a failure to report defensively.
+Append a `retain` / `revise` / `remove` verdict with its reason as a row in `.harness/HARNESS_BACKLOG.md` for anything not simply `retain` -- put the verdict and its reason in `proposed owner` (e.g. `revise (too noisy; narrow the matcher)`), the same column a `gap` row's type goes in, since an ablation row isn't proposing a promotion destination. Removing a control that no longer earns its carrying cost is a healthy, expected outcome of this pass, not a failure to report defensively.
 
 **`.harness/HARNESS_BACKLOG.md`** (lead-owned; create it the first time either pass produces a candidate). One table:
 

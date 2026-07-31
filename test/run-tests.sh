@@ -6199,14 +6199,48 @@ echo "== F015: promotion ladder + ablation pass =="
 HC_SKILL="$REPO_ROOT/skills/harness-continue/SKILL.md"
 CTX_RULE="$REPO_ROOT/rules/context-summary.md"
 
-# AC1: harness-continue contains both passes with the classification table,
-# and mentions HARNESS_BACKLOG.md (same grep-lint style as existing content
-# checks in this file, e.g. the F059/F061 checks just above).
-if grep -q "Promotion pass" "$HC_SKILL" && grep -q "Ablation pass" "$HC_SKILL" \
-  && grep -q "spawn-prompt tweak" "$HC_SKILL" && grep -q "not-yet" "$HC_SKILL"; then
-  pass "f015: harness-continue/SKILL.md has both the promotion and ablation passes with the ladder table"
+# AC1: harness-continue contains both passes with the FULL classification
+# table (all 7 rungs, one example each -- checking only 2 of 7 rung names
+# would let the middle five silently disappear), and mentions
+# HARNESS_BACKLOG.md (same grep-lint style as existing content checks in
+# this file, e.g. the F059/F061 checks just above).
+if grep -q "Promotion pass" "$HC_SKILL" && grep -q "Ablation pass" "$HC_SKILL"; then
+  pass "f015: harness-continue/SKILL.md has both the promotion and ablation passes"
 else
-  fail "f015: harness-continue/SKILL.md is missing the promotion pass, ablation pass, or ladder table"
+  fail "f015: harness-continue/SKILL.md is missing the promotion pass or the ablation pass"
+fi
+LADDER_ERRORS=$(python3 - "$HC_SKILL" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+match = re.search(r"\| Rung \| What it means \| Example \|\n\|---\|---\|---\|\n(.*?)\n\n", text, re.DOTALL)
+if not match:
+    print("could not find the ladder table (header + separator + rows)")
+    sys.exit(0)
+rows = [r for r in match.group(1).splitlines() if r.strip()]
+expected_rungs = [
+    "spawn-prompt tweak", "rule file edit", "hook change", "schema field",
+    "agent definition", "plugin skill", "not-yet",
+]
+if len(rows) != 7:
+    print(f"expected 7 table rows (one per rung), found {len(rows)}")
+found_rungs = [r.split("|")[1].strip() for r in rows if r.count("|") >= 3]
+missing = [r for r in expected_rungs if r not in found_rungs]
+if missing:
+    print(f"missing rung(s) in the table: {missing}")
+# "one example per rung" -- each row's 3rd column (the Example cell) must be non-empty.
+for row in rows:
+    cells = row.split("|")
+    if len(cells) >= 4 and not cells[3].strip():
+        print(f"row has an empty Example cell: {row!r}")
+PYEOF
+)
+if [ -z "$LADDER_ERRORS" ]; then
+  pass "f015: the ladder table has all 7 rungs with one example each (AC1)"
+else
+  fail "f015: ladder table -- $LADDER_ERRORS"
 fi
 if grep -q "HARNESS_BACKLOG.md" "$HC_SKILL"; then
   pass "f015: harness-continue/SKILL.md mentions HARNESS_BACKLOG.md (AC1)"
@@ -6239,8 +6273,12 @@ else
   fail "f015: the score >= 3 promotion threshold is not documented"
 fi
 
-# AC6: retrospective text contains the decay/retire rule.
-if grep -q "60 days" "$HC_SKILL" && grep -q "retired" "$HC_SKILL"; then
+# AC6: retrospective text contains the decay/retire rule. Anchored to
+# last_seen + 60 days together (rather than "60 days" and "retired"
+# independently) so the check can't be satisfied by two unrelated mentions
+# elsewhere in the file (e.g. "no control was ever retired" in the intro
+# prose, or "retired" appearing in the status enum documentation).
+if grep -q "last_seen.*60 days\|60 days.*last_seen" "$HC_SKILL"; then
   pass "f015: the 60-day decay/retirement rule is documented (AC6)"
 else
   fail "f015: the decay/retirement rule is missing"
@@ -6248,7 +6286,9 @@ fi
 
 # AC7: the bounded-canon cap is stated EXACTLY once (a second copy would mean
 # the two could silently drift, defeating the point of a single hard cap).
-CANON_CAP_COUNT=$(grep -c "hard-capped at 15 lines\|hard cap.*15 lines\|15 lines total" "$HC_SKILL")
+# grep -c counts matching LINES, not occurrences, so two mentions on the same
+# line would silently pass; grep -o extracts each match, giving a true count.
+CANON_CAP_COUNT=$(grep -o "15 lines\|15-line" "$HC_SKILL" | wc -l | tr -d ' ')
 if [ "$CANON_CAP_COUNT" -eq 1 ]; then
   pass "f015: the bounded-canon 15-line cap is stated exactly once (AC7)"
 else

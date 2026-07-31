@@ -54,17 +54,6 @@ Create once, update continuously.
          session's retrospective can recognize a repeat and bump the score. -->
 - (none yet)
 
-Example:
-```markdown
-## Meta-Patterns
-- Ground-truthing a reviewer's finding before fixing it caught real bugs
-  every time it was tried this session. (promoted-to: rules/agent-teams-
-  protocol.md's "verify before acting" clause)
-- Opus reviewers occasionally cite a line number one off from the real
-  diff hunk; worth double-checking before treating a citation as ground
-  truth. (watching)
-```
-
 ## Meta-Session [DATE]
 <!-- One section per completed session's retrospective. Written at session end.
      Analyzes correction_cycles, scope_expansions, model fit, discovery lineage.
@@ -78,6 +67,18 @@ Example:
 ## Closed Work Streams
 <!-- Completed features. Reference only if dependency exists. -->
 - [Feature]: completed [date], see [PR/commit]
+```
+
+Example:
+
+```markdown
+## Meta-Patterns
+- Ground-truthing a reviewer's finding before fixing it caught real bugs
+  every time it was tried this session. (promoted-to: rules/agent-teams-
+  protocol.md's "verify before acting" clause)
+- Opus reviewers occasionally cite a line number one off from the real
+  diff hunk; worth double-checking before treating a citation as ground
+  truth. (watching)
 ```
 
 **Update when:** a decision is made, a pattern is discovered, a gotcha is encountered, a work stream completes, active context shifts, or a session retrospective completes.
