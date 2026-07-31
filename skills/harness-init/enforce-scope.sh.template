@@ -235,6 +235,33 @@ if [ -n "$FILE_PATH" ]; then
         .claude/teammate-scope.txt)
             deny_json "teammate-scope.txt is lead-owned; report via SendMessage instead. $ANNOTATION"
             ;;
+        # .harness/mld/ added by F062: skills/harness-continue/SKILL.md documents this
+        # directory as lead-only ("the lead -- never a teammate -- writes
+        # .harness/mld/YYYY-MM-DD-<session-id>.md"), but it was unprotected -- confirmed
+        # live before this fix that a teammate scoped to .harness/ gets ALLOW on a Write
+        # here, the same class of gap F058/F060 closed elsewhere. The FIRST prefix-style
+        # entry in this set: mld files are dated/session-named, not a fixed path, so
+        # (unlike every entry above) a glob is needed here -- bash `case` patterns are
+        # shell globs natively, so this arm needs no new mechanism, but the mirrored
+        # python-side LEAD_OWNED check below does (see is_lead_owned_prefix()). Lower
+        # severity than harness.json/teammate-scope.txt (telemetry a teammate could
+        # pollute or fabricate, not security-relevant configuration or an enforcement
+        # boundary), but the same criterion applies: a file only the lead legitimately
+        # writes, never a teammate. Documented residual (found by adversarial review of
+        # PR #96): a bare-directory destination WITHOUT a trailing slash (`cp f
+        # .harness/mld`, `mv f .harness/mld`, `rm -rf .harness/mld`) normalizes to
+        # `.harness/mld` (no trailing "/"), which matches neither this glob arm nor
+        # the mirrored python prefix check, so a file landing INSIDE the directory via
+        # one of these forms is not caught -- `cp -t .harness/mld/ f` (trailing slash
+        # preserved) correctly DENIES, so the two spellings disagree. Accepted, not
+        # fixed: this is a deliberate-evasion-only route (the natural path a teammate
+        # takes is Write, or a `>`-redirect, both covered), and `.harness/` itself can
+        # already be `rm -rf`'d wholesale regardless of this fix, so directory-level
+        # destruction is a broader, pre-existing hole this narrower feature doesn't
+        # attempt to close.
+        .harness/mld/*)
+            deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION"
+            ;;
     esac
 
     # Legacy path (unchanged): check if file path matches any scope pattern
@@ -284,6 +311,19 @@ LEAD_OWNED = {
     # too, which a teammate can be legitimately assigned to work on).
     ".claude/teammate-scope.txt",
 }
+
+# Added by F062 -- .harness/mld/ files are dated/session-named
+# (.harness/mld/YYYY-MM-DD-<session-id>.md), not a fixed path, so exact-set
+# membership (LEAD_OWNED above) can't express this entry; the mirrored
+# Edit/Write case statement above uses a glob (case patterns are shell globs
+# natively) for the identical reason. See that case arm for the full rationale.
+LEAD_OWNED_PREFIXES = (".harness/mld/",)
+
+
+def is_lead_owned_prefix(norm):
+    return any(norm.startswith(p) for p in LEAD_OWNED_PREFIXES)
+
+
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
 
 # A narrow, enumerated allowlist of ordinary character-device sinks (never
@@ -1816,7 +1856,7 @@ def _check_segment(segment, project_root, patterns):
         # were ever widened back to a prefix-style match.
         if is_dev_exempt(norm):
             continue
-        if norm in LEAD_OWNED:
+        if norm in LEAD_OWNED or is_lead_owned_prefix(norm):
             print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
             return True
         if not any(norm.startswith(p) for p in patterns):
