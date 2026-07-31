@@ -114,3 +114,21 @@ way.
    allowlist.** No workaround — this probe exists to periodically confirm the
    entry still reflects a real, current Claude model choice (rather than a
    stale name kept out of inertia) and to remove it if it stops being one.
+
+6. **Lead/teammate hook-blindness limitation (F061).**
+   `rules/agent-teams-protocol.md`'s "Known limitation (F061)" callout
+   documents that no hook-facing field or environment variable distinguishes
+   the lead's own session from a teammate's, confirmed against
+   `code.claude.com/docs/en/hooks`'s common input fields
+   (`session_id`, `prompt_id`, `transcript_path`, `cwd`, `permission_mode`,
+   `effort`, `hook_event_name`, plus `agent_id`/`agent_type` for
+   `--agent`/subagent mode only) as of the date that callout was written. No
+   existing probe covers this: item 3 above checks `TaskCompleted`/
+   `TeammateIdle`/`SessionStart`/`SessionEnd` PAYLOAD SHAPE for regressions,
+   not PreToolUse hook input for a NEW field's addition. **Retirement
+   condition**: re-fetch `code.claude.com/docs/en/hooks`'s common input
+   fields; if a team-role/lead-vs-teammate discriminator field appears,
+   record it here as FIXED. Removing the limitation callout and updating
+   `enforce-scope.sh.template` to use the new field is a separate,
+   explicit, approval-required follow-up — not automatically performed as
+   part of a probe run.
