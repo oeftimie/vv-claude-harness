@@ -5,8 +5,8 @@ This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
-- Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues), all shipped so far through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up -- F016's `risk` trigger and F017's own conformance-tester trigger share the same underlying gap, that `risk`/`require_plan_approval` aren't persisted durably on the feature object), F018/OVI-66 (PR #103, dual-engine review, docs/protocol only), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md, this session) implemented. See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F020-F021 (two remaining Linear OVI-44 sub-issues) and F063/F064 (discovered follow-ups) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
+- Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues), all shipped so far through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up -- F016's `risk` trigger and F017's own conformance-tester trigger share the same underlying gap, that `risk`/`require_plan_approval` aren't persisted durably on the feature object), F018/OVI-66 (PR #103, dual-engine review, docs/protocol only), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md), F020/OVI-59 (skills/harness-improve/SKILL.md, this session) implemented. See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F021 (the last remaining Linear OVI-44 sub-issue) and F063/F064 (discovered follow-ups) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
 - No other locally-discovered work is queued.
 
 ## Cross-Cutting Concerns
@@ -1048,5 +1048,45 @@ This file is referenced in CLAUDE.md and loaded every session.
   zero duplicated sentences (AC1) before considering the split done, rather than
   relying only on the full-suite green run (which wouldn't have caught a
   duplicated sentence at all, since no automated check for that exists).
+- Plan approval: not applicable -- single-session implementation, no teammates
+  spawned.
+
+## Meta-Session 2026-08-01 (F020/OVI-59: harness-improve skill)
+- Scope accuracy: held the declared scope exactly (skills/harness-improve/SKILL.md,
+  test/run-tests.sh). No expansion needed -- F019's earlier fix already made the
+  skill-frontmatter name==directory lint self-maintaining (a glob, not a hardcoded
+  tuple), so AC1's prefix requirement only needed a small standalone check, not a
+  lint update.
+- Style consistency check: before considering the new test section done, grepped
+  the whole 8000+ line test/run-tests.sh for other uses of bash's `[[ ]]` and found
+  none -- the file consistently uses POSIX `[ ]`/`case`. Rewrote the AC1 prefix
+  check from `[[ ... == harness-* ]]` to a `case` statement to match, rather than
+  leaving the one inconsistent construct in place.
+- Mutation-testing: all 7 new assertions individually mutation-tested (a missing
+  step heading, an emptied gap-class owner cell, the attribution line removed from
+  BOTH its occurrences -- the first attempt only removed the closing one and the
+  intro-paragraph occurrence still satisfied the check, a real near-miss caught by
+  checking the FAIL output actually appeared -- and the non-harness-project
+  early-exit text removed). Each mutation produced exactly the expected single
+  FAIL, restored from a scratch backup between rounds.
+- Round-1 review (Opus, PR #105) found two real gaps, both fixed and re-verified:
+  (1) a wrong feature citation in the skill body (`F055` cited for the MLD
+  telemetry pointer; the real P3.1 feature is F014/OVI-54 -- F055 is an unrelated
+  TeammateIdle fix) -- corrected to F014/OVI-54; (2) the 3 AC3 guardrail
+  assertions grepped only the bold **label** text, not the sentence body, so a
+  guardrail whose label survived but whose body was gutted (e.g. `- **Bounded
+  claim**: TODO.`) still passed -- reviewer proved this empirically against a
+  scratch copy. Fixed by additionally anchoring each grep on a load-bearing
+  phrase from the sentence body (`THAT job, on THAT worker config, THAT day`;
+  `not just present on disk`; `Only observed behavior counts`), then
+  re-mutation-tested with the reviewer's exact label-only-reword mutation --
+  now correctly fails all three.
+- Model calibration: single-session, no sub-agents spawned for implementation.
+- Discovery lineage: none -- F020 was a pre-existing Linear-tracked feature
+  (OVI-59), not discovered mid-work.
+- Approach patterns: adapted harness-engineering's improve-harness.md playbook
+  (CC BY 4.0) into the 7-step/gap-table/guardrail shape already established by
+  F017/F018 for HE-derived features in this repo -- same attribution-line
+  convention, same "adapted from, not copied" framing.
 - Plan approval: not applicable -- single-session implementation, no teammates
   spawned.

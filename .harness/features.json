@@ -730,7 +730,7 @@
       "id": "F020",
       "description": "[OVI-59] P5.2: New skill harness-improve (HE's improve-one-harnessed-job loop) \u2014 Add skills/harness-improve/SKILL.md implementing an observation-first improvement loop in 7 steps (job contract, baseline from vv evidence, earliest failed handoff classified to a vv-native owner, one hypothesis, smallest change, fresh-session rerun, retain/revise/remove), with an embedded result-record template, guardrail sentences, and grep/frontmatter test coverage.",
       "priority": 20,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-improve/SKILL.md",
         "test/run-tests.sh"
@@ -741,12 +741,17 @@
         "F003"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "F020 section: 7 assertions, all 7 steps + gap-class table + 3 guardrails + non-harness early exit + line-budget NFR mutation-tested (7 mutations, each caught)",
       "notes": "Linear: OVI-59. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Wrote skills/harness-improve/SKILL.md (124 lines) adapting harness-engineering's improve-harness.md playbook: 7 numbered steps, a 7-row gap-class-to-owner table, 3 guardrail sentences, a non-harness-project early exit to /harness-init, and a Result Record Template.",
+        "Test coverage added as a self-contained '== F020: harness-improve skill ==' section: AC1 (harness- prefix, via case statement matching the file's POSIX style) relies on the pre-existing self-maintaining skill-frontmatter glob lint (F019) for name==directory; AC2 (7 steps, gap-class table, attribution) via a python heredoc; AC3 (3 guardrails) via grep; plus the non-harness edge case and the <350-line NFR.",
+        "Mutation-tested all 7 new assertions individually (missing step heading, empty gap-class owner, attribution removed from both locations, non-harness early-exit text removed) -- each caused exactly the expected assertion to fail, then restored from a scratch backup before committing.",
+        "Round-1 review (PR #105) found and I fixed two real gaps: a wrong feature citation (F055 -> F014/OVI-54 for the MLD-telemetry pointer) and the 3 AC3 guardrail assertions pinning only the bold label, not the sentence body (reviewer proved a label-surviving, body-gutted guardrail still passed). Fixed by anchoring each grep on a load-bearing sentence-body phrase too, then re-mutation-tested with the reviewer's exact reword -- now correctly fails."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {
