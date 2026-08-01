@@ -8781,15 +8781,22 @@ skill_dirs = sorted(
 
 errors = []
 for skill_dir in skill_dirs:
+    # "What's in the box" table rows use the "skills/<name>/" form; the
+    # plugin-tree ASCII block renders bare "<name>/" lines (the "skills/"
+    # prefix appears only once, on the parent "skills/" line) -- both must
+    # be checked separately, or a skill missing from just the tree (half of
+    # F065's original drift) can pass silently.
     if f"skills/{skill_dir}/" not in readme_text:
-        errors.append(f"README.md never mentions skills/{skill_dir}/")
+        errors.append(f"README.md's component table never mentions skills/{skill_dir}/")
+    if f"── {skill_dir}/" not in readme_text:
+        errors.append(f"README.md's plugin tree never mentions {skill_dir}/")
 
 for e in errors:
     print(e)
 PYEOF
 )
 if [ -z "$F065_ERRORS" ]; then
-  pass "f065: README.md mentions every skills/*/SKILL.md directory"
+  pass "f065: README.md mentions every skills/*/SKILL.md directory in both the plugin tree and the component table"
 else
   fail "f065: $F065_ERRORS"
 fi
