@@ -1063,12 +1063,24 @@ This file is referenced in CLAUDE.md and loaded every session.
   check from `[[ ... == harness-* ]]` to a `case` statement to match, rather than
   leaving the one inconsistent construct in place.
 - Mutation-testing: all 7 new assertions individually mutation-tested (a missing
-  step heading, an emptied gap-class owner cell, a reworded guardrail sentence, the
-  attribution line removed from BOTH its occurrences -- the first attempt only
-  removed the closing one and the intro-paragraph occurrence still satisfied the
-  check, a real near-miss caught by checking the FAIL output actually appeared --
-  and the non-harness-project early-exit text removed). Each mutation produced
-  exactly the expected single FAIL, restored from a scratch backup between rounds.
+  step heading, an emptied gap-class owner cell, the attribution line removed from
+  BOTH its occurrences -- the first attempt only removed the closing one and the
+  intro-paragraph occurrence still satisfied the check, a real near-miss caught by
+  checking the FAIL output actually appeared -- and the non-harness-project
+  early-exit text removed). Each mutation produced exactly the expected single
+  FAIL, restored from a scratch backup between rounds.
+- Round-1 review (Opus, PR #105) found two real gaps, both fixed and re-verified:
+  (1) a wrong feature citation in the skill body (`F055` cited for the MLD
+  telemetry pointer; the real P3.1 feature is F014/OVI-54 -- F055 is an unrelated
+  TeammateIdle fix) -- corrected to F014/OVI-54; (2) the 3 AC3 guardrail
+  assertions grepped only the bold **label** text, not the sentence body, so a
+  guardrail whose label survived but whose body was gutted (e.g. `- **Bounded
+  claim**: TODO.`) still passed -- reviewer proved this empirically against a
+  scratch copy. Fixed by additionally anchoring each grep on a load-bearing
+  phrase from the sentence body (`THAT job, on THAT worker config, THAT day`;
+  `not just present on disk`; `Only observed behavior counts`), then
+  re-mutation-tested with the reviewer's exact label-only-reword mutation --
+  now correctly fails all three.
 - Model calibration: single-session, no sub-agents spawned for implementation.
 - Discovery lineage: none -- F020 was a pre-existing Linear-tracked feature
   (OVI-59), not discovered mid-work.

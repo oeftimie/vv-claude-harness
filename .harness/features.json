@@ -749,7 +749,8 @@
       "approaches_tried": [
         "Wrote skills/harness-improve/SKILL.md (124 lines) adapting harness-engineering's improve-harness.md playbook: 7 numbered steps, a 7-row gap-class-to-owner table, 3 guardrail sentences, a non-harness-project early exit to /harness-init, and a Result Record Template.",
         "Test coverage added as a self-contained '== F020: harness-improve skill ==' section: AC1 (harness- prefix, via case statement matching the file's POSIX style) relies on the pre-existing self-maintaining skill-frontmatter glob lint (F019) for name==directory; AC2 (7 steps, gap-class table, attribution) via a python heredoc; AC3 (3 guardrails) via grep; plus the non-harness edge case and the <350-line NFR.",
-        "Mutation-tested all 7 new assertions individually (missing step heading, empty gap-class owner, reworded guardrail sentence, attribution removed from both locations, non-harness early-exit text removed) -- each caused exactly the expected assertion to fail, then restored from a scratch backup before committing."
+        "Mutation-tested all 7 new assertions individually (missing step heading, empty gap-class owner, attribution removed from both locations, non-harness early-exit text removed) -- each caused exactly the expected assertion to fail, then restored from a scratch backup before committing.",
+        "Round-1 review (PR #105) found and I fixed two real gaps: a wrong feature citation (F055 -> F014/OVI-54 for the MLD-telemetry pointer) and the 3 AC3 guardrail assertions pinning only the bold label, not the sentence body (reviewer proved a label-surviving, body-gutted guardrail still passed). Fixed by anchoring each grep on a load-bearing sentence-body phrase too, then re-mutation-tested with the reviewer's exact reword -- now correctly fails."
       ],
       "failure_reason": null,
       "discovered_via": null,
