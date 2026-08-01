@@ -1860,7 +1860,7 @@
       "id": "F064",
       "description": "F017/OVI-65's harness-continue Phase 4 step 3.5 gates the conformance-tester spawn on a feature's risk being \"elevated\", but risk is not persisted anywhere on the local features.json feature object -- it exists only transiently in a Linear readiness-stamp comment (remote mode, and only if prep.stamp is configured) or in the lead's own in-session Phase 1 notes, neither of which survives compaction or is checkable without a live Linear lookup. Persist `risk` (and ideally `require_plan_approval`, the step's other trigger condition, which has the same problem) as a durable field on the feature object in schemas/feature.schema.json, written back by harness-issue-prep at stamp time (mirroring what already goes into the Linear comment) and/or by the lead at Phase 1 team-design time, so step 3.5's trigger condition becomes a genuine features.json lookup instead of \"whatever the lead remembers or can still find in Linear.\"",
       "priority": 65,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "schemas/feature.schema.json",
         "skills/harness-issue-prep/SKILL.md",
@@ -1871,12 +1871,20 @@
         "F017"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered during PR #102 (F017/OVI-65) round-1 review: step 3.5's trigger condition references a field that does not durably exist. Documented as a known limitation in step 3.5's own text rather than fixed there, since persisting risk properly means changes to harness-issue-prep (writing it back locally at stamp time), which was never in F017's declared scope.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "11 new assertions: 7 validate-features.py checks for risk/require_plan_approval (invalid/valid values, error location), 4 doc-content checks (schema fields, harness-issue-prep local persistence, harness-continue step 3.5 durable read, Phase 1 write-back). All 4 doc/schema mutations tested (schema field removed, prep step removed, step 3.5 fully reverted to pre-F064 wording, Phase 1 write-back removed) plus the 7 validator checks are the standard fsv_mutate pattern already mutation-covered by that harness. Round-1 review found and I fixed a non-discriminating assertion within this: the step-3.5 'not itself persisted' disclaimer check was case-broken (mixed-case comparison against an all-uppercase .upper() call), so it passed even against the completely un-reverted pre-F064 text -- fixed to 'not itself persisted' in step.lower(), re-verified against a full revert of step 3.5 to the real pre-F064 wording (git show 6414f07~1, the true pre-F064 parent commit).",
+      "notes": "Discovered during PR #102 (F017/OVI-65) round-1 review: step 3.5's trigger condition references a field that does not durably exist. Documented as a known limitation in step 3.5's own text rather than fixed there, since persisting risk properly means changes to harness-issue-prep (writing it back locally at stamp time), which was never in F017's declared scope. RESOLVED: risk/require_plan_approval now durably persisted on the local feature object, written by harness-issue-prep Step 7 and/or the lead at Phase 1, read directly by step 3.5's trigger.",
       "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "scope_expansions": [
+        "scripts/validate-features.py: added check_risk/check_require_plan_approval to match the new schema fields -- schema documents intent, validate-features.py enforces it; adding one without the other would leave them out of sync."
+      ],
+      "approaches_tried": [
+        "Added risk (standard|elevated|null enum) and require_plan_approval (bool|null) as optional feature-schema fields, matching the existing 'operational metric, optional for backward compatibility' style used for qa_binding/coverage_target/design_contract. Added matching scripts/validate-features.py checks.",
+        "harness-issue-prep Step 7: added a 'Persist risk locally' sub-step immediately after the lane/risk question is asked, so risk gets written to the matching local feature object even if the rest of Step 7 later degrades to unstamped (Keychain/key-file failure) -- risk itself is useful independent of whether the HMAC signs successfully. Updated the Degradation table to reflect this.",
+        "harness-continue Phase 1 step 4: instructed the lead to write risk/require_plan_approval onto the feature object as soon as either is decided (from a prior prep, or fresh at Phase 1), rather than only holding the decision in-session.",
+        "harness-continue Phase 4 step 3.5: rewrote the trigger condition to read features.json's risk/require_plan_approval fields directly, removing the 'not itself persisted' disclaimer; added a documented legacy fallback for features prepped before F064 shipped (both fields absent doesn't mean 'not elevated', it means 'unassessed' -- treat as unknown, not false, per the same discipline as before).",
+        "Fixing an existing F017 test's exact-string match: my step 3.5 reword no longer contained the literal substring 'require_plan_approval: true' the F017 test (deliberately scoped to the step 3.5 block to avoid a false-pass from an unrelated Phase 1 occurrence of the same string) checked for. Adjusted the wording to preserve the literal phrase rather than weaken that test's discriminating power -- re-ran the F017 test to confirm it still passes for the right reason."
+      ],
       "failure_reason": null,
       "discovered_via": "F017",
       "spec": null

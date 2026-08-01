@@ -271,7 +271,7 @@ Before spending tokens on teammates, produce a decomposition plan:
 4. Design the team:
    - Which teammates, what scope (from features.json `scope` field), what model (Sonnet default; Opus if historical metrics suggest high difficulty). The plugin agent definitions already default the model per role (implementers and researcher: Sonnet; reviewer: Opus); a spawn-time `model` parameter overrides the definition's frontmatter, so an Opus upgrade needs only the Agent tool call's model param.
    - Which tasks depend on which (from features.json `depends_on` field, mapped to `TaskUpdate` `addBlockedBy` calls after task creation)
-   - Whether any teammate needs `require_plan_approval: true`
+   - Whether any teammate needs `require_plan_approval: true`. If a feature has already been through `harness-issue-prep` and stamped, its `risk` (`standard`/`elevated`) may already be set on the feature object — check `features.json` first rather than re-deriving it. Whichever way `risk` and `require_plan_approval` get decided here (from a prior prep, or fresh at this step), write them onto the feature object in `features.json` now (F064): this is what makes step 3.5's conformance-tester trigger below a durable lookup instead of something only this Phase 1 pass remembers.
 5. Present the plan to the user:
 
 ```
@@ -392,23 +392,23 @@ When all teammates complete:
 3.5. **Author-blind conformance check (optional, F017/OVI-65)**: for a feature whose
    `spec.verdict` is `"PASS"` AND EITHER of the following holds, spawn the conformance
    tester BEFORE marking the feature passing:
-   - Its Linear readiness stamp (if one was minted; `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`)
-     recorded `risk: "elevated"`. `risk` is NOT itself persisted on the local feature
-     object today, so check the stamp comment directly (or the Phase 1 team-design
-     notes, if the lead recorded the risk classification there) rather than expecting
-     a `features.json` field to hold it.
-   - The lead set `require_plan_approval: true` for this feature's teammate during
-     Phase 1. This is a live decision the lead makes in-session, not a field read back
-     from `features.json` — if Phase 1 happened in an earlier, now-compacted context
-     and the decision isn't in current context, treat this condition as unknown rather
-     than assuming false. Since this whole step is optional, don't spawn the
-     conformance tester on an unknown condition alone — mention the ambiguity to the
-     user (e.g. "this feature may have needed plan approval, but I don't have that
-     decision in context; run a conformance check anyway?") and let them decide.
+   - `features.json`'s `risk` field on this feature is `"elevated"` (F064: a durable
+     field, set by `harness-issue-prep` Step 7 at stamp time or by the lead directly
+     at Phase 1 above — read it straight from `features.json`, not from a Linear
+     comment or in-session memory).
+   - `features.json` records `require_plan_approval: true` on this feature (F064: same
+     source and durability as `risk` — set at Phase 1 above, or carried over from an
+     earlier `harness-issue-prep` run).
 
-   (Neither condition is a durable, machine-checkable field on the feature object
-   today; persisting `risk` on `features.json` so this trigger doesn't depend on the
-   lead's own memory or a live Linear lookup is a natural follow-up, not done here.)
+   **Legacy fallback**: a feature prepped before F064 shipped may have neither field
+   set even though it genuinely was elevated-risk or plan-approved. If `risk` and
+   `require_plan_approval` are both absent/null AND you have independent reason to
+   think the feature was elevated (a still-visible Linear stamp comment, or your own
+   Phase 1 notes in current context), treat the trigger as unknown rather than false —
+   mention the ambiguity to the user (e.g. "this feature may have needed plan
+   approval, but `features.json` doesn't record it; run a conformance check anyway?")
+   and let them decide, same as before F064. Do not backfill the missing fields from a
+   guess; only Step 7 or a fresh Phase 1 pass should write them.
 
    Adapted from agent-os's `conformance-test-writer` pattern (nodera-studio, MIT): a
    single context that writes both the code and its tests can satisfy a bug with a

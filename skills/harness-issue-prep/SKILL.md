@@ -173,6 +173,17 @@ plan-approval trigger list from the Agent Teams protocol's Dynamic overrides tab
 elevation heuristic: 10+ files, cross-cutting refactors, security-sensitive code, first
 feature in a new codebase).
 
+**Persist `risk` locally (F064)**: as soon as `risk` is determined, write it to the
+matching feature object in the local `.harness/features.json` (matched by
+`spec.source == "linear:<KEY>"`, or by feature id if you already have it), so
+`harness-continue`'s Phase 4 conformance-check trigger becomes a durable
+`features.json` lookup instead of depending on this stamp's Linear comment or your
+own in-session memory. Do this even if the rest of Step 7 later degrades to unstamped
+(Keychain/key-file failure below) -- `risk` itself is useful independent of whether
+the HMAC signs successfully. If no local feature object matches this issue (paste
+mode with no local mirror, or the feature hasn't been created yet), skip this
+sub-step; there is nothing to write it onto.
+
 Resolve `base_sha`:
 
 ```bash
@@ -330,7 +341,7 @@ If run inside a harness project (a `.harness/` directory exists), append one lin
 |---|---|
 | No Linear MCP, or a required capability is missing | Paste mode: spec is verified and normalized in conversation; write-back is manual; no stamp, no label |
 | No `prep` key in `harness.json` | Local-only mode: `features.json` gets the normalized description and `spec` object; no stamp, no label, no kickstart |
-| No key resolved from any source at Step 7 (exit 2) | Spec is normalized and written back; setup guidance for all three key sources is printed; run ends unstamped |
-| Key file has wrong permissions at Step 7 (exit 1) | Stamping aborted with the exact `chmod` fix reported; spec stays normalized but unstamped until re-run |
+| No key resolved from any source at Step 7 (exit 2) | Spec is normalized and written back; setup guidance for all three key sources is printed; run ends unstamped. `risk` is still persisted locally (F064) -- it was written as soon as it was determined, before key resolution. |
+| Key file has wrong permissions at Step 7 (exit 1) | Stamping aborted with the exact `chmod` fix reported; spec stays normalized but unstamped until re-run. `risk` is still persisted locally (F064), same reason as above. |
 | RV loop cap (5 cycles) hit | Spec stays unnormalized; still-open questions posted as a plain comment (remote) or written to `notes` (local); `needs_prep_label` applied if configured; unstamped |
 | User declines the Step 5 diff confirmation | Nothing is written back; no normalization, no stamp, no label; the run ends where the human stopped it |

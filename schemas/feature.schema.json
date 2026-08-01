@@ -156,6 +156,15 @@
         "design_contract": {
           "type": ["string", "null"],
           "description": "Optional, for backward compatibility. Pointer to a locked design artifact (mock, redline, screenshot set) that journey or manual proof is compared against."
+        },
+        "risk": {
+          "type": ["string", "null"],
+          "enum": ["standard", "elevated", null],
+          "description": "Optional, for backward compatibility (F064). Set by harness-issue-prep Step 7 when a readiness stamp is minted, mirroring the lane/risk question it already asks; the lead may also set it directly at Phase 1 team-design time for locally-scoped features with no stamp. Absent/null means unassessed. This is the durable local source harness-continue Phase 4 step 3.5 reads to decide whether to gate the conformance-tester spawn on 'elevated' -- previously that decision depended on a transient Linear stamp comment or the lead's own memory, neither of which survives compaction."
+        },
+        "require_plan_approval": {
+          "type": ["boolean", "null"],
+          "description": "Optional, for backward compatibility (F064). Whether this feature requires an explicit plan-approval step before an implementer proceeds (Agent Teams Phase 1). Absent/null means unassessed -- see harness-continue step 3.5's legacy fallback; do not infer false. Set alongside risk, same sources and same durability rationale."
         }
       }
     },

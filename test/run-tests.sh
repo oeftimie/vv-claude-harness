@@ -949,6 +949,35 @@ OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-design-contract.json" 2>&1)
 RC=$?
 assert_rc0 "$RC" "fsv: accepts a design_contract string"
 
+# F064: risk / require_plan_approval
+fsv_mutate "bad-risk.json" 'd["features"][0]["risk"] = "extreme"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-risk.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects an invalid risk value (F064)"
+assert_contains "$OUT" "features[0].risk" "fsv: bad risk error names the location (F064)"
+
+fsv_mutate "good-risk-standard.json" 'd["features"][0]["risk"] = "standard"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-risk-standard.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts risk value 'standard' (F064)"
+
+fsv_mutate "good-risk-elevated.json" 'd["features"][0]["risk"] = "elevated"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-risk-elevated.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts risk value 'elevated' (F064)"
+
+fsv_mutate "bad-require-plan-approval.json" 'd["features"][0]["require_plan_approval"] = "yes"'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/bad-require-plan-approval.json" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "fsv: rejects a non-boolean require_plan_approval (F064)"
+assert_contains "$OUT" "features[0].require_plan_approval" \
+  "fsv: bad require_plan_approval error names the location (F064)"
+
+fsv_mutate "good-require-plan-approval.json" 'd["features"][0]["require_plan_approval"] = True'
+OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/good-require-plan-approval.json" 2>&1)
+RC=$?
+assert_rc0 "$RC" "fsv: accepts a boolean require_plan_approval (F064)"
+
 fsv_mutate "coverage-string.json" \
   'd["features"][0]["coverage"] = "n/a (shell suite, no coverage tooling)"'
 OUT=$(python3 "$VALIDATE_SCRIPT" "$FSV_DIR/coverage-string.json" 2>&1)
@@ -8639,6 +8668,95 @@ if grep -q "evals/" "$REPO_ROOT/README.md"; then
   pass "f021: README.md links evals/ (AC3, optional link check)"
 else
   fail "f021: README.md does not mention evals/"
+fi
+
+echo ""
+echo "== F064: persist risk/require_plan_approval on features.json =="
+
+F064_SCHEMA="$REPO_ROOT/schemas/feature.schema.json"
+F064_PREP_SKILL="$REPO_ROOT/skills/harness-issue-prep/SKILL.md"
+F064_CONTINUE_SKILL="$REPO_ROOT/skills/harness-continue/SKILL.md"
+
+# Schema documents both new fields with their intended enum/type.
+F064_SCHEMA_ERRORS=$(python3 - "$F064_SCHEMA" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as f:
+    schema = json.load(f)
+props = schema["$defs"]["feature"]["properties"]
+
+errors = []
+if "risk" not in props:
+    errors.append("schema is missing the risk property")
+else:
+    risk_enum = props["risk"].get("enum")
+    if risk_enum != ["standard", "elevated", None]:
+        errors.append(f"risk enum is {risk_enum!r}, expected ['standard', 'elevated', None]")
+
+if "require_plan_approval" not in props:
+    errors.append("schema is missing the require_plan_approval property")
+else:
+    rpa_type = props["require_plan_approval"].get("type")
+    if rpa_type != ["boolean", "null"]:
+        errors.append(f"require_plan_approval type is {rpa_type!r}, expected ['boolean', 'null']")
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$F064_SCHEMA_ERRORS" ]; then
+  pass "f064: feature.schema.json documents risk (standard/elevated/null) and require_plan_approval (bool/null)"
+else
+  fail "f064: $F064_SCHEMA_ERRORS"
+fi
+
+# harness-issue-prep Step 7 instructs writing risk back to the local feature object.
+if grep -q "Persist \`risk\` locally (F064)" "$F064_PREP_SKILL"; then
+  pass "f064: harness-issue-prep/SKILL.md Step 7 persists risk to the local feature object"
+else
+  fail "f064: harness-issue-prep/SKILL.md is missing the local risk persistence step"
+fi
+
+# harness-continue step 3.5's trigger reads features.json directly, not a Linear
+# comment or in-session memory -- anchored to the step 3.5 block itself, matching
+# the F017 test's own discipline (require_plan_approval: true also appears in an
+# unrelated Phase 1 bullet elsewhere in this file).
+F064_STEP_ERRORS=$(python3 - "$F064_CONTINUE_SKILL" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+match = re.search(r"3\.5\. \*\*Author-blind conformance check.*?(?=\n   Adapted from)", text, re.DOTALL)
+if not match:
+    print("could not find the step 3.5 block")
+    sys.exit(0)
+step = match.group(0)
+
+if "features.json" not in step or "risk" not in step:
+    print("step 3.5 does not reference features.json's risk field")
+if '"elevated"' not in step:
+    print("step 3.5 does not name the elevated risk value")
+if "require_plan_approval: true" not in step:
+    print("step 3.5 does not name require_plan_approval: true")
+if "not itself persisted" in step.lower():
+    print("step 3.5 still contains the pre-F064 'not persisted' disclaimer")
+PYEOF
+)
+if [ -z "$F064_STEP_ERRORS" ]; then
+  pass "f064: harness-continue/SKILL.md step 3.5 reads risk/require_plan_approval from features.json directly"
+else
+  fail "f064: $F064_STEP_ERRORS"
+fi
+
+# Phase 1 instructs the lead to write risk/require_plan_approval onto the feature
+# object, not just decide them in-session.
+if grep -q "write them onto the feature object in \`features.json\` now (F064)" "$F064_CONTINUE_SKILL"; then
+  pass "f064: harness-continue/SKILL.md Phase 1 writes risk/require_plan_approval onto the feature object"
+else
+  fail "f064: harness-continue/SKILL.md Phase 1 does not persist risk/require_plan_approval"
 fi
 
 echo ""

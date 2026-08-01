@@ -827,3 +827,35 @@
   `pending`), per Ovidiu's standing instruction to keep working through
   everything without waiting for check-ins.
 - Blockers: none.
+
+## Session 36 - 2026-08-01 (F064: persist risk/require_plan_approval on features.json)
+- Feature: F064 - durable risk/require_plan_approval fields (locally discovered,
+  discovered_via F017, no Linear issue)
+- Status: complete
+- Added `risk` (standard|elevated|null) and `require_plan_approval` (bool|null)
+  as optional feature-schema fields, matching the existing "operational metric,
+  optional for backward compatibility" style. Added matching
+  scripts/validate-features.py checks (scope expansion, recorded).
+- harness-issue-prep Step 7 now writes `risk` to the local feature object as
+  soon as it's determined -- before HMAC key resolution, so a degraded
+  (unstamped) run still leaves `risk` recorded. `require_plan_approval` is set
+  only by the lead at Phase 1 (harness-continue), matching where that decision
+  is actually made.
+- harness-continue Phase 4 step 3.5's trigger now reads both fields straight
+  from `features.json`, removing the "not itself persisted" disclaimer F017
+  left behind. Documented legacy fallback preserved: absence means
+  unassessed, not "not elevated" -- treat as unknown, same discipline as
+  before.
+- Caught and fixed a real regression in a pre-existing F017 test: my first
+  step 3.5 reword dropped the literal substring `"require_plan_approval: true"`
+  an existing test checked for (deliberately scoped to the step 3.5 block
+  specifically to avoid a false-pass from an unrelated Phase 1 occurrence,
+  per PR #102's round-1 finding). Reworded to preserve the literal phrase
+  rather than weaken that test.
+- Tests: 1445/1445 passing (full_test is the gate; +11 F064 assertions, all
+  mutation-tested; also reconfirmed the pre-existing F017 tests still pass
+  for the right reason after the wording fix).
+- Next: F065, F066, F067 (remaining discovered follow-ups, all `pending`),
+  per Ovidiu's standing instruction to keep working through everything
+  without waiting for check-ins.
+- Blockers: none.
