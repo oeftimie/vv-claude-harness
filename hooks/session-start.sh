@@ -171,9 +171,11 @@ try:
         if not os.path.isfile(os.path.join(root, test_file)):
             missing.append(f.get("id", "?"))
     if missing:
+        shown = ", ".join(missing[:5])
+        more = f" (+{len(missing) - 5} more)" if len(missing) > 5 else ""
         print("")
-        print("WARNING: test_file does not exist for " + ", ".join(missing[:5])
-              + " despite a passing/in-progress status.")
+        print(f"WARNING: test_file does not exist for {shown}{more} despite a "
+              "passing/in-progress status.")
         print("Run /harness-doctor for details, or correct the status/test_file field.")
 except Exception:
     pass

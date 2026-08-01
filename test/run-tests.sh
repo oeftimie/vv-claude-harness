@@ -312,6 +312,30 @@ WARNING_LINE=$(printf '%s\n' "$OUT" | grep "test_file does not exist for" || tru
 assert_not_contains "$WARNING_LINE" "F003" \
   "v: F003 (pending, no test_file) is never named in the warning"
 
+# F066 round-1 review: the case above doesn't actually pin the status filter,
+# since F003 is excluded by null test_file regardless -- widening the status
+# tuple to include "pending" produces identical output there. Isolate the
+# status filter specifically: a pending feature WITH a test_file set.
+DIR_V4="$WORK/f066-pending-has-testfile"
+make_fixture "$DIR_V4"
+python3 - "$DIR_V4/.harness/features.json" <<'PYEOF'
+import json
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["test_file"] = "tests/badges/test_badges.py"  # deliberately missing
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_V4" '{"source":"startup"}')
+WARNING_LINE=$(printf '%s\n' "$OUT" | grep "test_file does not exist for" || true)
+assert_not_contains "$WARNING_LINE" "F003" \
+  "v: F066's status filter genuinely excludes pending, even with a test_file set"
+
 echo ""
 echo "== scope enforcement warning =="
 
@@ -5954,6 +5978,55 @@ make_healthy_doctor_fixture "$DIR_DOC_TESTFILEOK"
 OUT=$(run_doctor "$DIR_DOC_TESTFILEOK")
 assert_not_contains "$OUT" "does not exist" \
   "hd: the corrected healthy fixture has no F066 finding"
+
+# F066 round-1 review: the two checks above don't actually pin the status
+# filter or the null-test_file guard, since F003 is excluded by BOTH
+# conditions at once (pending status AND null test_file) -- widening the
+# status tuple to include "pending", or deleting the null-test_file guard
+# entirely, produces identical output. Purpose-built fixtures to isolate each.
+DIR_DOC_PENDING_WITH_TESTFILE="$WORK/doctor-pending-has-test-file"
+make_fixture "$DIR_DOC_PENDING_WITH_TESTFILE"
+install_hooks "$DIR_DOC_PENDING_WITH_TESTFILE"
+python3 - "$DIR_DOC_PENDING_WITH_TESTFILE/.harness/features.json" <<'PYEOF'
+import json
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["test_file"] = "tests/badges/test_badges.py"  # deliberately missing
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_doctor "$DIR_DOC_PENDING_WITH_TESTFILE")
+assert_not_contains "$OUT" "F003 is pending" \
+  "hd: F066's status filter genuinely excludes pending, even with a test_file set"
+
+DIR_DOC_PASSING_NULL_TESTFILE="$WORK/doctor-passing-null-test-file"
+make_fixture "$DIR_DOC_PASSING_NULL_TESTFILE"
+install_hooks "$DIR_DOC_PASSING_NULL_TESTFILE"
+python3 - "$DIR_DOC_PASSING_NULL_TESTFILE/.harness/features.json" <<'PYEOF'
+import json
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F001":
+        feature["test_file"] = None
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_doctor "$DIR_DOC_PASSING_NULL_TESTFILE" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "hd: a passing feature with null test_file doesn't crash doctor.py"
+assert_not_contains "$OUT" "Traceback" \
+  "hd: F066's null-test_file guard doesn't crash (rc_nonzero alone would also pass on a crash)"
+assert_not_contains "$OUT" "F001 is" \
+  "hd: F066's null-test_file guard genuinely skips a passing feature with no test_file"
 
 # fixes.py: the four single-purpose fixers' no-op ("already resolved" or
 # "can't act") branches are unreachable through the CLI (apply_fixes only invokes
