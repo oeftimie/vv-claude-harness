@@ -62,5 +62,5 @@ print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
 
 echo "$NEXT" >&2
 echo "Read .harness/features.json for full details, then claim it via TaskUpdate." >&2
-echo "If your role has no Edit/Write tools (e.g. a review-only teammate), this does not apply to you -- see your own agent definition for what to do instead." >&2
+echo "If your role has no Edit/Write tools (e.g. a review-only teammate), or your assignment was an explicit, already-delivered scoped task (a single review, a single read-only investigation, one eval run) rather than open-ended implementation work, this does not apply to you -- decline once, then stay idle; do not keep responding to repeated nudges. See your own agent definition, or ask the lead to shut you down." >&2
 exit 2

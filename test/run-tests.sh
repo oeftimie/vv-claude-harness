@@ -4609,6 +4609,14 @@ assert_contains "$STDERR_ONLY" "no Edit/Write tools" \
 assert_contains "$STDERR_ONLY" "does not apply to you" \
   "ht (F055): guidance's non-implementer carve-out is actionable, not just descriptive"
 
+# F067: the escape hatch also covers a teammate with Edit/Write (not role-limited
+# by construction) whose ASSIGNMENT was a scoped, already-delivered one-shot task --
+# the general-purpose-subagent case F055's tool-only carve-out doesn't reach.
+assert_contains "$STDERR_ONLY" "already-delivered scoped task" \
+  "ht (F067): guidance also carves out a scoped one-shot assignment, not just role by construction"
+assert_contains "$STDERR_ONLY" "decline once, then stay idle" \
+  "ht (F067): guidance tells a carved-out teammate not to keep responding to repeated nudges"
+
 python3 - "$DIR_HR/.harness/features.json" <<'PYEOF'
 import json
 import sys
@@ -6548,11 +6556,48 @@ fi
 # Pin that the retirement condition is actually wired to a probe, not just
 # stated and left unchecked.
 RUNBOOK_MD="$REPO_ROOT/docs/maintenance-runbook.md"
-if grep -q "Lead/teammate hook-blindness limitation (F061)" "$RUNBOOK_MD" \
-  && grep -q "record it here as FIXED" "$RUNBOOK_MD"; then
+if grep -q "Lead/teammate hook-blindness (F061) and TeammateIdle task-list blindness" "$RUNBOOK_MD" \
+  && grep -q "record F061 here as FIXED" "$RUNBOOK_MD"; then
   pass "mnt (F061): the maintenance runbook has a probe wired to F061's retirement condition"
 else
   fail "mnt (F061): the maintenance runbook has no probe for F061's retirement condition"
+fi
+
+# F067: check-remaining-tasks.sh's escape hatch was tool-inventory-only
+# (F055), so a general-purpose subagent given a scoped one-shot assignment
+# (Edit/Write by construction, but no open-ended implementation work) had no
+# way to signal "my assignment is done" short of an idle-nudge loop.
+if grep -q "Extension to scoped one-shot assignments (F067)" "$PROTOCOL_MD" \
+  && grep -q "not role-limited by construction" "$PROTOCOL_MD"; then
+  pass "mnt (F067): agent-teams-protocol.md extends F059's early-release rule to scoped one-shot assignments"
+else
+  fail "mnt (F067): agent-teams-protocol.md is missing the F067 early-release extension"
+fi
+if grep -q "Known limitation (F067)" "$PROTOCOL_MD" \
+  && grep -q "this limitation retires" "$PROTOCOL_MD"; then
+  pass "mnt (F067): agent-teams-protocol.md documents the TeammateIdle task-list-blindness limitation and its retirement condition"
+else
+  fail "mnt (F067): agent-teams-protocol.md is missing the F067 limitation callout or its retirement condition"
+fi
+if grep -q "TeammateIdle can't see task-list state (F067)" "$PROTOCOL_MD"; then
+  pass "mnt (F067): a Known Limitations bullet points to the inline F067 callout"
+else
+  fail "mnt (F067): missing the Known Limitations bullet for F067"
+fi
+if grep -q "F067 here as FIXED" "$RUNBOOK_MD"; then
+  pass "mnt (F067): the maintenance runbook has a probe wired to F067's retirement condition"
+else
+  fail "mnt (F067): the maintenance runbook has no probe for F067's retirement condition"
+fi
+
+# F067's fix touches the live .claude/hooks/ copy AND the shipped template --
+# they must stay byte-identical (same drift class F063 closed earlier this
+# session for the settings.json wiring block).
+if diff -q "$REPO_ROOT/skills/harness-init/check-remaining-tasks.sh.template" \
+  "$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh" >/dev/null 2>&1; then
+  pass "mnt (F067): the live check-remaining-tasks.sh copy matches its template exactly"
+else
+  fail "mnt (F067): the live check-remaining-tasks.sh copy has drifted from its template"
 fi
 
 if grep -q "[Rr]etirement condition" "$REPO_ROOT/README.md"; then

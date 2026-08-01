@@ -115,20 +115,28 @@ way.
    entry still reflects a real, current Claude model choice (rather than a
    stale name kept out of inertia) and to remove it if it stops being one.
 
-6. **Lead/teammate hook-blindness limitation (F061).**
-   `rules/agent-teams-protocol.md`'s "Known limitation (F061)" callout
-   documents that no hook-facing field or environment variable distinguishes
-   the lead's own session from a teammate's, confirmed against
-   `code.claude.com/docs/en/hooks`'s common input fields
-   (`session_id`, `prompt_id`, `transcript_path`, `cwd`, `permission_mode`,
-   `effort`, `hook_event_name`, plus `agent_id`/`agent_type` for
-   `--agent`/subagent mode only) as of the date that callout was written. No
-   existing probe covers this: item 3 above checks `TaskCompleted`/
+6. **Lead/teammate hook-blindness (F061) and TeammateIdle task-list blindness
+   (F067) limitations.** Both are the same underlying probe action (re-fetch
+   the same docs page for a new field), so this item covers both rather than
+   duplicating the fetch.
+   - `rules/agent-teams-protocol.md`'s "Known limitation (F061)" callout
+     documents that no hook-facing field or environment variable distinguishes
+     the lead's own session from a teammate's, confirmed against
+     `code.claude.com/docs/en/hooks`'s common input fields
+     (`session_id`, `prompt_id`, `transcript_path`, `cwd`, `permission_mode`,
+     `effort`, `hook_event_name`, plus `agent_id`/`agent_type` for
+     `--agent`/subagent mode only) as of the date that callout was written.
+   - `rules/agent-teams-protocol.md`'s "Known limitation (F067)" callout
+     documents that `TeammateIdle`'s hook input carries only those same
+     common fields, no task-list snapshot, confirmed against the same page
+     on the same date.
+   No existing probe covers either: item 3 above checks `TaskCompleted`/
    `TeammateIdle`/`SessionStart`/`SessionEnd` PAYLOAD SHAPE for regressions,
-   not PreToolUse hook input for a NEW field's addition. **Retirement
-   condition**: re-fetch `code.claude.com/docs/en/hooks`'s common input
-   fields; if a team-role/lead-vs-teammate discriminator field appears,
-   record it here as FIXED. Removing the limitation callout and updating
-   `enforce-scope.sh.template` to use the new field is a separate,
-   explicit, approval-required follow-up — not automatically performed as
-   part of a probe run.
+   not PreToolUse/TeammateIdle hook input for a NEW field's addition.
+   **Retirement condition**: re-fetch `code.claude.com/docs/en/hooks`'s common
+   input fields; if a team-role/lead-vs-teammate discriminator field appears,
+   record F061 here as FIXED; if a task-list snapshot field appears, record
+   F067 here as FIXED (the two can retire independently of each other).
+   Removing either limitation callout and updating the corresponding hook
+   template to use the new field is a separate, explicit, approval-required
+   follow-up — not automatically performed as part of a probe run.
