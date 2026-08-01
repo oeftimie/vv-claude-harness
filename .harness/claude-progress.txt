@@ -763,8 +763,8 @@
   worthless in general. A second, smaller deviation (a hint sentence given only
   to the corrected condition-A batch) is also disclosed, not hidden.
 - Discovered and filed as follow-ups (both out of F021's scope): F066 (no hook
-  validates a passing feature's test_file actually exists on disk -- found
-  independently by 2 of 6 eval subjects) and F067 (TeammateIdle's escape hatch is
+  validates a passing feature's test_file actually exists on disk -- raised by
+  1 of the 6 valid eval subjects) and F067 (TeammateIdle's escape hatch is
   tool-based, not assignment-based; 5 of 6 eval subjects hit an idle-nudge loop
   after finishing their read-only assignment and needed explicit shutdown --
   same root gap F055 partially addressed, recurring for ad-hoc read-only

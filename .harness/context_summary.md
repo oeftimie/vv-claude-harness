@@ -1126,7 +1126,7 @@ This file is referenced in CLAUDE.md and loaded every session.
   sentence given to the corrected condition-A batch but not condition B) is
   also disclosed rather than hidden.
 - Discovery lineage: F066 (no hook validates a passing feature's test_file
-  actually exists -- 2 of 6 eval subjects found this independently) and F067
+  actually exists -- raised by 1 of the 6 valid eval subjects) and F067
   (TeammateIdle's escape hatch is tool-based, not assignment-based scope; 5
   of 6 eval subjects hit an idle-nudge loop after finishing their read-only
   assignment and needed explicit shutdown) both filed as follow-ups, both

@@ -1898,7 +1898,7 @@
     },
     {
       "id": "F066",
-      "description": "No vv hook cross-checks a feature's `passing`/`in-progress` status against its `test_file` actually existing (or its scope directories existing) in the working tree. session-start.sh faithfully reports whatever features.json says; nothing validates that the referenced paths resolve. Discovered independently by 2 of 6 eval-a2/eval-b subagents during F021's orientation-recovery eval, against test/fixtures/harness-project (whose F001/F002 entries cite test files that were never committed) -- faithful orientation can still hand a session a fabricated picture. Consider a lightweight doctor-style check (or a session-start.sh warning) when a passing feature's test_file path does not exist.",
+      "description": "No vv hook cross-checks a feature's `passing`/`in-progress` status against its `test_file` actually existing (or its scope directories existing) in the working tree. session-start.sh faithfully reports whatever features.json says; nothing validates that the referenced paths resolve. Raised by 1 of the 6 valid eval-a2/eval-b subagents during F021's orientation-recovery eval, against test/fixtures/harness-project (whose F001/F002 entries cite test files that were never committed) -- faithful orientation can still hand a session a fabricated picture. Consider a lightweight doctor-style check (or a session-start.sh warning) when a passing feature's test_file path does not exist.",
       "priority": 67,
       "status": "pending",
       "scope": [
@@ -1910,7 +1910,7 @@
       "assigned_to": null,
       "test_file": null,
       "coverage": null,
-      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): eval-a2-run2 and eval-a-run3 both independently found and reported this against test/fixtures/harness-project. Not fixed in F021 -- the fixture itself is shared by the entire mechanical test suite and is out of F021's declared scope (evals/README.md, evals/orientation-recovery.md, README.md, test/run-tests.sh).",
+      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): eval-a2-run2 (one of the 6 VALID runs) proposed this as the generalizable finding. A discarded round-1 subagent (eval-a-run3, excluded from the eval's results table -- see evals/orientation-recovery.md's capture-defect section) noticed the same underlying fixture inconsistency but did not itself count toward the eval; caught and corrected during PR #107 review, which found the original notes wrongly cited that discarded run as a second valid source. Not fixed in F021 -- the fixture itself is shared by the entire mechanical test suite and is out of F021's declared scope (evals/README.md, evals/orientation-recovery.md, README.md, test/run-tests.sh).",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
