@@ -1978,7 +1978,7 @@
       "id": "F068",
       "description": "skills/harness-doctor/SKILL.md's frontmatter description claims doctor.py 'Verifies... version drift against the current plugin', but no such check exists anywhere in doctor.py -- confirmed via grep, zero matches for 'version' in the entire file. Either implement a real version-drift check (compare the project's recorded plugin version, if any, against the currently installed CLAUDE_PLUGIN_ROOT's .claude-plugin/plugin.json) or correct the description to stop claiming a check that doesn't run.",
       "priority": 69,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-doctor/SKILL.md",
         "skills/harness-doctor/doctor.py",
@@ -1986,12 +1986,20 @@
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "discovered_via F066 (2026-08-01): found incidentally while updating SKILL.md's description for the new test_file existence check -- the pre-existing 'version drift' claim was already inaccurate before that edit, unrelated to F066's own change. Not fixed in F066 -- deciding whether to implement the check or just correct the doc is a real design choice, not a mechanical fix, and out of F066's declared scope.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "14 new assertions: 8 in the hd: section (drift finding present/absent/matched, plugin_root-unknown skip, --fix resolves/writes-correct-version/idempotent), 6 in the fixes.py direct-unit block (_update_plugin_version's 3 no-op branches plus its actual write, folded into the existing block that already covered the other 4 fixers). All mutation-tested: forcing the comparison to always report clean fails exactly the 2 finding-presence assertions and the --fix-writes-correct-version assertion (3); removing the absent-recorded guard fails exactly the absent-produces-no-finding assertion (1); making the fixer a no-op that returns True without writing fails exactly the 3 --fix assertions. Full suite 1476/1476.",
+      "notes": "Chose to implement the real check over correcting the description, since the value (an actual doctor.py capability matching what a 'doctor' tool should do) outweighed the small extra scope, and the existing pattern for an optional harness.json field (worker block, F016) was directly reusable. Investigated first: .harness/harness.json has no version field of any kind in any project (confirmed by reading templates/harness.json.tmpl and this repo's own harness.json), so a real check needed a new field recorded at /harness-init time, not just a doctor.py comparison against something already there. Also found, while editing the 'What it checks' list to add the new check, that item 6 was pre-existing-mislabeled 'Version drift' for something that was never a real version comparison (stale PostCompact block + missing v5 artifacts) -- renamed to 'v5 upgrade staleness' to stop the name collision with this feature's actual version check, and separately found F066's own test_file check had never been documented in this same list at all -- added it too since it was directly adjacent to the edit already in progress. This repo's own .harness/harness.json is left without a plugin_version field (matches its own precedent of not having a worker block either -- this repo dogfoods the harness but was never itself run through /harness-init in the normal plugin-consumer sense).",
       "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "scope_expansions": [
+        "skills/harness-doctor/fixes.py: the real check needed a real --fix action (update the recorded version), which lives here alongside the other four fixers, not in doctor.py itself -- same file the four pre-existing fixers already live in, not a new file.",
+        "skills/harness-init/SKILL.md: the check is only useful if new projects start with a recorded plugin_version -- added an initial-recording step mirroring the existing worker-block step (F016), same file, same section.",
+        "INSTALL.md: the --fix action needed to be named as one of the upgrade section's mechanical steps (SKILL.md's own text already claimed --fix does 'exactly the N mechanical steps in INSTALL.md's upgrade section' -- adding a step here keeps that claim true rather than making it newly false)."
+      ],
+      "approaches_tried": [
+        "Read templates/harness.json.tmpl and the F016 worker-block precedent in skills/harness-init/SKILL.md and schemas/feature.schema.json before writing any code, to reuse an established pattern (optional field, absence-is-valid, defensive skip on missing plugin_root) rather than inventing a new one.",
+        "check_version_drift follows check_mld_non_injection's exact plugin_root-skip shape: no plugin_root -> can't compare, skip; no manifest or no recorded value -> nothing to compare, skip; only an actual mismatch produces a Finding. No $defs schema entry added for plugin_version (unlike the worker block) since it's a bare string, not a nested object needing field-level validation -- would have been speculative structure for a single scalar.",
+        "_update_plugin_version in fixes.py follows the existing fixer contract (return True/False, no side effects on no-op) and is only ever invoked through apply_fixes when a drift Finding already exists, so it never writes plugin_version to a project that never recorded one -- that decision stays with /harness-init, not doctor --fix."
+      ],
       "failure_reason": null,
       "discovered_via": "F066",
       "spec": null
