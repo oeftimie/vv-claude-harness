@@ -6072,10 +6072,12 @@ else
   fail "mnt: MAINTENANCE_LOG.md does not exist"
 fi
 
-if grep -q "retirement condition" "$REPO_ROOT/CLAUDE.md"; then
-  pass "mnt: CLAUDE.md has the new every-workaround-needs-a-retirement-condition rule"
+# Post-F019/OVI-58, this general project policy (not Claude-specific) lives in
+# AGENTS.md, imported into CLAUDE.md via @AGENTS.md rather than restated there.
+if grep -q "retirement condition" "$REPO_ROOT/AGENTS.md"; then
+  pass "mnt: AGENTS.md has the every-workaround-needs-a-retirement-condition rule"
 else
-  fail "mnt: CLAUDE.md is missing the retirement-condition rule"
+  fail "mnt: AGENTS.md is missing the retirement-condition rule"
 fi
 
 PROTOCOL_MD="$REPO_ROOT/rules/agent-teams-protocol.md"
