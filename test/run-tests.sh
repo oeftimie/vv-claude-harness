@@ -6328,7 +6328,7 @@ REQUAL_MD="$REPO_ROOT/docs/requalification.md"
 # jsonschema dependency, so this check follows the same style: extract the
 # harness_worker_block $def and hand-validate representative harness.json shapes
 # against it.
-WORKER_SCHEMA_ERRORS=$(python3 - "$FEATURE_SCHEMA" <<'PYEOF'
+WORKER_SCHEMA_ERRORS=$(python3 - "$FEATURE_SCHEMA" 2>&1 <<'PYEOF'
 import json
 import sys
 
@@ -6460,7 +6460,7 @@ else
 fi
 
 # AC3: requalification.md lists >= 4 named subtraction candidates with decision criteria.
-SUBTRACTION_ERRORS=$(python3 - "$REQUAL_MD" <<'PYEOF'
+SUBTRACTION_ERRORS=$(python3 - "$REQUAL_MD" 2>&1 <<'PYEOF'
 import re
 import sys
 
@@ -6502,7 +6502,7 @@ fi
 # column, not just a grep for the implementer's own marker phrase (which only proves
 # the phrase wasn't duplicated, not that a second real table doesn't exist elsewhere
 # under different wording).
-BINDINGS_TABLE_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+BINDINGS_TABLE_ERRORS=$(python3 - "$REPO_ROOT" 2>&1 <<'PYEOF'
 import re
 import subprocess
 import sys
