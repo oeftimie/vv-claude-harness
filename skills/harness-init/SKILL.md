@@ -93,8 +93,11 @@ On success this writes, byte-verbatim or rendered from a template in
   Bash hook that fires only on `git commit`, denying compound stage-and-commit forms and
   staged secret-shaped content (see the template's own header for the full check list).
 - `.harness/harness.json` and `.harness/features.json` skeletons with `project`/`stack`/
-  `created` filled in; `git_identity` and `team_structure` are left `null` here (this
-  step and Step 6, respectively, are the decisions that fill them).
+  `created` filled in, plus `plugin_version` (F068) when `${CLAUDE_PLUGIN_ROOT}/
+  .claude-plugin/plugin.json` is readable -- purely mechanical, unlike the two fields
+  below, so the stamp writes it directly rather than deferring it to a follow-up step;
+  `git_identity` and `team_structure` are left `null` here (this step and Step 6,
+  respectively, are the decisions that fill them).
 - `.gitignore` gains `.harness/SESSION_INCOMPLETE`, appended idempotently.
 
 **`.harness/features.json`'s feature schema.** Each feature's shape (the 16 fields, which
@@ -171,42 +174,14 @@ table has since been requalified to different bindings, use those instead of the
 `opus`/`sonnet`/`opus` shown here. Schema: `schemas/feature.schema.json`'s
 `$defs/harness_worker_block`.
 
-**3. Record `plugin_version`** (F068): read the currently running plugin's own version
-from `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` the same defensive way step 2
-probes `claude --version` -- `CLAUDE_PLUGIN_ROOT` unset, the manifest missing, or its
-`version` field absent all skip silently, no `plugin_version` key written:
+`plugin_version` (F068) is NOT a follow-up step here, unlike `git_identity` and
+`worker` above -- unlike those two, it needs no user decision and no live subprocess
+probe, only a file already sitting next to `scripts/stamp.sh` on disk, so the stamp
+itself writes it directly (see `scripts/stamp.sh`'s own comments). `harness-doctor`
+(F068) compares it against the currently installed plugin on later runs and offers to
+bootstrap or refresh it via `--fix` if it's ever missing or stale.
 
-```bash
-python3 - <<'PYEOF'
-import json
-import os
-
-plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
-if not plugin_root:
-    raise SystemExit(0)
-
-manifest_path = os.path.join(plugin_root, ".claude-plugin", "plugin.json")
-try:
-    with open(manifest_path) as f:
-        version = json.load(f).get("version")
-except (OSError, ValueError):
-    raise SystemExit(0)
-if not version:
-    raise SystemExit(0)
-
-with open(".harness/harness.json") as f:
-    data = json.load(f)
-data["plugin_version"] = version
-with open(".harness/harness.json", "w") as f:
-    json.dump(data, f, indent=2)
-PYEOF
-```
-
-`harness-doctor` (F068) compares this against the currently installed plugin on later
-runs and flags drift; absence is valid and produces no finding, same as the `worker`
-block above.
-
-**4. Write `.harness/context_summary.md`** -- this carries real project judgment (domain,
+**3. Write `.harness/context_summary.md`** -- this carries real project judgment (domain,
 constraints, architecture), never zero-decision content, so it stays hand-authored:
 
 ```markdown
@@ -242,7 +217,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - (none yet — first retrospective will populate this)
 ```
 
-**5. Write `.harness/claude-progress.txt`**:
+**4. Write `.harness/claude-progress.txt`**:
 
 ```
 # Claude Progress Log
@@ -256,7 +231,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - [List what you set up]
 ```
 
-**6. Configure `.harness/init.sh`** for the detected stack -- the one genuinely
+**5. Configure `.harness/init.sh`** for the detected stack -- the one genuinely
 decision-shaped file in this set, so the stamp does not touch it. Read the
 `init.sh.template` file in this skill's directory, copy it to `.harness/init.sh`,
 configure for the detected stack, and make it executable with `chmod +x`.

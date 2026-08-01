@@ -78,14 +78,18 @@ and points to `/harness-init` instead of running any checks.
    the working tree — `features.json` recording a test file is a claim, not a fact,
    and nothing else in the harness validates it. `pending` features and features with
    no `test_file` set are not checked (nothing to verify yet).
-8. **Plugin version drift** (F068): if `.harness/harness.json` has a `plugin_version`
-   field, it is compared against the currently running plugin's own
-   `.claude-plugin/plugin.json` version. A mismatch is reported (not an error) —
-   hooks and skills may have legitimately changed between the two versions, and the
-   reader decides whether that matters here. Absence of `plugin_version` is valid
-   (an older project, or one that has never run `/harness-init` or `doctor --fix`
-   since F068 shipped) and produces no finding, exactly like the optional `worker`
-   block (F016).
+8. **Plugin version drift** (F068): `.harness/harness.json`'s `plugin_version` field
+   is compared against the currently running plugin's own `.claude-plugin/plugin.json`
+   version. `scripts/stamp.sh` writes it at project creation (mechanical, not
+   decision-shaped, so the stamp emits it directly rather than deferring it to a
+   `/harness-init` follow-up step like `git_identity`/`worker`). A mismatch is
+   reported (not an error) — hooks and skills may have legitimately changed between
+   the two versions, and the reader decides whether that matters here. A project with
+   no `plugin_version` recorded at all — one stamped before F068 shipped, most likely
+   — gets an "upgrade available" finding, same class as the missing-`harness_state.py`
+   case (check 2): fixable, not a hard error, and `--fix` bootstraps it. This is the
+   only path by which such a project can ever acquire the field, so unlike the
+   `worker` block, absence here is not silently valid.
 9. **mld non-injection**: if `.harness/mld/` exists, the currently running plugin's
    `hooks/session-start.sh` must not reference it anywhere — that directory is
    telemetry, never something read into the model's context. This checks the
@@ -114,10 +118,10 @@ stale `PostCompact` block; copy `statusline.sh` from the plugin; add the missing
 `statusLine`/`env`/`permissions`/hook wiring to `.claude/settings.json`; append
 `.harness/SESSION_INCOMPLETE` to `.gitignore`; copy `harness_state.py.template` (and
 re-copy `verify-task-quality.sh`/`check-remaining-tasks.sh`, since older per-project
-copies may carry pre-OVI-50 inline logic); update `.harness/harness.json`'s
-`plugin_version` to the currently installed plugin's version (F068), but only when a
-`plugin_version` finding is present — `--fix` never writes the field to a project that
-has never recorded one, since that decision belongs to `/harness-init`, not doctor.
+copies may carry pre-OVI-50 inline logic); write or update `.harness/harness.json`'s
+`plugin_version` to the currently installed plugin's version (F068) — this is how a
+project that predates F068, or has simply drifted, ever acquires or refreshes the
+field; nothing else does.
 Anything it cannot mechanically resolve —
 missing `python3`/`git`, a hard-required hook that was deleted outright, a JSON parse
 error, a `features.json` validation failure, a `context_summary.md` missing a required

@@ -109,11 +109,12 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # Render the three templated JSON files into $WORKDIR first, entirely
 # independent of $TARGET_DIR -- new mode's collision pre-flight needs every
 # target's content decided before touching disk.
-python3 - "$TEMPLATES_DIR" "$WORKDIR" "$PROJECT_NAME" "$STACK" "$CREATED" "$ENV_TEAMS_FLAG" "$POSTTOOLUSE_FRAGMENT" <<'PYEOF'
+python3 - "$TEMPLATES_DIR" "$WORKDIR" "$PROJECT_NAME" "$STACK" "$CREATED" "$ENV_TEAMS_FLAG" "$POSTTOOLUSE_FRAGMENT" "$PLUGIN_ROOT" <<'PYEOF'
 import json
+import os
 import sys
 
-templates_dir, workdir, project_name, stack, created, env_teams_flag, posttooluse_fragment = sys.argv[1:8]
+templates_dir, workdir, project_name, stack, created, env_teams_flag, posttooluse_fragment, plugin_root = sys.argv[1:9]
 
 
 def read(path):
@@ -151,7 +152,23 @@ harness_text = substitute(
     {},
     {"PROJECT_NAME": project_name, "STACK": stack, "CREATED": created},
 )
-json.loads(harness_text)
+harness_data = json.loads(harness_text)
+
+# F068: plugin_version is purely mechanical (read a file already sitting next to
+# this script) rather than decision-shaped like git_identity (needs the user) or
+# worker (needs a live `claude --version` probe) -- "never hand-write what a
+# stamp can emit" applies to it directly, unlike those two, which stay as
+# SKILL.md follow-up steps. Defensive: a plugin_root with no readable, versioned
+# manifest just means no key is written, same fallback shape as everywhere else
+# this value is read.
+try:
+    with open(f"{plugin_root}/.claude-plugin/plugin.json") as fh:
+        plugin_version = json.load(fh).get("version")
+except (OSError, ValueError):
+    plugin_version = None
+if plugin_version:
+    harness_data["plugin_version"] = plugin_version
+harness_text = json.dumps(harness_data, indent=2) + "\n"
 
 features_text = substitute(
     read(f"{templates_dir}/features.json.tmpl"),
