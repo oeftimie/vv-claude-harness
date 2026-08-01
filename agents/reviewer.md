@@ -3,9 +3,9 @@ name: reviewer
 description: >-
   Harness Agent Teams review teammate. Senior review of completed features for
   correctness, scope adherence, test quality, and the 95% coverage gate. Cannot edit
-  files by construction (no Edit/Write tools); Bash is limited to test runs and git diff
-  by instruction. Reports findings to the lead via SendMessage. Spawn via the
-  harness-continue team workflow.
+  files by construction (no Edit/Write tools); Bash is limited to test runs and
+  read-only git inspection (git diff, git show) by instruction. Reports findings to
+  the lead via SendMessage. Spawn via the harness-continue team workflow.
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash
