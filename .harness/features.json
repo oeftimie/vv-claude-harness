@@ -642,7 +642,7 @@
       ],
       "approaches_tried": [
         "Checked git history for the evidence_type enum before assuming a schema change was needed -- found F010 had already added \"conformance\" to both enums proactively, avoiding a redundant/conflicting edit to an already-correct schema.",
-        "Mutation-tested both new lint checks (the AC1 tools-set check and the AC2 blindness-rule check) against targeted defects; both caught their mutation."
+        "Mutation-tested both new lint checks (the AC1 tools-set check and the round-1 AC2 blindness-rule check) against targeted defects; both caught their mutation at the time -- but round-1's AC2 mutation was too narrow (it only tried weakening the rule's wording, not deleting the whole section), and PR #102 review round 1 found the check still passed with the ENTIRE blindness-rule section deleted, since it grepped the whole file including the agent's own frontmatter description. Rewrote round 2 to scope the check to the blindness-rule section specifically (body only, frontmatter stripped); re-verified against the exact section-deletion mutation."
       ],
       "failure_reason": null,
       "discovered_via": null,
