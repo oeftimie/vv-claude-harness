@@ -389,6 +389,56 @@ When all teammates complete:
    - Identify conflicting changes via `git diff`
    - Revert cleanly rather than attempting broken merges
    - Record conflict resolution in `context_summary.md`
+3.5. **Author-blind conformance check (optional, F017/OVI-65)**: for a feature whose
+   `spec.verdict` is `"PASS"` AND EITHER of the following holds, spawn the conformance
+   tester BEFORE marking the feature passing:
+   - Its Linear readiness stamp (if one was minted; `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`)
+     recorded `risk: "elevated"`. `risk` is NOT itself persisted on the local feature
+     object today, so check the stamp comment directly (or the Phase 1 team-design
+     notes, if the lead recorded the risk classification there) rather than expecting
+     a `features.json` field to hold it.
+   - The lead set `require_plan_approval: true` for this feature's teammate during
+     Phase 1. This is a live decision the lead makes in-session, not a field read back
+     from `features.json` — if Phase 1 happened in an earlier, now-compacted context
+     and the decision isn't in current context, treat this condition as unknown rather
+     than assuming false. Since this whole step is optional, don't spawn the
+     conformance tester on an unknown condition alone — mention the ambiguity to the
+     user (e.g. "this feature may have needed plan approval, but I don't have that
+     decision in context; run a conformance check anyway?") and let them decide.
+
+   (Neither condition is a durable, machine-checkable field on the feature object
+   today; persisting `risk` on `features.json` so this trigger doesn't depend on the
+   lead's own memory or a live Linear lookup is a natural follow-up, not done here.)
+
+   Adapted from agent-os's `conformance-test-writer` pattern (nodera-studio, MIT): a
+   single context that writes both the code and its tests can satisfy a bug with a
+   test that matches the bug — this step derives tests from the verified spec alone,
+   never from the implementation.
+
+   ```
+   Agent({
+     description: "Author-blind conformance test for F0NN",
+     subagent_type: "vv-harness:conformance-tester",
+     model: "sonnet",
+     prompt: "[the feature's verified description, including its numbered acceptance
+               criteria, exactly as it appears in features.json; the feature's scope;
+               the project's test conventions (framework, directory layout, naming).
+               Do NOT read: [implementer's test_file path], the implementation diff,
+               or the implementer's completion message.]"
+   })
+   ```
+
+   Route the result:
+   - All PASS (or PASS plus honest NOT-TESTABLE criteria): proceed to mark the feature
+     passing; record `proof.evidence_type: "conformance"` on the feature, with the
+     conformance test file(s) as `artifact` and any NOT-TESTABLE criteria named in
+     `not_established`.
+   - Any FAIL: do NOT mark the feature passing. The FAIL is a finding routed back for
+     a fix (to the implementer, or fixed directly by the lead), same as any other
+     pre-passing defect — the conformance tester never fixes source itself.
+
+   **Single-session mode**: this step is available but manual — run it only if the
+   user asks for it; it is not a default part of the single-session TDD loop.
 4. Update `.harness/features.json` for each completed feature (status, test_file, coverage, clear assigned_to)
 5. Append decisions and patterns to `.harness/context_summary.md`
 
