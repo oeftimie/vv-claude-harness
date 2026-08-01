@@ -1195,3 +1195,39 @@ This file is referenced in CLAUDE.md and loaded every session.
   check before it printed anything, so the mutation appeared to pass for the
   wrong reason -- wrapped the check in try/except so exceptions report as
   failures, not silent false-passes.
+
+## Meta-Session 2026-08-01 (F064: persist risk/require_plan_approval on features.json)
+- Scope accuracy: one scope expansion beyond the declared 4 files:
+  scripts/validate-features.py, recorded in features.json. The schema's own
+  header says it "documents intent for humans and external tools" while
+  validate-features.py is what actually enforces it -- adding a schema field
+  without a matching validator check would have left the two out of sync,
+  the exact class of drift F063 (the immediately prior feature this session)
+  existed to close.
+- Design decision: `risk` is written back locally as soon as it's determined
+  in `harness-issue-prep` Step 7 (before HMAC key resolution), not only on a
+  fully successful stamp -- so a Keychain/permission failure that degrades
+  the run to unstamped still leaves `risk` durably recorded. `require_plan_approval`
+  is NOT written by harness-issue-prep at all (prep doesn't do team design);
+  it's set only by the lead at Phase 1, matching where that decision actually
+  gets made per agent-teams-protocol.md.
+- Legacy handling: step 3.5's rewritten trigger keeps the "treat as unknown,
+  not false" discipline from before F064 for features that predate this
+  change and have neither field set -- absence is not evidence of low risk,
+  it's evidence of not-yet-assessed.
+- Caught and fixed a real regression in a pre-existing F017 test: my first
+  draft of step 3.5's `require_plan_approval` clause no longer contained the
+  literal substring `"require_plan_approval: true"` that an existing,
+  deliberately narrow-scoped F017 test checked for (scoped specifically to
+  avoid a false-pass from an unrelated Phase 1 occurrence of the same
+  string, per that test's own comment, referencing PR #102's round-1
+  finding). Reworded to preserve the literal phrase rather than weaken the
+  older test's discriminating power.
+- Discovery lineage: none -- F064 was itself a discovered follow-up (via
+  F017), not a source of further discoveries this round.
+- Model calibration: single-session, no sub-agents spawned.
+- Approach patterns: matched the existing "operational metric, optional for
+  backward compatibility" field style (qa_binding, coverage_target,
+  design_contract) rather than inventing a new convention for the two new
+  fields.
+- Plan approval: not applicable -- single-session implementation.
