@@ -29,8 +29,9 @@ Skill/rule/agent content shipped by this plugin references other shipped files v
 never a bare repo-relative path, since the installed cache path differs from this
 checkout. Use the same convention when editing `skills/`, `rules/`, or `agents/`.
 
-Files under `hooks/` and the `.sh.template`/`.py.template` files under
-`skills/harness-init/` are Claude Code lifecycle hooks (SessionStart, PreToolUse,
-TaskCompleted, TeammateIdle). Test one directly the way `.claude/settings.json` invokes
-it: `echo '{}' | CLAUDE_PROJECT_DIR=<project> bash <hook>.sh`, matching
+Most files under `hooks/` and the `.sh.template`/`.py.template` files under
+`skills/harness-init/` are Claude Code lifecycle hooks (e.g. SessionStart, SessionEnd,
+PreToolUse, PostToolUse, TaskCompleted, TeammateIdle; `statusline.sh` is not a
+lifecycle hook). Test one directly the way `.claude/settings.json` invokes it:
+`echo '{}' | CLAUDE_PROJECT_DIR=<project> bash <hook>.sh`, matching
 `test/run-tests.sh`'s own `run_hook` helper.
