@@ -210,6 +210,79 @@ promptly rather than waiting for Phase 5 -- distinguishing the two cases is a ju
 call for the lead, not something the `TeammateIdle` hook can do on its own (it has no
 teammate identity to key off, confirmed during F055).
 
+## Dual-Engine Review (optional, F018/OVI-66)
+
+Source: agent-os's review doctrine (nodera-studio, MIT) -- "independent engines for
+recall, one synthesizer for precision." vv's reviewer is a single Opus agent reading
+the diff; a second, independently-run engine catches single-model blind spots at the
+cost of configuration, not a new dependency.
+
+**Config**: an optional `review` block in `.harness/harness.json`:
+```json
+{
+  "review": {
+    "second_engine": "codex"
+  }
+}
+```
+Absent -- the current default -- means single-engine behavior, zero change.
+
+**When the block is present AND `command -v codex` succeeds**, the lead runs the Codex
+CLI review as a background Bash step over the feature branch diff, BLIND to the Claude
+reviewer's output: spawn the Claude reviewer teammate and start the Codex background
+step before reading either's result, so neither engine's findings can influence the
+other's.
+
+Pinned invocation:
+```bash
+codex review --base <BASE_BRANCH>
+```
+`verified live 2026-08-01 on Codex CLI 0.145.0`: `codex review --help` confirms this
+exact flag (`--base <BRANCH>`, "Review changes against the given base branch") exists
+and matches this use case, and `codex doctor` confirmed the CLI is authenticated
+(ChatGPT auth) and its endpoint reachable. A full end-to-end review run was NOT
+executed as part of this verification (avoiding an unrequested spend against the
+user's Codex subscription) -- the command's existence, exact flag spelling, and the
+CLI's auth/reachability are what's verified live, not a completed review's output
+shape. Re-verify a full run the first time this path actually triggers.
+
+**If the CLI is absent or errors**, skip WITH an explicit line in the review summary:
+`"second engine unavailable: single-engine review"` -- never silently. A silent skip
+would let a config that looks like it's getting dual coverage quietly degrade to
+single-engine without anyone noticing.
+
+**Synthesis rules** (apply when both engines produced output; these govern how the
+lead or the Claude reviewer combines the two lists into what actually routes to
+fixes):
+1. **Dedupe by defect, not by file:line.** Two engines describing the same underlying
+   defect at slightly different line numbers (e.g. the function signature vs. its
+   first call site) are ONE finding, not two.
+2. **A single-engine CRITICAL survives synthesis.** Cross-engine agreement is a
+   confidence signal, not a filter -- a defect only one engine caught is not
+   downgraded or dropped for lacking a second opinion, if its severity is CRITICAL.
+3. **Cross-engine agreement raises confidence, it doesn't gate inclusion.** When both
+   engines independently flag the same defect, label it higher-confidence in the
+   synthesized list; a single-engine finding is still included, just not labeled with
+   that boost.
+4. **Provenance is verified, not guessed.** Before labeling a finding NEW vs.
+   PRE-EXISTING, check `git show <merge-base>:<file>` for the flagged region rather
+   than assuming from the diff alone -- a line that looks new in the diff view can be
+   an unmodified line inside a larger hunk.
+
+**Cost**: the second engine is Codex-subscription cost, not Claude tokens -- it adds
+no Sonnet/Opus spend to the session's own cost accounting in `## Cost Considerations`
+above.
+
+**Honest limits**: two engines disagree often on style; only correctness and security
+findings get the cross-engine consensus treatment above. A style disagreement between
+engines is not evidence either engine is wrong -- don't synthesize style findings the
+same way as correctness/security ones.
+
+**Out of scope**: a third engine (CodeRabbit, Gemini, etc.); Codex as an implementer
+(vv orchestrates Claude teams only, by design); automatically applying fixes from the
+synthesized findings list -- synthesis produces a routed list, a human or a teammate
+still does the fix.
+
 ## Teammate Responsibilities
 
 Each teammate is a focused implementer. It:

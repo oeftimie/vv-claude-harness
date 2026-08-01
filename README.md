@@ -306,6 +306,17 @@ Use Agent Teams when two or more independent features are ready. The lead operat
 
 The `TaskCompleted` hook mechanically enforces passing tests before any task can be marked complete. The `TeammateIdle` hook prompts (but doesn't force) idle teammates to pick up the next pending feature.
 
+**Optional dual-engine review (F018/OVI-66)**: configure `.harness/harness.json`'s
+`review.second_engine: "codex"` to have the lead run a Codex CLI review in parallel
+with — and blind to — the Claude reviewer's own review. Absent the config, or absent
+the `codex` CLI on `PATH`, behavior is unchanged (single-engine review); a missing CLI
+skips with an explicit note rather than silently. Synthesis rules for combining both
+engines' findings (dedupe by defect, a single-engine CRITICAL always survives,
+cross-engine agreement raises confidence, provenance verified via `git show`) live in
+`rules/agent-teams-protocol.md`'s Dual-Engine Review section. The second engine costs
+Codex-subscription usage, not Claude tokens; the two engines disagree often on style,
+so only correctness/security findings get the cross-engine consensus treatment.
+
 ### When NOT to use
 
 * **Don't use Agent Teams** for features touching fewer than 3 files each — sequential single-session mode is cheaper. The Opus lead runs for the entire session regardless of teammate count; coordination overhead adds up.
