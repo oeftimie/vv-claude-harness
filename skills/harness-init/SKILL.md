@@ -133,7 +133,45 @@ with open(".harness/harness.json", "w") as f:
 PYEOF
 ```
 
-**2. Write `.harness/context_summary.md`** -- this carries real project judgment (domain,
+**2. Record the initial `worker` block** (F016/OVI-57): probe `claude --version` the same
+defensive way `harness-continue`'s Step 2.6 does -- unavailable or unparseable output ->
+skip silently, no `worker` key written, and epoch tracking simply starts the first time a
+later session records it:
+
+```bash
+python3 - <<'PYEOF'
+import json
+import re
+import subprocess
+
+try:
+    out = subprocess.check_output(["claude", "--version"], stderr=subprocess.DEVNULL, text=True)
+except (FileNotFoundError, subprocess.CalledProcessError):
+    raise SystemExit(0)
+
+match = re.search(r"(\d+\.\d+\.\d+)", out)
+if not match:
+    raise SystemExit(0)
+
+with open(".harness/harness.json") as f:
+    data = json.load(f)
+data["worker"] = {
+    "cli_version": match.group(1),
+    "models": {"lead": "opus", "implementer": "sonnet", "reviewer": "opus"},
+    "recorded_at": "<ISO8601 UTC>",
+}
+with open(".harness/harness.json", "w") as f:
+    json.dump(data, f, indent=2)
+PYEOF
+```
+
+The `models` values are the CURRENT row values from `rules/agent-teams-protocol.md`'s
+Model Selection table (the single bindings table) at the time you run this -- if that
+table has since been requalified to different bindings, use those instead of the
+`opus`/`sonnet`/`opus` shown here. Schema: `schemas/feature.schema.json`'s
+`$defs/harness_worker_block`.
+
+**3. Write `.harness/context_summary.md`** -- this carries real project judgment (domain,
 constraints, architecture), never zero-decision content, so it stays hand-authored:
 
 ```markdown
@@ -169,7 +207,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - (none yet — first retrospective will populate this)
 ```
 
-**3. Write `.harness/claude-progress.txt`**:
+**4. Write `.harness/claude-progress.txt`**:
 
 ```
 # Claude Progress Log
@@ -183,7 +221,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - [List what you set up]
 ```
 
-**4. Configure `.harness/init.sh`** for the detected stack -- the one genuinely
+**5. Configure `.harness/init.sh`** for the detected stack -- the one genuinely
 decision-shaped file in this set, so the stamp does not touch it. Read the
 `init.sh.template` file in this skill's directory, copy it to `.harness/init.sh`,
 configure for the detected stack, and make it executable with `chmod +x`.

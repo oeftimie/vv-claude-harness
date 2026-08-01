@@ -6318,6 +6318,250 @@ else
 fi
 
 echo ""
+echo "== F016: worker epoch record + requalification checklist =="
+
+FEATURE_SCHEMA="$REPO_ROOT/schemas/feature.schema.json"
+REQUAL_MD="$REPO_ROOT/docs/requalification.md"
+
+# AC1: the schema validates the worker block, and its absence, by hand -- this repo's
+# convention (scripts/validate-features.py) is a stdlib-only manual validator, no
+# jsonschema dependency, so this check follows the same style: extract the
+# harness_worker_block $def and hand-validate representative harness.json shapes
+# against it.
+WORKER_SCHEMA_ERRORS=$(python3 - "$FEATURE_SCHEMA" 2>&1 <<'PYEOF'
+import json
+import sys
+
+PY_TYPE_OF_JSON_TYPE = {
+    "string": str,
+    "integer": int,
+    "number": (int, float),
+    "boolean": bool,
+    "object": dict,
+    "array": list,
+}
+
+schema_path = sys.argv[1]
+with open(schema_path) as fh:
+    schema = json.load(fh)
+
+block_schema = schema.get("$defs", {}).get("harness_worker_block")
+if not block_schema:
+    print("schemas/feature.schema.json has no $defs/harness_worker_block")
+    sys.exit(0)
+
+required = block_schema.get("required", [])
+if set(required) != {"cli_version", "models", "recorded_at"}:
+    print(f"harness_worker_block required fields should be exactly cli_version/models/recorded_at, got {required}")
+
+models_schema = block_schema.get("properties", {}).get("models", {})
+models_required = models_schema.get("required", [])
+if set(models_required) != {"lead", "implementer", "reviewer"}:
+    print(f"harness_worker_block.models required fields should be exactly lead/implementer/reviewer, got {models_required}")
+
+
+def validate_worker_block(instance, block_schema, models_schema, required, models_required):
+    # Checks presence AND type against the schema's own declared types (not just
+    # a hardcoded field list) so a field that changes type (e.g. cli_version
+    # becoming an integer) is caught, not just a field that disappears.
+    for field in required:
+        if field not in instance:
+            return f"missing required field: {field}"
+        expected_type = block_schema["properties"][field]["type"]
+        py_type = PY_TYPE_OF_JSON_TYPE[expected_type]
+        if not isinstance(instance[field], py_type):
+            return f"{field} should be {expected_type}, got {type(instance[field]).__name__}"
+    models = instance["models"]
+    for field in models_required:
+        if field not in models:
+            return f"models missing required field: {field}"
+        expected_type = models_schema["properties"][field]["type"]
+        py_type = PY_TYPE_OF_JSON_TYPE[expected_type]
+        if not isinstance(models[field], py_type):
+            return f"models.{field} should be {expected_type}, got {type(models[field]).__name__}"
+    return None
+
+
+def validate_harness_json(instance):
+    # The worker block is OPTIONAL on harness.json as a whole -- only validate
+    # its shape when the key is actually present.
+    if "worker" not in instance:
+        return None
+    return validate_worker_block(instance["worker"], block_schema, models_schema, required, models_required)
+
+
+# Case 1: a valid worker block validates.
+valid_instance = {
+    "cli_version": "2.1.4",
+    "models": {"lead": "opus", "implementer": "sonnet", "reviewer": "opus"},
+    "recorded_at": "2026-08-01T00:00:00Z",
+}
+err = validate_worker_block(valid_instance, block_schema, models_schema, required, models_required)
+if err:
+    print(f"a valid worker block should validate, got error: {err}")
+
+# Case 2: a malformed worker block (missing recorded_at) is rejected.
+invalid_instance = {"cli_version": "2.1.4", "models": {"lead": "opus", "implementer": "sonnet", "reviewer": "opus"}}
+err = validate_worker_block(invalid_instance, block_schema, models_schema, required, models_required)
+if err is None:
+    print("a worker block missing recorded_at should have been rejected, but validated")
+
+# Case 3: a worker block with a field of the WRONG TYPE (cli_version as an int,
+# not a string) is rejected -- proves the check validates types, not just
+# key presence.
+wrong_type_instance = {
+    "cli_version": 214,
+    "models": {"lead": "opus", "implementer": "sonnet", "reviewer": "opus"},
+    "recorded_at": "2026-08-01T00:00:00Z",
+}
+err = validate_worker_block(wrong_type_instance, block_schema, models_schema, required, models_required)
+if err is None:
+    print("a worker block with cli_version as an int should have been rejected, but validated")
+
+# Case 4: harness.json with NO worker key at all validates cleanly -- the block
+# is optional, and this actually calls the validator (not just an unchecked
+# dict-membership assertion) to prove the "absence" path is exercised for real.
+harness_json_without_worker = {"project": "demo", "stack": "python"}
+err = validate_harness_json(harness_json_without_worker)
+if err is not None:
+    print(f"a harness.json with no worker key should validate cleanly, got error: {err}")
+
+# Case 5: harness.json WITH a worker key still gets that key's shape checked --
+# proves validate_harness_json doesn't just always return None.
+harness_json_with_bad_worker = {"project": "demo", "worker": {"cli_version": "2.1.4"}}
+err = validate_harness_json(harness_json_with_bad_worker)
+if err is None:
+    print("a harness.json with an incomplete worker block should have been rejected, but validated")
+PYEOF
+)
+if [ -z "$WORKER_SCHEMA_ERRORS" ]; then
+  pass "f016: the worker block schema validates a valid instance, rejects a malformed one, and its absence is valid (AC1)"
+else
+  fail "f016: worker block schema -- $WORKER_SCHEMA_ERRORS"
+fi
+
+# AC2: harness-continue contains Step 2.6 with the version-delta rule and the
+# silent-skip conditions.
+HC_SKILL_F016="$REPO_ROOT/skills/harness-continue/SKILL.md"
+if grep -q "Step 2.6" "$HC_SKILL_F016" && grep -q "Worker Epoch Check" "$HC_SKILL_F016"; then
+  pass "f016: harness-continue/SKILL.md has Step 2.6 (Worker Epoch Check)"
+else
+  fail "f016: harness-continue/SKILL.md is missing Step 2.6"
+fi
+if grep -q "delta is >= 10" "$HC_SKILL_F016"; then
+  pass "f016: Step 2.6 documents the version-delta >= 10 rule (AC2)"
+else
+  fail "f016: Step 2.6 is missing the version-delta >= 10 rule"
+fi
+if grep -qi "skip silently" "$HC_SKILL_F016"; then
+  pass "f016: Step 2.6 documents its silent-skip conditions (AC2)"
+else
+  fail "f016: Step 2.6 is missing its silent-skip conditions"
+fi
+
+# AC3: requalification.md lists >= 4 named subtraction candidates with decision criteria.
+SUBTRACTION_ERRORS=$(python3 - "$REQUAL_MD" 2>&1 <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+match = re.search(
+    r"\| Candidate \| Why it might be removable \| Evidence to check \|\n\|---\|---\|---\|\n(.*?)\n\n",
+    text, re.DOTALL,
+)
+if not match:
+    print("could not find the subtraction candidate table")
+    sys.exit(0)
+rows = [r for r in match.group(1).splitlines() if r.strip()]
+if len(rows) < 4:
+    print(f"expected >= 4 subtraction candidates, found {len(rows)}")
+for row in rows:
+    cells = row.split("|")
+    if len(cells) < 4 or not cells[1].strip() or not cells[2].strip() or not cells[3].strip():
+        print(f"row is missing a name, removability reason, or evidence criterion: {row!r}")
+PYEOF
+)
+if [ -z "$SUBTRACTION_ERRORS" ]; then
+  pass "f016: docs/requalification.md lists >= 4 subtraction candidates with decision criteria (AC3)"
+else
+  fail "f016: subtraction candidate table -- $SUBTRACTION_ERRORS"
+fi
+
+# AC4: protocol epoch sentence present.
+PROTOCOL_MD_F016="$REPO_ROOT/rules/agent-teams-protocol.md"
+if grep -q "Metrics hygiene" "$PROTOCOL_MD_F016" && grep -q "worker epoch" "$PROTOCOL_MD_F016" \
+  && grep -q "advisory only" "$PROTOCOL_MD_F016"; then
+  pass "f016: rules/agent-teams-protocol.md's metrics-hygiene epoch sentence is present (AC4)"
+else
+  fail "f016: the metrics-hygiene epoch sentence is missing from rules/agent-teams-protocol.md"
+fi
+
+# AC5 (amendment): exactly one bindings table exists -- scanned repo-wide for any
+# markdown table whose header row names both a role-like column and a model-like
+# column, not just a grep for the implementer's own marker phrase (which only proves
+# the phrase wasn't duplicated, not that a second real table doesn't exist elsewhere
+# under different wording).
+BINDINGS_TABLE_ERRORS=$(python3 - "$REPO_ROOT" 2>&1 <<'PYEOF'
+import re
+import subprocess
+import sys
+
+repo_root = sys.argv[1]
+files = subprocess.check_output(
+    ["git", "-C", repo_root, "ls-files", "*.md"], text=True
+).splitlines()
+
+header_pattern = re.compile(r"^\|.*\brole\b.*\|.*\bmodel\b.*\|", re.IGNORECASE)
+hits = []
+for rel_path in files:
+    full_path = f"{repo_root}/{rel_path}"
+    try:
+        with open(full_path) as fh:
+            for lineno, line in enumerate(fh, start=1):
+                if header_pattern.match(line.strip()):
+                    hits.append(f"{rel_path}:{lineno}")
+    except (OSError, UnicodeDecodeError):
+        continue
+
+if len(hits) != 1:
+    print(f"expected exactly 1 role/model table header, found {len(hits)}: {hits}")
+PYEOF
+)
+if [ -z "$BINDINGS_TABLE_ERRORS" ]; then
+  pass "f016: exactly one bindings table exists repo-wide (AC5)"
+else
+  fail "f016: bindings table scan -- $BINDINGS_TABLE_ERRORS"
+fi
+
+# AC6 (amendment): the verified-live annotation convention is documented in the
+# requalification doc.
+if grep -q "verified live" "$REQUAL_MD" && grep -q "YYYY-MM-DD" "$REQUAL_MD"; then
+  pass "f016: the verified-live annotation convention is documented in docs/requalification.md (AC6)"
+else
+  fail "f016: the verified-live annotation convention is missing from docs/requalification.md"
+fi
+
+# AC8 (amendment): the CLAUDE_CODE_SUBAGENT_MODEL warning is present in the template.
+if grep -q "CLAUDE_CODE_SUBAGENT_MODEL" "$REPO_ROOT/templates/CLAUDE.md"; then
+  pass "f016: templates/CLAUDE.md documents the CLAUDE_CODE_SUBAGENT_MODEL footgun (AC8)"
+else
+  fail "f016: templates/CLAUDE.md is missing the CLAUDE_CODE_SUBAGENT_MODEL warning"
+fi
+
+# Spec item 1 says the worker block is "written by /harness-init" -- confirm
+# harness-init/SKILL.md actually writes it, not just harness-continue's Step 2.6
+# refreshing an already-existing one (caught in PR #101 round 1 review: without
+# this, no code path ever creates the block, and Step 2.6 skips silently in
+# every project forever).
+HI_SKILL_F016="$REPO_ROOT/skills/harness-init/SKILL.md"
+if grep -q '"worker"' "$HI_SKILL_F016" && grep -qi "claude --version" "$HI_SKILL_F016"; then
+  pass "f016: skills/harness-init/SKILL.md writes the initial worker block"
+else
+  fail "f016: skills/harness-init/SKILL.md does not write the worker block (spec item 1)"
+fi
+
+echo ""
 echo "== commit-gate.sh =="
 
 run_commit_gate() {

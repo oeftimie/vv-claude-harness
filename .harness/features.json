@@ -583,7 +583,7 @@
       "id": "F016",
       "description": "[OVI-57] P4.2: Worker epoch record + requalification checklist (with subtraction pass) \u2014 Add an optional harness.json worker block recording CLI version and per-role models, an epoch check in harness-continue (Step 2.6) that prompts requalification on large version deltas, and docs/requalification.md with a subtraction pass listing removal candidates. Amendment adds a single bindings table, verified-live annotations, and the CLAUDE_CODE_SUBAGENT_MODEL warning.",
       "priority": 16,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "schemas/feature.schema.json",
         "skills/harness-continue/SKILL.md",
@@ -596,12 +596,18 @@
         "F004"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-57. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "test_file": "test/run-tests.sh (F016 section)",
+      "coverage": "n/a (shell/python fixture suite, no coverage tool)",
+      "notes": "Linear: OVI-57 (incl. Amendment 1, cross-harness reconciliation). Documentation/schema feature, minimal code: adds an optional harness_worker_block sub-schema to schemas/feature.schema.json (cli_version, models{lead,implementer,reviewer}, recorded_at) describing .harness/harness.json's optional worker block -- current state is data, model-selection POLICY stays in agent frontmatter and the protocol bindings table. Adds harness-continue Step 2.6 (Worker Epoch Check): runs claude --version defensively, compares minor-version delta against worker.cli_version, prompts requalification at delta>=10, skips silently when the CLI probe fails or the worker block is absent. New docs/requalification.md checklist: orientation eval re-run (forward-references not-yet-shipped F021), bindings-table review, operational-metric epoch-scoping note, inherit-vs-pinned per-role decision (reviewer is first inherit candidate), verified-live annotation convention, degradation-is-not-escalation guidance, and a 4-candidate subtraction pass table. rules/agent-teams-protocol.md's existing Model Selection table is reframed as the single bindings table (requalification updates a row, never the protocol prose), plus a metrics-hygiene sentence scoping historical signals to the current worker epoch. templates/CLAUDE.md gains the CLAUDE_CODE_SUBAGENT_MODEL footgun warning.",
       "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "scope_expansions": [
+        "skills/harness-init/SKILL.md (outside the declared scope list) was edited during review round 1 to actually write the worker block -- spec item 1 says \"written by /harness-init\", but the initial implementation left harness-init untouched, so the schema description's \"Written by /harness-init\" claim was false and the feature was inert (Step 2.6 would skip silently in every project forever with no code path ever creating the block). A real spec requirement missing from the declared scope list, fixed in the same PR rather than left for a follow-up."
+      ],
+      "approaches_tried": [
+        "Since schemas/feature.schema.json is explicitly named in the declared scope (not a new harness.json-specific schema file, which does not exist in this repo), added the worker block as a second, clearly-documented $defs entry in the same file rather than creating an out-of-scope new schema file -- the $def's own description states plainly it is independent of the features.json envelope above it.",
+        "AC1 (\"schema validates the worker block and its absence\") tested with a hand-rolled stdlib-only validator matching this repo's existing scripts/validate-features.py convention (no jsonschema dependency), covering a valid instance, a malformed one (missing required field), and confirming absence needs no validation call at all.",
+        "Mutation-tested 3 of the new checks (the worker-schema hand-validator, the \"exactly one bindings table\" AC5 guard, and the subtraction-candidate count) against targeted defects; all 3 caught their mutation on the first correctly-quoted attempt (an initial attempt failed silently from a shell-quoting bug in the test script itself, not the check under test -- redone with a heredoc to confirm)."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {

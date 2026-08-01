@@ -129,7 +129,11 @@ be valid ISO8601. `design_contract` optionally points at a locked design artifac
 
 ## Model Selection
 
-Choose models based on the cognitive demand of each role:
+Roles and their cognitive-demand tiers are protocol -- they don't change with a worker
+upgrade. Which model NAME currently fills each tier is a binding, not policy, and this
+table is the single bindings table for that binding (F016/OVI-57's "bindings-as-data"):
+when a model generation ages out, requalification (`${CLAUDE_PLUGIN_ROOT}/docs/requalification.md`)
+updates a row here, never the Role/Reasoning prose around it.
 
 | Role | Model | Reasoning |
 |------|-------|-----------|
@@ -141,10 +145,13 @@ Choose models based on the cognitive demand of each role:
 
 The four vv-harness agent definitions (`vv-harness:feature-implementer`,
 `vv-harness:layer-implementer`, `vv-harness:researcher`, `vv-harness:reviewer`) carry
-these per-role model, effort, and tool defaults in their frontmatter (reviewer: Opus with
-high effort; implementers and researcher: Sonnet). The dynamic Opus-upgrade heuristics
-below still apply: the spawn-time `model` parameter overrides the definition's
-frontmatter.
+these per-role model, effort, and tool defaults in their frontmatter, matching the
+bindings table above (the reviewer definition also sets high effort, not just a model).
+The dynamic Opus-upgrade heuristics below still apply: the spawn-time `model` parameter
+overrides the definition's frontmatter. Requalification updates the table above AND
+each agent definition's frontmatter together -- both must move in the same
+requalification pass, since the table alone doesn't change what actually gets
+spawned.
 
 **Static overrides**: if an implementer's scope is architecturally complex (10+ files, cross-cutting concerns, security-sensitive), upgrade to Opus regardless of history.
 
@@ -159,6 +166,8 @@ frontmatter.
 | Stamp or prep marked risk: "elevated" | Set require_plan_approval: true and upgrade the implementer to Opus |
 
 These are judgment calls for the lead, not mechanical rules. If no historical data exists (first session, new scope), default to Sonnet.
+
+**Metrics hygiene**: these historical signals apply within the current worker epoch (F016/OVI-57's `.harness/harness.json` `worker` block); signals from a prior epoch are advisory only, not a mechanical trigger, since a correction-cycle count from a different model generation doesn't describe this one.
 
 The lead specifies model in the Agent tool call via `model: "sonnet"` or `model: "opus"`. Default to Sonnet for implementers; use Opus only when justified.
 

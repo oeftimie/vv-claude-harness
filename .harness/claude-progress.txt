@@ -600,3 +600,29 @@
   (discovered_via F013), per Ovidiu's standing instruction to keep working
   through everything from Linear without waiting for check-ins.
 - Blockers: none.
+
+## Session 29 - 2026-08-01 (F016/OVI-57: worker epoch record + requalification checklist)
+- Feature: F016 - worker epoch record + requalification checklist (with subtraction pass)
+- Status: complete
+- Added an optional harness_worker_block sub-schema to schemas/feature.schema.json
+  (cli_version, models{lead,implementer,reviewer}, recorded_at) for harness.json's
+  optional worker block -- data, not policy (policy stays in agent frontmatter and the
+  protocol bindings table).
+- harness-continue gains Step 2.6 (Worker Epoch Check): runs `claude --version`
+  defensively, compares the minor-version delta against worker.cli_version, prompts
+  requalification at delta>=10 (or a reported model-generation change), skips silently
+  when the CLI probe fails or the worker block is absent.
+- New docs/requalification.md checklist: orientation eval re-run, bindings-table
+  review, operational-metric epoch-scoping note, inherit-vs-pinned per-role decision
+  (reviewer is the first inherit candidate), verified-live annotation convention,
+  degradation-is-not-escalation guidance, and a 4-candidate subtraction pass table.
+- rules/agent-teams-protocol.md's existing Model Selection table reframed as the
+  single bindings table (requalification updates a row, never the protocol prose)
+  plus a metrics-hygiene sentence scoping historical signals to the current epoch.
+  templates/CLAUDE.md gains the CLAUDE_CODE_SUBAGENT_MODEL footgun warning.
+- Tests: 1410/1410 passing (full_test is the gate; +9 F016 assertions, 3
+  mutation-tested).
+- Next: F017-F021 (five remaining Linear OVI-44 sub-issues) and F063
+  (discovered_via F013), per Ovidiu's standing instruction to keep working through
+  everything from Linear without waiting for check-ins.
+- Blockers: none.
