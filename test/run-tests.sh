@@ -8024,14 +8024,45 @@ echo "== F017: author-blind conformance tester =="
 CONFORMANCE_AGENT="$REPO_ROOT/agents/conformance-tester.md"
 
 # AC2: the blindness rule is present verbatim-strength, and the forbidden-inputs
-# list explicitly names the diff, the completion message, and implementer tests.
-if grep -q "MUST NOT read" "$CONFORMANCE_AGENT" \
-  && grep -qi "implementation diff" "$CONFORMANCE_AGENT" \
-  && grep -qi "completion message" "$CONFORMANCE_AGENT" \
-  && grep -qi "implementer authored\|implementer's own tests\|implementer wrote" "$CONFORMANCE_AGENT"; then
-  pass "f017: conformance-tester.md's blindness rule is stated verbatim-strength with the forbidden-inputs list (AC2)"
+# list explicitly names the diff, the completion message, and implementer tests --
+# scoped to the INSTRUCTION BODY (frontmatter stripped) and specifically within the
+# blindness-rule section itself, not just anywhere in the file. A naive whole-file
+# grep would still pass with the entire rule deleted, since the frontmatter
+# `description:` field independently mentions these same words as agent-selection
+# metadata (caught in PR #102 round 1 review, reproduced live: deleting the whole
+# "## The blindness rule" section and replacing it with unrelated text left a
+# whole-file grep passing).
+BLINDNESS_ERRORS=$(python3 - "$CONFORMANCE_AGENT" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+parts = text.split("---", 2)
+if len(parts) < 3:
+    print("could not split frontmatter from body")
+    sys.exit(0)
+body = parts[2]
+
+section_match = re.search(r"## The blindness rule\n(.*?)(?=\n## )", body, re.DOTALL)
+if not section_match:
+    print("no '## The blindness rule' section found in the instruction body")
+    sys.exit(0)
+section = section_match.group(1)
+
+if "MUST NOT read" not in section:
+    print("blindness-rule section does not state MUST NOT read")
+for phrase in ("implementation diff", "completion message"):
+    if phrase.lower() not in section.lower():
+        print(f"blindness-rule section is missing: {phrase!r}")
+if not re.search(r"implementer authored|implementer's own tests|implementer wrote", section, re.IGNORECASE):
+    print("blindness-rule section does not name implementer-authored tests as forbidden")
+PYEOF
+)
+if [ -z "$BLINDNESS_ERRORS" ]; then
+  pass "f017: conformance-tester.md's blindness-rule SECTION states the rule and forbidden-inputs list (AC2)"
 else
-  fail "f017: conformance-tester.md is missing the blindness rule or its forbidden-inputs list"
+  fail "f017: blindness rule -- $BLINDNESS_ERRORS"
 fi
 
 # AC1 (frontmatter specifics not already covered by the generic agent lint above):
@@ -8072,13 +8103,44 @@ else
   fail "f017: conformance-tester.md is missing the attribution line"
 fi
 
-# AC4: harness-continue documents the trigger conditions and the spawn prompt template.
-HC_SKILL_F017="$REPO_ROOT/skills/harness-continue/SKILL.md"
-if grep -q "vv-harness:conformance-tester" "$HC_SKILL_F017" \
-  && grep -q "elevated" "$HC_SKILL_F017" && grep -q "require_plan_approval: true" "$HC_SKILL_F017"; then
-  pass "f017: harness-continue/SKILL.md documents the conformance-tester trigger conditions (AC4)"
+# Edge case/NFR: token cost is documented (one sonnet pass per elevated feature).
+if grep -q "F017/OVI-65" "$REPO_ROOT/rules/agent-teams-protocol.md" \
+  && grep -q "one Sonnet pass" "$REPO_ROOT/rules/agent-teams-protocol.md"; then
+  pass "f017: the token cost NFR is documented in rules/agent-teams-protocol.md's Cost Considerations"
 else
-  fail "f017: harness-continue/SKILL.md is missing the conformance-tester trigger conditions"
+  fail "f017: the token cost NFR is not documented"
+fi
+
+# AC4: harness-continue documents the trigger conditions and the spawn prompt
+# template -- anchored to the step 3.5 block itself, not the whole file. A whole-file
+# grep for "require_plan_approval: true" would pass even with that clause removed
+# from step 3.5, since the identical string already exists in an unrelated Phase 1
+# bullet elsewhere in this file (caught in PR #102 round 1 review, reproduced live).
+HC_SKILL_F017="$REPO_ROOT/skills/harness-continue/SKILL.md"
+STEP_3_5_ERRORS=$(python3 - "$HC_SKILL_F017" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+match = re.search(r"3\.5\. \*\*Author-blind conformance check.*?(?=\n4\. )", text, re.DOTALL)
+if not match:
+    print("could not find the step 3.5 block")
+    sys.exit(0)
+step = match.group(0)
+
+if "vv-harness:conformance-tester" not in step:
+    print("step 3.5 does not name vv-harness:conformance-tester")
+if "elevated" not in step:
+    print("step 3.5 does not mention elevated risk")
+if "require_plan_approval: true" not in step:
+    print("step 3.5 does not mention require_plan_approval: true")
+PYEOF
+)
+if [ -z "$STEP_3_5_ERRORS" ]; then
+  pass "f017: harness-continue/SKILL.md's step 3.5 documents the conformance-tester trigger conditions (AC4)"
+else
+  fail "f017: step 3.5 trigger conditions -- $STEP_3_5_ERRORS"
 fi
 if grep -q 'subagent_type: "vv-harness:conformance-tester"' "$HC_SKILL_F017"; then
   pass "f017: harness-continue/SKILL.md has the conformance-tester spawn prompt template (AC4)"

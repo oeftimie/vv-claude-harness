@@ -552,6 +552,7 @@ Model mixing reduces per-implementer token cost by roughly 5x (Sonnet vs Opus). 
 - For two features that each touch fewer than 3 files, sequential single-session is cheaper
 - The more independent the features, the better the parallelism payoff (less SendMessage overhead)
 - Reviewer teammates on Opus are worth the cost for features touching 10+ files; skip them for smaller scopes
+- The author-blind conformance tester (F017/OVI-65) costs one Sonnet pass per elevated-risk or plan-approval-gated feature it's spawned for -- it's opt-in per feature (Phase 4 step 3.5 in `harness-continue`), not a per-session fixed cost, so it doesn't change the break-even math above for teams that never trigger it.
 
 Don't optimize for cost at the expense of quality. The point of model mixing is to put reasoning power where it matters most (lead decisions, code review) and use efficient models for well-scoped, well-defined implementation work.
 

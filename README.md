@@ -201,7 +201,8 @@ vv-harness/                                            # Plugin root
 │   ├── researcher.md                                  # Sonnet, retrieval-only (Write for findings file)
 │   ├── reviewer.md                                    # Opus, high effort, no Edit/Write tools
 │   ├── spec-verification.md                           # Opus, read-only spec gate (SV-01..SV-06)
-│   └── reverification-guard.md                        # Sonnet, read-only re-verify of human revisions
+│   ├── reverification-guard.md                        # Sonnet, read-only re-verify of human revisions
+│   └── conformance-tester.md                          # Sonnet, author-blind behavior tests from spec alone
 ├── hooks/
 │   ├── session-start.sh                               # Orientation, spec-drift warning, compaction recovery
 │   ├── session-end.sh                                 # Session discipline audit
@@ -388,7 +389,7 @@ claude
 | `skills/harness-continue/` | Session continuation with team spawn prompts and the subagent fallback |
 | `skills/harness-issue-prep/` | Verify and normalize a spec (Linear issue, pasted text, or a feature), then mark it ready for implementation |
 | `skills/harness-issue-debug/` | Open a failed feature or a runner-parked Linear issue in a live repair session |
-| `agents/` | Declarative teammate definitions (feature-implementer, layer-implementer, researcher, reviewer, spec-verification, reverification-guard) |
+| `agents/` | Declarative teammate definitions (feature-implementer, layer-implementer, researcher, reviewer, spec-verification, reverification-guard, conformance-tester) |
 | `schemas/` | Data contracts published for external consumers (readiness stamp, park/resolution formats) |
 | `hooks/` | Plugin continuity hooks: session-start, session-end, statusline |
 | `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |

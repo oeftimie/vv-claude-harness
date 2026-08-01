@@ -390,12 +390,27 @@ When all teammates complete:
    - Revert cleanly rather than attempting broken merges
    - Record conflict resolution in `context_summary.md`
 3.5. **Author-blind conformance check (optional, F017/OVI-65)**: for a feature whose
-   `spec.verdict` is `"PASS"` AND (its stamp/prep `risk` is `"elevated"`, OR its
-   teammate had `require_plan_approval: true`), spawn the conformance tester BEFORE
-   marking the feature passing. Adapted from agent-os's `conformance-test-writer`
-   pattern (nodera-studio, MIT): a single context that writes both the code and its
-   tests can satisfy a bug with a test that matches the bug — this step derives tests
-   from the verified spec alone, never from the implementation.
+   `spec.verdict` is `"PASS"` AND EITHER of the following holds, spawn the conformance
+   tester BEFORE marking the feature passing:
+   - Its Linear readiness stamp (if one was minted; `${CLAUDE_PLUGIN_ROOT}/schemas/readiness-stamp.md`)
+     recorded `risk: "elevated"`. `risk` is NOT itself persisted on the local feature
+     object today, so check the stamp comment directly (or the Phase 1 team-design
+     notes, if the lead recorded the risk classification there) rather than expecting
+     a `features.json` field to hold it.
+   - The lead set `require_plan_approval: true` for this feature's teammate during
+     Phase 1. This is a live decision the lead makes in-session, not a field read back
+     from `features.json` — if Phase 1 happened in an earlier, now-compacted context
+     and the decision isn't in current context, treat this condition as unknown rather
+     than assuming false.
+
+   (Neither condition is a durable, machine-checkable field on the feature object
+   today; persisting `risk` on `features.json` so this trigger doesn't depend on the
+   lead's own memory or a live Linear lookup is a natural follow-up, not done here.)
+
+   Adapted from agent-os's `conformance-test-writer` pattern (nodera-studio, MIT): a
+   single context that writes both the code and its tests can satisfy a bug with a
+   test that matches the bug — this step derives tests from the verified spec alone,
+   never from the implementation.
 
    ```
    Agent({
