@@ -6214,24 +6214,6 @@ with tempfile.TemporaryDirectory() as d:
     if fixes._update_plugin_version(d, None) is not False:
         errors.append("_update_plugin_version should no-op when plugin_root is None")
 
-    # round-1 review (PR #113, N2): the manifest-missing/no-version guard was
-    # previously untested and, at the time, provably unreachable through the CLI
-    # (check_version_drift already validated the manifest before any finding could
-    # exist). Exercise it directly rather than drop it -- it's still a legitimate
-    # defensive guard for a plugin_root whose plugin.json vanishes or is malformed
-    # between the check and the fix, matching _copy_statusline's own defensive style.
-    empty_plugin_root = os.path.join(d, "empty-plugin-root")
-    os.makedirs(os.path.join(empty_plugin_root, ".claude-plugin"))
-    if fixes._update_plugin_version(d, empty_plugin_root) is not False:
-        errors.append("_update_plugin_version should no-op when plugin.json is missing")
-
-    versionless_plugin_root = os.path.join(d, "versionless-plugin-root")
-    os.makedirs(os.path.join(versionless_plugin_root, ".claude-plugin"))
-    with open(os.path.join(versionless_plugin_root, ".claude-plugin", "plugin.json"), "w") as fh:
-        json.dump({"name": "no-version-here"}, fh)
-    if fixes._update_plugin_version(d, versionless_plugin_root) is not False:
-        errors.append("_update_plugin_version should no-op when plugin.json has no version key")
-
     fake_plugin_root = os.path.join(d, "fake-plugin-root")
     os.makedirs(os.path.join(fake_plugin_root, ".claude-plugin"))
     with open(os.path.join(fake_plugin_root, ".claude-plugin", "plugin.json"), "w") as fh:
@@ -6241,10 +6223,38 @@ with tempfile.TemporaryDirectory() as d:
             "_update_plugin_version should no-op when .harness/harness.json is missing"
         )
 
+    # round-1 review (PR #113, N2 -- itself found vacuous in round-2, N2 recurrence):
+    # the manifest-missing/no-version guard needs .harness/harness.json to ALREADY
+    # exist, so a removed guard would actually reach the write path instead of being
+    # masked by the harness-missing guard above. Created here, before these two
+    # checks, specifically so each isolates only the one branch it claims to.
     os.makedirs(os.path.join(d, ".harness"))
     harness_path = os.path.join(d, ".harness", "harness.json")
     with open(harness_path, "w") as fh:
         json.dump({"project": "x"}, fh)
+
+    empty_plugin_root = os.path.join(d, "empty-plugin-root")
+    os.makedirs(os.path.join(empty_plugin_root, ".claude-plugin"))
+    if fixes._update_plugin_version(d, empty_plugin_root) is not False:
+        errors.append("_update_plugin_version should no-op when plugin.json is missing")
+    with open(harness_path) as fh:
+        if "plugin_version" in json.load(fh):
+            errors.append(
+                "_update_plugin_version wrote plugin_version despite a missing plugin.json"
+            )
+
+    versionless_plugin_root = os.path.join(d, "versionless-plugin-root")
+    os.makedirs(os.path.join(versionless_plugin_root, ".claude-plugin"))
+    with open(os.path.join(versionless_plugin_root, ".claude-plugin", "plugin.json"), "w") as fh:
+        json.dump({"name": "no-version-here"}, fh)
+    if fixes._update_plugin_version(d, versionless_plugin_root) is not False:
+        errors.append("_update_plugin_version should no-op when plugin.json has no version key")
+    with open(harness_path) as fh:
+        if "plugin_version" in json.load(fh):
+            errors.append(
+                "_update_plugin_version wrote plugin_version despite a versionless plugin.json"
+            )
+
     if not fixes._update_plugin_version(d, fake_plugin_root):
         errors.append("_update_plugin_version should report a change when harness.json exists")
     with open(harness_path) as fh:
