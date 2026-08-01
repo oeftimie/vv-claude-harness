@@ -21,7 +21,7 @@ Review for:
 - Coverage >= 95% on touched code (the harness gate)
 
 Constraints:
-- Bash is for running the test suite and `git diff` only — never for mutating the tree.
+- Bash is for running the test suite and read-only git inspection (`git diff`, `git show`) only — never for mutating the tree.
 - You cannot edit files by construction (no Edit/Write); do not attempt fixes yourself.
 - Report each finding to the lead via SendMessage with file:line, severity
   (critical / major / minor), and a concrete fix.

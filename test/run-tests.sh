@@ -8198,12 +8198,22 @@ if "second engine unavailable: single-engine review" not in section:
 
 # AC2: blind-parallel rule, skip-with-note rule (checked above), the four
 # synthesis rules, and the pinned invocation with its verified-live annotation.
-if "BLIND to" not in section and "blind" not in section.lower():
-    print("section does not state the blind-parallel rule")
+# Checking the word "blind" alone is a no-op: this same section separately says
+# a second engine "catches single-model blind spots", so a bare substring check
+# can never fail even with the actual blind-parallel sequencing rule deleted
+# (confirmed by PR #103 round 1 review: deleting the whole rule left this
+# passing). Assert the concrete sequencing instruction and the CLI gate instead.
+if "before reading either's result" not in section:
+    print("section does not state the blind-parallel sequencing rule")
+if "command -v codex" not in section:
+    print("section does not state the command -v codex gate")
 if "codex review --base" not in section:
     print("section does not pin the codex review --base invocation")
 if "verified live" not in section:
     print("section does not carry a verified-live annotation")
+if "was NOT" not in section or "Re-verify" not in section:
+    print("verified-live annotation is missing its own honesty caveat "
+          "(what was NOT verified, and the re-verify trigger)")
 synthesis_markers = [
     "Dedupe by defect",
     "single-engine CRITICAL survives",

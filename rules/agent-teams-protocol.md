@@ -231,7 +231,8 @@ Absent -- the current default -- means single-engine behavior, zero change.
 CLI review as a background Bash step over the feature branch diff, BLIND to the Claude
 reviewer's output: spawn the Claude reviewer teammate and start the Codex background
 step before reading either's result, so neither engine's findings can influence the
-other's.
+other's. **Worktree-fallback mode**: same flow -- the diff reviewed is the worktree
+branch's diff, not the lead's own working tree.
 
 Pinned invocation:
 ```bash
@@ -258,8 +259,8 @@ fixes):
    defect at slightly different line numbers (e.g. the function signature vs. its
    first call site) are ONE finding, not two.
 2. **A single-engine CRITICAL survives synthesis.** Cross-engine agreement is a
-   confidence signal, not a filter -- a defect only one engine caught is not
-   downgraded or dropped for lacking a second opinion, if its severity is CRITICAL.
+   confidence signal, not a filter -- a CRITICAL-severity defect only one engine
+   caught is never downgraded or dropped for lacking a second opinion.
 3. **Cross-engine agreement raises confidence, it doesn't gate inclusion.** When both
    engines independently flag the same defect, label it higher-confidence in the
    synthesized list; a single-engine finding is still included, just not labeled with
@@ -271,7 +272,7 @@ fixes):
 
 **Cost**: the second engine is Codex-subscription cost, not Claude tokens -- it adds
 no Sonnet/Opus spend to the session's own cost accounting in `## Cost Considerations`
-above.
+below.
 
 **Honest limits**: two engines disagree often on style; only correctness and security
 findings get the cross-engine consensus treatment above. A style disagreement between
