@@ -53,6 +53,44 @@ If it fails unexpectedly, `/harness-doctor` can help narrow down why — it stru
 checks hook presence/executability, `.claude/settings.json` wiring, `.gitignore`
 rules, and `.harness/` file validity in about 10 seconds.
 
+## Step 2.6: Worker Epoch Check
+
+HE fixed-worker thesis: hold the worker (model + coding agent) constant for one epoch,
+record its configuration, and requalify on every material change -- "requalification
+includes subtraction." This step is the mechanical trigger for that ritual, not the
+ritual itself; see `${CLAUDE_PLUGIN_ROOT}/docs/requalification.md` for the checklist.
+
+Read `.harness/harness.json`'s optional `worker` block
+(`schemas/feature.schema.json`'s `$defs/harness_worker_block`). **Absent -> skip
+silently**: an old project, or one that has never run this check, has nothing to
+compare against yet, and this is not a reason to block the session.
+
+If present, probe the live CLI version defensively -- its output format may change
+across releases, and this check must never block a session over a parse failure:
+
+```bash
+claude --version 2>/dev/null || true
+```
+
+**Command unavailable, or output doesn't parse -> skip silently.** No hook-time
+version probing; this check lives only in the skill, and only degrades gracefully.
+
+If it parses, compare the MINOR component of the live version against
+`worker.cli_version`'s minor component. Surface a one-line requalification prompt when
+either holds: the minor-version delta is >= 10, or the user directly reports a
+model-generation change (a new Sonnet/Opus generation, a CLI major bump, etc.):
+
+```
+Worker epoch check: CLI moved from <worker.cli_version> to <live version> (delta N
+minors) since this project's worker block was last recorded on <recorded_at>. Consider
+a requalification pass: see docs/requalification.md.
+```
+
+This is a prompt, not a gate -- proceed with the session either way. Only update
+`.harness/harness.json`'s `worker` block (`cli_version`, `models`, `recorded_at`) once
+the user has actually run (or explicitly deferred with a reason) the requalification
+pass; firing the prompt alone is not a reason to rewrite the block.
+
 ## Step 3: Set Effort Level
 
 Set effort based on the current phase:

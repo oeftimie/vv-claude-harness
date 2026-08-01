@@ -158,6 +158,31 @@
           "description": "Optional, for backward compatibility. Pointer to a locked design artifact (mock, redline, screenshot set) that journey or manual proof is compared against."
         }
       }
+    },
+    "harness_worker_block": {
+      "description": "The optional worker block in .harness/harness.json (F016/OVI-57) -- NOT part of the features.json envelope above; a separate, independent schema hosted in this file since it is the plugin's one canonical schema location. Written by /harness-init and refreshed by harness-continue's Step 2.6 epoch check. Absence is valid: an old project, or one that has never run the epoch check, has no worker key at all in harness.json.",
+      "type": "object",
+      "required": ["cli_version", "models", "recorded_at"],
+      "properties": {
+        "cli_version": {
+          "type": "string",
+          "description": "The Claude Code CLI version this epoch's metrics were recorded under, e.g. \"2.1.4\". Compared against `claude --version`'s live output by Step 2.6; a minor-version delta >= 10 triggers a requalification prompt."
+        },
+        "models": {
+          "type": "object",
+          "required": ["lead", "implementer", "reviewer"],
+          "description": "Current model bindings, one per role. This is DATA (what is actually configured right now) -- the model-selection POLICY (which role gets which tier, and why) stays in agent frontmatter and rules/agent-teams-protocol.md's Model Selection table; this block never duplicates or overrides that policy.",
+          "properties": {
+            "lead": { "type": "string" },
+            "implementer": { "type": "string" },
+            "reviewer": { "type": "string" }
+          }
+        },
+        "recorded_at": {
+          "type": "string",
+          "description": "ISO8601 timestamp of when this worker block was last written or refreshed."
+        }
+      }
     }
   }
 }

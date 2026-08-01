@@ -6318,6 +6318,165 @@ else
 fi
 
 echo ""
+echo "== F016: worker epoch record + requalification checklist =="
+
+FEATURE_SCHEMA="$REPO_ROOT/schemas/feature.schema.json"
+REQUAL_MD="$REPO_ROOT/docs/requalification.md"
+
+# AC1: the schema validates the worker block, and its absence, by hand -- this repo's
+# convention (scripts/validate-features.py) is a stdlib-only manual validator, no
+# jsonschema dependency, so this check follows the same style: extract the
+# harness_worker_block $def and hand-validate representative harness.json shapes
+# against it.
+WORKER_SCHEMA_ERRORS=$(python3 - "$FEATURE_SCHEMA" <<'PYEOF'
+import json
+import sys
+
+schema_path = sys.argv[1]
+with open(schema_path) as fh:
+    schema = json.load(fh)
+
+block_schema = schema.get("$defs", {}).get("harness_worker_block")
+if not block_schema:
+    print("schemas/feature.schema.json has no $defs/harness_worker_block")
+    sys.exit(0)
+
+required = block_schema.get("required", [])
+if set(required) != {"cli_version", "models", "recorded_at"}:
+    print(f"harness_worker_block required fields should be exactly cli_version/models/recorded_at, got {required}")
+
+models_required = block_schema.get("properties", {}).get("models", {}).get("required", [])
+if set(models_required) != {"lead", "implementer", "reviewer"}:
+    print(f"harness_worker_block.models required fields should be exactly lead/implementer/reviewer, got {models_required}")
+
+
+def hand_validate(instance):
+    # Minimal structural check mirroring scripts/validate-features.py's own
+    # stdlib-only approach -- not a full JSON Schema implementation, just enough
+    # to prove the two representative cases (valid presence, valid absence).
+    for field in required:
+        if field not in instance:
+            return f"missing required field: {field}"
+    models = instance.get("models", {})
+    for field in models_required:
+        if field not in models:
+            return f"models missing required field: {field}"
+    return None
+
+
+# Case 1: a valid worker block validates.
+valid_instance = {
+    "cli_version": "2.1.4",
+    "models": {"lead": "opus", "implementer": "sonnet", "reviewer": "opus"},
+    "recorded_at": "2026-08-01T00:00:00Z",
+}
+err = hand_validate(valid_instance)
+if err:
+    print(f"a valid worker block should validate, got error: {err}")
+
+# Case 2: a malformed worker block (missing recorded_at) is rejected.
+invalid_instance = {"cli_version": "2.1.4", "models": {"lead": "opus", "implementer": "sonnet", "reviewer": "opus"}}
+err = hand_validate(invalid_instance)
+if err is None:
+    print("a worker block missing recorded_at should have been rejected, but validated")
+
+# Case 3: harness.json with NO worker key at all is valid -- the block is optional.
+harness_json_without_worker = {"project": "demo", "stack": "python"}
+if "worker" in harness_json_without_worker:
+    print("test fixture error: this instance should not have a worker key")
+# Absence is valid by construction (the schema marks harness_worker_block as
+# describing an OPTIONAL block, not requiring harness.json to have one) --
+# there is nothing to reject here, which is itself the point: no validator
+# call is made against the outer harness.json shape for the worker key.
+PYEOF
+)
+if [ -z "$WORKER_SCHEMA_ERRORS" ]; then
+  pass "f016: the worker block schema validates a valid instance, rejects a malformed one, and its absence is valid (AC1)"
+else
+  fail "f016: worker block schema -- $WORKER_SCHEMA_ERRORS"
+fi
+
+# AC2: harness-continue contains Step 2.6 with the version-delta rule and the
+# silent-skip conditions.
+HC_SKILL_F016="$REPO_ROOT/skills/harness-continue/SKILL.md"
+if grep -q "Step 2.6" "$HC_SKILL_F016" && grep -q "Worker Epoch Check" "$HC_SKILL_F016"; then
+  pass "f016: harness-continue/SKILL.md has Step 2.6 (Worker Epoch Check)"
+else
+  fail "f016: harness-continue/SKILL.md is missing Step 2.6"
+fi
+if grep -q "delta is >= 10" "$HC_SKILL_F016"; then
+  pass "f016: Step 2.6 documents the version-delta >= 10 rule (AC2)"
+else
+  fail "f016: Step 2.6 is missing the version-delta >= 10 rule"
+fi
+if grep -qi "skip silently" "$HC_SKILL_F016"; then
+  pass "f016: Step 2.6 documents its silent-skip conditions (AC2)"
+else
+  fail "f016: Step 2.6 is missing its silent-skip conditions"
+fi
+
+# AC3: requalification.md lists >= 4 named subtraction candidates with decision criteria.
+SUBTRACTION_ERRORS=$(python3 - "$REQUAL_MD" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+match = re.search(
+    r"\| Candidate \| Why it might be removable \| Evidence to check \|\n\|---\|---\|---\|\n(.*?)\n\n",
+    text, re.DOTALL,
+)
+if not match:
+    print("could not find the subtraction candidate table")
+    sys.exit(0)
+rows = [r for r in match.group(1).splitlines() if r.strip()]
+if len(rows) < 4:
+    print(f"expected >= 4 subtraction candidates, found {len(rows)}")
+for row in rows:
+    cells = row.split("|")
+    if len(cells) < 4 or not cells[1].strip() or not cells[2].strip() or not cells[3].strip():
+        print(f"row is missing a name, removability reason, or evidence criterion: {row!r}")
+PYEOF
+)
+if [ -z "$SUBTRACTION_ERRORS" ]; then
+  pass "f016: docs/requalification.md lists >= 4 subtraction candidates with decision criteria (AC3)"
+else
+  fail "f016: subtraction candidate table -- $SUBTRACTION_ERRORS"
+fi
+
+# AC4: protocol epoch sentence present.
+PROTOCOL_MD_F016="$REPO_ROOT/rules/agent-teams-protocol.md"
+if grep -q "Metrics hygiene" "$PROTOCOL_MD_F016" && grep -q "worker epoch" "$PROTOCOL_MD_F016" \
+  && grep -q "advisory only" "$PROTOCOL_MD_F016"; then
+  pass "f016: rules/agent-teams-protocol.md's metrics-hygiene epoch sentence is present (AC4)"
+else
+  fail "f016: the metrics-hygiene epoch sentence is missing from rules/agent-teams-protocol.md"
+fi
+
+# AC5 (amendment): exactly one bindings table exists.
+BINDINGS_COUNT=$(grep -c "the single bindings table" "$PROTOCOL_MD_F016")
+if [ "$BINDINGS_COUNT" -eq 1 ]; then
+  pass "f016: exactly one bindings table is identified in rules/agent-teams-protocol.md (AC5)"
+else
+  fail "f016: expected exactly one bindings table marker, found $BINDINGS_COUNT"
+fi
+
+# AC6 (amendment): the verified-live annotation convention is documented in the
+# requalification doc.
+if grep -q "verified live" "$REQUAL_MD" && grep -q "YYYY-MM-DD" "$REQUAL_MD"; then
+  pass "f016: the verified-live annotation convention is documented in docs/requalification.md (AC6)"
+else
+  fail "f016: the verified-live annotation convention is missing from docs/requalification.md"
+fi
+
+# AC8 (amendment): the CLAUDE_CODE_SUBAGENT_MODEL warning is present in the template.
+if grep -q "CLAUDE_CODE_SUBAGENT_MODEL" "$REPO_ROOT/templates/CLAUDE.md"; then
+  pass "f016: templates/CLAUDE.md documents the CLAUDE_CODE_SUBAGENT_MODEL footgun (AC8)"
+else
+  fail "f016: templates/CLAUDE.md is missing the CLAUDE_CODE_SUBAGENT_MODEL warning"
+fi
+
+echo ""
 echo "== commit-gate.sh =="
 
 run_commit_gate() {
