@@ -41,7 +41,7 @@ Gather evidence vv already has -- don't reconstruct from memory:
   `approaches_tried`, `failure_reason` on the job's feature(s).
 - `.harness/SESSION_INCOMPLETE` history, if still present: what gaps got flagged
   and left open.
-- `.harness/mld/*.md` entries (F055; P3.1's corroboration marker, when present):
+- `.harness/mld/*.md` entries (F014/OVI-54; P3.1's corroboration marker, when present):
   `## Mistakes` / `## Learnings` / `## Desires` from past sessions on this job.
 - The actual session transcript, if still available.
 

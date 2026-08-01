@@ -8329,18 +8329,23 @@ else
   fail "f020: harness-improve/SKILL.md -- $IMPROVE_ERRORS"
 fi
 
-# AC3: the 3 guardrail sentences are present.
-if grep -q "Bounded claim" "$IMPROVE_SKILL"; then
+# AC3: the 3 guardrail sentences are present -- anchored on load-bearing phrases
+# from the sentence BODY, not just the bold label, so rewording the label while
+# gutting the sentence still fails these checks.
+if grep -q "Bounded claim" "$IMPROVE_SKILL" && \
+   grep -q "THAT job, on THAT worker config, THAT day" "$IMPROVE_SKILL"; then
   pass "f020: the bounded-claim guardrail is present (AC3)"
 else
   fail "f020: the bounded-claim guardrail is missing"
 fi
-if grep -qi "retrieved.*invoked\|retrieved-or-invoked" "$IMPROVE_SKILL"; then
+if grep -qi "retrieved.*invoked\|retrieved-or-invoked" "$IMPROVE_SKILL" && \
+   grep -q "not just present on disk" "$IMPROVE_SKILL"; then
   pass "f020: the retrieved-or-invoked guardrail is present (AC3)"
 else
   fail "f020: the retrieved-or-invoked guardrail is missing"
 fi
-if grep -q "No uncorroborated self-report" "$IMPROVE_SKILL"; then
+if grep -q "No uncorroborated self-report" "$IMPROVE_SKILL" && \
+   grep -q "Only observed behavior counts" "$IMPROVE_SKILL"; then
   pass "f020: the no-uncorroborated-self-report guardrail is present (AC3)"
 else
   fail "f020: the no-uncorroborated-self-report guardrail is missing"
