@@ -164,7 +164,7 @@
         },
         "require_plan_approval": {
           "type": ["boolean", "null"],
-          "description": "Optional, for backward compatibility (F064). Whether this feature requires an explicit plan-approval step before an implementer proceeds (Agent Teams Phase 1). Absent/null means not set; treated as false. Set alongside risk, same sources and same durability rationale."
+          "description": "Optional, for backward compatibility (F064). Whether this feature requires an explicit plan-approval step before an implementer proceeds (Agent Teams Phase 1). Absent/null means unassessed -- see harness-continue step 3.5's legacy fallback; do not infer false. Set alongside risk, same sources and same durability rationale."
         }
       }
     },

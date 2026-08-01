@@ -8741,7 +8741,7 @@ if '"elevated"' not in step:
     print("step 3.5 does not name the elevated risk value")
 if "require_plan_approval: true" not in step:
     print("step 3.5 does not name require_plan_approval: true")
-if "not itself persisted" in step or "NOT itself persisted" in step.upper():
+if "not itself persisted" in step.lower():
     print("step 3.5 still contains the pre-F064 'not persisted' disclaimer")
 PYEOF
 )
