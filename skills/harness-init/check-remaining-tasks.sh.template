@@ -18,12 +18,18 @@
 # hook in this repo to get the channel right -- enforce-scope.sh.template's two
 # legacy `exit 2` sites and verify-task-quality.sh.template's four all still write
 # their blocking message to stdout, the same defect, not yet fixed (see F046 notes).
-# Role-blind by construction (F055): the TeammateIdle payload carries no teammate
-# identity, so this hook cannot tell an implementer from a review-only teammate and
-# will offer the same claimable feature to both for as long as one exists. The
-# guidance text below says so explicitly; the rest of the fix (a reviewer declining
-# once instead of re-messaging the lead on every repeat) lives in agents/reviewer.md,
-# since that is the only place role is actually known.
+# Correction (F067 round-1 review): F055 originally claimed the TeammateIdle payload
+# carries no teammate identity at all. That was WRONG -- confirmed via raw curl of
+# code.claude.com/docs/en/hooks.md (a WebFetch-based check during F055 truncated
+# before reaching the TeammateIdle section, ~line 2310 of a 2900+ line page, and
+# silently answered from the common-fields table instead): the payload DOES carry
+# `teammate_name` (plus deprecated `team_name`). This script still does not use it --
+# INPUT is read and discarded below -- so it stays role-blind IN PRACTICE, but that is
+# now a design choice/gap, not a platform limitation. A real fix (keying the escape
+# hatch off `teammate_name`) is possible and tracked as a follow-up, not done here.
+# The guidance text below still applies uniformly to every teammate; the reviewer-
+# specific half of the original mitigation (declining once instead of re-messaging
+# the lead on every repeat) lives in agents/reviewer.md.
 
 set -euo pipefail
 
@@ -62,5 +68,5 @@ print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
 
 echo "$NEXT" >&2
 echo "Read .harness/features.json for full details, then claim it via TaskUpdate." >&2
-echo "If your role has no Edit/Write tools (e.g. a review-only teammate), this does not apply to you -- see your own agent definition for what to do instead." >&2
+echo "If your role has no Edit/Write tools (e.g. a review-only teammate), or your assignment was an explicit, already-delivered scoped task (a single review, a single read-only investigation, one eval run) rather than open-ended implementation work, this does not apply to you -- decline once, then stay idle; do not keep responding to repeated nudges. See your own agent definition, or ask the lead to shut you down." >&2
 exit 2

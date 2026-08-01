@@ -207,8 +207,25 @@ running (the existing "no wasted capacity" design, unchanged by this rule). When
 role-limited teammate reports its assigned work is done (e.g. a review delivered and
 acted on) and has nothing left to claim, the lead SHOULD send it a `shutdown_request`
 promptly rather than waiting for Phase 5 -- distinguishing the two cases is a judgment
-call for the lead, not something the `TeammateIdle` hook can do on its own (it has no
-teammate identity to key off, confirmed during F055).
+call for the lead today (F055's original claim that the hook has no teammate identity
+to key off was found FALSE during F067's own review -- `TeammateIdle`'s input does
+carry `teammate_name`; `check-remaining-tasks.sh` just doesn't use it yet, a tracked
+follow-up, not this rule's fix).
+
+**Extension to scoped one-shot assignments (F067).** The same early-release logic
+applies to a teammate that is NOT role-limited by construction (it has Edit/Write, e.g.
+a general-purpose subagent spawned outside the `vv-harness:reviewer` type) but whose
+*assignment* was an explicit, scoped, one-shot task -- a single review, a single
+read-only investigation, one eval run -- rather than open-ended implementation work.
+`check-remaining-tasks.sh`'s escape hatch is tool-inventory-only TODAY and doesn't fire
+for this case (confirmed live, repeatedly, during F021's orientation-recovery eval and
+every PR review this session: a scoped subagent with Edit/Write gets nudged toward the
+next claimable feature in a loop after its one task is delivered, with no way to signal
+"my assignment is done" short of going idle, which re-triggers the same nudge). The
+lead is responsible for recognizing this case and releasing the teammate promptly, the
+same judgment call F059 already assigns for role-limited teammates -- do not wait for
+the teammate to talk itself out of the loop, and do not let it claim unrelated work just
+to stop the nudging.
 
 ## Dual-Engine Review (optional, F018/OVI-66)
 
@@ -420,6 +437,32 @@ The harness installs two hooks that enforce quality mechanically:
 - Checks `.harness/features.json` for pending features
 - If work remains: sends the next feature assignment (exit code 2), keeps teammate working
 - If no work remains: allows idle (exit code 0)
+
+> **Known limitation (F067): the hook cannot see task-list state, only
+> `features.json`.** Confirmed via raw fetch of code.claude.com/docs/en/hooks.md (not
+> WebFetch, which truncated before reaching the `TeammateIdle` section on a 2900+ line
+> page and produced a wrong answer during this same investigation -- see the
+> correction note below): `TeammateIdle`'s input carries the common fields
+> (`session_id`, `prompt_id`, `transcript_path`, `cwd`, `permission_mode`, `effort`,
+> `hook_event_name`) plus `teammate_name` and deprecated `team_name` -- but still no
+> task-list snapshot of any kind. So the hook's claimable count can name a feature as
+> claimable purely from `features.json` status, even when a `TaskCreate`/`TaskUpdate`
+> has already claimed it in the session's own task list but that claim was never
+> mirrored into `features.json` (`assigned_to`, `status: "in-progress"`). **Fallback**:
+> the LEAD is the only party that sees both `features.json` and the live task list, so
+> it is the lead's responsibility to write the claim into `features.json` in the SAME
+> action that claims a feature via `TaskCreate` -- not as a follow-up step -- so this
+> hook's suggestions stay honest. **Retirement condition**: if `TeammateIdle`'s hook
+> input ever documents a task-list field (recheck code.claude.com/docs/en/hooks.md),
+> the hook can cross-check directly instead of relying on the lead's own discipline.
+>
+> **Correction, not a separate limitation**: F055's original claim that the
+> `TeammateIdle` payload "carries no teammate identity" was FALSE -- `teammate_name`
+> IS present (confirmed above). `check-remaining-tasks.sh` still doesn't use it, so it
+> stays role-blind in practice, but that is a design gap now known to be fixable, not
+> a platform limitation -- see the corrected comment in `check-remaining-tasks.sh`
+> itself and the Extension note below. A real mechanical fix (keying the escape hatch
+> off `teammate_name`) is a tracked follow-up, not done as part of F067.
 
 Post-compaction recovery is handled by the plugin's SessionStart hook (matcher
 `compact`), which re-injects orientation directly into model context after `/compact`
@@ -648,6 +691,14 @@ Don't optimize for cost at the expense of quality. The point of model mixing is 
   `enforce-scope.sh` gates the lead's own actions too, since no hook-facing field or
   environment variable distinguishes the lead's session from a teammate's — see
   Mechanical Scope Enforcement above for the fallback and retirement condition.
+- **TeammateIdle can't see task-list state (F067)**: `check-remaining-tasks.sh` reads
+  only `features.json`, since `TeammateIdle`'s hook input carries no task-list snapshot
+  (it does carry `teammate_name`, unlike what F055 originally claimed — see the
+  TeammateIdle hook section above) — a feature claimed via `TaskCreate` but not yet
+  mirrored into `features.json` reads as still-claimable, and a scoped one-shot
+  teammate (not role-limited by construction) has no hook-level escape hatch from the
+  resulting nudge loop TODAY — see the TeammateIdle hook section above and the Early
+  release extension for the fallback.
 
 ## Integration with Harness
 
