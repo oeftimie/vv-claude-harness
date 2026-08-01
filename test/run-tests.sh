@@ -1324,11 +1324,15 @@ import os
 import sys
 
 root = sys.argv[1]
-for skill_dir in ("harness-issue-prep", "harness-issue-debug", "harness-doctor"):
-    path = os.path.join(root, "skills", skill_dir, "SKILL.md")
-    if not os.path.isfile(path):
-        print(f"missing: {path}")
-        continue
+skills_dir = os.path.join(root, "skills")
+skill_dirs = sorted(
+    d for d in os.listdir(skills_dir)
+    if os.path.isfile(os.path.join(skills_dir, d, "SKILL.md"))
+)
+if not skill_dirs:
+    print("no skill directories found under skills/")
+for skill_dir in skill_dirs:
+    path = os.path.join(skills_dir, skill_dir, "SKILL.md")
     lines = open(path).read().splitlines()
     if not lines or lines[0] != "---":
         print(f"{skill_dir}/SKILL.md: does not start with ---")
@@ -1339,15 +1343,20 @@ for skill_dir in ("harness-issue-prep", "harness-issue-debug", "harness-doctor")
         print(f"{skill_dir}/SKILL.md: frontmatter has no closing ---")
         continue
     name = None
+    description = None
     for line in lines[1:end]:
         if line.startswith("name:"):
             name = line.split(":", 1)[1].strip()
+        if line.startswith("description:"):
+            description = line.split(":", 1)[1].strip()
     if name != skill_dir:
         print(f"{skill_dir}/SKILL.md: name '{name}' does not match directory '{skill_dir}'")
+    if not description:
+        print(f"{skill_dir}/SKILL.md: missing description: key")
 PYEOF
 )
 if [ -z "$SKILL_ERRORS" ]; then
-  pass "w: harness-issue-prep/-debug/-doctor SKILL.md files have sane frontmatter"
+  pass "w: all skills/*/SKILL.md files have sane frontmatter (name matches directory, description present)"
 else
   fail "w: skill frontmatter -- $SKILL_ERRORS"
 fi
@@ -6072,10 +6081,12 @@ else
   fail "mnt: MAINTENANCE_LOG.md does not exist"
 fi
 
-if grep -q "retirement condition" "$REPO_ROOT/CLAUDE.md"; then
-  pass "mnt: CLAUDE.md has the new every-workaround-needs-a-retirement-condition rule"
+# Post-F019/OVI-58, this general project policy (not Claude-specific) lives in
+# AGENTS.md, imported into CLAUDE.md via @AGENTS.md rather than restated there.
+if grep -q "retirement condition" "$REPO_ROOT/AGENTS.md"; then
+  pass "mnt: AGENTS.md has the every-workaround-needs-a-retirement-condition rule"
 else
-  fail "mnt: CLAUDE.md is missing the retirement-condition rule"
+  fail "mnt: AGENTS.md is missing the retirement-condition rule"
 fi
 
 PROTOCOL_MD="$REPO_ROOT/rules/agent-teams-protocol.md"

@@ -690,7 +690,7 @@
       "id": "F019",
       "description": "[OVI-58] P5.1: AGENTS.md routing layer for the distribution repo (cross-agent legibility) \u2014 Add a root AGENTS.md agent-agnostic operating guide (repo identity, distribution-vs-config distinction, test command, single-version rule, routing) and rewrite CLAUDE.md to a one-line @AGENTS.md import plus Claude-specific overlay with zero duplicated sentences, optionally adding up to two nested guides. Verify the import works on the current CLI.",
       "priority": 19,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "AGENTS.md",
         "CLAUDE.md",
@@ -703,12 +703,19 @@
         "F003"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-58. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "test_file": "test/run-tests.sh (existing mnt: check redirected to AGENTS.md)",
+      "coverage": "n/a (docs-only feature; AC3 explicitly requires no new test paths, just unaffected manifest tests)",
+      "notes": "Linear: OVI-58. New root AGENTS.md (52 lines, under the ~60-line cap): repo identity, the moved Key Distinction section, directory map, test command, single-version rule, git identity, and the workaround-retirement-condition rule (moved from CLAUDE.md, since it's a general project policy, not Claude-specific). CLAUDE.md rewritten to `@AGENTS.md` (line 1) plus only genuinely Claude-specific content: Harness section, Harness Prep risk/lane self-classification, and (added in review round 1, per the spec's literal item 2) a Path Resolution and Hook Testing section covering CLAUDE_PLUGIN_ROOT and hook-invocation conventions -- both were named explicitly in the spec but initially misplaced or omitted. Verified via Claude Code's own official docs (code.claude.com/docs/en/memory#agentsmd) that @AGENTS.md import is a genuine, currently-documented, first-party feature. Two nested guides: skills/AGENTS.md (19 lines) and test/AGENTS.md (24 lines). AC4 (fresh Codex/Cursor session surfaces AGENTS.md guidance) IS now genuinely verified for Codex, at zero cost: `codex debug prompt-input` (a local, no-API-call subcommand) renders the exact model-visible prompt, confirmed to contain AGENTS.md's full content under an '<INSTRUCTIONS>' block -- found during round-1 review after the initial implementation had incorrectly concluded no zero-cost path existed (missed this specific debug subcommand). Cursor remains unverified.",
       "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "scope_expansions": [
+        "test/run-tests.sh (outside the declared scope list) was edited twice: once to redirect a pre-existing test (\"mnt: CLAUDE.md is missing the retirement-condition rule\") from CLAUDE.md to AGENTS.md, and once (round 1 review) to fix the skill-frontmatter lint to actually cover all 5 skill directories instead of a hardcoded 3, closing a real gap skills/AGENTS.md's own claim had asserted was already closed."
+      ],
+      "approaches_tried": [
+        "Verified the @AGENTS.md import mechanism against Claude Code's own official documentation (fetched directly) before committing to it as the primary approach, rather than assuming from training knowledge or the spec's own claim alone -- found it's not just supported but the explicitly documented, first-party recommended pattern for exactly this AGENTS.md/CLAUDE.md coexistence use case.",
+        "A pre-existing test (\"mnt: CLAUDE.md is missing the retirement-condition rule\") broke as a direct, expected consequence of moving that rule to AGENTS.md -- fixed by redirecting it to the new home, the same content-moved-not-lost pattern used for F013's settings-block test.",
+        "Manually diffed both files side by side to confirm zero duplicated sentences (AC1) before considering the split done, rather than relying only on the full-suite green run.",
+        "Round-1 review found a real test-coverage gap (skills/AGENTS.md claimed a lint that only covered 3 of 5 skill directories) and a real content-fidelity gap (two spec-named Claude-specific items, CLAUDE_PLUGIN_ROOT notes and hook-testing guidance, were misplaced in the agent-agnostic nested guide or missing entirely) -- fixed the underlying test (glob all skills/*/SKILL.md) rather than just rewording the claim to match the gap, and moved the misplaced content to its correct home per the spec's literal wording."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {
