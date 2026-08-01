@@ -6036,7 +6036,81 @@ assert_not_contains "$OUT" "Traceback" \
 assert_not_contains "$OUT" "F001 is" \
   "hd: F066's null-test_file guard genuinely skips a passing feature with no test_file"
 
-# fixes.py: the four single-purpose fixers' no-op ("already resolved" or
+# F068: plugin_version drift. REPO_ROOT doubles as CLAUDE_PLUGIN_ROOT throughout
+# this test file (see run_doctor), so its own .claude-plugin/plugin.json version
+# is the "currently installed plugin" version for every assertion below.
+CURRENT_PLUGIN_VERSION=$(python3 -c "
+import json
+print(json.load(open('$REPO_ROOT/.claude-plugin/plugin.json'))['version'])
+")
+
+DIR_DOC_VERSION_DRIFT="$WORK/doctor-version-drift"
+make_healthy_doctor_fixture "$DIR_DOC_VERSION_DRIFT"
+python3 - "$DIR_DOC_VERSION_DRIFT/.harness/harness.json" <<'PYEOF'
+import json
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+data["plugin_version"] = "1.0.0"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_doctor "$DIR_DOC_VERSION_DRIFT")
+RC=$?
+assert_rc_nonzero "$RC" "hd: a drifted plugin_version is a finding, not silent (F068)"
+assert_contains "$OUT" \
+  "records plugin_version '1.0.0', but the currently installed plugin is '$CURRENT_PLUGIN_VERSION'" \
+  "hd: F068's finding names both the recorded and the currently installed version"
+
+DIR_DOC_VERSION_MATCH="$WORK/doctor-version-match"
+make_healthy_doctor_fixture "$DIR_DOC_VERSION_MATCH"
+python3 - "$DIR_DOC_VERSION_MATCH/.harness/harness.json" "$CURRENT_PLUGIN_VERSION" <<'PYEOF'
+import json
+import sys
+path, version = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+data["plugin_version"] = version
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_doctor "$DIR_DOC_VERSION_MATCH")
+assert_not_contains "$OUT" "plugin_version" \
+  "hd: a plugin_version matching the running plugin produces no finding"
+
+DIR_DOC_VERSION_ABSENT="$WORK/doctor-version-absent"
+make_healthy_doctor_fixture "$DIR_DOC_VERSION_ABSENT"
+OUT=$(run_doctor "$DIR_DOC_VERSION_ABSENT")
+assert_not_contains "$OUT" "plugin_version" \
+  "hd: a project with no recorded plugin_version at all produces no finding (F016 worker-block precedent)"
+
+# plugin_root can't be determined -> nothing to compare against, no finding even
+# though the recorded value is genuinely stale.
+OUT=$(run_doctor_with_root "$DIR_DOC_VERSION_DRIFT" "")
+assert_not_contains "$OUT" "plugin_version" \
+  "hd: F068's check is skipped, not falsely healthy or crashing, when plugin_root is unknown"
+
+# --fix updates the recorded version and the result is idempotent.
+OUT=$(run_doctor "$DIR_DOC_VERSION_DRIFT" --fix)
+assert_not_contains "$OUT" "plugin_version" \
+  "hd: F068's --fix resolves the drift finding"
+RECORDED_AFTER_FIX=$(python3 -c "
+import json
+print(json.load(open('$DIR_DOC_VERSION_DRIFT/.harness/harness.json')).get('plugin_version'))
+")
+if [ "$RECORDED_AFTER_FIX" = "$CURRENT_PLUGIN_VERSION" ]; then
+  pass "hd: F068's --fix writes the currently installed plugin's version, not a placeholder"
+else
+  fail "hd: F068's --fix writes the currently installed plugin's version, not a placeholder -- got '$RECORDED_AFTER_FIX', wanted '$CURRENT_PLUGIN_VERSION'"
+fi
+OUT=$(run_doctor "$DIR_DOC_VERSION_DRIFT")
+assert_not_contains "$OUT" "plugin_version" \
+  "hd: F068's --fix is idempotent -- re-running plain doctor afterward stays clean"
+
+# fixes.py: the five single-purpose fixers' no-op ("already resolved" or
 # "can't act") branches are unreachable through the CLI (apply_fixes only invokes
 # a fix_id when a finding actually calls for it), so exercise them directly.
 FIXES_ERRORS=$(python3 - "$REPO_ROOT/skills/harness-doctor" <<'PYEOF'
@@ -6089,6 +6163,30 @@ with tempfile.TemporaryDirectory() as d:
         errors.append("_add_settings_wiring did not add the missing TaskCompleted block")
     if merged["hooks"]["TeammateIdle"] != partial_hooks["TeammateIdle"]:
         errors.append("_add_settings_wiring should not touch an already-present hook event")
+
+    # F068: _update_plugin_version's no-op branches, plus its actual write.
+    if fixes._update_plugin_version(d, None) is not False:
+        errors.append("_update_plugin_version should no-op when plugin_root is None")
+
+    fake_plugin_root = os.path.join(d, "fake-plugin-root")
+    os.makedirs(os.path.join(fake_plugin_root, ".claude-plugin"))
+    with open(os.path.join(fake_plugin_root, ".claude-plugin", "plugin.json"), "w") as fh:
+        json.dump({"version": "9.9.9"}, fh)
+    if fixes._update_plugin_version(d, fake_plugin_root) is not False:
+        errors.append(
+            "_update_plugin_version should no-op when .harness/harness.json is missing"
+        )
+
+    os.makedirs(os.path.join(d, ".harness"))
+    harness_path = os.path.join(d, ".harness", "harness.json")
+    with open(harness_path, "w") as fh:
+        json.dump({"project": "x"}, fh)
+    if not fixes._update_plugin_version(d, fake_plugin_root):
+        errors.append("_update_plugin_version should report a change when harness.json exists")
+    with open(harness_path) as fh:
+        updated = json.load(fh)
+    if updated.get("plugin_version") != "9.9.9":
+        errors.append("_update_plugin_version did not write the plugin's version into harness.json")
 
 for e in errors:
     print(e)

@@ -7,7 +7,7 @@ description: Report-first, idempotent instance health check for a harness-manage
 
 Structural, idempotent health check for a single harness project. It is report-first:
 running it never changes anything on disk. It only writes when re-run with `--fix`,
-and `--fix` applies exactly the five mechanical steps in INSTALL.md's "Upgrading an
+and `--fix` applies exactly the six mechanical steps in INSTALL.md's "Upgrading an
 existing harness project" section — nothing broader, and never without you having
 first seen the report and asked for the fix.
 
@@ -68,12 +68,25 @@ and points to `/harness-init` instead of running any checks.
    `## Meta-Patterns`. Repeatable dated `## Meta-Session [DATE]` entries and the
    optional `## Closed Work Streams` section are not checked for bare presence — a
    project's first session legitimately has neither yet.
-6. **Version drift**: a stale `PostCompact` block (see check 3) and missing v5
+6. **v5 upgrade staleness**: a stale `PostCompact` block (see check 3) and missing v5
    artifacts (`statusline.sh`, the settings wiring, the `.gitignore` entry,
-   `harness_state.py`) are the drift surface for a per-project doctor. The global
+   `harness_state.py`) are the staleness surface for a per-project doctor. The global
    v3.6-era stale-file manifest in `CHANGELOG.md` is explicitly scoped to `~/.claude/`
    only and does not apply here.
-7. **mld non-injection**: if `.harness/mld/` exists, the currently running plugin's
+7. **Feature test_file existence** (F066): every feature with status `passing` or
+   `in-progress` and a non-null `test_file` must have that path actually resolve in
+   the working tree — `features.json` recording a test file is a claim, not a fact,
+   and nothing else in the harness validates it. `pending` features and features with
+   no `test_file` set are not checked (nothing to verify yet).
+8. **Plugin version drift** (F068): if `.harness/harness.json` has a `plugin_version`
+   field, it is compared against the currently running plugin's own
+   `.claude-plugin/plugin.json` version. A mismatch is reported (not an error) —
+   hooks and skills may have legitimately changed between the two versions, and the
+   reader decides whether that matters here. Absence of `plugin_version` is valid
+   (an older project, or one that has never run `/harness-init` or `doctor --fix`
+   since F068 shipped) and produces no finding, exactly like the optional `worker`
+   block (F016).
+9. **mld non-injection**: if `.harness/mld/` exists, the currently running plugin's
    `hooks/session-start.sh` must not reference it anywhere — that directory is
    telemetry, never something read into the model's context. This checks the
    plugin's own copy rather than anything under the project's `.claude/hooks/`,
@@ -101,7 +114,11 @@ stale `PostCompact` block; copy `statusline.sh` from the plugin; add the missing
 `statusLine`/`env`/`permissions`/hook wiring to `.claude/settings.json`; append
 `.harness/SESSION_INCOMPLETE` to `.gitignore`; copy `harness_state.py.template` (and
 re-copy `verify-task-quality.sh`/`check-remaining-tasks.sh`, since older per-project
-copies may carry pre-OVI-50 inline logic). Anything it cannot mechanically resolve —
+copies may carry pre-OVI-50 inline logic); update `.harness/harness.json`'s
+`plugin_version` to the currently installed plugin's version (F068), but only when a
+`plugin_version` finding is present — `--fix` never writes the field to a project that
+has never recorded one, since that decision belongs to `/harness-init`, not doctor.
+Anything it cannot mechanically resolve —
 missing `python3`/`git`, a hard-required hook that was deleted outright, a JSON parse
 error, a `features.json` validation failure, a `context_summary.md` missing a required
 section — is reported unchanged after the fix pass, because that is a judgment call,
@@ -118,4 +135,4 @@ second time.
 - `harness-continue`'s Step 2.5 smoke test fails unexpectedly.
 - After manually editing anything under `.claude/` or `.harness/`.
 - Before or after upgrading a project that was initialized under an older harness
-  version — this replaces the five manual steps INSTALL.md used to require.
+  version — this replaces the six manual steps INSTALL.md used to require.

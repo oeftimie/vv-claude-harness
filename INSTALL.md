@@ -144,6 +144,9 @@ initialized under v3, run without the plugin's install mechanism):
    .claude/hooks/harness_state.py && chmod +x .claude/hooks/harness_state.py` — `verify-task-quality.sh`
    and `check-remaining-tasks.sh` consume it if present; re-copy the two templates from the
    current plugin version too, since older per-project copies still have the old inline logic.
+6. Update the recorded plugin version: set `.harness/harness.json`'s `plugin_version`
+   field (F068) to the currently installed plugin's version, so the next `harness-doctor`
+   run compares against the version you're actually on rather than a stale one.
 
 ## Personalize your CLAUDE.md
 

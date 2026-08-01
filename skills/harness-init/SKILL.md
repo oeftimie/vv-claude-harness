@@ -171,7 +171,42 @@ table has since been requalified to different bindings, use those instead of the
 `opus`/`sonnet`/`opus` shown here. Schema: `schemas/feature.schema.json`'s
 `$defs/harness_worker_block`.
 
-**3. Write `.harness/context_summary.md`** -- this carries real project judgment (domain,
+**3. Record `plugin_version`** (F068): read the currently running plugin's own version
+from `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` the same defensive way step 2
+probes `claude --version` -- `CLAUDE_PLUGIN_ROOT` unset, the manifest missing, or its
+`version` field absent all skip silently, no `plugin_version` key written:
+
+```bash
+python3 - <<'PYEOF'
+import json
+import os
+
+plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+if not plugin_root:
+    raise SystemExit(0)
+
+manifest_path = os.path.join(plugin_root, ".claude-plugin", "plugin.json")
+try:
+    with open(manifest_path) as f:
+        version = json.load(f).get("version")
+except (OSError, ValueError):
+    raise SystemExit(0)
+if not version:
+    raise SystemExit(0)
+
+with open(".harness/harness.json") as f:
+    data = json.load(f)
+data["plugin_version"] = version
+with open(".harness/harness.json", "w") as f:
+    json.dump(data, f, indent=2)
+PYEOF
+```
+
+`harness-doctor` (F068) compares this against the currently installed plugin on later
+runs and flags drift; absence is valid and produces no finding, same as the `worker`
+block above.
+
+**4. Write `.harness/context_summary.md`** -- this carries real project judgment (domain,
 constraints, architecture), never zero-decision content, so it stays hand-authored:
 
 ```markdown
@@ -207,7 +242,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - (none yet — first retrospective will populate this)
 ```
 
-**4. Write `.harness/claude-progress.txt`**:
+**5. Write `.harness/claude-progress.txt`**:
 
 ```
 # Claude Progress Log
@@ -221,7 +256,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 - [List what you set up]
 ```
 
-**5. Configure `.harness/init.sh`** for the detected stack -- the one genuinely
+**6. Configure `.harness/init.sh`** for the detected stack -- the one genuinely
 decision-shaped file in this set, so the stamp does not touch it. Read the
 `init.sh.template` file in this skill's directory, copy it to `.harness/init.sh`,
 configure for the detected stack, and make it executable with `chmod +x`.

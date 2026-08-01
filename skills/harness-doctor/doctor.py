@@ -333,6 +333,44 @@ def check_feature_test_files(project_dir):
     return findings
 
 
+def check_version_drift(project_dir, plugin_root):
+    """F068: harness.json's optional plugin_version field records the plugin
+    version a project was last synced against. Absence is valid -- an old
+    project, or one that has never run /harness-init post-F068, has no
+    plugin_version key at all, exactly like the worker block (F016). Drift is
+    reported, not an error: hooks/skills may have legitimately changed
+    between the two versions, and the reader decides what to do about it."""
+    if not plugin_root:
+        return []  # can't compare without knowing the running plugin's version
+    manifest_path = os.path.join(plugin_root, ".claude-plugin", "plugin.json")
+    if not os.path.isfile(manifest_path):
+        return []
+    try:
+        with open(manifest_path) as fh:
+            current = json.load(fh).get("version")
+    except (OSError, ValueError):
+        return []
+    if not current:
+        return []
+    harness_path = os.path.join(project_dir, ".harness", "harness.json")
+    if not os.path.isfile(harness_path):
+        return []  # already reported by check_harness_state_files
+    try:
+        with open(harness_path) as fh:
+            recorded = json.load(fh).get("plugin_version")
+    except (OSError, ValueError):
+        return []  # already reported by check_harness_state_files
+    if not recorded or recorded == current:
+        return []
+    return [Finding(
+        f".harness/harness.json records plugin_version '{recorded}', but the "
+        f"currently installed plugin is '{current}'",
+        "review CHANGELOG.md between the two versions for hook/skill changes, "
+        "then re-run doctor --fix to update the recorded version",
+        fix_id="update_plugin_version",
+    )]
+
+
 def check_mld_non_injection(project_dir, plugin_root):
     mld_dir = os.path.join(project_dir, ".harness", "mld")
     if not os.path.isdir(mld_dir):
@@ -362,6 +400,7 @@ def run_checks(project_dir, plugin_root):
     findings.extend(check_gitignore(project_dir))
     findings.extend(check_harness_state_files(project_dir, plugin_root))
     findings.extend(check_feature_test_files(project_dir))
+    findings.extend(check_version_drift(project_dir, plugin_root))
     findings.extend(check_mld_non_injection(project_dir, plugin_root))
     return findings
 
