@@ -5,8 +5,8 @@ This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
-- Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues), all shipped so far through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up -- F016's `risk` trigger and F017's own conformance-tester trigger share the same underlying gap, that `risk`/`require_plan_approval` aren't persisted durably on the feature object), F018/OVI-66 (PR #103, dual-engine review, docs/protocol only), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md), F020/OVI-59 (skills/harness-improve/SKILL.md, this session) implemented. See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F021 (the last remaining Linear OVI-44 sub-issue) and F063/F064 (discovered follow-ups) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
+- Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues) is now COMPLETE, all shipped through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up), F018/OVI-66 (PR #103), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md), F020/OVI-59 (skills/harness-improve/SKILL.md), F021/OVI-60 (evals/README.md + evals/orientation-recovery.md, this session, filed F066+F067 as follow-ups). See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. With F021 shipped, ALL 21 original OVI-44 sub-issues are done -- remaining queued work is discovered follow-ups only: F063, F064, F066, F067 (all `pending`), worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
 - No other locally-discovered work is queued.
 
 ## Cross-Cutting Concerns
@@ -1090,3 +1090,65 @@ This file is referenced in CLAUDE.md and loaded every session.
   convention, same "adapted from, not copied" framing.
 - Plan approval: not applicable -- single-session implementation, no teammates
   spawned.
+
+## Meta-Session 2026-08-01 (F021/OVI-60: eval method doc + orientation-recovery eval)
+- Scope accuracy: held the declared scope exactly (evals/README.md,
+  evals/orientation-recovery.md, README.md, test/run-tests.sh). No expansion
+  needed.
+- Real capability gap found and worked around, not silently: the spec's literal
+  protocol calls for `claude -p` subprocess invocations. Attempted first;
+  confirmed blocked (subprocess auth failure, zero cost, zero tokens) --
+  this session's own auth is supplied by its runtime, not the on-disk
+  credential files a fresh CLI process reads, and fixing that would mean
+  touching credential-store configuration without Ovidiu's explicit
+  confirmation. Substituted fresh general-purpose subagents given the real
+  captured hook stdout (or nothing) as prompt content, disclosed as a
+  known, non-silent deviation in the eval doc itself.
+- A real methodological defect was caught mid-eval by one of the eval
+  subjects, not by me: an initial orientation-text capture leaked a
+  SESSION_INCOMPLETE-gated warning block from an unrelated scratch directory
+  (an earlier `claude -p` auth-test had left that file behind there). The
+  subject tried to reproduce the warning against the fixture it could
+  actually see, found the gating file absent, and flagged it rather than
+  assuming the lead's claim was correct. Ground-truthed the leak myself,
+  discarded the entire first batch of 3 condition-A runs, re-captured
+  cleanly, and reran. This is the invalid-result checklist working exactly
+  as designed -- documented as a worked example in the eval doc, not
+  smoothed over.
+- Result was an honest null: all 6 valid runs (3 corrected condition-A + 3
+  condition-B) converged on identical behavior (verify state against git
+  before acting, discover the shared fixture's own data/reality mismatch,
+  refuse to proceed, escalate) regardless of whether orientation text was
+  injected. Decision recorded: "investigate further," not keep or remove --
+  the likely cause is a dominant confound (this fixture's state is
+  independently re-derivable in one `git ls-files`/`find` call), not evidence
+  that orientation is worthless. A second, smaller deviation (one hint
+  sentence given to the corrected condition-A batch but not condition B) is
+  also disclosed rather than hidden.
+- Discovery lineage: F066 (no hook validates a passing feature's test_file
+  actually exists -- raised by 1 of the 6 valid eval subjects) and F067
+  (TeammateIdle's escape hatch is tool-based, not assignment-based scope; 5
+  of 6 eval subjects hit an idle-nudge loop after finishing their read-only
+  assignment and needed explicit shutdown) both filed as follow-ups, both
+  out of F021's declared scope (hooks/, .claude/hooks/).
+- One overreach noted, not reversed: one eval subagent (general-purpose,
+  read-only fixture assignment) wrote unprompted to this session's own
+  persistent auto-memory store (a file outside its assigned scratch
+  directory) with a lesson about verifying injected orientation. The content
+  is accurate and consistent with what I independently verified, so it was
+  kept -- but a spawned subagent writing to shared, persistent state outside
+  its declared task is a real scope overreach worth surfacing to Ovidiu,
+  not something to file a feature for unprompted (no vv mechanism failed
+  here; the subagent had a Write tool it wasn't told not to use for this).
+- Model calibration: 9 general-purpose subagents spawned total across both
+  eval batches (3 discarded condition-A + 3 corrected condition-A + 3
+  condition-B), all Sonnet (inherited, no override) -- no implementation
+  subagents.
+- Approach patterns: adapted harness-engineering's eval method (CC BY 4.0)
+  into vv's own contract (decision-first, one intervention, fresh sessions,
+  availability/retrieval/relevance separated, invalid-result checklist,
+  fixed-worker recording) -- same "adapted from, not copied" attribution
+  convention as F017/F018/F020.
+- Plan approval: not applicable -- single-session implementation; eval
+  subagents were spawned directly (not via Agent Teams), so no plan-approval
+  step applied.

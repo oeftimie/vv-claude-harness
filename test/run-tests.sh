@@ -8367,6 +8367,102 @@ else
 fi
 
 echo ""
+echo "== F021: eval method doc + orientation-recovery eval =="
+
+EVAL_README="$REPO_ROOT/evals/README.md"
+EVAL_ORIENT="$REPO_ROOT/evals/orientation-recovery.md"
+
+# AC1: method doc names the 5 required elements.
+EVAL_README_ERRORS=$(python3 - "$EVAL_README" <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+
+required = [
+    "The decision it informs",
+    "Exactly one named intervention",
+    "Fresh sessions",
+    "Available",
+    "Retrieved",
+    "Relevant",
+    "Invalid-result checklist",
+    "Treatment never retrieved",
+    "Extra differences between conditions",
+    "One rollout treated as representative",
+    "Activity metrics standing in for outcomes",
+    "worker config",
+    "claude --version",
+    "Record",
+]
+missing = [r for r in required if r not in text]
+if missing:
+    print(f"missing required element(s): {missing}")
+PYEOF
+)
+if [ -z "$EVAL_README_ERRORS" ]; then
+  pass "f021: evals/README.md names the decision, one-intervention, availability/retrieval/relevance, invalid-result checklist, and fixed-worker recording (AC1)"
+else
+  fail "f021: evals/README.md -- $EVAL_README_ERRORS"
+fi
+
+# AC2: orientation-recovery.md names the decision, executed protocol, results
+# table with per-run rows, the three binary facts, and a stated decision.
+EVAL_ORIENT_ERRORS=$(python3 - "$EVAL_ORIENT" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+
+required = [
+    "## Decision informed",
+    "F003-correct",
+    "F002-respected",
+    "No-overreach",
+    "## Results",
+]
+missing = [r for r in required if r not in text]
+if missing:
+    print(f"missing required section(s): {missing}")
+
+if not re.search(r"^\| *[Rr]un", text, re.MULTILINE):
+    print("no per-run results table found (expected a markdown table with a Run column)")
+data_rows = re.findall(r"^\| *[AB][0-9]+ *\|", text, re.MULTILINE)
+if len(data_rows) < 6:
+    print(f"expected >= 6 per-run data rows (3 per condition), found {len(data_rows)}")
+
+if not re.search(r"^#+ *Decision:.*\b(keep|simplify|investigate)\b", text, re.IGNORECASE | re.MULTILINE):
+    print("no stated decision (a '### Decision: keep/simplify/investigate...' heading) found")
+
+if "evidence limit" not in text.lower() and "known limit" not in text.lower():
+    print("no stated evidence limit for the conclusion")
+PYEOF
+)
+if [ -z "$EVAL_ORIENT_ERRORS" ]; then
+  pass "f021: orientation-recovery.md has a results table, the 3 binary facts, and a stated decision with its evidence limit (AC2)"
+else
+  fail "f021: orientation-recovery.md -- $EVAL_ORIENT_ERRORS"
+fi
+
+# AC3: both docs attributed; README.md links evals/.
+if grep -q "CC BY 4.0" "$EVAL_README" && grep -qi "harness-engineering" "$EVAL_README"; then
+  pass "f021: evals/README.md carries the harness-engineering CC BY 4.0 attribution (AC3)"
+else
+  fail "f021: evals/README.md is missing the attribution line"
+fi
+if grep -q "CC BY 4.0" "$EVAL_ORIENT" && grep -qi "harness-engineering" "$EVAL_ORIENT"; then
+  pass "f021: orientation-recovery.md carries the harness-engineering CC BY 4.0 attribution (AC3)"
+else
+  fail "f021: orientation-recovery.md is missing the attribution line"
+fi
+if grep -q "evals/" "$REPO_ROOT/README.md"; then
+  pass "f021: README.md links evals/ (AC3, optional link check)"
+else
+  fail "f021: README.md does not mention evals/"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do

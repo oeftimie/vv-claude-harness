@@ -766,7 +766,7 @@
       "id": "F021",
       "description": "[OVI-60] P5.3: Eval method doc + first behavioral eval (orientation recovery A/B) \u2014 Add evals/README.md defining vv's proportionate eval contract (decision-first, one intervention, fresh sessions, separate availability/retrieval/relevance facts, invalid-result checklist, fixed-worker recording) and evals/orientation-recovery.md, an executed A/B on whether SessionStart orientation changes next-session behavior, with a committed results table and a stated decision.",
       "priority": 21,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "evals/README.md",
         "evals/orientation-recovery.md",
@@ -779,12 +779,18 @@
         "F003"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-60. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "F021 section: 5 assertions (AC1 method-doc elements, AC2 results-table/3-facts/decision/evidence-limit, AC3 x2 attribution + README link), all 5 mutation-tested (each caught, one test-scoping gap found and fixed along the way -- the decision-word check matched the framing sentence in 'Decision informed' too, tightened to require a '### Decision:' heading)",
+      "notes": "Linear: OVI-60. Method deviations (subprocess-auth blocker, capture-leak discard, hint-sentence asymmetry) are documented in evals/orientation-recovery.md itself, not just here. Filed F066 and F067 as genuine follow-ups discovered during the eval runs; both out of F021's declared scope.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Wrote evals/README.md (the vv eval contract, adapted from harness-engineering's method) and evals/orientation-recovery.md (the first executed eval).",
+        "Attempted the spec's literal `claude -p` subprocess protocol first; confirmed blocked in this sandboxed session (subprocess auth failure, zero cost) without touching credential stores. Substituted genuinely fresh general-purpose subagents given the real captured orientation text (or nothing) as prompt content -- disclosed as a known deviation in the doc, not silently substituted.",
+        "Ran 3 fresh subagents per condition (6 total) against copies of test/fixtures/harness-project. Discarded an entire first batch of 3 condition-A runs after one subject caught, unprompted, that the captured orientation text included a SESSION_INCOMPLETE-gated warning block that the actual fixture could not have produced -- ground-truthed the leak (an unrelated earlier scratch-dir command had left that file behind), re-captured cleanly, and redid all 3 condition-A runs. Documented the discard and its cause in the eval doc rather than hiding it.",
+        "Result: 'investigate further', not keep/remove -- all 6 valid runs (3A+3B) independently discovered the same fixture data/reality mismatch (features.json claims passing tests with no corresponding source/test files in git) and converged on identical behavior regardless of condition, so no differential effect of the orientation text was observed. Documented this as a dominant confound specific to this small, self-evidently-inconsistent fixture, not evidence that orientation is worthless in general.",
+        "Disclosed a second, smaller deviation: the corrected condition-A batch carried one hint sentence condition B never received (a real, if likely low-impact, departure from 'exactly one intervention'), rather than presenting the comparison as cleaner than it was."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {
@@ -1888,6 +1894,50 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F020",
+      "spec": null
+    },
+    {
+      "id": "F066",
+      "description": "No vv hook cross-checks a feature's `passing`/`in-progress` status against its `test_file` actually existing (or its scope directories existing) in the working tree. session-start.sh faithfully reports whatever features.json says; nothing validates that the referenced paths resolve. Raised by 1 of the 6 valid eval-a2/eval-b subagents during F021's orientation-recovery eval, against test/fixtures/harness-project (whose F001/F002 entries cite test files that were never committed) -- faithful orientation can still hand a session a fabricated picture. Consider a lightweight doctor-style check (or a session-start.sh warning) when a passing feature's test_file path does not exist.",
+      "priority": 67,
+      "status": "pending",
+      "scope": [
+        "hooks/session-start.sh",
+        "skills/harness-doctor/doctor.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): eval-a2-run2 (one of the 6 VALID runs) proposed this as the generalizable finding. A discarded round-1 subagent (eval-a-run3, excluded from the eval's results table -- see evals/orientation-recovery.md's capture-defect section) noticed the same underlying fixture inconsistency but did not itself count toward the eval; caught and corrected during PR #107 review, which found the original notes wrongly cited that discarded run as a second valid source. Not fixed in F021 -- the fixture itself is shared by the entire mechanical test suite and is out of F021's declared scope (evals/README.md, evals/orientation-recovery.md, README.md, test/run-tests.sh).",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F021",
+      "spec": null
+    },
+    {
+      "id": "F067",
+      "description": "check-remaining-tasks.sh's TeammateIdle nudge has two related gaps surfaced by F021's eval subagents (general-purpose, not vv-harness:reviewer): (1) its escape hatch ('if your role has no Edit/Write tools, this does not apply to you') is keyed on tool inventory, not on assignment scope -- a general-purpose subagent given an explicit read-only task (like an eval run) has Edit/Write by construction and gets nudged in a loop toward claiming the next feature, with no way to signal 'my assignment is scoped and complete' short of going idle and re-triggering the same nudge. (2) the claimable-feature count reads features.json status only and ignores task-level claims -- F021 was counted as unclaimed/claimable while TaskList showed task #8 in_progress under the lead, a features.json/TaskList sync gap. F055 (shipped) addressed the reviewer-specific case via agents/reviewer.md's construction-level guarantee; this is the same root design gap (TeammateIdle carries no teammate identity) recurring for ad-hoc read-only assignments the F055 fix doesn't cover.",
+      "priority": 68,
+      "status": "pending",
+      "scope": [
+        ".claude/hooks/check-remaining-tasks.sh"
+      ],
+      "depends_on": [
+        "F055"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): 5 of 6 eval subagents hit the idle-nudge loop after delivering their read-only result and had to be explicitly shut down by the lead. Not fixed in F021 -- .claude/hooks/ is out of F021's declared scope.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F021",
       "spec": null
     }
   ]
