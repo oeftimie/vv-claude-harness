@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 63,
+  "total_features": 64,
   "passing": 53,
   "features": [
     {
@@ -637,7 +637,9 @@
       "coverage": "n/a (shell/python fixture suite, no coverage tool)",
       "notes": "Linear: OVI-65. New agents/conformance-tester.md (vv-harness:conformance-tester, sonnet, tools Read/Grep/Glob/Write/Bash): derives behavior tests from a feature's verified description + acceptance criteria alone, hard-forbidden from reading the implementation diff, completion message, or implementer-authored tests. Reports PASS/FAIL/NOT-TESTABLE per criterion; never fixes source itself. Wired as an optional harness-continue Phase 4 step (3.5): spawns before marking a feature passing when spec.verdict is PASS AND (risk elevated OR require_plan_approval), recording proof.evidence_type conformance on success, routing any FAIL back as a finding rather than marking passing. AC3 (schema accepts evidence_type \"conformance\") was ALREADY satisfied -- F010/OVI-52 added it to both the qa_binding and proof.evidence_type enums proactively when it shipped, confirmed via git blame and the pre-existing \"fsv: accepts qa_binding value conformance\" test; no schema change needed here despite schemas/feature.schema.json being in the declared scope list.",
       "correction_cycles": 0,
-      "scope_expansions": [],
+      "scope_expansions": [
+        "README.md (outside the declared scope list) was edited during review round 1 to add conformance-tester to the agent roster (tree diagram + layout table) -- a regression this PR itself caused by shipping a 7th agent without updating either place that enumerates all six pre-existing ones."
+      ],
       "approaches_tried": [
         "Checked git history for the evidence_type enum before assuming a schema change was needed -- found F010 had already added \"conformance\" to both enums proactively, avoiding a redundant/conflicting edit to an already-correct schema.",
         "Mutation-tested both new lint checks (the AC1 tools-set check and the AC2 blindness-rule check) against targeted defects; both caught their mutation."
@@ -1826,6 +1828,31 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F013",
+      "spec": null
+    },
+    {
+      "id": "F064",
+      "description": "F017/OVI-65's harness-continue Phase 4 step 3.5 gates the conformance-tester spawn on a feature's risk being \"elevated\", but risk is not persisted anywhere on the local features.json feature object -- it exists only transiently in a Linear readiness-stamp comment (remote mode, and only if prep.stamp is configured) or in the lead's own in-session Phase 1 notes, neither of which survives compaction or is checkable without a live Linear lookup. Persist `risk` (and ideally `require_plan_approval`, the step's other trigger condition, which has the same problem) as a durable field on the feature object in schemas/feature.schema.json, written back by harness-issue-prep at stamp time (mirroring what already goes into the Linear comment) and/or by the lead at Phase 1 team-design time, so step 3.5's trigger condition becomes a genuine features.json lookup instead of \"whatever the lead remembers or can still find in Linear.\"",
+      "priority": 65,
+      "status": "pending",
+      "scope": [
+        "schemas/feature.schema.json",
+        "skills/harness-issue-prep/SKILL.md",
+        "skills/harness-continue/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F017"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Discovered during PR #102 (F017/OVI-65) round-1 review: step 3.5's trigger condition references a field that does not durably exist. Documented as a known limitation in step 3.5's own text rather than fixed there, since persisting risk properly means changes to harness-issue-prep (writing it back locally at stamp time), which was never in F017's declared scope.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F017",
       "spec": null
     }
   ]
