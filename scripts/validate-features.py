@@ -18,6 +18,7 @@ OPTIONAL_FEATURE_FIELDS = (
     "correction_cycles", "scope_expansions", "approaches_tried",
     "failure_reason", "discovered_via", "spec",
     "qa_binding", "proof", "coverage_target", "delivered", "design_contract",
+    "risk", "require_plan_approval",
 )
 KNOWN_FEATURE_FIELDS = set(REQUIRED_FEATURE_FIELDS) | set(OPTIONAL_FEATURE_FIELDS)
 
@@ -180,6 +181,25 @@ def check_design_contract(feature, index, errors):
         errors.append(f"features[{index}].design_contract: must be a string or null")
 
 
+RISK_VALUES = (None, "standard", "elevated")
+
+
+def check_risk(feature, index, errors):
+    if "risk" not in feature:
+        return
+    value = feature["risk"]
+    if value not in RISK_VALUES:
+        errors.append(f"features[{index}].risk: invalid value {value!r}, expected standard/elevated/null")
+
+
+def check_require_plan_approval(feature, index, errors):
+    if "require_plan_approval" not in feature or feature["require_plan_approval"] is None:
+        return
+    value = feature["require_plan_approval"]
+    if not isinstance(value, bool):
+        errors.append(f"features[{index}].require_plan_approval: must be a boolean or null")
+
+
 REQUIRED_CHECKS = {
     "id": check_id,
     "description": check_description,
@@ -205,6 +225,8 @@ OPTIONAL_CHECKS = {
     "coverage_target": check_coverage_target,
     "delivered": check_delivered,
     "design_contract": check_design_contract,
+    "risk": check_risk,
+    "require_plan_approval": check_require_plan_approval,
 }
 
 
