@@ -1893,18 +1893,21 @@
       "id": "F065",
       "description": "README.md's plugin-tree block (~line 194-198) and its \"What's in the box\" table (~line 399-403) both omit harness-improve AND harness-doctor from the skills list -- pre-existing drift (harness-doctor predates this feature; harness-improve extends the same gap to a second skill). Add both skills to both README locations so the shipped skill roster is documented completely.",
       "priority": 66,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "README.md"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "discovered_via F020 (PR #105 round-2 review, review-pr105-f020): flagged as pre-existing, out-of-declared-scope drift, not a blocker for F020. Confirmed independently before filing: skills/ has 6 directories (harness-init, harness-continue, harness-issue-prep, harness-issue-debug, harness-doctor, harness-improve), but README.md's plugin-tree block and 'What's in the box' table both list only the first 4 -- harness-doctor and harness-improve are missing from both locations.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "1 drift-detection assertion, globs skills/*/SKILL.md the same self-maintaining way F019's frontmatter lint does and confirms README.md mentions every skills/<name>/ path; mutation-tested by reverting both README additions and confirming the check fails on the exact original gap",
+      "notes": "discovered_via F020 (PR #105 round-2 review, review-pr105-f020): flagged as pre-existing, out-of-declared-scope drift, not a blocker for F020. Confirmed independently before filing: skills/ has 6 directories (harness-init, harness-continue, harness-issue-prep, harness-issue-debug, harness-doctor, harness-improve), but README.md's plugin-tree block and 'What's in the box' table both list only the first 4 -- harness-doctor and harness-improve are missing from both locations. RESOLVED: both skills added to both README locations; a drift-detection test now guards against this recurring.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Added harness-doctor and harness-improve to README.md's plugin-tree block and 'What's in the box' table, matching the existing terse one-line style for each.",
+        "Rather than a one-off fix, added a drift-detection test (matching F063's precedent from earlier this session): globs skills/*/SKILL.md and confirms README.md mentions every skills/<name>/ path, so a future skill addition that isn't mirrored into README fails loudly instead of repeating this exact gap."
+      ],
       "failure_reason": null,
       "discovered_via": "F020",
       "spec": null
