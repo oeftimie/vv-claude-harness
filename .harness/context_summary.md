@@ -9,8 +9,9 @@ This file is referenced in CLAUDE.md and loaded every session.
 - **Correction, 2026-07-31**: the long-repeated "F012/F013 blocked awaiting Ovidiu's answers" claim (carried across many session handoffs since session 11) was stale, not current. `features.json`'s own `spec` field showed `verdict: "PASS"` for both, sha256(description) matched the stored hash exactly (no drift), and direct Linear queries (`get_issue`, `list_comments`) on OVI-53 and OVI-63 showed zero open-question comment threads. Ovidiu confirmed to proceed once this was surfaced. Lesson: a claim repeated across many handoffs with no fresh evidence is a signal to re-verify, not to re-relay.
 - F012/OVI-53 (portable readiness-stamp signing) shipped, merged to main (PR #98). Notable catch: the actual Linear spec text (fetched via `get_issue`, not the terse local `features.json` description mirror) specified a flat, presence-gated `prep.kick_command` -- the first implementation pass had nested it as `prep.runner.kick_command` with a leftover `enabled` flag, caught only by re-checking against the real spec source before committing. Full detail in F012's own `notes`/`approaches_tried`.
 - F013/OVI-63 (mechanical stamp for /harness-init) shipped, merged to main (PR #99, 2 review rounds -- round 1 caught a real JSON-injection/crash bug via unescaped project_name substitution, fixed with json.dumps-based escaping). Full detail in F013's own `notes`/`approaches_tried`. Filed F063 (discovered_via F013, harness-doctor/fixes.py wiring drift, pre-existing and out of scope) as a follow-up.
-- F015/OVI-55 (promotion ladder + ablation pass in Phase 5.5) implemented. Documentation/skill-content only, no code: harness-continue's Phase 5.5 gains mandatory Promotion and Ablation passes writing to a new `.harness/HARNESS_BACKLOG.md` schema (score/status/last_seen lifecycle, 60-day decay, gap entries, a hard-capped 15-line always-on canon). Full detail in F015's own `notes`/`approaches_tried`.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F016-F021 (six remaining Linear OVI-44 sub-issues) and F063 (discovered_via F013) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
+- F015/OVI-55 (promotion ladder + ablation pass in Phase 5.5) shipped, merged to main (PR #100, 2 review rounds -- round 1 caught a real markdown fence-nesting regression in rules/context-summary.md that escaped headings and orphaned trailing prose into a broken code block, verified with pandoc). Full detail in F015's own `notes`/`approaches_tried`.
+- F016/OVI-57 (worker epoch record + requalification checklist) implemented. New `harness_worker_block` sub-schema in schemas/feature.schema.json for harness.json's optional worker block; harness-continue Step 2.6 (defensive `claude --version` check, delta>=10 requalification prompt, silent-skip when unavailable); new docs/requalification.md checklist (4-candidate subtraction pass, inherit-vs-pinned per role, verified-live annotations); rules/agent-teams-protocol.md's Model Selection table reframed as the single bindings table; CLAUDE_CODE_SUBAGENT_MODEL footgun warning added to templates/CLAUDE.md. Full detail in F016's own `notes`/`approaches_tried`.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F017-F021 (five remaining Linear OVI-44 sub-issues) and F063 (discovered_via F013) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
 - No other locally-discovered work is queued.
 
 ## Cross-Cutting Concerns
@@ -944,5 +945,38 @@ This file is referenced in CLAUDE.md and loaded every session.
   (duplicated the cap phrase, confirmed the count-based check flips from
   pass to fail) -- the same discipline applied to a prose/documentation
   assertion, not just a code assertion, confirming it generalizes.
+- Plan approval: not applicable -- single-session implementation, no
+  teammates spawned.
+
+## Meta-Session 2026-08-01 (F016/OVI-57: worker epoch record + requalification)
+- Scope accuracy: held the declared scope exactly (schemas/feature.schema.json,
+  skills/harness-continue/SKILL.md, docs/requalification.md,
+  rules/agent-teams-protocol.md, templates/CLAUDE.md, test/run-tests.sh);
+  zero scope_expansions.
+- Design decision made without the spec spelling it out, recorded as an
+  assumption in F016's own notes: the spec's "Schema file (P1.1) extended
+  accordingly" assumed a schema owner that, on inspection, only ever
+  covered the features.json envelope (F004/P1.1's declared scope), not
+  harness.json. Rather than creating an out-of-scope new schema file for
+  harness.json, added the worker block as a second, independently-
+  documented $defs entry within the same declared-scope file, with its
+  own description stating plainly it's unrelated to the features.json
+  envelope above it.
+- Forward references to not-yet-shipped sibling features (F021's
+  orientation eval, F015's ablation-pass backlog) were written to
+  degrade honestly ("if F021 hasn't landed yet, note that this step
+  was skipped and move on") rather than assuming delivery order.
+- Model calibration: single-session, no sub-agents spawned for
+  implementation.
+- Discovery lineage: none -- F016 was a pre-existing Linear-tracked
+  feature (OVI-57), not discovered mid-work.
+- Approach patterns: mutation-tested 3 of the new checks; one attempt
+  initially produced a false "no failure" result from a shell-quoting
+  bug in the mutation SCRIPT itself (nested double quotes inside a
+  `python3 -c "..."` invocation), not the check under test -- caught by
+  noticing the absence of expected output rather than assuming a clean
+  mutation meant a weak check, then redone with a heredoc to get a
+  trustworthy result. A reminder that a mutation test's own tooling
+  needs the same skepticism as the code it's testing.
 - Plan approval: not applicable -- single-session implementation, no
   teammates spawned.
