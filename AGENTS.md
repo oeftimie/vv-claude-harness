@@ -1,8 +1,6 @@
 # VV Claude Code Harness — Distribution Repository
 
 This repo distributes VV Claude Code Harness — it is NOT an application codebase.
-`CLAUDE.md` in this directory imports this file (`@AGENTS.md`) and adds only
-Claude-specific overlay; every fact below has exactly one owner, here.
 
 ## What This Repo Contains
 
@@ -31,8 +29,11 @@ on this repo.
 ## Working on This Repo
 
 - No build system, no application code
-- Run `bash test/run-tests.sh` and make sure it passes before committing changes to
-  `hooks/` or the `.claude-plugin/` manifests
+- Tests live at `test/run-tests.sh` (dependency-free shell runner covering the hook
+  scripts, plugin manifests, and agent frontmatter). Run `bash test/run-tests.sh` and
+  make sure it passes before committing changes to `hooks/` or the `.claude-plugin/`
+  manifests
+- Other changes are documentation and template edits
 - The version number lives ONLY in `.claude-plugin/plugin.json` (`version`) — the
   canonical plugin version and the update cache key: users only receive updates when it
   is bumped. Do not introduce other version locations that need syncing.
@@ -42,8 +43,10 @@ on this repo.
   with the gh credential helper, no SSH in this environment. Verify before any
   push/pull/clone. Never push directly to main — PR-based flow only.
 - A documented workaround (a pattern adopted to route around a platform bug or gap, as
-  opposed to a permanent design limitation) MUST name the version or event that retires
+  opposed to a permanent design limitation) MUST name the version or event that removes
   it — never leave one pinned to "confirmed as of vX.Y+" with no condition for
   revisiting it. `docs/maintenance-runbook.md`, `MAINTENANCE_LOG.md`, and
-  `.github/workflows/maintenance.yml` check these retirement conditions on a schedule;
-  retiring one is always an explicit, approval-required change, never automatic.
+  `.github/workflows/maintenance.yml` check these retirement conditions on a schedule; a
+  workaround without one can't be checked. Retiring a workaround is always an explicit,
+  approval-required change — never performed automatically by a probe run, even when a
+  probe reports the underlying bug fixed.

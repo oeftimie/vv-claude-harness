@@ -21,3 +21,16 @@ This project uses the Long-Running Agent Harness (vv-harness plugin) to manage i
 ## Harness Prep: Risk/Lane Self-Classification
 
 When `/harness-issue-prep` needs `lane`/`risk` for a readiness stamp, apply the existing dynamic-override heuristic in `rules/agent-teams-protocol.md` (10+ files, cross-cutting concerns, security-sensitive code, first feature in a new codebase → elevated) without asking. Only ask when the call is genuinely close.
+
+## Path Resolution and Hook Testing
+
+Skill/rule/agent content shipped by this plugin references other shipped files via
+`${CLAUDE_PLUGIN_ROOT}/path/to/file`, Claude Code's runtime plugin-cache variable --
+never a bare repo-relative path, since the installed cache path differs from this
+checkout. Use the same convention when editing `skills/`, `rules/`, or `agents/`.
+
+Files under `hooks/` and the `.sh.template`/`.py.template` files under
+`skills/harness-init/` are Claude Code lifecycle hooks (SessionStart, PreToolUse,
+TaskCompleted, TeammateIdle). Test one directly the way `.claude/settings.json` invokes
+it: `echo '{}' | CLAUDE_PROJECT_DIR=<project> bash <hook>.sh`, matching
+`test/run-tests.sh`'s own `run_hook` helper.
