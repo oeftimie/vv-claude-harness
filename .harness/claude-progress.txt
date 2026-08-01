@@ -783,3 +783,30 @@
   Ovidiu's standing instruction to keep working through everything without
   waiting for check-ins.
 - Blockers: none.
+
+## Session 35 - 2026-08-01 (F063: CANONICAL_WIRING drift fix)
+- Feature: F063 - fixes.py's CANONICAL_WIRING drift from the real settings.json.tmpl
+  wiring (locally discovered, discovered_via F013, no Linear issue)
+- Status: complete
+- Fixed CANONICAL_WIRING's PreToolUse.Bash matcher: was missing enforce-scope.sh
+  and commit-gate.sh, only wired verify-git-identity.sh. Corrected to match
+  settings.json.tmpl exactly (all 3 hooks, same order).
+- Added a drift-detection test (not just a static content check): renders the
+  real template with scripts/stamp.sh's own placeholder-substitution convention
+  and diffs CANONICAL_WIRING's keys against it, so future template drift fails
+  loudly instead of silently leaving harness-doctor's --fix stale.
+- Caught a bug in my own new test before trusting it: first draft substituted
+  ENV_TEAMS_FLAG with an unquoted "1" (a JSON integer); stamp.sh actually
+  JSON-encodes that placeholder (a quoted string) -- confirmed by reading
+  stamp.sh's substitute() function directly, then fixed the test.
+- Considered and declined the ticket's suggested delegation to
+  `scripts/stamp.sh mode=upgrade` (stamp.sh needs an answers file doctor.py's
+  call site doesn't have, and its byte-identical-refresh assumption doesn't fit
+  add_settings_wiring's partial-patch job) -- matches F013's precedent.
+- Tests: 1434/1434 passing (full_test is the gate; +1 F063 assertion,
+  mutation-tested by reverting the fix and confirming it fails on the exact
+  original drift).
+- Next: F064, F065, F066, F067 (remaining discovered follow-ups, all
+  `pending`), per Ovidiu's standing instruction to keep working through
+  everything without waiting for check-ins.
+- Blockers: none.
