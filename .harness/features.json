@@ -1946,7 +1946,7 @@
       "id": "F067",
       "description": "check-remaining-tasks.sh's TeammateIdle nudge has two related gaps surfaced by F021's eval subagents (general-purpose, not vv-harness:reviewer): (1) its escape hatch ('if your role has no Edit/Write tools, this does not apply to you') is keyed on tool inventory, not on assignment scope -- a general-purpose subagent given an explicit read-only task (like an eval run) has Edit/Write by construction and gets nudged in a loop toward claiming the next feature, with no way to signal 'my assignment is scoped and complete' short of going idle and re-triggering the same nudge. (2) the claimable-feature count reads features.json status only and ignores task-level claims -- F021 was counted as unclaimed/claimable while TaskList showed task #8 in_progress under the lead, a features.json/TaskList sync gap. F055 (shipped) addressed the reviewer-specific case via agents/reviewer.md's construction-level guarantee; this is the same root design gap (TeammateIdle carries no teammate identity) recurring for ad-hoc read-only assignments the F055 fix doesn't cover.",
       "priority": 68,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         ".claude/hooks/check-remaining-tasks.sh"
       ],
@@ -1954,12 +1954,22 @@
         "F055"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): 5 of 6 eval subagents hit the idle-nudge loop after delivering their read-only result and had to be explicitly shut down by the lead. Not fixed in F021 -- .claude/hooks/ is out of F021's declared scope.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "7 new assertions: 2 in the ht: section (stderr guidance broadened, actionable decline-once instruction), 5 in the mnt: section (protocol.md extension + Known Limitation callout + Known Limitations bullet, maintenance-runbook probe, live-copy-vs-template drift guard). All mutation-tested: template reverted (2 ht: assertions fail), live copy reverted alone (drift-guard assertion fails, ht: assertions correctly unaffected since they exercise the template via install_hooks), and each of the 3 protocol.md additions reverted independently (each corresponding mnt: assertion fails, nothing else).",
+      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): 5 of 6 eval subagents hit the idle-nudge loop after delivering their read-only result and had to be explicitly shut down by the lead. Not fixed in F021 -- .claude/hooks/ is out of F021's declared scope. RESOLVED: gap #1 fixed at the hook-guidance + lead-judgment-rule level (fixable); gap #2 resolved as a documented Known Limitation with a retirement condition (genuine platform limitation, confirmed via docs, not fixable in the hook itself -- same resolution shape as F061).",
       "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "scope_expansions": [
+        "skills/harness-init/check-remaining-tasks.sh.template: the canonical distribution source for the live .claude/hooks/ copy F067 declared in scope -- editing only the live copy would have fixed this repo's own dogfooding instance while leaving every /harness-init-installed project permanently un-fixed. Kept byte-identical to the live copy, matching F063's precedent, with a new drift-detection test guarding it.",
+        "rules/agent-teams-protocol.md: gap #1 (tool-only escape hatch) needed a lead-side judgment rule, not just better hook stderr text -- extended F059's existing early-release rule rather than inventing a parallel one. Gap #2 (task-list blindness) is a genuine platform limitation (confirmed via docs), documented the same way F061 resolved an identical-shape problem: a Known Limitation callout with a retirement condition, not a fake mechanical fix.",
+        "docs/maintenance-runbook.md: F067's retirement condition needed a probe wired to it, matching F061's own precedent (an undocumented retirement condition can't be checked). Extended F061's existing probe item 6 rather than duplicating the identical docs-page fetch as a new item."
+      ],
+      "approaches_tried": [
+        "Verified via direct fetch of code.claude.com/docs/en/hooks (not memory) exactly what TeammateIdle's hook input contains: only the common fields (session_id, prompt_id, transcript_path, cwd, permission_mode, effort, hook_event_name) -- confirmed zero teammate identity and zero task-list state, resolving the design question before implementation: gap #1 is fixable at the hook's stderr-text level (broaden the escape hatch), gap #2 is not fixable in the hook at all (genuine platform limitation, matching F061's own already-verified finding for the analogous lead-vs-teammate blindness).",
+        "Broadened check-remaining-tasks.sh.template's escape-hatch stderr line to carve out scoped one-shot assignments (not just role by construction), resynced the live .claude/hooks/ copy to match exactly, added a drift-detection test guarding the two stay in sync.",
+        "Extended F059's 'Early release for role-limited teammates' rule in rules/agent-teams-protocol.md with a new subsection naming the scoped-one-shot case explicitly, citing this session's own repeated live evidence (every reviewer subagent hit the loop) rather than a hypothetical.",
+        "Added a 'Known limitation (F067)' inline callout plus a matching Known Limitations bullet, mirroring F061's exact dual-placement pattern (established during F061's own round-2 review) -- states the consequence, the fallback (lead keeps features.json synchronized with task claims), and a retirement condition.",
+        "Extended F061's existing maintenance-runbook probe item 6 to also cover F067's retirement condition, since both conditions are the identical underlying probe action (re-fetch the same docs page, check for a different new field) -- avoided adding a near-duplicate item 7."
+      ],
       "failure_reason": null,
       "discovered_via": "F021",
       "spec": null

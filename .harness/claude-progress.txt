@@ -908,3 +908,34 @@
   instruction to keep working through everything without waiting for
   check-ins.
 - Blockers: none.
+
+## Session 39 - 2026-08-01 (F067: TeammateIdle escape hatch keyed on scope)
+- Feature: F067 - broaden the idle-nudge escape hatch to assignment scope,
+  not just tool inventory (locally discovered, discovered_via F021, no
+  Linear issue, depends_on F055)
+- Status: complete
+- Two related gaps, heavily corroborated this session (every reviewer
+  subagent spawned for PRs #105-#111 hit the exact nudge loop):
+  (1) check-remaining-tasks.sh's escape hatch was tool-inventory-only, so a
+  general-purpose subagent with a scoped one-shot assignment (Edit/Write by
+  construction, but no open-ended implementation work) had no way to
+  signal "my assignment is done." Fixed at the hook-guidance level
+  (broadened stderr text in both the shipped template and this repo's own
+  live copy) plus a lead-side judgment rule (extended F059's early-release
+  rule in rules/agent-teams-protocol.md).
+  (2) The claimable-feature count ignores task-level claims. Confirmed via
+  direct fetch of code.claude.com/docs/en/hooks that TeammateIdle's hook
+  input carries no task-list state at all -- a genuine platform limitation,
+  resolved the same way F061 resolved an identical-shape problem earlier
+  this session: a documented Known Limitation with a retirement condition,
+  not a fake mechanical fix.
+- Extended two existing mechanisms rather than adding parallel new ones:
+  F059's early-release rule, and F061's maintenance-runbook probe (both
+  retirement conditions are the identical underlying docs-page fetch).
+- Tests: 1469/1469 passing (full_test is the gate; +7 F067 assertions, all
+  mutation-tested, including a new drift-detection test guarding the
+  live/template copies stay byte-identical).
+- Next: F068 (this session's own discovery, `pending`) is the only
+  remaining item in the backlog, per Ovidiu's standing instruction to keep
+  working through everything without waiting for check-ins.
+- Blockers: none.

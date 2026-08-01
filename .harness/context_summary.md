@@ -1285,3 +1285,42 @@ This file is referenced in CLAUDE.md and loaded every session.
   already established by session-start.sh's spec-drift and
   scope-enforcement warnings, rather than inventing a new mechanism.
 - Plan approval: not applicable -- single-session implementation.
+
+## Meta-Session 2026-08-01 (F067: TeammateIdle escape hatch keyed on scope)
+- Scope accuracy: 3 scope expansions beyond the declared single file
+  (.claude/hooks/check-remaining-tasks.sh): the shipped template (canonical
+  distribution source, editing only the live copy would have fixed nothing
+  for /harness-init-installed projects), rules/agent-teams-protocol.md
+  (where the real gap-#1 fix lives -- a lead judgment rule, not just hook
+  text), and docs/maintenance-runbook.md (a probe wired to gap #2's
+  retirement condition, matching F061's own precedent that an unchecked
+  retirement condition can't be trusted).
+- Design decision made without asking (Ovidiu asleep, standing autonomous
+  instruction): verified via direct docs fetch (code.claude.com/docs/en/hooks)
+  BEFORE deciding how to split the two gaps -- gap #1 (tool-only escape
+  hatch) is genuinely hook-fixable; gap #2 (task-list blindness) is not,
+  confirmed by the same TeammateIdle payload inspection F055 already
+  established. This is the same resolution shape as F061 earlier this
+  session (investigate first, discover a genuine platform ceiling, document
+  it as a Known Limitation with a retirement condition rather than force a
+  fake mechanical fix) -- recognized the pattern match and reused it rather
+  than re-deriving from scratch.
+- Extended two existing mechanisms instead of adding parallel new ones:
+  F059's early-release rule (rather than a new rule with overlapping
+  scope), and F061's maintenance-runbook probe item 6 (rather than a
+  near-duplicate item 7 for the identical underlying docs-page fetch).
+- Corroboration: this session's own transcript is the evidence base --
+  every single reviewer subagent spawned across F063 through F066's PRs hit
+  the exact nudge loop F067 describes, unprompted, and had to be explicitly
+  shut down by the lead each time. Cited this directly in the protocol.md
+  extension rather than a hypothetical scenario.
+- Hit the same line-wrap-vs-grep gotcha F059 already documented once: a
+  test assertion's target phrase ("record F067 here as FIXED") straddled a
+  prose line-wrap in maintenance-runbook.md's source, making a
+  single-line grep miss it even though the phrase reads continuously when
+  rendered. Fixed by shortening the matched substring to stay within one
+  line, not by reflowing the prose to fit the test.
+- Discovery lineage: none -- F067 was itself a discovered follow-up (via
+  F021), not a source of further discoveries this round.
+- Model calibration: single-session, no sub-agents spawned.
+- Plan approval: not applicable -- single-session implementation.
