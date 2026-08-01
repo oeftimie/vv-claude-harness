@@ -1152,3 +1152,46 @@ This file is referenced in CLAUDE.md and loaded every session.
 - Plan approval: not applicable -- single-session implementation; eval
   subagents were spawned directly (not via Agent Teams), so no plan-approval
   step applied.
+
+## Meta-Session 2026-08-01 (F063: CANONICAL_WIRING drift fix)
+- Scope accuracy: held the declared scope exactly (skills/harness-doctor/fixes.py,
+  skills/harness-doctor/doctor.py -- untouched, no change needed there --
+  test/run-tests.sh). No expansion.
+- Root cause fixed at its source, plus a drift-detection test added: rather than
+  just re-typing the correct 3-hook Bash matcher block, the new test renders the
+  real settings.json.tmpl (with the same JSON-encoding convention scripts/stamp.sh
+  uses for its placeholders) and diffs CANONICAL_WIRING's own keys against it, so
+  a future template edit that isn't mirrored into CANONICAL_WIRING fails loudly.
+- Caught and fixed a bug in my own new test before trusting it: the first draft
+  substituted `{{ENV_TEAMS_FLAG}}` with a bare `1` (producing a JSON integer),
+  while scripts/stamp.sh actually JSON-encodes that placeholder's value (a quoted
+  string) -- confirmed by reading stamp.sh's own `substitute()` function, not
+  assumed. The bug surfaced as a false failure against known-correct code, which
+  is what caught it.
+- Declined the ticket's suggested delegation to `scripts/stamp.sh mode=upgrade`
+  (replacing `add_settings_wiring`'s hand-written CANONICAL_WIRING entirely):
+  stamp.sh needs an answers file (project_name/stack/team_mode) doctor.py's
+  single-project call site doesn't have, and its upgrade-mode
+  byte-identical-refresh assumption doesn't fit add_settings_wiring's actual job
+  (patching only the missing keys of a partially-customized settings.json).
+  Matches F013's precedent of declining the same delegation question.
+- Discovery lineage: none -- F063 was itself a discovered follow-up (via F013),
+  not a source of further discoveries this round.
+- Model calibration: single-session, no sub-agents spawned.
+- Approach patterns: same "render the real template, diff the constant against
+  it" drift-detection pattern already used elsewhere in this repo's test suite
+  for single-owner-of-truth invariants.
+- Plan approval: not applicable -- single-session implementation.
+- Round-1 review (PR #108) found doctor.py has its OWN independent copy of the
+  same wiring knowledge (SETTINGS_WIRING_CHECKS) with the identical
+  commit-gate.sh omission, plus a matcher-blind `_hook_wired()` that couldn't
+  tell "wired on Bash" from "wired on some other matcher." Fixed both; also
+  had to fix `make_healthy_doctor_fixture` (a repo-wide test helper) which
+  predated F011/commit-gate.sh and was itself stale -- the strengthened check
+  correctly flagged it as unhealthy, surfacing 5 pre-existing test failures
+  that traced to the SAME root drift, not to my fix. Caught a real bug in my
+  own first mutation test along the way: an uncaught exception from calling
+  the reverted function with an argument it no longer accepted crashed the
+  check before it printed anything, so the mutation appeared to pass for the
+  wrong reason -- wrapped the check in try/except so exceptions report as
+  failures, not silent false-passes.

@@ -783,3 +783,47 @@
   Ovidiu's standing instruction to keep working through everything without
   waiting for check-ins.
 - Blockers: none.
+
+## Session 35 - 2026-08-01 (F063: CANONICAL_WIRING drift fix)
+- Feature: F063 - fixes.py's CANONICAL_WIRING drift from the real settings.json.tmpl
+  wiring (locally discovered, discovered_via F013, no Linear issue)
+- Status: complete
+- Fixed CANONICAL_WIRING's PreToolUse.Bash matcher: was missing enforce-scope.sh
+  and commit-gate.sh, only wired verify-git-identity.sh. Corrected to match
+  settings.json.tmpl exactly (all 3 hooks, same order).
+- Added a drift-detection test (not just a static content check): renders the
+  real template with scripts/stamp.sh's own placeholder-substitution convention
+  and diffs CANONICAL_WIRING's keys against it, so future template drift fails
+  loudly instead of silently leaving harness-doctor's --fix stale.
+- Caught a bug in my own new test before trusting it: first draft substituted
+  ENV_TEAMS_FLAG with an unquoted "1" (a JSON integer); stamp.sh actually
+  JSON-encodes that placeholder (a quoted string) -- confirmed by reading
+  stamp.sh's substitute() function directly, then fixed the test.
+- Considered and declined the ticket's suggested delegation to
+  `scripts/stamp.sh mode=upgrade` (stamp.sh needs an answers file doctor.py's
+  call site doesn't have, and its byte-identical-refresh assumption doesn't fit
+  add_settings_wiring's partial-patch job) -- matches F013's precedent.
+- Tests: 1435/1435 passing at first, then 1434/1434 after a redundant assertion
+  was removed (see below); +2 net F063 assertions, all mutation-tested.
+- 2026-08-01 round-1 review (PR #108): REQUEST CHANGES (narrow) -- doctor.py
+  has its OWN independent copy of the wiring knowledge (SETTINGS_WIRING_CHECKS)
+  with the identical commit-gate.sh omission, plus a matcher-blind
+  `_hook_wired()` that couldn't tell "wired on Bash" from "wired on some other
+  matcher" -- the exact drift shape any pre-F054 project has. Ground-truthed
+  and fixed: made `_hook_wired` matcher-aware, fixed the PreToolUse predicate
+  to require all 3 hooks on their real matchers. This correctly flagged
+  `make_healthy_doctor_fixture` (a repo-wide test helper predating
+  F011/commit-gate.sh) as genuinely stale -- fixed the fixture itself (5
+  pre-existing test failures traced to it, not to the new code), and removed
+  one now-redundant assertion whose rationale ("F011 template not shipped")
+  no longer held once the fixture was corrected.
+- Caught a bug in my own first mutation test the hard way: reverting
+  `_hook_wired`'s signature made the check's own matcher-awareness assertion
+  raise an uncaught `TypeError`, crashing the python check before it printed
+  anything -- so the mutation "passed" for the wrong reason (empty output,
+  not a real pass). Wrapped the check in try/except so any exception reports
+  as a failure, then re-verified all mutations correctly fail.
+- Next: F064, F065, F066, F067 (remaining discovered follow-ups, all
+  `pending`), per Ovidiu's standing instruction to keep working through
+  everything without waiting for check-ins.
+- Blockers: none.

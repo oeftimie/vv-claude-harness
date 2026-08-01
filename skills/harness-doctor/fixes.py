@@ -61,10 +61,20 @@ CANONICAL_WIRING = {
                 "type": "command",
                 "command": '"$CLAUDE_PROJECT_DIR"/.claude/hooks/enforce-scope.sh',
             }]},
-            {"matcher": "Bash", "hooks": [{
-                "type": "command",
-                "command": '"$CLAUDE_PROJECT_DIR"/.claude/hooks/verify-git-identity.sh',
-            }]},
+            {"matcher": "Bash", "hooks": [
+                {
+                    "type": "command",
+                    "command": '"$CLAUDE_PROJECT_DIR"/.claude/hooks/enforce-scope.sh',
+                },
+                {
+                    "type": "command",
+                    "command": '"$CLAUDE_PROJECT_DIR"/.claude/hooks/verify-git-identity.sh',
+                },
+                {
+                    "type": "command",
+                    "command": '"$CLAUDE_PROJECT_DIR"/.claude/hooks/commit-gate.sh',
+                },
+            ]},
         ],
         "TaskCompleted": [{"hooks": [{
             "type": "command",

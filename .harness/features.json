@@ -1831,7 +1831,7 @@
       "id": "F063",
       "description": "skills/harness-doctor/fixes.py's CANONICAL_WIRING (the settings.json wiring block its add_settings_wiring fixer applies) has drifted from the real wiring: its PreToolUse Bash matcher lists only verify-git-identity.sh, missing enforce-scope.sh and commit-gate.sh, both of which skills/harness-init/templates/settings.json.tmpl (F013/OVI-63) wires. This predates F013 (it was already stale against the old inline block on main) but was surfaced during F013's PR #99 review. Fix CANONICAL_WIRING to match the current wiring, and consider (per OVI-63's own Dependencies note, \"OVI-51: settings template is the single owner of the wiring block\") having add_settings_wiring delegate to scripts/stamp.sh mode=upgrade instead of maintaining a second hand-written copy of the block.",
       "priority": 64,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-doctor/fixes.py",
         "skills/harness-doctor/doctor.py",
@@ -1841,12 +1841,17 @@
         "F013"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Discovered during PR #99 (F013/OVI-63) round-1 review as a pre-existing, unrelated drift -- not fixed there since skills/harness-doctor/fixes.py was never in F013's declared scope.",
+      "test_file": "test/run-tests.sh",
+      "coverage": "2 drift-detection assertions: (1) CANONICAL_WIRING vs the real template, (2) doctor.py's SETTINGS_WIRING_CHECKS/_hook_wired matcher-awareness and commit-gate.sh detection, isolated with a dedicated missing-commit-gate-only case; both mutation-tested with the check wrapped in try/except so a signature-breaking mutation can't silently vanish as a false pass",
+      "notes": "Discovered during PR #99 (F013/OVI-63) round-1 review as a pre-existing, unrelated drift -- not fixed there since skills/harness-doctor/fixes.py was never in F013's declared scope. RESOLVED: CANONICAL_WIRING corrected and now drift-tested directly against the template; stamp.sh delegation considered and declined (see approaches_tried) rather than actioned. Round-1 review also found and fixed: doctor.py's own independent copy of this wiring knowledge had the identical commit-gate.sh gap plus matcher-blindness; both fixed and drift-guarded.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Fixed CANONICAL_WIRING's PreToolUse.Bash matcher to include enforce-scope.sh and commit-gate.sh alongside verify-git-identity.sh, matching settings.json.tmpl exactly (confirmed by reading both files side by side before editing).",
+        "Added a drift-detection test rather than a static content assertion: renders the real template with the same JSON-encoding convention scripts/stamp.sh uses (ENV_TEAMS_FLAG is JSON-encoded before insertion, POSTTOOLUSE_HOOKS is inserted verbatim) and diffs CANONICAL_WIRING's statusLine/env/permissions/hooks keys against it. First draft of the test itself had a bug (substituted ENV_TEAMS_FLAG with an unquoted '1', producing a JSON integer instead of stamp.sh's actual quoted string) -- caught by the test failing on the CURRENT, correct fixes.py; fixed the test's substitution to match stamp.sh's own JSON-encoding convention.",
+        "Considered and declined the ticket's suggested alternative (having add_settings_wiring delegate to scripts/stamp.sh mode=upgrade instead of maintaining a second hand-written copy of the wiring block): stamp.sh requires an answers file (project_name, stack, team_mode) that doctor.py's single-project-inspection call site doesn't have, and stamp.sh's upgrade-mode byte-identical-refresh assumption isn't designed for add_settings_wiring's actual job (patching in only the missing top-level keys of a partially-customized settings.json). Fixing the immediate drift bug is the ticket's core, mandatory ask; the delegation redesign is a larger, separately-reviewable change, matching F013's precedent of declining the same delegation question.",
+        "Round-1 review (PR #108) found doctor.py had the SAME drift (SETTINGS_WIRING_CHECKS never checked commit-gate.sh) plus a matcher-blind _hook_wired() that couldn't tell 'wired on Bash' from 'wired on some other matcher' -- the exact drift shape any pre-F054 project has. Made _hook_wired matcher-aware, fixed the PreToolUse predicate, and fixed a stale test fixture (make_healthy_doctor_fixture predated F011/commit-gate.sh) that the fix's own drift-detection then correctly flagged as unhealthy. Caught a real bug in my own first mutation test: an uncaught TypeError from calling the reverted _hook_wired with a keyword arg it didn't accept crashed the check before it could print anything, so the mutation silently 'passed' for the wrong reason -- wrapped the check in try/except so any exception reports as a failure, then re-verified the mutation correctly fails."
+      ],
       "failure_reason": null,
       "discovered_via": "F013",
       "spec": null

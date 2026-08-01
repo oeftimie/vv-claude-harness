@@ -147,9 +147,12 @@ SETTINGS_WIRING_CHECKS = (
     ),
     (
         "PreToolUse",
-        lambda s: _hook_wired(s, "PreToolUse", "enforce-scope.sh")
-        and _hook_wired(s, "PreToolUse", "verify-git-identity.sh"),
-        "PreToolUse wiring for enforce-scope.sh and verify-git-identity.sh",
+        lambda s: _hook_wired(s, "PreToolUse", "enforce-scope.sh", matcher="Edit|Write|MultiEdit")
+        and _hook_wired(s, "PreToolUse", "enforce-scope.sh", matcher="Bash")
+        and _hook_wired(s, "PreToolUse", "verify-git-identity.sh", matcher="Bash")
+        and _hook_wired(s, "PreToolUse", "commit-gate.sh", matcher="Bash"),
+        "PreToolUse wiring for enforce-scope.sh (Edit|Write|MultiEdit and Bash "
+        "matchers), verify-git-identity.sh, and commit-gate.sh (Bash matcher)",
     ),
     (
         "TaskCompleted",
@@ -164,8 +167,10 @@ SETTINGS_WIRING_CHECKS = (
 )
 
 
-def _hook_wired(settings, event, script_name):
+def _hook_wired(settings, event, script_name, matcher=None):
     for entry in settings.get("hooks", {}).get(event, []):
+        if matcher is not None and entry.get("matcher") != matcher:
+            continue
         for hook in entry.get("hooks", []):
             if script_name in hook.get("command", ""):
                 return True
