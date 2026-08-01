@@ -5912,6 +5912,56 @@ else
   fail "hd: fixes.py direct unit checks -- $FIXES_ERRORS"
 fi
 
+# F063: fixes.py's CANONICAL_WIRING must match the real settings.json.tmpl
+# wiring exactly (not a hand-maintained guess) -- this is a drift-detection
+# test: it renders the template with concrete placeholder values and diffs
+# CANONICAL_WIRING's own keys against it, so a future template change that
+# isn't mirrored into CANONICAL_WIRING fails here instead of silently
+# leaving harness-doctor's --fix applying stale wiring.
+F063_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import json
+import os
+import sys
+
+repo_root = sys.argv[1]
+sys.path.insert(0, os.path.join(repo_root, "skills", "harness-doctor"))
+import fixes
+
+tmpl_path = os.path.join(
+    repo_root, "skills", "harness-init", "templates", "settings.json.tmpl"
+)
+text = open(tmpl_path).read()
+# ENV_TEAMS_FLAG is a string_values placeholder in scripts/stamp.sh (JSON-encoded
+# before insertion, per its own substitute() docstring); POSTTOOLUSE_HOOKS is a
+# raw_json_values placeholder (inserted verbatim as an already-valid JSON array).
+text = text.replace("{{ENV_TEAMS_FLAG}}", json.dumps("1")).replace(
+    "{{POSTTOOLUSE_HOOKS}}", "[]"
+)
+rendered = json.loads(text)
+
+errors = []
+for key in ("statusLine", "env", "permissions"):
+    if fixes.CANONICAL_WIRING[key] != rendered[key]:
+        errors.append(f"CANONICAL_WIRING[{key!r}] does not match settings.json.tmpl")
+
+# CANONICAL_WIRING deliberately omits PostToolUse (stack-dependent; not
+# backfilled by add_settings_wiring), so only compare the events it defines.
+for event, blocks in fixes.CANONICAL_WIRING["hooks"].items():
+    if blocks != rendered["hooks"].get(event):
+        errors.append(
+            f"CANONICAL_WIRING['hooks'][{event!r}] does not match settings.json.tmpl"
+        )
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$F063_ERRORS" ]; then
+  pass "f063: fixes.py's CANONICAL_WIRING matches the real settings.json.tmpl wiring exactly"
+else
+  fail "f063: $F063_ERRORS"
+fi
+
 # AC2: doctor never writes without approval -- the skill text asserts it.
 if grep -qi "report-first" "$REPO_ROOT/skills/harness-doctor/SKILL.md" 2>/dev/null \
   && grep -q "never writes\|without explicit approval\|without approval" \
