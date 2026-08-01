@@ -8760,6 +8760,48 @@ else
 fi
 
 echo ""
+echo "== F065: README documents every shipped skill =="
+
+# Drift-detection, not a static content check (matching F063's pattern): glob
+# skills/*/SKILL.md the same self-maintaining way the frontmatter lint does
+# (case w, above), so a future skill addition that isn't mirrored into README
+# fails here instead of silently leaving the plugin tree / component table stale.
+F065_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import os
+import sys
+
+repo_root = sys.argv[1]
+readme_text = open(os.path.join(repo_root, "README.md")).read()
+
+skills_dir = os.path.join(repo_root, "skills")
+skill_dirs = sorted(
+    d for d in os.listdir(skills_dir)
+    if os.path.isfile(os.path.join(skills_dir, d, "SKILL.md"))
+)
+
+errors = []
+for skill_dir in skill_dirs:
+    # "What's in the box" table rows use the "skills/<name>/" form; the
+    # plugin-tree ASCII block renders bare "<name>/" lines (the "skills/"
+    # prefix appears only once, on the parent "skills/" line) -- both must
+    # be checked separately, or a skill missing from just the tree (half of
+    # F065's original drift) can pass silently.
+    if f"skills/{skill_dir}/" not in readme_text:
+        errors.append(f"README.md's component table never mentions skills/{skill_dir}/")
+    if f"── {skill_dir}/" not in readme_text:
+        errors.append(f"README.md's plugin tree never mentions {skill_dir}/")
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$F065_ERRORS" ]; then
+  pass "f065: README.md mentions every skills/*/SKILL.md directory in both the plugin tree and the component table"
+else
+  fail "f065: $F065_ERRORS"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do

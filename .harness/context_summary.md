@@ -1231,3 +1231,16 @@ This file is referenced in CLAUDE.md and loaded every session.
   design_contract) rather than inventing a new convention for the two new
   fields.
 - Plan approval: not applicable -- single-session implementation.
+
+## Meta-Session 2026-08-01 (F065: README skills-roster drift)
+- Scope accuracy: held the declared scope exactly (README.md); the
+  drift-detection test went into test/run-tests.sh, already implied by
+  "add tests," no expansion recorded.
+- Approach patterns: same drift-detection-not-static-fix pattern as F063
+  (render/glob the real source, diff against the doc claim) -- applied here
+  as "glob skills/*/SKILL.md, confirm README mentions each," so this
+  specific gap (a skill shipped without its README entry) can't recur
+  silently.
+- Discovery lineage: none.
+- Model calibration: single-session, no sub-agents spawned.
+- Plan approval: not applicable -- single-session implementation.

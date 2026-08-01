@@ -859,3 +859,19 @@
   per Ovidiu's standing instruction to keep working through everything
   without waiting for check-ins.
 - Blockers: none.
+
+## Session 37 - 2026-08-01 (F065: README skills-roster drift)
+- Feature: F065 - README.md missing harness-doctor/harness-improve from the
+  skills roster (locally discovered, discovered_via F020, no Linear issue)
+- Status: complete
+- Added both skills to README's plugin-tree block and "What's in the box"
+  table. Added a drift-detection test (same pattern as F063: glob the real
+  source, diff against the doc) confirming README mentions every
+  skills/*/SKILL.md directory, so this specific gap can't recur silently.
+- Tests: 1446/1446 passing (full_test is the gate; +1 F065 assertion,
+  mutation-tested by reverting both README additions and confirming the
+  check fails on the exact original gap).
+- Next: F066, F067 (remaining discovered follow-ups, both `pending`), per
+  Ovidiu's standing instruction to keep working through everything without
+  waiting for check-ins.
+- Blockers: none.

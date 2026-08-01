@@ -194,7 +194,9 @@ vv-harness/                                            # Plugin root
 │   ├── harness-init/                                  # /harness-init skill + hook templates
 │   ├── harness-continue/                              # /harness-continue skill + team-spawn-prompts.md
 │   ├── harness-issue-prep/                            # Spec gate: verify, normalize, stamp a spec
-│   └── harness-issue-debug/                           # Repair loop for failed or runner-parked work
+│   ├── harness-issue-debug/                           # Repair loop for failed or runner-parked work
+│   ├── harness-doctor/                                # Report-first instance health check + --fix
+│   └── harness-improve/                               # Observation-first improvement loop for one job
 ├── agents/                                            # Declarative teammates (spawned as vv-harness:*)
 │   ├── feature-implementer.md                         # Sonnet, scoped TDD on one feature
 │   ├── layer-implementer.md                           # Sonnet, owns one architectural layer
@@ -400,6 +402,8 @@ claude
 | `skills/harness-continue/` | Session continuation with team spawn prompts and the subagent fallback |
 | `skills/harness-issue-prep/` | Verify and normalize a spec (Linear issue, pasted text, or a feature), then mark it ready for implementation |
 | `skills/harness-issue-debug/` | Open a failed feature or a runner-parked Linear issue in a live repair session |
+| `skills/harness-doctor/` | Report-first, idempotent instance health check with an optional `--fix` upgrade mode |
+| `skills/harness-improve/` | Observation-first improvement loop: record a job contract, observe the baseline, one intervention, verify at the claim boundary |
 | `agents/` | Declarative teammate definitions (feature-implementer, layer-implementer, researcher, reviewer, spec-verification, reverification-guard, conformance-tester) |
 | `schemas/` | Data contracts published for external consumers (readiness stamp, park/resolution formats) |
 | `hooks/` | Plugin continuity hooks: session-start, session-end, statusline |
