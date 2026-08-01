@@ -8268,6 +8268,100 @@ else
 fi
 
 echo ""
+echo "== F020: harness-improve skill =="
+
+IMPROVE_SKILL="$REPO_ROOT/skills/harness-improve/SKILL.md"
+
+# AC1: name == directory, "harness-" prefix for /h discovery -- the generic
+# skills/*/SKILL.md lint (case w, above) already covers name==directory
+# automatically (F019's fix made it self-maintaining); just confirm the prefix.
+case "$(basename "$(dirname "$IMPROVE_SKILL")")" in
+  harness-*) pass "f020: skills/harness-improve keeps the harness- prefix for /h discovery (AC1)" ;;
+  *) fail "f020: skills/harness-improve does not keep the harness- prefix" ;;
+esac
+
+# AC2: all 7 steps present, every gap class names a vv-native owner, attribution present.
+IMPROVE_ERRORS=$(python3 - "$IMPROVE_SKILL" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+
+expected_steps = [
+    "Step 1: Record the Job Contract",
+    "Step 2: Observe the Baseline",
+    "Step 3: Locate and Classify the Earliest Failed Handoff",
+    "Step 4: One Intervention Hypothesis",
+    "Step 5: Implement the Smallest Change",
+    "Step 6: Fresh-Session Rerun",
+    "Step 7: Retain, Revise, or Remove",
+]
+missing_steps = [s for s in expected_steps if s not in text]
+if missing_steps:
+    print(f"missing step(s): {missing_steps}")
+
+gap_table_match = re.search(r"\| Gap class \| vv-native owner \|\n\|---\|---\|\n(.*?)\n\n", text, re.DOTALL)
+if not gap_table_match:
+    print("could not find the gap-class table")
+else:
+    rows = [r for r in gap_table_match.group(1).splitlines() if r.strip()]
+    expected_classes = [
+        "Context", "Capability", "Domain ownership", "Authority", "Proof",
+        "Feedback/delivery", "Worker limitation",
+    ]
+    found_classes = [r.split("|")[1].strip() for r in rows if r.count("|") >= 3]
+    missing_classes = [c for c in expected_classes if c not in found_classes]
+    if missing_classes:
+        print(f"gap-class table missing: {missing_classes}")
+    for row in rows:
+        cells = row.split("|")
+        if len(cells) >= 3 and not cells[2].strip():
+            print(f"gap-class row has no owner: {row!r}")
+
+if "CC BY 4.0" not in text or "harness-engineering" not in text:
+    print("missing the attribution line (harness-engineering, CC BY 4.0)")
+PYEOF
+)
+if [ -z "$IMPROVE_ERRORS" ]; then
+  pass "f020: harness-improve/SKILL.md has all 7 steps, every gap class has a named owner, and the attribution line (AC2)"
+else
+  fail "f020: harness-improve/SKILL.md -- $IMPROVE_ERRORS"
+fi
+
+# AC3: the 3 guardrail sentences are present.
+if grep -q "Bounded claim" "$IMPROVE_SKILL"; then
+  pass "f020: the bounded-claim guardrail is present (AC3)"
+else
+  fail "f020: the bounded-claim guardrail is missing"
+fi
+if grep -qi "retrieved.*invoked\|retrieved-or-invoked" "$IMPROVE_SKILL"; then
+  pass "f020: the retrieved-or-invoked guardrail is present (AC3)"
+else
+  fail "f020: the retrieved-or-invoked guardrail is missing"
+fi
+if grep -q "No uncorroborated self-report" "$IMPROVE_SKILL"; then
+  pass "f020: the no-uncorroborated-self-report guardrail is present (AC3)"
+else
+  fail "f020: the no-uncorroborated-self-report guardrail is missing"
+fi
+
+# Edge case: non-harness projects exit early pointing to /harness-init.
+if grep -q "harness-init" "$IMPROVE_SKILL" && grep -qi "\.harness/.*doesn't exist\|doesn't exist.*\.harness" "$IMPROVE_SKILL"; then
+  pass "f020: harness-improve exits early to /harness-init on non-harness projects"
+else
+  fail "f020: harness-improve is missing the non-harness-project early exit"
+fi
+
+# NFR: skill body stays under the practical token budget (aim < 350 lines).
+IMPROVE_LINE_COUNT=$(wc -l < "$IMPROVE_SKILL" | tr -d ' ')
+if [ "$IMPROVE_LINE_COUNT" -lt 350 ]; then
+  pass "f020: harness-improve/SKILL.md is $IMPROVE_LINE_COUNT lines, under the 350-line budget"
+else
+  fail "f020: harness-improve/SKILL.md is $IMPROVE_LINE_COUNT lines, over the 350-line budget"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
