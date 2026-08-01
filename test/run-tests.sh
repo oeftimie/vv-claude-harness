@@ -8174,6 +8174,89 @@ else
 fi
 
 echo ""
+echo "== F018: dual-engine review =="
+
+PROTOCOL_MD_F018="$REPO_ROOT/rules/agent-teams-protocol.md"
+DUAL_ENGINE_ERRORS=$(python3 - "$PROTOCOL_MD_F018" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+match = re.search(r"## Dual-Engine Review.*?(?=\n## )", text, re.DOTALL)
+if not match:
+    print("could not find the Dual-Engine Review section")
+    sys.exit(0)
+section = match.group(0)
+
+# AC1: both conditions (no config, no CLI) are made explicit as producing
+# unchanged/single-engine behavior.
+if "zero change" not in section:
+    print("section does not state the no-config case is zero change")
+if "second engine unavailable: single-engine review" not in section:
+    print("section does not state the exact skip-with-note message")
+
+# AC2: blind-parallel rule, skip-with-note rule (checked above), the four
+# synthesis rules, and the pinned invocation with its verified-live annotation.
+# Checking the word "blind" alone is a no-op: this same section separately says
+# a second engine "catches single-model blind spots", so a bare substring check
+# can never fail even with the actual blind-parallel sequencing rule deleted
+# (confirmed by PR #103 round 1 review: deleting the whole rule left this
+# passing). Assert the concrete sequencing instruction and the CLI gate instead.
+if "before reading either's result" not in section:
+    print("section does not state the blind-parallel sequencing rule")
+if "command -v codex" not in section:
+    print("section does not state the command -v codex gate")
+if "codex review --base" not in section:
+    print("section does not pin the codex review --base invocation")
+if "verified live" not in section:
+    print("section does not carry a verified-live annotation")
+if "was NOT" not in section or "Re-verify" not in section:
+    print("verified-live annotation is missing its own honesty caveat "
+          "(what was NOT verified, and the re-verify trigger)")
+synthesis_markers = [
+    "Dedupe by defect",
+    "single-engine CRITICAL survives",
+    "Cross-engine agreement raises confidence",
+    "Provenance is verified",
+]
+missing = [m for m in synthesis_markers if m not in section]
+if missing:
+    print(f"section is missing synthesis rule(s): {missing}")
+
+# Spec item 4: cost note and honest limits.
+if "Codex-subscription cost" not in section:
+    print("section is missing the cost note (Codex-subscription cost, not Claude tokens)")
+if "disagree often on style" not in section:
+    print("section is missing the honest-limits note")
+
+# Spec item 5: attribution.
+if "agent-os" not in section or "nodera-studio" not in section or "MIT" not in section:
+    print("section is missing the attribution line")
+PYEOF
+)
+if [ -z "$DUAL_ENGINE_ERRORS" ]; then
+  pass "f018: rules/agent-teams-protocol.md's Dual-Engine Review section covers AC1/AC2 and spec items 4-5"
+else
+  fail "f018: Dual-Engine Review section -- $DUAL_ENGINE_ERRORS"
+fi
+
+# AC3: documented in README's team workflow section.
+if grep -q "F018/OVI-66" "$REPO_ROOT/README.md" && grep -q "review.second_engine" "$REPO_ROOT/README.md"; then
+  pass "f018: README.md documents dual-engine review in the team workflow section (AC3)"
+else
+  fail "f018: README.md does not document dual-engine review"
+fi
+
+# Spec item 3: synthesis rules are also referenced from the reviewer agent's own
+# instructions ("added to the reviewer/lead instructions").
+if grep -q "F018/OVI-66" "$REPO_ROOT/agents/reviewer.md" && grep -qi "synthesis rules" "$REPO_ROOT/agents/reviewer.md"; then
+  pass "f018: agents/reviewer.md references the dual-engine synthesis rules"
+else
+  fail "f018: agents/reviewer.md does not reference the dual-engine synthesis rules"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do

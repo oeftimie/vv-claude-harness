@@ -658,7 +658,7 @@
       "id": "F018",
       "description": "[OVI-66] A2: Optional dual-engine review (Codex second reviewer + synthesizer rules) \u2014 Add an optional harness.json review block enabling a blind second-engine (Codex CLI) review run in parallel with the Claude reviewer, with explicit skip-with-note when the CLI is absent, plus synthesizer rules (dedupe by defect, single-engine CRITICAL survives, cross-engine agreement raises confidence, provenance verified via git show merge-base). Document in the protocol and README.",
       "priority": 18,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "rules/agent-teams-protocol.md",
         "agents/reviewer.md",
@@ -667,12 +667,15 @@
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-66. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "test_file": "test/run-tests.sh (F018 section)",
+      "coverage": "n/a (shell/python fixture suite, no coverage tool; docs+protocol lint only, no new executable code path per AC3)",
+      "notes": "Linear: OVI-66. Documentation/protocol-only feature (AC3: \"no new executable code paths in the plugin\"). New \"## Dual-Engine Review\" section in rules/agent-teams-protocol.md: optional harness.json review.second_engine config, blind-parallel spawn rule, explicit skip-with-note when the codex CLI is absent, the pinned `codex review --base <BASE_BRANCH>` invocation, and the 4 synthesis rules (dedupe by defect, single-engine CRITICAL survives, cross-engine agreement raises confidence, provenance via git show merge-base). agents/reviewer.md gained a pointer to the same synthesis rules and an explicit blindness instruction. README.md documents it in the Parallel work section. Verified live 2026-08-01 on Codex CLI 0.145.0: confirmed `codex review --base <BRANCH>` is the exact real flag (via `codex review --help`) and the CLI is authenticated/reachable (via `codex doctor`) -- deliberately did NOT run a full end-to-end review to avoid spending the user's Codex subscription usage without explicit authorization; the annotation says exactly what was verified (command existence + auth) vs. not (a completed review's output shape), and says to re-verify a full run the first time this path actually triggers.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Checked codex CLI availability and its actual --help output before writing the pinned invocation, rather than guessing plausible flag names -- found a literal `codex review --base <BRANCH>` subcommand, and confirmed via `codex doctor` the CLI is authenticated and reachable, without spending a real review's worth of API/subscription usage on an unauthorized test run.",
+        "Mutation-tested the main section-scoped check by deleting one of the 4 synthesis rules; caught correctly."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {
