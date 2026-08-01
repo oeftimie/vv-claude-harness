@@ -1916,7 +1916,7 @@
       "id": "F066",
       "description": "No vv hook cross-checks a feature's `passing`/`in-progress` status against its `test_file` actually existing (or its scope directories existing) in the working tree. session-start.sh faithfully reports whatever features.json says; nothing validates that the referenced paths resolve. Raised by 1 of the 6 valid eval-a2/eval-b subagents during F021's orientation-recovery eval, against test/fixtures/harness-project (whose F001/F002 entries cite test files that were never committed) -- faithful orientation can still hand a session a fabricated picture. Consider a lightweight doctor-style check (or a session-start.sh warning) when a passing feature's test_file path does not exist.",
       "priority": 67,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "hooks/session-start.sh",
         "skills/harness-doctor/doctor.py",
@@ -1924,12 +1924,20 @@
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): eval-a2-run2 (one of the 6 VALID runs) proposed this as the generalizable finding. A discarded round-1 subagent (eval-a-run3, excluded from the eval's results table -- see evals/orientation-recovery.md's capture-defect section) noticed the same underlying fixture inconsistency but did not itself count toward the eval; caught and corrected during PR #107 review, which found the original notes wrongly cited that discarded run as a second valid source. Not fixed in F021 -- the fixture itself is shared by the entire mechanical test suite and is out of F021's declared scope (evals/README.md, evals/orientation-recovery.md, README.md, test/run-tests.sh).",
+      "test_file": "test/run-tests.sh",
+      "coverage": "7 new assertions: 5 doctor.py checks (finding present, names both passing/in-progress features specifically, pending feature never flagged, corrected healthy fixture stays healthy) + 2 sub-checks folded into 3 session-start.sh scenarios (missing case, satisfied case, pending-not-flagged case, scoped to the warning line specifically to avoid a false-fail against F003's legitimate 'Next claimable' mention elsewhere in the orientation). All mutation-tested: removing doctor.py's check call, and neutering session-start.sh's os.path.isfile condition, each independently confirmed to fail the right assertions.",
+      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): eval-a2-run2 (one of the 6 VALID runs) proposed this as the generalizable finding. A discarded round-1 subagent (eval-a-run3, excluded from the eval's results table -- see evals/orientation-recovery.md's capture-defect section) noticed the same underlying fixture inconsistency but did not itself count toward the eval; caught and corrected during PR #107 review, which found the original notes wrongly cited that discarded run as a second valid source. Not fixed in F021 -- the fixture itself is shared by the entire mechanical test suite and is out of F021's declared scope (evals/README.md, evals/orientation-recovery.md, README.md, test/run-tests.sh). RESOLVED: doctor.py and session-start.sh both now flag a passing/in-progress feature whose test_file doesn't resolve. Filed F068 (discovered incidentally, not fixed here) for a pre-existing, unrelated inaccuracy found in skills/harness-doctor/SKILL.md's description (claims a 'version drift' check that does not exist anywhere in doctor.py).",
       "correction_cycles": 0,
-      "scope_expansions": [],
-      "approaches_tried": [],
+      "scope_expansions": [
+        "skills/harness-doctor/SKILL.md: updated the frontmatter description to mention the new test_file existence check, for accuracy -- not in F066's declared scope (only doctor.py was), but the description is what /help and skill-discovery show users."
+      ],
+      "approaches_tried": [
+        "Added doctor.py's check_feature_test_files: report-only (no fix_id -- doctor can't invent a missing test file), checks every passing/in-progress feature's test_file against the working tree.",
+        "Added a matching warning in hooks/session-start.sh, reusing the same lightweight per-feature os.path.isfile pattern the existing spec-drift (SHA256 hash) and scope-enforcement checks already use -- deliberately NOT a static pointer-only line, since the existing precedent showed a live per-session scan is proportionate here.",
+        "Fixing this correctly flagged make_healthy_doctor_fixture (a repo-wide test helper used by ~13 doctor tests) as genuinely unhealthy -- confirmed via a full test run before assuming safety, matching F063's precedent for this exact blast-radius shape. Fixed by creating trivial placeholder files at the two claimed paths inside the fixture-builder helper, not by touching the shared base fixture (test/fixtures/harness-project) that many unrelated tests also depend on for its mechanical, deliberately-inconsistent shape.",
+        "Verified before assuming any blast radius: audited all 21 run_session_start call sites and all ~13 make_healthy_doctor_fixture call sites for exact-match or assert_not_contains assertions that could conflict with the new warning text, before running the full suite to confirm.",
+        "Caught and fixed a real bug in my own new test: an assert_not_contains check for 'F003 ' (pending, no test_file) false-failed because 'Next claimable: F003 - Render status badges' already legitimately contains that substring elsewhere in the orientation. Rescoped the assertion to the warning line specifically."
+      ],
       "failure_reason": null,
       "discovered_via": "F021",
       "spec": null
@@ -1954,6 +1962,28 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F021",
+      "spec": null
+    },
+    {
+      "id": "F068",
+      "description": "skills/harness-doctor/SKILL.md's frontmatter description claims doctor.py 'Verifies... version drift against the current plugin', but no such check exists anywhere in doctor.py -- confirmed via grep, zero matches for 'version' in the entire file. Either implement a real version-drift check (compare the project's recorded plugin version, if any, against the currently installed CLAUDE_PLUGIN_ROOT's .claude-plugin/plugin.json) or correct the description to stop claiming a check that doesn't run.",
+      "priority": 69,
+      "status": "pending",
+      "scope": [
+        "skills/harness-doctor/SKILL.md",
+        "skills/harness-doctor/doctor.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "discovered_via F066 (2026-08-01): found incidentally while updating SKILL.md's description for the new test_file existence check -- the pre-existing 'version drift' claim was already inaccurate before that edit, unrelated to F066's own change. Not fixed in F066 -- deciding whether to implement the check or just correct the doc is a real design choice, not a mechanical fix, and out of F066's declared scope.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F066",
       "spec": null
     }
   ]

@@ -875,3 +875,36 @@
   Ovidiu's standing instruction to keep working through everything without
   waiting for check-ins.
 - Blockers: none.
+
+## Session 38 - 2026-08-01 (F066: test_file existence check)
+- Feature: F066 - warn when a passing/in-progress feature's test_file is
+  missing (locally discovered, discovered_via F021, no Linear issue)
+- Status: complete
+- Design decision: F066's own description offered doctor.py OR
+  session-start.sh as alternatives; implemented both. doctor.py gets a new
+  report-only check_feature_test_files (no fixer possible). session-start.sh
+  gets a real live per-session scan, not just a static pointer -- justified
+  by the file's own existing precedent (the spec-drift SHA256 check already
+  does an equivalent-cost per-feature scan every session).
+- Found and fixed a real blast-radius risk before it landed: the shared
+  "healthy" doctor-test fixture (~13 dependent tests) has always cited
+  test_file paths for F001/F002 that were never actually created -- exactly
+  the defect F066 catches. Audited all call sites first, then fixed the
+  fixture-builder helper (not the shared base fixture other tests need for
+  its mechanical shape), matching F063's precedent.
+- Caught a real bug in my own test: an assert_not_contains check for "F003 "
+  false-failed against "Next claimable: F003 - ..." already present
+  elsewhere in the orientation. Rescoped to the warning line specifically.
+- Scope expansion: skills/harness-doctor/SKILL.md's description updated for
+  accuracy (not in F066's declared scope).
+- Discovered and filed F068 (not fixed here): SKILL.md's description claims
+  a "version drift" check that doesn't exist anywhere in doctor.py -- a
+  pre-existing, unrelated inaccuracy found only because the same description
+  needed touching for this feature.
+- Tests: 1457/1457 passing (full_test is the gate; +11 F066 assertions
+  across doctor.py and session-start.sh, all mutation-tested).
+- Next: F067 (the last remaining discovered follow-up, `pending`), and
+  F068 (this session's own discovery, `pending`), per Ovidiu's standing
+  instruction to keep working through everything without waiting for
+  check-ins.
+- Blockers: none.
