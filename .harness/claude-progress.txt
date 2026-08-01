@@ -697,3 +697,32 @@
   follow-ups), per Ovidiu's standing instruction to keep working through everything
   from Linear without waiting for check-ins.
 - Blockers: none.
+
+## Session 33 - 2026-08-01 (F020/OVI-59: harness-improve skill)
+- Feature: F020 - new skill harness-improve (HE's improve-one-harnessed-job loop)
+- Status: complete
+- New skills/harness-improve/SKILL.md (124 lines): observation-first improvement loop
+  adapted from harness-engineering's improve-harness.md playbook (CC BY 4.0). 7 steps
+  (job contract, baseline from vv evidence, earliest-failed-handoff classification via
+  a 7-row gap-class-to-owner table, one intervention hypothesis in a falsifiable shape,
+  smallest change, fresh-session rerun with a consequential-job inspection variant, and
+  a retain/revise/remove verdict), 3 guardrail sentences (bounded claim,
+  retrieved-or-invoked, no uncorroborated self-report), a non-harness-project early
+  exit to /harness-init, and an embedded Result Record Template.
+- AC1's harness- prefix requirement rides on F019's earlier fix that made the
+  skill-frontmatter name==directory lint self-maintaining (a glob, not a hardcoded
+  tuple) -- no lint change needed, only a small standalone prefix check.
+- Style consistency: found the new AC1 check's first draft was the only use of bash
+  `[[ ]]` in the 8000+ line test/run-tests.sh (grep-confirmed); rewrote it as a `case`
+  statement to match the file's consistent POSIX style.
+- Tests: 1428/1428 passing (full_test is the gate; +7 F020 assertions). All 7
+  individually mutation-tested (missing step heading, empty gap-class owner cell,
+  reworded guardrail sentence, attribution removed from both occurrences -- the first
+  attempt only cleared the closing line and the intro paragraph's occurrence still
+  passed the check, caught by checking the FAIL output actually appeared -- and the
+  non-harness early-exit text removed); each produced exactly the expected single
+  FAIL, restored from a scratch backup between rounds.
+- Next: F021 (the last remaining Linear OVI-44 sub-issue) and F063/F064 (discovered
+  follow-ups), per Ovidiu's standing instruction to keep working through everything
+  from Linear without waiting for check-ins.
+- Blockers: none.
