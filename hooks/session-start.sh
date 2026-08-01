@@ -152,6 +152,35 @@ except Exception:
     pass
 PYEOF
 
+# F066: a passing/in-progress feature's test_file is a claim, not a fact -- this
+# reproduces doctor.py's check_feature_test_files at session-start scope (cheap,
+# same os.path.isfile cost as the spec-drift hash check above) so faithful
+# orientation can't hand the session a fabricated picture.
+python3 - "$ROOT" "$H/features.json" <<'PYEOF' 2>/dev/null || true
+import json, os, sys
+try:
+    root, features_path = sys.argv[1], sys.argv[2]
+    feats = json.load(open(features_path)).get("features", [])
+    missing = []
+    for f in feats:
+        if f.get("status") not in ("passing", "in-progress"):
+            continue
+        test_file = f.get("test_file")
+        if not test_file:
+            continue
+        if not os.path.isfile(os.path.join(root, test_file)):
+            missing.append(f.get("id", "?"))
+    if missing:
+        shown = ", ".join(missing[:5])
+        more = f" (+{len(missing) - 5} more)" if len(missing) > 5 else ""
+        print("")
+        print(f"WARNING: test_file does not exist for {shown}{more} despite a "
+              "passing/in-progress status.")
+        print("Run /harness-doctor for details, or correct the status/test_file field.")
+except Exception:
+    pass
+PYEOF
+
 if [ -f "$H/claude-progress.txt" ]; then
   echo ""
   echo "Last handoff (claude-progress.txt, last 12 lines):"

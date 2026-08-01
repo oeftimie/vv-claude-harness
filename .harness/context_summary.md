@@ -1244,3 +1244,44 @@ This file is referenced in CLAUDE.md and loaded every session.
 - Discovery lineage: none.
 - Model calibration: single-session, no sub-agents spawned.
 - Plan approval: not applicable -- single-session implementation.
+
+## Meta-Session 2026-08-01 (F066: test_file existence check)
+- Scope accuracy: one scope expansion beyond the declared 3 files:
+  skills/harness-doctor/SKILL.md (frontmatter description updated for
+  accuracy), recorded in features.json.
+- Design decision made without asking (Ovidiu asleep, standing autonomous
+  instruction): F066's own description offered "a lightweight doctor-style
+  check (or a session-start.sh warning)" as alternatives. Implemented both,
+  not either/or -- doctor.py as the structural, opt-in diagnostic (matching
+  its existing role); session-start.sh as a genuine live per-session scan,
+  not just a static pointer, after confirming session-start.sh already does
+  an equivalent-cost per-feature scan today (the spec-drift SHA256 hash
+  check), so proportionality concerns about "a live scan on every session"
+  didn't actually apply here -- the precedent for exactly that already
+  existed in the same file.
+- Real blast-radius risk found and resolved before it became a regression:
+  the shared "healthy" doctor-test fixture (make_healthy_doctor_fixture, used
+  by ~13 pre-existing tests) has always had F001 (passing) and F002
+  (in-progress) citing test_file paths that were never actually created --
+  the exact defect this feature exists to catch. Audited all call sites
+  before running anything, then fixed the fixture-builder helper itself
+  (creating trivial placeholder files at the two claimed paths), not the
+  shared base fixture other tests also depend on for its deliberately
+  mechanical, inconsistent shape -- same precedent as F063's stale-fixture
+  fix.
+- Caught a real bug in my own new test before trusting it: an
+  assert_not_contains check for "F003 " false-failed because "Next
+  claimable: F003 - Render status badges" already legitimately contains
+  that substring elsewhere in the orientation output. Rescoped the
+  assertion to the warning line specifically rather than the whole
+  orientation.
+- Discovery lineage: filed F068 (discovered incidentally, not fixed here) --
+  skills/harness-doctor/SKILL.md's description claims a "version drift"
+  check that doesn't exist anywhere in doctor.py, a pre-existing inaccuracy
+  unrelated to F066's own change, found only because that same description
+  needed touching for this feature.
+- Model calibration: single-session, no sub-agents spawned.
+- Approach patterns: reused the exact per-feature os.path.isfile pattern
+  already established by session-start.sh's spec-drift and
+  scope-enforcement warnings, rather than inventing a new mechanism.
+- Plan approval: not applicable -- single-session implementation.

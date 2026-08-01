@@ -274,6 +274,69 @@ assert_not_contains "$OUT" "Traceback" "u: no python traceback leaks for a non-d
 assert_contains "$OUT" "## Harness orientation" "u: orientation header still present"
 
 echo ""
+echo "== F066: test_file existence warning =="
+
+# The plain base fixture already has this exact defect (F001 passing/test_file,
+# F002 in-progress/test_file, neither committed) -- the real-world shape F066
+# was filed against. Warning must appear by default, unmodified.
+DIR_V1="$WORK/f066-missing-test-file"
+make_fixture "$DIR_V1"
+OUT=$(run_session_start "$DIR_V1" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "v: missing test_file case exits 0"
+assert_contains "$OUT" "WARNING: test_file does not exist for F001, F002" \
+  "v: warns and names both features with a missing test_file"
+assert_contains "$OUT" "/harness-doctor" "v: warning points to /harness-doctor for details"
+
+# Once the referenced files genuinely exist, the warning must not fire.
+DIR_V2="$WORK/f066-test-file-ok"
+make_fixture "$DIR_V2"
+mkdir -p "$DIR_V2/tests/parser" "$DIR_V2/tests/hooks"
+printf '# placeholder\n' > "$DIR_V2/tests/parser/test_parser.py"
+printf '# placeholder\n' > "$DIR_V2/tests/hooks/test_hooks.py"
+git -C "$DIR_V2" add -A
+git -C "$DIR_V2" commit -q -m "add the referenced test files"
+OUT=$(run_session_start "$DIR_V2" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "v: satisfied test_file case exits 0"
+assert_not_contains "$OUT" "test_file does not exist" \
+  "v: no warning once the referenced files actually exist"
+
+# A pending feature with no test_file must never be flagged -- scope to the
+# WARNING line itself, not the whole orientation (F003 legitimately appears
+# elsewhere, e.g. "Next claimable: F003 - Render status badges").
+DIR_V3="$WORK/f066-pending-no-testfile"
+make_fixture "$DIR_V3"
+OUT=$(run_session_start "$DIR_V3" '{"source":"startup"}')
+WARNING_LINE=$(printf '%s\n' "$OUT" | grep "test_file does not exist for" || true)
+assert_not_contains "$WARNING_LINE" "F003" \
+  "v: F003 (pending, no test_file) is never named in the warning"
+
+# F066 round-1 review: the case above doesn't actually pin the status filter,
+# since F003 is excluded by null test_file regardless -- widening the status
+# tuple to include "pending" produces identical output there. Isolate the
+# status filter specifically: a pending feature WITH a test_file set.
+DIR_V4="$WORK/f066-pending-has-testfile"
+make_fixture "$DIR_V4"
+python3 - "$DIR_V4/.harness/features.json" <<'PYEOF'
+import json
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["test_file"] = "tests/badges/test_badges.py"  # deliberately missing
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start "$DIR_V4" '{"source":"startup"}')
+WARNING_LINE=$(printf '%s\n' "$OUT" | grep "test_file does not exist for" || true)
+assert_not_contains "$WARNING_LINE" "F003" \
+  "v: F066's status filter genuinely excludes pending, even with a test_file set"
+
+echo ""
 echo "== scope enforcement warning =="
 
 DIR_W="$WORK/scope-unarmed"
@@ -5579,6 +5642,14 @@ SETTINGSEOF
 ## Meta-Patterns
 - (none yet)
 CTXEOF
+  # F066: the base fixture's F001 (passing) and F002 (in-progress) cite
+  # test_file paths that were never actually created -- deliberate for the
+  # mechanical hook tests this fixture also serves, but genuinely unhealthy
+  # under doctor.py's F066 check. Create real (if trivial) files at both
+  # paths so this specific "healthy" fixture is actually healthy.
+  mkdir -p "$1/tests/parser" "$1/tests/hooks"
+  printf '# F066 fixture placeholder\n' > "$1/tests/parser/test_parser.py"
+  printf '# F066 fixture placeholder\n' > "$1/tests/hooks/test_hooks.py"
   git -C "$1" add -A
   git -C "$1" commit -q -m "doctor fixture: v5-healthy"
 }
@@ -5878,6 +5949,84 @@ ln -sf "$REAL_PYTHON3" "$EMPTY_PATH_DIR/python3"
 OUT=$(PATH="$EMPTY_PATH_DIR" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" python3 "$DOCTOR_PY" "$DIR_DOC_NOGIT")
 assert_contains "$OUT" "no committed history available for this file; treating as local" \
   "hd: git being unavailable degrades drift classification instead of crashing"
+
+# F066: a passing/in-progress feature's test_file must actually exist. Reuses
+# the plain (non-healthy) base fixture directly -- it already has this exact
+# defect (F001 passing/test_file, F002 in-progress/test_file, neither
+# committed), which is the real-world shape F066 was filed against.
+DIR_DOC_MISSINGTEST="$WORK/doctor-missing-test-file"
+make_fixture "$DIR_DOC_MISSINGTEST"
+install_hooks "$DIR_DOC_MISSINGTEST"
+OUT=$(run_doctor "$DIR_DOC_MISSINGTEST")
+RC=$?
+assert_rc_nonzero "$RC" "hd: a feature with a missing test_file is a finding, not silent (F066)"
+assert_contains "$OUT" \
+  "F001 is passing but its test_file 'tests/parser/test_parser.py' does not exist" \
+  "hd: F066 names the passing feature and its missing test_file"
+assert_contains "$OUT" \
+  "F002 is in-progress but its test_file 'tests/hooks/test_hooks.py' does not exist" \
+  "hd: F066 also checks in-progress features, not just passing ones"
+assert_not_contains "$OUT" \
+  "F003 is" \
+  "hd: F066 does not flag F003 (pending, no test_file -- nothing to check)"
+
+# The corrected "healthy" fixture (F066's own fix to make_healthy_doctor_fixture)
+# must stay healthy -- confirms the fixture fix actually closed the gap rather
+# than just adding files that still don't satisfy the check.
+DIR_DOC_TESTFILEOK="$WORK/doctor-test-file-ok"
+make_healthy_doctor_fixture "$DIR_DOC_TESTFILEOK"
+OUT=$(run_doctor "$DIR_DOC_TESTFILEOK")
+assert_not_contains "$OUT" "does not exist" \
+  "hd: the corrected healthy fixture has no F066 finding"
+
+# F066 round-1 review: the two checks above don't actually pin the status
+# filter or the null-test_file guard, since F003 is excluded by BOTH
+# conditions at once (pending status AND null test_file) -- widening the
+# status tuple to include "pending", or deleting the null-test_file guard
+# entirely, produces identical output. Purpose-built fixtures to isolate each.
+DIR_DOC_PENDING_WITH_TESTFILE="$WORK/doctor-pending-has-test-file"
+make_fixture "$DIR_DOC_PENDING_WITH_TESTFILE"
+install_hooks "$DIR_DOC_PENDING_WITH_TESTFILE"
+python3 - "$DIR_DOC_PENDING_WITH_TESTFILE/.harness/features.json" <<'PYEOF'
+import json
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["test_file"] = "tests/badges/test_badges.py"  # deliberately missing
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_doctor "$DIR_DOC_PENDING_WITH_TESTFILE")
+assert_not_contains "$OUT" "F003 is pending" \
+  "hd: F066's status filter genuinely excludes pending, even with a test_file set"
+
+DIR_DOC_PASSING_NULL_TESTFILE="$WORK/doctor-passing-null-test-file"
+make_fixture "$DIR_DOC_PASSING_NULL_TESTFILE"
+install_hooks "$DIR_DOC_PASSING_NULL_TESTFILE"
+python3 - "$DIR_DOC_PASSING_NULL_TESTFILE/.harness/features.json" <<'PYEOF'
+import json
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F001":
+        feature["test_file"] = None
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_doctor "$DIR_DOC_PASSING_NULL_TESTFILE" 2>&1)
+RC=$?
+assert_rc_nonzero "$RC" "hd: a passing feature with null test_file is a finding, not silent"
+assert_not_contains "$OUT" "Traceback" \
+  "hd: F066's null-test_file guard doesn't crash (rc_nonzero alone would also pass on a crash)"
+assert_not_contains "$OUT" "F001 is" \
+  "hd: F066's null-test_file guard genuinely skips a passing feature with no test_file"
 
 # fixes.py: the four single-purpose fixers' no-op ("already resolved" or
 # "can't act") branches are unreachable through the CLI (apply_fixes only invokes

@@ -1,6 +1,6 @@
 ---
 name: harness-doctor
-description: Report-first, idempotent instance health check for a harness-managed project. Verifies python3/git presence, the hook set and its executability, .claude/settings.json wiring, .gitignore rules, .harness/ file validity, version drift against the current plugin, and the mld non-injection guarantee. Offers a --fix upgrade mode, but never writes without explicit approval. Use when a smoke test fails unexpectedly, after a manual edit to .claude/ or .harness/, or when upgrading a project initialized under an older harness version.
+description: Report-first, idempotent instance health check for a harness-managed project. Verifies python3/git presence, the hook set and its executability, .claude/settings.json wiring, .gitignore rules, .harness/ file validity, version drift against the current plugin, whether a passing/in-progress feature's test_file actually exists, and the mld non-injection guarantee. Offers a --fix upgrade mode, but never writes without explicit approval. Use when a smoke test fails unexpectedly, after a manual edit to .claude/ or .harness/, or when upgrading a project initialized under an older harness version.
 ---
 
 # Harness Doctor
