@@ -1869,6 +1869,26 @@
       "failure_reason": null,
       "discovered_via": "F017",
       "spec": null
+    },
+    {
+      "id": "F065",
+      "description": "README.md's plugin-tree block (~line 194-198) and its \"What's in the box\" table (~line 399-403) both omit harness-improve AND harness-doctor from the skills list -- pre-existing drift (harness-doctor predates this feature; harness-improve extends the same gap to a second skill). Add both skills to both README locations so the shipped skill roster is documented completely.",
+      "priority": 66,
+      "status": "pending",
+      "scope": [
+        "README.md"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "discovered_via F020 (PR #105 round-2 review, review-pr105-f020): flagged as pre-existing, out-of-declared-scope drift, not a blocker for F020. Confirmed independently before filing: skills/ has 6 directories (harness-init, harness-continue, harness-issue-prep, harness-issue-debug, harness-doctor, harness-improve), but README.md's plugin-tree block and 'What's in the box' table both list only the first 4 -- harness-doctor and harness-improve are missing from both locations.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F020",
+      "spec": null
     }
   ]
 }
