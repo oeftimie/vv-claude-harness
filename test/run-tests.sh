@@ -5924,35 +5924,42 @@ F063_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import json
 import os
 import sys
+import traceback
 
 repo_root = sys.argv[1]
 sys.path.insert(0, os.path.join(repo_root, "skills", "harness-doctor"))
 import fixes
 
-tmpl_path = os.path.join(
-    repo_root, "skills", "harness-init", "templates", "settings.json.tmpl"
-)
-text = open(tmpl_path).read()
-# ENV_TEAMS_FLAG is a string_values placeholder in scripts/stamp.sh (JSON-encoded
-# before insertion, per its own substitute() docstring); POSTTOOLUSE_HOOKS is a
-# raw_json_values placeholder (inserted verbatim as an already-valid JSON array).
-text = text.replace("{{ENV_TEAMS_FLAG}}", json.dumps("1")).replace(
-    "{{POSTTOOLUSE_HOOKS}}", "[]"
-)
-rendered = json.loads(text)
-
 errors = []
-for key in ("statusLine", "env", "permissions"):
-    if fixes.CANONICAL_WIRING[key] != rendered[key]:
-        errors.append(f"CANONICAL_WIRING[{key!r}] does not match settings.json.tmpl")
+try:
+    tmpl_path = os.path.join(
+        repo_root, "skills", "harness-init", "templates", "settings.json.tmpl"
+    )
+    text = open(tmpl_path).read()
+    # ENV_TEAMS_FLAG is a string_values placeholder in scripts/stamp.sh (JSON-encoded
+    # before insertion, per its own substitute() docstring); POSTTOOLUSE_HOOKS is a
+    # raw_json_values placeholder (inserted verbatim as an already-valid JSON array).
+    text = text.replace("{{ENV_TEAMS_FLAG}}", json.dumps("1")).replace(
+        "{{POSTTOOLUSE_HOOKS}}", "[]"
+    )
+    rendered = json.loads(text)
 
-# CANONICAL_WIRING deliberately omits PostToolUse (stack-dependent; not
-# backfilled by add_settings_wiring), so only compare the events it defines.
-for event, blocks in fixes.CANONICAL_WIRING["hooks"].items():
-    if blocks != rendered["hooks"].get(event):
-        errors.append(
-            f"CANONICAL_WIRING['hooks'][{event!r}] does not match settings.json.tmpl"
-        )
+    for key in ("statusLine", "env", "permissions"):
+        if fixes.CANONICAL_WIRING[key] != rendered[key]:
+            errors.append(f"CANONICAL_WIRING[{key!r}] does not match settings.json.tmpl")
+
+    # CANONICAL_WIRING deliberately omits PostToolUse (stack-dependent; not
+    # backfilled by add_settings_wiring), so only compare the events it defines.
+    for event, blocks in fixes.CANONICAL_WIRING["hooks"].items():
+        if blocks != rendered["hooks"].get(event):
+            errors.append(
+                f"CANONICAL_WIRING['hooks'][{event!r}] does not match settings.json.tmpl"
+            )
+except Exception:
+    # Never let an exception silently vanish as an empty, falsely-passing
+    # result -- report it as a failure like any other (same hazard the
+    # adjacent F063 doctor.py check was fixed for in round 1).
+    errors.append("exception while running the F063 fixes.py check:\n" + traceback.format_exc())
 
 for e in errors:
     print(e)
