@@ -5525,7 +5525,11 @@ make_healthy_doctor_fixture() {
       },
       {
         "matcher": "Bash",
-        "hooks": [{"type": "command", "command": "bash .claude/hooks/verify-git-identity.sh"}]
+        "hooks": [
+          {"type": "command", "command": "bash .claude/hooks/enforce-scope.sh"},
+          {"type": "command", "command": "bash .claude/hooks/verify-git-identity.sh"},
+          {"type": "command", "command": "bash .claude/hooks/commit-gate.sh"}
+        ]
       }
     ],
     "TaskCompleted": [
@@ -5560,8 +5564,6 @@ if [ "$OUT" = "healthy" ]; then
 else
   fail "hd: a fully healthy fixture prints a single 'healthy' line -- got: $OUT"
 fi
-assert_not_contains "$OUT" "commit-gate" \
-  "hd: healthy fixture has no commit-gate finding (F011/OVI-64 template not shipped)"
 
 # AC1: seeded breakages -- non-executable hook, missing settings wiring, invalid
 # features.json, gitignored .claude/. Each finding must name its repair.
@@ -5960,6 +5962,126 @@ if [ -z "$F063_ERRORS" ]; then
   pass "f063: fixes.py's CANONICAL_WIRING matches the real settings.json.tmpl wiring exactly"
 else
   fail "f063: $F063_ERRORS"
+fi
+
+# F063 round-1 review: doctor.py has its OWN independent copy of this wiring
+# knowledge (SETTINGS_WIRING_CHECKS), and it had the same drift PLUS a
+# matcher-blind _hook_wired() that couldn't distinguish "wired on the Bash
+# matcher" from "wired on some other matcher" -- so a settings.json with
+# enforce-scope.sh only on Edit|Write|MultiEdit (never on Bash) and no
+# commit-gate.sh at all read as fully wired. Regression-test the exact
+# reviewer-reproduced shape, plus a drift-detection diff of the PreToolUse
+# predicate's required (script, matcher) pairs against the real template.
+F063_DOCTOR_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import os
+import sys
+import traceback
+
+repo_root = sys.argv[1]
+sys.path.insert(0, os.path.join(repo_root, "skills", "harness-doctor"))
+import doctor
+
+errors = []
+
+try:
+    # Reviewer's exact reproduction: enforce-scope.sh on Edit|Write|MultiEdit only,
+    # verify-git-identity.sh on Bash, no commit-gate.sh anywhere. This is the drift
+    # shape any pre-F054 project has (PreToolUse present, but not fully wired).
+    drifted_settings = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Edit|Write|MultiEdit",
+                    "hooks": [{"type": "command", "command": "enforce-scope.sh"}],
+                },
+                {
+                    "matcher": "Bash",
+                    "hooks": [{"type": "command", "command": "verify-git-identity.sh"}],
+                },
+            ]
+        }
+    }
+    pretooluse_check = next(c for c in doctor.SETTINGS_WIRING_CHECKS if c[0] == "PreToolUse")
+    if pretooluse_check[1](drifted_settings):
+        errors.append(
+            "SETTINGS_WIRING_CHECKS['PreToolUse'] reports fully wired on a settings.json "
+            "missing commit-gate.sh and Bash-matcher enforce-scope.sh -- the exact drift "
+            "shape this feature exists to catch"
+        )
+
+    # Fully, correctly wired (matches settings.json.tmpl) must NOT be flagged.
+    correct_settings = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Edit|Write|MultiEdit",
+                    "hooks": [{"type": "command", "command": "enforce-scope.sh"}],
+                },
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {"type": "command", "command": "enforce-scope.sh"},
+                        {"type": "command", "command": "verify-git-identity.sh"},
+                        {"type": "command", "command": "commit-gate.sh"},
+                    ],
+                },
+            ]
+        }
+    }
+    if not pretooluse_check[1](correct_settings):
+        errors.append(
+            "SETTINGS_WIRING_CHECKS['PreToolUse'] false-flags a settings.json that "
+            "matches settings.json.tmpl exactly"
+        )
+
+    # Isolate the commit-gate.sh requirement specifically: everything else wired
+    # correctly, commit-gate.sh absent entirely. Must still be flagged -- this is
+    # the one condition drifted_settings above doesn't isolate on its own (it's
+    # already missing Bash-matcher enforce-scope.sh, which alone fails the check).
+    missing_commit_gate_only = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Edit|Write|MultiEdit",
+                    "hooks": [{"type": "command", "command": "enforce-scope.sh"}],
+                },
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {"type": "command", "command": "enforce-scope.sh"},
+                        {"type": "command", "command": "verify-git-identity.sh"},
+                    ],
+                },
+            ]
+        }
+    }
+    if pretooluse_check[1](missing_commit_gate_only):
+        errors.append(
+            "SETTINGS_WIRING_CHECKS['PreToolUse'] reports fully wired with "
+            "commit-gate.sh entirely absent from the Bash matcher"
+        )
+
+    # _hook_wired must be matcher-aware: a script present under the WRONG matcher
+    # must not satisfy a check for a specific matcher.
+    if doctor._hook_wired(drifted_settings, "PreToolUse", "enforce-scope.sh", matcher="Bash"):
+        errors.append(
+            "_hook_wired() found enforce-scope.sh on the Bash matcher when it is only "
+            "wired on Edit|Write|MultiEdit -- matcher filtering is not working"
+        )
+except Exception:
+    # Never let an exception (e.g. a signature mismatch from a reverted fix)
+    # silently vanish as an empty, falsely-passing result -- report it as a
+    # failure like any other.
+    errors.append("exception while running the F063 doctor.py check:\n" + traceback.format_exc())
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$F063_DOCTOR_ERRORS" ]; then
+  pass "f063: doctor.py's SETTINGS_WIRING_CHECKS detects the reviewer-reproduced drift and is matcher-aware"
+else
+  fail "f063: $F063_DOCTOR_ERRORS"
 fi
 
 # AC2: doctor never writes without approval -- the skill text asserts it.
