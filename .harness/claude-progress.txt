@@ -952,15 +952,26 @@
   entry needed a forward pointer to its correction), folded in before
   merge. PR #112 merged, reviewer released.
 - F068: implemented a real plugin_version drift check in harness-doctor
-  (doctor.py + fixes.py), since .harness/harness.json had no version field
-  in any project. Added the initial-recording step to harness-init/SKILL.md
-  and a 6th INSTALL.md upgrade step, mirroring the F016 worker-block
-  pattern. Also fixed two adjacent pre-existing doc gaps in the same "What
-  it checks" list (a mislabeled "Version drift" item, and F066's test_file
-  check never being documented there). 14 new assertions, all
-  mutation-tested. Not yet merged as of this entry (on branch
-  eovidiu/f068-version-drift-check, tests green).
-- Tests: 1476/1476 passing (full_test is the gate).
-- Next: open PR for F068, spawn a reviewer, iterate to APPROVE, merge. Then
-  F069 (design pass needed before implementation -- see its own notes).
+  (doctor.py + fixes.py). Round-1 review found the initial design
+  (absence-is-valid, mirroring the F016 worker block) left the check
+  permanently inert for every pre-existing project -- verified
+  empirically before fixing. Root-caused rather than patched: reclassified
+  absence as a fixable "upgrade available" finding and moved the initial
+  write into scripts/stamp.sh itself (mechanical, unlike git_identity/
+  worker), per stamp.sh's own "never hand-write what a stamp can emit"
+  doctrine. That redesign broke F013's own pre-existing AC3 ("a stamped
+  project passes harness-doctor clean") -- caught by the full suite, not
+  by review. Round 2 found one of round 1's own claimed test fixes was
+  itself vacuous (same defect class as F066's round-1 finding, recurring
+  within F068's own review cycle) plus a genuine dogfood gap (this repo's
+  own harness.json had no plugin_version) -- fixed both, folded in all
+  remaining non-blocking nits without a third review round since each was
+  independently mutation-verified. PR #113 merged.
+- Tests: 1480/1480 passing (full_test is the gate).
+- Next: F069 is the only remaining item -- needs its own design pass
+  before implementation (what naming convention, if any, check-remaining-
+  tasks.sh could key off; see F069's own notes for corroborating live
+  evidence gathered across both F067's and F068's review cycles) plus the
+  mechanical corrections to agents/reviewer.md, README.md, and a proposed
+  CHANGELOG.md fix for Ovidiu's sign-off.
 - Blockers: none.

@@ -6,7 +6,7 @@ This file is referenced in CLAUDE.md and loaded every session.
 ## Active Context
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
 - Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues) is now COMPLETE, all shipped through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up), F018/OVI-66 (PR #103), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md), F020/OVI-59 (skills/harness-improve/SKILL.md), F021/OVI-60 (evals/README.md + evals/orientation-recovery.md, this session, filed F066+F067 as follow-ups). See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. With F021 shipped, ALL 21 original OVI-44 sub-issues are done -- remaining queued work is discovered follow-ups only, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge). F063-F068 are all shipped (F063 PR #108, F064 PR #109, F065 PR #110, F066 PR #111, F067 PR #112, F068 single-session on `eovidiu/f068-version-drift-check`, not yet merged as of this entry). Only F069 remains `pending`.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. With F021 shipped, ALL 21 original OVI-44 sub-issues are done -- remaining queued work is discovered follow-ups only, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge). F063-F068 are all shipped and merged (F063 PR #108, F064 PR #109, F065 PR #110, F066 PR #111, F067 PR #112, F068 PR #113 -- both F067 and F068 needed 2 review rounds, see their own Meta-Session entries for what each round caught). Only F069 remains `pending`.
 - F069 (filed during F067's round-1 review): the broader correction for F055's falsified "TeammateIdle carries no teammate identity" claim, covering `agents/reviewer.md`, `README.md`, a proposed (not silent) `CHANGELOG.md` fix since it's Human-Owned, and the real design question of whether `check-remaining-tasks.sh` should key its escape hatch off `teammate_name` directly now that it's confirmed present. Needs its own design pass before implementation, not a quick mechanical extension -- see F069's own `notes` for corroborating live evidence gathered during F067's review cycle.
 
 ## Cross-Cutting Concerns
@@ -1414,3 +1414,38 @@ session-end.sh at the next SessionStart.
   returns True without writing), each confirmed to fail exactly the
   assertions meant to catch that specific defect class, nothing else. Full
   suite 1476/1476 throughout.
+- CORRECTION (round-1 review, review-pr113-f068): the design decision
+  above -- absence-is-valid, mirroring the F016 worker block -- was WRONG.
+  The reviewer found it left the check permanently inert for every
+  pre-existing project: nothing but doctor --fix ever writes
+  plugin_version, and a check that never fires never triggers its own
+  fixer either. Verified empirically before fixing. Root-caused rather
+  than patched: reclassified absence as a fixable "upgrade available"
+  finding (matching the missing-harness_state.py pattern) and moved the
+  initial write into scripts/stamp.sh itself, since it's purely mechanical
+  (unlike git_identity/worker, which need a user decision or a live
+  `claude --version` probe) -- stamp.sh's own doctrine is "never
+  hand-write what a stamp can emit; never stamp what a decision shapes."
+  This surfaced a real regression the redesign would have caused in
+  F013's own pre-existing AC3 ("a stamped project passes harness-doctor
+  clean"), caught by the full suite, not by review -- confirms the value
+  of re-running the whole suite after every design change, not just the
+  new assertions. Also fixed 3 non-blocking nits (a silently-passing
+  crash in the fixes.py direct-unit test block, an untested defensive
+  guard, and a wrong coverage-field assertion count).
+- ROUND 2 (review-pr113-f068): APPROVE, with one of round-1's own claimed
+  fixes found to still be wrong -- the "untested defensive guard" fix
+  from round 1 was itself vacuous (the 2 new isolation assertions ran
+  before .harness/harness.json existed in the test's own setup, so an
+  unrelated guard masked whatever the target guard did). Same defect
+  class as F066's round-1 finding: a condition satisfied by something
+  else at the same time, never independently pinned -- caught this
+  pattern recurring within the SAME feature's own review cycle, not just
+  across features. Fixed by reordering the test setup and re-verified via
+  2 targeted mutations. Also fixed a genuine dogfood gap (this repo's own
+  harness.json had no plugin_version and failed its own new check the
+  moment absence stopped being silently valid) by running
+  `doctor.py --fix` against this repo itself rather than hand-editing the
+  field. Folded in all non-blocking nits post-APPROVE without a third
+  review round, since each was independently mutation-verified before
+  committing. PR #113 merged at 322220f. Full suite 1480/1480 final.
