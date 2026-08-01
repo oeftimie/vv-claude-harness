@@ -1182,3 +1182,16 @@ This file is referenced in CLAUDE.md and loaded every session.
   it" drift-detection pattern already used elsewhere in this repo's test suite
   for single-owner-of-truth invariants.
 - Plan approval: not applicable -- single-session implementation.
+- Round-1 review (PR #108) found doctor.py has its OWN independent copy of the
+  same wiring knowledge (SETTINGS_WIRING_CHECKS) with the identical
+  commit-gate.sh omission, plus a matcher-blind `_hook_wired()` that couldn't
+  tell "wired on Bash" from "wired on some other matcher." Fixed both; also
+  had to fix `make_healthy_doctor_fixture` (a repo-wide test helper) which
+  predated F011/commit-gate.sh and was itself stale -- the strengthened check
+  correctly flagged it as unhealthy, surfacing 5 pre-existing test failures
+  that traced to the SAME root drift, not to my fix. Caught a real bug in my
+  own first mutation test along the way: an uncaught exception from calling
+  the reverted function with an argument it no longer accepted crashed the
+  check before it printed anything, so the mutation appeared to pass for the
+  wrong reason -- wrapped the check in try/except so exceptions report as
+  failures, not silent false-passes.
