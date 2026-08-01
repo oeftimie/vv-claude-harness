@@ -8019,6 +8019,79 @@ else
 fi
 
 echo ""
+echo "== F017: author-blind conformance tester =="
+
+CONFORMANCE_AGENT="$REPO_ROOT/agents/conformance-tester.md"
+
+# AC2: the blindness rule is present verbatim-strength, and the forbidden-inputs
+# list explicitly names the diff, the completion message, and implementer tests.
+if grep -q "MUST NOT read" "$CONFORMANCE_AGENT" \
+  && grep -qi "implementation diff" "$CONFORMANCE_AGENT" \
+  && grep -qi "completion message" "$CONFORMANCE_AGENT" \
+  && grep -qi "implementer authored\|implementer's own tests\|implementer wrote" "$CONFORMANCE_AGENT"; then
+  pass "f017: conformance-tester.md's blindness rule is stated verbatim-strength with the forbidden-inputs list (AC2)"
+else
+  fail "f017: conformance-tester.md is missing the blindness rule or its forbidden-inputs list"
+fi
+
+# AC1 (frontmatter specifics not already covered by the generic agent lint above):
+# right tools (Write for test files, Bash for running the suite only, no Edit),
+# and the model is sonnet per spec item 1.
+CONFORMANCE_FM_ERRORS=$(python3 - "$CONFORMANCE_AGENT" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+fm = text.split("---")[1]
+
+if not re.search(r"^model:\s*sonnet\s*$", fm, re.MULTILINE):
+    print("model should be sonnet")
+
+tools_match = re.search(r"^tools:\s*(.+)$", fm, re.MULTILINE)
+if not tools_match:
+    print("no tools: line found")
+else:
+    tools = {t.strip() for t in tools_match.group(1).split(",")}
+    expected = {"Read", "Grep", "Glob", "Write", "Bash"}
+    if tools != expected:
+        print(f"tools should be exactly {sorted(expected)}, got {sorted(tools)}")
+PYEOF
+)
+if [ -z "$CONFORMANCE_FM_ERRORS" ]; then
+  pass "f017: conformance-tester.md has model sonnet and the exact expected tool set (AC1)"
+else
+  fail "f017: conformance-tester.md frontmatter -- $CONFORMANCE_FM_ERRORS"
+fi
+
+# Spec item 4: one attribution line.
+if grep -qi "agent-os" "$CONFORMANCE_AGENT" && grep -qi "nodera-studio" "$CONFORMANCE_AGENT" \
+  && grep -qi "MIT" "$CONFORMANCE_AGENT"; then
+  pass "f017: conformance-tester.md attributes the agent-os pattern (nodera-studio, MIT)"
+else
+  fail "f017: conformance-tester.md is missing the attribution line"
+fi
+
+# AC4: harness-continue documents the trigger conditions and the spawn prompt template.
+HC_SKILL_F017="$REPO_ROOT/skills/harness-continue/SKILL.md"
+if grep -q "vv-harness:conformance-tester" "$HC_SKILL_F017" \
+  && grep -q "elevated" "$HC_SKILL_F017" && grep -q "require_plan_approval: true" "$HC_SKILL_F017"; then
+  pass "f017: harness-continue/SKILL.md documents the conformance-tester trigger conditions (AC4)"
+else
+  fail "f017: harness-continue/SKILL.md is missing the conformance-tester trigger conditions"
+fi
+if grep -q 'subagent_type: "vv-harness:conformance-tester"' "$HC_SKILL_F017"; then
+  pass "f017: harness-continue/SKILL.md has the conformance-tester spawn prompt template (AC4)"
+else
+  fail "f017: harness-continue/SKILL.md is missing the conformance-tester spawn prompt template"
+fi
+if grep -qi 'evidence_type.*"conformance"\|evidence_type: "conformance"' "$HC_SKILL_F017"; then
+  pass "f017: harness-continue/SKILL.md documents recording proof.evidence_type conformance"
+else
+  fail "f017: harness-continue/SKILL.md does not document recording proof.evidence_type conformance"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
