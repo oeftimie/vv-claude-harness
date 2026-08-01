@@ -61,9 +61,9 @@ includes subtraction." This step is the mechanical trigger for that ritual, not 
 ritual itself; see `${CLAUDE_PLUGIN_ROOT}/docs/requalification.md` for the checklist.
 
 Read `.harness/harness.json`'s optional `worker` block
-(`schemas/feature.schema.json`'s `$defs/harness_worker_block`). **Absent -> skip
-silently**: an old project, or one that has never run this check, has nothing to
-compare against yet, and this is not a reason to block the session.
+(`${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json`'s `$defs/harness_worker_block`).
+**Absent -> skip silently**: an old project, or one that has never run this check, has
+nothing to compare against yet, and this is not a reason to block the session.
 
 If present, probe the live CLI version defensively -- its output format may change
 across releases, and this check must never block a session over a parse failure:

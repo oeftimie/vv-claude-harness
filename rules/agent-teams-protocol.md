@@ -145,10 +145,13 @@ updates a row here, never the Role/Reasoning prose around it.
 
 The four vv-harness agent definitions (`vv-harness:feature-implementer`,
 `vv-harness:layer-implementer`, `vv-harness:researcher`, `vv-harness:reviewer`) carry
-these per-role model, effort, and tool defaults in their frontmatter (reviewer: Opus with
-high effort; implementers and researcher: Sonnet). The dynamic Opus-upgrade heuristics
-below still apply: the spawn-time `model` parameter overrides the definition's
-frontmatter.
+these per-role model, effort, and tool defaults in their frontmatter, matching the
+bindings table above (the reviewer definition also sets high effort, not just a model).
+The dynamic Opus-upgrade heuristics below still apply: the spawn-time `model` parameter
+overrides the definition's frontmatter. Requalification updates the table above AND
+each agent definition's frontmatter together -- both must move in the same
+requalification pass, since the table alone doesn't change what actually gets
+spawned.
 
 **Static overrides**: if an implementer's scope is architecturally complex (10+ files, cross-cutting concerns, security-sensitive), upgrade to Opus regardless of history.
 

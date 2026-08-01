@@ -30,7 +30,7 @@ supplements: Project-level CLAUDE.md files in individual repositories
 - Silently retry more than specified limits
 - Lose work without explicit rollback decision
 - Create documentation files unless explicitly requested (update existing docs freely)
-- Set the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable in a harness project — it flattens every vv agent's frontmatter `model` field to the same value, silently defeating the per-role bindings table in `rules/agent-teams-protocol.md`'s Model Selection section
+- Set the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable in a harness project — it can override a spawned agent's model, silently defeating the per-role bindings table in `rules/agent-teams-protocol.md`'s Model Selection section; treat it as a footgun in any harness project regardless of the exact platform behavior in your current CLI version
 
 ---
 

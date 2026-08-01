@@ -22,7 +22,7 @@ eval result.
 
 ## 2. Review the bindings table
 
-`rules/agent-teams-protocol.md`'s Model Selection section holds the ONE bindings table:
+`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`'s Model Selection section holds the ONE bindings table:
 role -> model. Requalification updates a row in THAT table — never the protocol prose
 around it ("lead needs deep reasoning" is policy and doesn't change; "lead: Opus" is a
 binding that might). When these names age, the fix is one row in that table and a
@@ -47,21 +47,24 @@ per feature, and review quality tracking the session's own model is usually wort
 than the cost delta). Record the decision and its reasoning in the bindings table update
 from step 2.
 
-**The `CLAUDE_CODE_SUBAGENT_MODEL` footgun**: setting this environment variable flattens
-every vv agent's frontmatter `model` field to the same value, silently defeating the
-per-role bindings table entirely. Never set it in a harness project; see the invariant in
-`templates/CLAUDE.md`.
+**The `CLAUDE_CODE_SUBAGENT_MODEL` footgun**: this environment variable is documented to
+override a spawned agent's model in at least some configurations, which would flatten the
+per-role bindings table -- exact scope not independently verified live in this repo; treat
+it as a footgun and never set it in a harness project regardless. See the invariant in
+your project's own `CLAUDE.md` (personalized from the plugin's `templates/CLAUDE.md` --
+`${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md` from inside a session).
 
 ## 5. Verified-live annotations
 
 Every hook or protocol clause whose correctness depends on specific platform behavior
-(not just vv's own code) carries a `verified live YYYY-MM-DD on Claude Code X.Y.Z`
+(not just vv's own code) MUST carry a `verified live YYYY-MM-DD on Claude Code X.Y.Z`
 annotation at the point of the claim. This is worker-epoch pinning applied at the file
 level: the annotation says exactly which worker generation last confirmed the behavior,
 so staleness is visible instead of assumed. Requalification refreshes every annotation
 touched by the epoch change (re-verify the claim under the new CLI, update the date and
 version, or flag it for removal if the behavior no longer holds); the repo-side
-maintenance loop (`docs/maintenance-runbook.md`) does the same on its own schedule for
+maintenance loop (the vv-claude-harness plugin repo's own `docs/maintenance-runbook.md`
+-- not a file in your project) does the same on its own schedule for
 platform-behavior claims that aren't tied to a specific project's epoch.
 
 ## 6. Degradation is not escalation
