@@ -622,7 +622,7 @@
       "id": "F017",
       "description": "[OVI-65] A1: Author-blind conformance tester (anti-reward-hacking gate) \u2014 Add agents/conformance-tester.md (vv-harness:conformance-tester), an agent that derives behavior tests from the verified feature description alone, forbidden from reading the implementation diff, completion message, or implementer tests, writes conformance tests, and reports PASS/FAIL/NOT-TESTABLE per criterion. Wire an optional harness-continue Phase 4 spawn for elevated-risk features recording evidence_type conformance.",
       "priority": 17,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "agents/conformance-tester.md",
         "skills/harness-continue/SKILL.md",
@@ -633,12 +633,15 @@
         "F010"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
-      "notes": "Linear: OVI-65. Full spec (incl. Amendment) re-verified per-issue by /harness-issue-prep before implementation.",
+      "test_file": "test/run-tests.sh (F017 section)",
+      "coverage": "n/a (shell/python fixture suite, no coverage tool)",
+      "notes": "Linear: OVI-65. New agents/conformance-tester.md (vv-harness:conformance-tester, sonnet, tools Read/Grep/Glob/Write/Bash): derives behavior tests from a feature's verified description + acceptance criteria alone, hard-forbidden from reading the implementation diff, completion message, or implementer-authored tests. Reports PASS/FAIL/NOT-TESTABLE per criterion; never fixes source itself. Wired as an optional harness-continue Phase 4 step (3.5): spawns before marking a feature passing when spec.verdict is PASS AND (risk elevated OR require_plan_approval), recording proof.evidence_type conformance on success, routing any FAIL back as a finding rather than marking passing. AC3 (schema accepts evidence_type \"conformance\") was ALREADY satisfied -- F010/OVI-52 added it to both the qa_binding and proof.evidence_type enums proactively when it shipped, confirmed via git blame and the pre-existing \"fsv: accepts qa_binding value conformance\" test; no schema change needed here despite schemas/feature.schema.json being in the declared scope list.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Checked git history for the evidence_type enum before assuming a schema change was needed -- found F010 had already added \"conformance\" to both enums proactively, avoiding a redundant/conflicting edit to an already-correct schema.",
+        "Mutation-tested both new lint checks (the AC1 tools-set check and the AC2 blindness-rule check) against targeted defects; both caught their mutation."
+      ],
       "failure_reason": null,
       "discovered_via": null,
       "spec": {

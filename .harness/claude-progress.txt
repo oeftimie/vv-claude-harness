@@ -626,3 +626,25 @@
   (discovered_via F013), per Ovidiu's standing instruction to keep working through
   everything from Linear without waiting for check-ins.
 - Blockers: none.
+
+## Session 30 - 2026-08-01 (F017/OVI-65: author-blind conformance tester)
+- Feature: F017 - author-blind conformance tester (anti-reward-hacking gate)
+- Status: complete
+- New agents/conformance-tester.md (vv-harness:conformance-tester, sonnet, tools
+  Read/Grep/Glob/Write/Bash): derives behavior tests from a feature's verified
+  description and acceptance criteria alone, hard-forbidden from reading the
+  implementation diff, completion message, or implementer-authored tests. Reports
+  PASS/FAIL/NOT-TESTABLE per criterion; never fixes source itself.
+- Wired as an optional harness-continue Phase 4 step (3.5): spawns before marking a
+  feature passing when spec.verdict is PASS AND (risk elevated OR
+  require_plan_approval), recording proof.evidence_type conformance on success,
+  routing any FAIL back as a finding.
+- AC3 (schema accepts evidence_type "conformance") was already satisfied -- F010/OVI-52
+  added it to both enums proactively; confirmed via git blame before assuming a schema
+  change was needed.
+- Tests: 1417/1417 passing (full_test is the gate; +6 F017 assertions, 2
+  mutation-tested).
+- Next: F018-F021 (four remaining Linear OVI-44 sub-issues) and F063
+  (discovered_via F013), per Ovidiu's standing instruction to keep working through
+  everything from Linear without waiting for check-ins.
+- Blockers: none.

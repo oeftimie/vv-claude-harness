@@ -7,11 +7,12 @@ This file is referenced in CLAUDE.md and loaded every session.
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped, each through the standard TDD + mutation-test + adversarial-review-to-APPROVE loop. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
 - Freshest arc (F055-F062, prior session, see Meta-Session 2026-07-31 below): the LEAD_OWNED protection family (harness.json, teammate-scope.txt, .harness/mld/) plus TeammateIdle/shutdown coordination fixes (F055, F059) plus one pure-research feature that resolved to documentation instead of code (F061).
 - **Correction, 2026-07-31**: the long-repeated "F012/F013 blocked awaiting Ovidiu's answers" claim (carried across many session handoffs since session 11) was stale, not current. `features.json`'s own `spec` field showed `verdict: "PASS"` for both, sha256(description) matched the stored hash exactly (no drift), and direct Linear queries (`get_issue`, `list_comments`) on OVI-53 and OVI-63 showed zero open-question comment threads. Ovidiu confirmed to proceed once this was surfaced. Lesson: a claim repeated across many handoffs with no fresh evidence is a signal to re-verify, not to re-relay.
-- F012/OVI-53 (portable readiness-stamp signing) shipped, merged to main (PR #98). Notable catch: the actual Linear spec text (fetched via `get_issue`, not the terse local `features.json` description mirror) specified a flat, presence-gated `prep.kick_command` -- the first implementation pass had nested it as `prep.runner.kick_command` with a leftover `enabled` flag, caught only by re-checking against the real spec source before committing. Full detail in F012's own `notes`/`approaches_tried`.
-- F013/OVI-63 (mechanical stamp for /harness-init) shipped, merged to main (PR #99, 2 review rounds -- round 1 caught a real JSON-injection/crash bug via unescaped project_name substitution, fixed with json.dumps-based escaping). Full detail in F013's own `notes`/`approaches_tried`. Filed F063 (discovered_via F013, harness-doctor/fixes.py wiring drift, pre-existing and out of scope) as a follow-up.
-- F015/OVI-55 (promotion ladder + ablation pass in Phase 5.5) shipped, merged to main (PR #100, 2 review rounds -- round 1 caught a real markdown fence-nesting regression in rules/context-summary.md that escaped headings and orphaned trailing prose into a broken code block, verified with pandoc). Full detail in F015's own `notes`/`approaches_tried`.
-- F016/OVI-57 (worker epoch record + requalification checklist) implemented. New `harness_worker_block` sub-schema in schemas/feature.schema.json for harness.json's optional worker block; harness-continue Step 2.6 (defensive `claude --version` check, delta>=10 requalification prompt, silent-skip when unavailable); new docs/requalification.md checklist (4-candidate subtraction pass, inherit-vs-pinned per role, verified-live annotations); rules/agent-teams-protocol.md's Model Selection table reframed as the single bindings table; CLAUDE_CODE_SUBAGENT_MODEL footgun warning added to templates/CLAUDE.md. Full detail in F016's own `notes`/`approaches_tried`.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F017-F021 (five remaining Linear OVI-44 sub-issues) and F063 (discovered_via F013) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
+- F012/OVI-53 (portable readiness-stamp signing) shipped, merged to main (PR #98). See F012's own `notes` for the `prep.kick_command` spec-conformance catch.
+- F013/OVI-63 (mechanical stamp for /harness-init) shipped, merged to main (PR #99). Filed F063 (discovered_via F013, harness-doctor/fixes.py wiring drift, pre-existing and out of scope) as a follow-up.
+- F015/OVI-55 (promotion ladder + ablation pass in Phase 5.5) shipped, merged to main (PR #100).
+- F016/OVI-57 (worker epoch record + requalification checklist) shipped, merged to main (PR #101, 2 review rounds -- round 1 caught the feature was inert: spec item 1 said the worker block is "written by /harness-init" but no code path ever wrote it, fixed by adding the write step outside the declared scope list and recording a scope_expansion).
+- F017/OVI-65 (author-blind conformance tester) implemented. New agents/conformance-tester.md (sonnet): derives behavior tests from a feature's verified description alone, hard-forbidden from reading the implementation diff/completion message/implementer tests. Wired as an optional harness-continue Phase 4 step for spec-verified + elevated-risk features. AC3 (schema evidence_type "conformance") was already satisfied by F010's proactive addition -- confirmed via git blame before assuming a schema change was needed. Full detail in F017's own `notes`/`approaches_tried`.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F018-F021 (four remaining Linear OVI-44 sub-issues) and F063 (discovered_via F013) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
 - No other locally-discovered work is queued.
 
 ## Cross-Cutting Concerns
@@ -978,5 +979,27 @@ This file is referenced in CLAUDE.md and loaded every session.
   mutation meant a weak check, then redone with a heredoc to get a
   trustworthy result. A reminder that a mutation test's own tooling
   needs the same skepticism as the code it's testing.
+- Plan approval: not applicable -- single-session implementation, no
+  teammates spawned.
+
+## Meta-Session 2026-08-01 (F017/OVI-65: author-blind conformance tester)
+- Scope accuracy: held the declared scope exactly (agents/conformance-tester.md,
+  skills/harness-continue/SKILL.md, schemas/feature.schema.json,
+  test/run-tests.sh); zero scope_expansions -- schemas/feature.schema.json
+  was in scope but needed no edit (see below).
+- Verified-before-assuming: checked git history for the evidence_type enum
+  before touching schemas/feature.schema.json, and found F010/OVI-52 had
+  already added "conformance" to both the qa_binding and proof.evidence_type
+  enums proactively when it shipped. Confirmed AC3 was already satisfied
+  rather than making a redundant edit to an already-correct schema (which
+  could have introduced a real conflict, e.g. a duplicate enum entry, if
+  done carelessly).
+- Model calibration: single-session, no sub-agents spawned for
+  implementation.
+- Discovery lineage: none -- F017 was a pre-existing Linear-tracked
+  feature (OVI-65), not discovered mid-work.
+- Approach patterns: mutation-tested both new lint checks (the frontmatter
+  tools-set check, the blindness-rule presence check) against targeted
+  defects; both caught their mutation on the first attempt.
 - Plan approval: not applicable -- single-session implementation, no
   teammates spawned.
