@@ -1296,15 +1296,27 @@ This file is referenced in CLAUDE.md and loaded every session.
   retirement condition, matching F061's own precedent that an unchecked
   retirement condition can't be trusted).
 - Design decision made without asking (Ovidiu asleep, standing autonomous
-  instruction): verified via direct docs fetch (code.claude.com/docs/en/hooks)
+  instruction): verified via a WebFetch of code.claude.com/docs/en/hooks
   BEFORE deciding how to split the two gaps -- gap #1 (tool-only escape
-  hatch) is genuinely hook-fixable; gap #2 (task-list blindness) is not,
-  confirmed by the same TeammateIdle payload inspection F055 already
-  established. This is the same resolution shape as F061 earlier this
-  session (investigate first, discover a genuine platform ceiling, document
-  it as a Known Limitation with a retirement condition rather than force a
-  fake mechanical fix) -- recognized the pattern match and reused it rather
-  than re-deriving from scratch.
+  hatch) is genuinely hook-fixable; gap #2 (task-list blindness) was
+  believed not to be, on the premise that TeammateIdle carries no teammate
+  identity at all (matching F055's original, also-false claim). CORRECTION
+  (round-1 review, review-pr112-f067): that premise was WRONG -- the
+  WebFetch had truncated before reaching the TeammateIdle section of a
+  2900+ line page and silently answered from the common-fields table
+  instead. A raw curl of the same URL showed `teammate_name` (and
+  deprecated `team_name`) genuinely present. Fixed in the same PR before
+  merge: corrected the false claim everywhere it appeared (this hook's
+  header comment, its template, agent-teams-protocol.md, maintenance-
+  runbook.md, features.json's own F067 notes), reframed gap #2 from
+  "platform-impossible" to "not attempted, now known possible" (F069
+  filed to consider a real fix), and re-verified F061's separate,
+  different claim (no lead-vs-teammate discriminator) was NOT affected by
+  the same error -- grepped the raw fetch for `is_lead|isLead|leadSession|
+  team_role|agent_role`, zero matches, F061 stands correct. Lesson
+  generalized: WebFetch is not reliable for factual claims about a specific
+  section of a large reference page; raw curl + grep is the safer pattern
+  for anything load-bearing.
 - Extended two existing mechanisms instead of adding parallel new ones:
   F059's early-release rule (rather than a new rule with overlapping
   scope), and F061's maintenance-runbook probe item 6 (rather than a
@@ -1324,3 +1336,44 @@ This file is referenced in CLAUDE.md and loaded every session.
   F021), not a source of further discoveries this round.
 - Model calibration: single-session, no sub-agents spawned.
 - Plan approval: not applicable -- single-session implementation.
+
+## Meta-Session 2026-07-31
+Session-level retrospective for the autonomous overnight run Ovidiu kicked off
+before going to sleep ("work until everything from Linear is solved... see
+you tomorrow"). Per-feature retrospectives for every feature shipped in this
+run already exist above (F063 through F067); this entry is the required
+session-level checkpoint the prior session ended without writing, flagged by
+session-end.sh at the next SessionStart.
+- Scope of the run: shipped F063, F064, F065, F066, F067 (5 discovered
+  follow-ups, no Linear issues -- the 21 original OVI-44 Linear sub-issues
+  were already complete going into this run). Filed F068 (during F066) and
+  F069 (during F067's round-1 review) as further follow-ups, both still
+  `pending` at the end of this run.
+- Biggest catch of the run: F067's round-1 review (review-pr112-f067)
+  falsified a foundational, already-shipped claim from F055 -- that the
+  TeammateIdle hook payload carries no teammate identity at all. The claim
+  traced back to a WebFetch of a 2900+ line docs page that truncated before
+  the relevant section and silently answered from the wrong table. A raw
+  curl fetch of the same URL, done independently by both the reviewer and
+  the lead, showed `teammate_name` is genuinely present. Corrected
+  everywhere F067 touched the claim before merge; F069 filed for the
+  remaining occurrences (agents/reviewer.md, README.md, and a proposed,
+  not silent, CHANGELOG.md fix, since CHANGELOG.md is Human-Owned).
+- Pattern reused across the run rather than re-derived each time: "extend an
+  existing mechanism instead of adding a parallel one" (F059's early-release
+  rule extended for F067; F061's maintenance-runbook probe item extended for
+  F067's retirement condition instead of a near-duplicate item), and
+  "investigate a suspicious check before trusting it" (F063's mutation-test
+  false-pass, F066's fixture cry-wolf and null-guard crash, F067's falsified
+  design premise all caught this way).
+- Process lesson for future sessions: WebFetch is not reliable for a factual
+  claim anchored to one section of a large reference page -- it can
+  summarize from the wrong part of the page without any visible signal that
+  it did so. For anything load-bearing (a design premise, a documented
+  platform limitation), prefer `curl -sL <url>.md -o <scratch-file>` and
+  grep/read the raw text directly.
+- Retrospective discipline gap this entry fixes: session-end.sh's Meta-
+  Session date check depends on writing the session-level entry at the
+  *end* of the session, not folding it into the last feature's own
+  Meta-Session entry -- the two are different checkpoints even when they
+  land in the same session. Noting this explicitly so it isn't repeated.

@@ -1944,7 +1944,7 @@
     },
     {
       "id": "F067",
-      "description": "check-remaining-tasks.sh's TeammateIdle nudge has two related gaps surfaced by F021's eval subagents (general-purpose, not vv-harness:reviewer): (1) its escape hatch ('if your role has no Edit/Write tools, this does not apply to you') is keyed on tool inventory, not on assignment scope -- a general-purpose subagent given an explicit read-only task (like an eval run) has Edit/Write by construction and gets nudged in a loop toward claiming the next feature, with no way to signal 'my assignment is scoped and complete' short of going idle and re-triggering the same nudge. (2) the claimable-feature count reads features.json status only and ignores task-level claims -- F021 was counted as unclaimed/claimable while TaskList showed task #8 in_progress under the lead, a features.json/TaskList sync gap. F055 (shipped) addressed the reviewer-specific case via agents/reviewer.md's construction-level guarantee; this is the same root design gap (TeammateIdle carries no teammate identity) recurring for ad-hoc read-only assignments the F055 fix doesn't cover.",
+      "description": "check-remaining-tasks.sh's TeammateIdle nudge has two related gaps surfaced by F021's eval subagents (general-purpose, not vv-harness:reviewer): (1) its escape hatch ('if your role has no Edit/Write tools, this does not apply to you') is keyed on tool inventory, not on assignment scope -- a general-purpose subagent given an explicit read-only task (like an eval run) has Edit/Write by construction and gets nudged in a loop toward claiming the next feature, with no way to signal 'my assignment is scoped and complete' short of going idle and re-triggering the same nudge. (2) the claimable-feature count reads features.json status only and ignores task-level claims -- F021 was counted as unclaimed/claimable while TaskList showed task #8 in_progress under the lead, a features.json/TaskList sync gap. F055 (shipped) addressed the reviewer-specific case via agents/reviewer.md's construction-level guarantee; this is the same shape of gap (TeammateIdle nudges every idle teammate uniformly, regardless of what it was actually assigned) recurring for ad-hoc read-only assignments the F055 fix doesn't cover. Correction (round-1 review): the hook payload DOES carry teammate_name -- F055's original premise that it carries no teammate identity at all was wrong, confirmed via raw curl of code.claude.com/docs/en/hooks.md after a WebFetch-based check had truncated before reaching the TeammateIdle section and silently answered from the common-fields table instead. The genuine remaining gap is narrower: no task-list snapshot, and this hook doesn't use teammate_name even though it could.",
       "priority": 68,
       "status": "passing",
       "scope": [
@@ -1956,7 +1956,7 @@
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
       "coverage": "7 new assertions: 2 in the ht: section (stderr guidance broadened, actionable decline-once instruction), 5 in the mnt: section (protocol.md extension + Known Limitation callout + Known Limitations bullet, maintenance-runbook probe, live-copy-vs-template drift guard). All mutation-tested: template reverted (2 ht: assertions fail), live copy reverted alone (drift-guard assertion fails, ht: assertions correctly unaffected since they exercise the template via install_hooks), and each of the 3 protocol.md additions reverted independently (each corresponding mnt: assertion fails, nothing else).",
-      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): 5 of 6 eval subagents hit the idle-nudge loop after delivering their read-only result and had to be explicitly shut down by the lead. Not fixed in F021 -- .claude/hooks/ is out of F021's declared scope. RESOLVED: gap #1 fixed at the hook-guidance + lead-judgment-rule level (fixable); gap #2 resolved as a documented Known Limitation with a retirement condition (genuine platform limitation, confirmed via docs, not fixable in the hook itself -- same resolution shape as F061).",
+      "notes": "discovered_via F021 (orientation-recovery eval, 2026-08-01): 5 of 6 eval subagents hit the idle-nudge loop after delivering their read-only result and had to be explicitly shut down by the lead. Not fixed in F021 -- .claude/hooks/ is out of F021's declared scope. RESOLVED: gap #1 fixed at the hook-guidance + lead-judgment-rule level (fixable); gap #2 resolved as a documented Known Limitation with a retirement condition (genuine platform limitation, confirmed via docs, not fixable in the hook itself -- same resolution shape as F061). CORRECTION (round-1 review, review-pr112-f067, 2026-08-01): the original 'confirmed zero teammate identity' claim above was FALSE, caused by a WebFetch truncation artifact on a 2900+ line docs page, not a real platform check. Re-verified via raw curl: teammate_name IS present in TeammateIdle's hook input. All prose making the false claim (check-remaining-tasks.sh + template header comments, agent-teams-protocol.md's callout/bullet/F059 sentence, maintenance-runbook.md probe item 6) corrected in the same PR before merge. F069 filed to cover the broader correction in agents/reviewer.md, README.md, and a proposed (not silent) CHANGELOG.md fix.",
       "correction_cycles": 0,
       "scope_expansions": [
         "skills/harness-init/check-remaining-tasks.sh.template: the canonical distribution source for the live .claude/hooks/ copy F067 declared in scope -- editing only the live copy would have fixed this repo's own dogfooding instance while leaving every /harness-init-installed project permanently un-fixed. Kept byte-identical to the live copy, matching F063's precedent, with a new drift-detection test guarding it.",
@@ -1964,7 +1964,7 @@
         "docs/maintenance-runbook.md: F067's retirement condition needed a probe wired to it, matching F061's own precedent (an undocumented retirement condition can't be checked). Extended F061's existing probe item 6 rather than duplicating the identical docs-page fetch as a new item."
       ],
       "approaches_tried": [
-        "Verified via direct fetch of code.claude.com/docs/en/hooks (not memory) exactly what TeammateIdle's hook input contains: only the common fields (session_id, prompt_id, transcript_path, cwd, permission_mode, effort, hook_event_name) -- confirmed zero teammate identity and zero task-list state, resolving the design question before implementation: gap #1 is fixable at the hook's stderr-text level (broaden the escape hatch), gap #2 is not fixable in the hook at all (genuine platform limitation, matching F061's own already-verified finding for the analogous lead-vs-teammate blindness).",
+        "Verified via WebFetch of code.claude.com/docs/en/hooks exactly what TeammateIdle's hook input contains -- this WebFetch truncated before reaching the TeammateIdle section of the page and silently answered from the common input fields table instead, producing a FALSE conclusion (zero teammate identity) that was only caught during round-1 review. Corrected via raw curl of the same URL: TeammateIdle's input carries the common fields PLUS teammate_name (and deprecated team_name), but still no task-list snapshot. Gap #1 (tool-only escape hatch) is fixable at the hook's stderr-text level regardless of this correction. Gap #2 (task-list blindness) remains a genuine platform limitation -- matching F061's own already-verified finding for the analogous lead-vs-teammate blindness -- but keying the escape hatch off teammate_name directly is now a real, un-attempted option, not a platform impossibility; tracked as a follow-up (F069) rather than expanding this PR.",
         "Broadened check-remaining-tasks.sh.template's escape-hatch stderr line to carve out scoped one-shot assignments (not just role by construction), resynced the live .claude/hooks/ copy to match exactly, added a drift-detection test guarding the two stay in sync.",
         "Extended F059's 'Early release for role-limited teammates' rule in rules/agent-teams-protocol.md with a new subsection naming the scoped-one-shot case explicitly, citing this session's own repeated live evidence (every reviewer subagent hit the loop) rather than a hypothetical.",
         "Added a 'Known limitation (F067)' inline callout plus a matching Known Limitations bullet, mirroring F061's exact dual-placement pattern (established during F061's own round-2 review) -- states the consequence, the fallback (lead keeps features.json synchronized with task claims), and a retirement condition.",
@@ -1994,6 +1994,35 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "F066",
+      "spec": null
+    },
+    {
+      "id": "F069",
+      "description": "F055's foundational claim that the TeammateIdle hook payload 'carries no teammate identity' is FALSE, discovered during F067's round-1 review. Confirmed via raw curl of code.claude.com/docs/en/hooks.md (a WebFetch-based check during F055 truncated before reaching the TeammateIdle section, ~line 2310 of a 2900+ line page, and silently answered from the common-fields table instead): TeammateIdle's input DOES carry `teammate_name` (plus deprecated `team_name`). agents/reviewer.md:32-33 and README.md:174 both repeat the false claim; CHANGELOG.md:83 does too but is Human-Owned (propose corrections, don't silently edit). F067 already corrected .claude/hooks/check-remaining-tasks.sh (+ its template) and rules/agent-teams-protocol.md's relevant passages. This feature covers: (1) correcting agents/reviewer.md and README.md's remaining false claims; (2) proposing a CHANGELOG.md correction to Ovidiu rather than editing it directly; (3) the real design question F067 deliberately deferred -- now that teammate_name is confirmed present, check-remaining-tasks.sh COULD key its escape hatch off it directly (e.g. matching against a documented naming convention for review-only teammates) instead of relying entirely on prose guidance and lead judgment. Needs its own design pass (what naming convention, if any, is guaranteed; whether a wrong guess is worse than the current prose-only approach) before implementation, not a quick mechanical extension.",
+      "priority": 70,
+      "status": "pending",
+      "scope": [
+        "agents/reviewer.md",
+        "README.md",
+        "CHANGELOG.md",
+        ".claude/hooks/check-remaining-tasks.sh",
+        "skills/harness-init/check-remaining-tasks.sh.template",
+        "rules/agent-teams-protocol.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F055",
+        "F067"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "discovered_via F067 (round-1 review, review-pr112-f067, 2026-08-01): the reviewer independently re-fetched code.claude.com/docs/en/hooks.md with curl (not WebFetch) after finding F067's own docs claims suspicious, and found the TeammateIdle section (documenting teammate_name) sits ~line 2310 of a 2900+ line page -- past where a WebFetch-based summarization apparently truncates. F067 itself was corrected in round 1 before merge; this feature covers the remaining false claims in files F067 didn't touch, plus the now-real design question of whether a mechanical fix is worth building.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F067",
       "spec": null
     }
   ]
