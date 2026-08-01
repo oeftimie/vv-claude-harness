@@ -5,9 +5,8 @@ This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
-- Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues), all shipped so far through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up -- F016's `risk` trigger and F017's own conformance-tester trigger share the same underlying gap, that `risk`/`require_plan_approval` aren't persisted durably on the feature object), F018/OVI-66 (dual-engine review, docs/protocol only) implemented this session. See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
-- F019-F021 (three remaining Linear OVI-44 sub-issues) and F063/F064 (discovered follow-ups) are next, worked in the same autonomous loop.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F018-F021 (four remaining Linear OVI-44 sub-issues) and F063 (discovered_via F013) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
+- Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues), all shipped so far through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up -- F016's `risk` trigger and F017's own conformance-tester trigger share the same underlying gap, that `risk`/`require_plan_approval` aren't persisted durably on the feature object), F018/OVI-66 (PR #103, dual-engine review, docs/protocol only), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md, this session) implemented. See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F020-F021 (two remaining Linear OVI-44 sub-issues) and F063/F064 (discovered follow-ups) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
 - No other locally-discovered work is queued.
 
 ## Cross-Cutting Concerns
@@ -1018,3 +1017,36 @@ This file is referenced in CLAUDE.md and loaded every session.
   by deleting one of the four rules; caught correctly on the first attempt.
 - Plan approval: not applicable -- single-session implementation, no
   teammates spawned.
+
+## Meta-Session 2026-08-01 (F019/OVI-58: AGENTS.md routing layer)
+- Scope accuracy: the initial implementation held the declared scope (AGENTS.md,
+  CLAUDE.md, skills/AGENTS.md, test/AGENTS.md) exactly. Round-trip review found one
+  real regression: a pre-existing test checked CLAUDE.md for the workaround-
+  retirement-condition rule, which this feature moved to AGENTS.md -- fixed by
+  redirecting the test outside the declared scope list, recorded as a
+  scope_expansion.
+- Verified-before-committing: fetched Claude Code's own official documentation
+  for the `@path` import mechanism before writing CLAUDE.md around it, rather than
+  trusting the spec's own claim ("documented feature, used by vv since v2.1") or
+  training-data recall alone. Found it's not just supported but the explicitly
+  documented, first-party recommended pattern for exactly this AGENTS.md/CLAUDE.md
+  coexistence use case -- a genuinely strong verification, not a guess dressed up
+  as one.
+- Honest partial verification, consistent with F018's precedent: AC4 (a fresh
+  Codex/Cursor session surfaces AGENTS.md guidance) was not independently
+  live-verified. Confirmed via web search that AGENTS.md is a real,
+  OpenAI-originated, now-widely-adopted convention Codex reads natively, looked
+  for a zero-cost check (a reported `--print-instructions` flag) and found it
+  doesn't exist in the actually-installed CLI version, and declined to spend a
+  real paid Codex invocation just to verify further. Left the actual manual
+  check for Ovidiu's next real session, same discipline as F018's Codex
+  verification boundary.
+- Model calibration: single-session, no sub-agents spawned for implementation.
+- Discovery lineage: none -- F019 was a pre-existing Linear-tracked feature
+  (OVI-58), not discovered mid-work.
+- Approach patterns: manually diffed both root files side by side to confirm
+  zero duplicated sentences (AC1) before considering the split done, rather than
+  relying only on the full-suite green run (which wouldn't have caught a
+  duplicated sentence at all, since no automated check for that exists).
+- Plan approval: not applicable -- single-session implementation, no teammates
+  spawned.

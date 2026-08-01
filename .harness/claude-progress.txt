@@ -669,3 +669,31 @@
   follow-ups), per Ovidiu's standing instruction to keep working through everything
   from Linear without waiting for check-ins.
 - Blockers: none.
+
+## Session 32 - 2026-08-01 (F019/OVI-58: AGENTS.md routing layer)
+- Feature: F019 - AGENTS.md routing layer for the distribution repo (cross-agent legibility)
+- Status: complete
+- New root AGENTS.md (49 lines): repo identity, the moved Key Distinction section,
+  directory map, test command, single-version rule, git identity, and the
+  workaround-retirement-condition rule (moved from CLAUDE.md -- general project
+  policy, not Claude-specific). CLAUDE.md rewritten to `@AGENTS.md` (line 1) plus only
+  genuinely Claude-specific content (Harness section, Harness Prep skill note).
+- Verified via Claude Code's own official docs that @AGENTS.md is the documented,
+  first-party recommended pattern for this exact AGENTS.md/CLAUDE.md coexistence use
+  case, not an assumption.
+- Two nested guides added: skills/AGENTS.md (22 lines) and test/AGENTS.md (24 lines),
+  both within the ~25-line cap and both earning their keep with real, directory-
+  specific conventions not covered by the root.
+- Fixed a pre-existing test broken by the content move (retirement-condition rule
+  check redirected from CLAUDE.md to AGENTS.md) -- outside declared scope, recorded
+  as a scope_expansion.
+- AC4 (fresh Codex/Cursor session surfaces the guidance) left as a manual check for
+  Ovidiu -- confirmed AGENTS.md is a genuine, natively-read Codex convention via web
+  search, but declined to spend a real paid Codex invocation to verify further
+  (matching F018's same discipline).
+- Tests: 1421/1421 passing (full_test is the gate; unaffected count, per AC3 -- one
+  existing test redirected, none added).
+- Next: F020-F021 (two remaining Linear OVI-44 sub-issues) and F063/F064 (discovered
+  follow-ups), per Ovidiu's standing instruction to keep working through everything
+  from Linear without waiting for check-ins.
+- Blockers: none.
