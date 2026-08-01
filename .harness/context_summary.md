@@ -4,14 +4,9 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
-- The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped, each through the standard TDD + mutation-test + adversarial-review-to-APPROVE loop. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
-- Freshest arc (F055-F062, prior session, see Meta-Session 2026-07-31 below): the LEAD_OWNED protection family (harness.json, teammate-scope.txt, .harness/mld/) plus TeammateIdle/shutdown coordination fixes (F055, F059) plus one pure-research feature that resolved to documentation instead of code (F061).
-- **Correction, 2026-07-31**: the long-repeated "F012/F013 blocked awaiting Ovidiu's answers" claim (carried across many session handoffs since session 11) was stale, not current. `features.json`'s own `spec` field showed `verdict: "PASS"` for both, sha256(description) matched the stored hash exactly (no drift), and direct Linear queries (`get_issue`, `list_comments`) on OVI-53 and OVI-63 showed zero open-question comment threads. Ovidiu confirmed to proceed once this was surfaced. Lesson: a claim repeated across many handoffs with no fresh evidence is a signal to re-verify, not to re-relay.
-- F012/OVI-53 (portable readiness-stamp signing) shipped, merged to main (PR #98). See F012's own `notes` for the `prep.kick_command` spec-conformance catch.
-- F013/OVI-63 (mechanical stamp for /harness-init) shipped, merged to main (PR #99). Filed F063 (discovered_via F013, harness-doctor/fixes.py wiring drift, pre-existing and out of scope) as a follow-up.
-- F015/OVI-55 (promotion ladder + ablation pass in Phase 5.5) shipped, merged to main (PR #100).
-- F016/OVI-57 (worker epoch record + requalification checklist) shipped, merged to main (PR #101, 2 review rounds -- round 1 caught the feature was inert: spec item 1 said the worker block is "written by /harness-init" but no code path ever wrote it, fixed by adding the write step outside the declared scope list and recording a scope_expansion).
-- F017/OVI-65 (author-blind conformance tester) implemented. New agents/conformance-tester.md (sonnet): derives behavior tests from a feature's verified description alone, hard-forbidden from reading the implementation diff/completion message/implementer tests. Wired as an optional harness-continue Phase 4 step for spec-verified + elevated-risk features. AC3 (schema evidence_type "conformance") was already satisfied by F010's proactive addition -- confirmed via git blame before assuming a schema change was needed. Full detail in F017's own `notes`/`approaches_tried`.
+- The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
+- Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues), all shipped so far through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up -- F016's `risk` trigger and F017's own conformance-tester trigger share the same underlying gap, that `risk`/`require_plan_approval` aren't persisted durably on the feature object), F018/OVI-66 (dual-engine review, docs/protocol only) implemented this session. See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
+- F019-F021 (three remaining Linear OVI-44 sub-issues) and F063/F064 (discovered follow-ups) are next, worked in the same autonomous loop.
 - Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features -- F018-F021 (four remaining Linear OVI-44 sub-issues) and F063 (discovered_via F013) are next, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
 - No other locally-discovered work is queued.
 
@@ -1001,5 +996,25 @@ This file is referenced in CLAUDE.md and loaded every session.
 - Approach patterns: mutation-tested both new lint checks (the frontmatter
   tools-set check, the blindness-rule presence check) against targeted
   defects; both caught their mutation on the first attempt.
+- Plan approval: not applicable -- single-session implementation, no
+  teammates spawned.
+
+## Meta-Session 2026-08-01 (F018/OVI-66: optional dual-engine review)
+- Scope accuracy: held the declared scope exactly (rules/agent-teams-protocol.md,
+  agents/reviewer.md, README.md, test/run-tests.sh); zero scope_expansions.
+- Grounded a "verified live" annotation in genuine, minimal live verification
+  rather than either fabricating it or skipping it: checked `codex --help` and
+  `codex review --help` to confirm the exact pinned flag exists, and `codex
+  doctor` to confirm auth/reachability -- but deliberately did NOT run a full
+  `codex review` against a real diff, since that would spend Ovidiu's Codex
+  subscription usage without an explicit go-ahead for that specific action.
+  The annotation states precisely what was verified (command existence + auth)
+  versus what wasn't (a completed review's actual output), rather than letting
+  "verified live" imply more than it means.
+- Model calibration: single-session, no sub-agents spawned for implementation.
+- Discovery lineage: none -- F018 was a pre-existing Linear-tracked feature
+  (OVI-66), not discovered mid-work.
+- Approach patterns: mutation-tested the section-scoped synthesis-rules check
+  by deleting one of the four rules; caught correctly on the first attempt.
 - Plan approval: not applicable -- single-session implementation, no
   teammates spawned.

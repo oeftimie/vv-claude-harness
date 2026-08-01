@@ -648,3 +648,24 @@
   (discovered_via F013), per Ovidiu's standing instruction to keep working through
   everything from Linear without waiting for check-ins.
 - Blockers: none.
+
+## Session 31 - 2026-08-01 (F018/OVI-66: optional dual-engine review)
+- Feature: F018 - optional dual-engine review (Codex second reviewer + synthesizer rules)
+- Status: complete
+- Documentation/protocol-only (AC3: no new executable code paths). New "## Dual-Engine
+  Review" section in rules/agent-teams-protocol.md: optional harness.json
+  review.second_engine config, blind-parallel spawn rule, explicit skip-with-note when
+  the codex CLI is absent, the pinned `codex review --base <BASE_BRANCH>` invocation,
+  and the 4 synthesis rules (dedupe by defect, single-engine CRITICAL survives,
+  cross-engine agreement raises confidence, provenance via git show merge-base).
+  agents/reviewer.md gained a pointer to the synthesis rules and a blindness
+  instruction. README.md documents it in the Parallel work section.
+- Verified live 2026-08-01 on Codex CLI 0.145.0: confirmed the exact `codex review
+  --base` flag via --help and CLI auth/reachability via `codex doctor`, but did NOT
+  run a full review (avoiding unauthorized Codex subscription spend) -- the annotation
+  states precisely what was and wasn't verified.
+- Tests: 1421/1421 passing (full_test is the gate; +3 F018 assertions, mutation-tested).
+- Next: F019-F021 (three remaining Linear OVI-44 sub-issues) and F063/F064 (discovered
+  follow-ups), per Ovidiu's standing instruction to keep working through everything
+  from Linear without waiting for check-ins.
+- Blockers: none.
