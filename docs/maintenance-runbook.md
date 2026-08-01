@@ -127,9 +127,14 @@ way.
      `effort`, `hook_event_name`, plus `agent_id`/`agent_type` for
      `--agent`/subagent mode only) as of the date that callout was written.
    - `rules/agent-teams-protocol.md`'s "Known limitation (F067)" callout
-     documents that `TeammateIdle`'s hook input carries only those same
-     common fields, no task-list snapshot, confirmed against the same page
-     on the same date.
+     documents that `TeammateIdle`'s hook input carries the common fields
+     plus `teammate_name`/`team_name`, but no task-list snapshot, confirmed
+     against the same page on the same date. (F067's round-1 review found an
+     earlier draft of this callout, and F055's original claim, wrongly said
+     `TeammateIdle` carries no teammate identity at all -- a WebFetch-based
+     check had truncated before reaching the relevant section of the page;
+     a raw fetch corrected it. `teammate_name` being present does not close
+     the task-list-snapshot gap this item's retirement condition tracks.)
    No existing probe covers either: item 3 above checks `TaskCompleted`/
    `TeammateIdle`/`SessionStart`/`SessionEnd` PAYLOAD SHAPE for regressions,
    not PreToolUse/TeammateIdle hook input for a NEW field's addition.

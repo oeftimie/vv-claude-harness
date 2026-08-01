@@ -6568,13 +6568,13 @@ fi
 # (Edit/Write by construction, but no open-ended implementation work) had no
 # way to signal "my assignment is done" short of an idle-nudge loop.
 if grep -q "Extension to scoped one-shot assignments (F067)" "$PROTOCOL_MD" \
-  && grep -q "not role-limited by construction" "$PROTOCOL_MD"; then
+  && grep -q "is NOT role-limited by construction" "$PROTOCOL_MD"; then
   pass "mnt (F067): agent-teams-protocol.md extends F059's early-release rule to scoped one-shot assignments"
 else
   fail "mnt (F067): agent-teams-protocol.md is missing the F067 early-release extension"
 fi
 if grep -q "Known limitation (F067)" "$PROTOCOL_MD" \
-  && grep -q "this limitation retires" "$PROTOCOL_MD"; then
+  && grep -q "ever documents a task-list field" "$PROTOCOL_MD"; then
   pass "mnt (F067): agent-teams-protocol.md documents the TeammateIdle task-list-blindness limitation and its retirement condition"
 else
   fail "mnt (F067): agent-teams-protocol.md is missing the F067 limitation callout or its retirement condition"
@@ -6591,14 +6591,10 @@ else
 fi
 
 # F067's fix touches the live .claude/hooks/ copy AND the shipped template --
-# they must stay byte-identical (same drift class F063 closed earlier this
-# session for the settings.json wiring block).
-if diff -q "$REPO_ROOT/skills/harness-init/check-remaining-tasks.sh.template" \
-  "$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh" >/dev/null 2>&1; then
-  pass "mnt (F067): the live check-remaining-tasks.sh copy matches its template exactly"
-else
-  fail "mnt (F067): the live check-remaining-tasks.sh copy has drifted from its template"
-fi
+# they must stay byte-identical. Not a new check: the pre-existing F047 loop
+# (test/run-tests.sh, "== hooks (F047) ==" section, "ht: this repo's installed
+# check-remaining-tasks.sh matches its template") already asserts exactly this
+# for all 5 hooks including this one -- no separate F067 assertion needed here.
 
 if grep -q "[Rr]etirement condition" "$REPO_ROOT/README.md"; then
   pass "mnt: README.md's plan_approval_response mention carries a retirement condition"
