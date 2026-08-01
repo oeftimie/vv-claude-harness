@@ -8392,6 +8392,8 @@ required = [
     "One rollout treated as representative",
     "Activity metrics standing in for outcomes",
     "worker config",
+    "claude --version",
+    "Record",
 ]
 missing = [r for r in required if r not in text]
 if missing:
@@ -8426,6 +8428,9 @@ if missing:
 
 if not re.search(r"^\| *[Rr]un", text, re.MULTILINE):
     print("no per-run results table found (expected a markdown table with a Run column)")
+data_rows = re.findall(r"^\| *[AB][0-9]+ *\|", text, re.MULTILINE)
+if len(data_rows) < 6:
+    print(f"expected >= 6 per-run data rows (3 per condition), found {len(data_rows)}")
 
 if not re.search(r"^#+ *Decision:.*\b(keep|simplify|investigate)\b", text, re.IGNORECASE | re.MULTILINE):
     print("no stated decision (a '### Decision: keep/simplify/investigate...' heading) found")

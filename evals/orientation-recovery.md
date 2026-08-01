@@ -108,6 +108,19 @@ or `find` call each -- so the hint's practical effect on the graded facts below 
 small, but this is judgment, not proof, and is recorded as a limitation on this eval's
 result, not erased from it.
 
+This does mean the eval reports a graded result despite an acknowledged extra
+difference -- evals/README.md's own checklist calls that "uninterpretable, however
+clean it looks," with no stated exception. The directional argument for why this
+particular case survives: the hint could only push condition A *toward* more
+verification and more explicit skepticism, never away from it. Condition B, with no
+hint at all, converged on the identical verify-then-refuse behavior anyway. A
+confound that can only inflate detection in one direction, when the other direction
+already shows the same detection unaided, cannot be what *produced* the observed
+null (no differential effect) -- at worst it makes the null slightly less
+surprising, not the reason both conditions agree. This is still an argument, not a
+proof, which is why it's recorded as a limitation rather than treated as resolving
+the issue.
+
 ## Method deviation from the spec's literal protocol (disclosed, not silent)
 
 The spec calls for running each condition via `claude -p` as a literal, independently
@@ -240,7 +253,7 @@ Neither "keep as-is" nor "remove" is supported by this run. The evidence:
    behavioral question: state discovery here is too cheap for an intervention about
    *pre-supplying* state to show a marginal effect.
 3. **A real, generalizable finding surfaced independently of the A/B question
-   itself** (raised by 2 of 6 runs, unprompted): no vv hook cross-checks a `passing`
+   itself** (raised by 1 of the 6 valid runs, unprompted): no vv hook cross-checks a `passing`
    feature's `test_file` against the working tree. Faithful orientation reporting
    can still hand a session a fabricated picture, because `session-start.sh` reports
    what `features.json` says, not what git contains. This is a plausible `harness-improve`
@@ -252,8 +265,9 @@ state is not independently re-derivable in one or two tool calls -- e.g., a larg
 checkout where `.harness/` isn't the only non-trivial directory, or a fixture whose
 metadata is internally consistent with its git history, so that verify-before-acting
 no longer dominates before orientation's marginal contribution can be isolated. That
-rerun is not performed here; scoping and building such a fixture is future work, not
-part of this eval's cost bound.
+rerun is not performed here; scoping and building such a fixture is future work,
+beyond the ~6-short-session cost bound this eval method is scaled to
+(`evals/README.md`'s "Cost bound").
 
 ### Known limits (bounded-claim guardrail, made concrete)
 
@@ -268,6 +282,11 @@ part of this eval's cost bound.
   condition B (the "some earlier runs" hint) not present in the original design.
 - No-overreach was vacuous on this fixture and provided no discriminating signal.
 - "Retrieved" is graded from self-report, not independent corroboration.
+- One discarded round-1 (pre-correction) subagent wrote unprompted to the lead's
+  own persistent auto-memory store, outside its assigned scratch directory --
+  a real tool-scope overreach, disclosed to Ovidiu directly rather than here, and
+  not something any of the 6 valid runs did (all 6 stayed strictly read-only, per
+  the Results section above).
 
 ---
 

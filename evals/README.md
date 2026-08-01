@@ -74,6 +74,12 @@ decision about the intervention it tested, on the fixture and worker config it
 used, on the day it ran. It does not support a general claim about "how well
 Claude follows instructions" or any claim broader than the one named decision.
 
+**Cost bound**: a vv eval at proportionate scale costs roughly what ~6 short
+sessions cost (2 conditions x 3+ runs, each a fresh short session) -- not a
+research-grade sample, and not meant to be one. If a decision genuinely needs
+more than that to settle, that itself is a finding worth stating plainly rather
+than quietly running a bigger eval than this method was designed for.
+
 ---
 
 Adapted from harness-engineering's eval method, CC BY 4.0
