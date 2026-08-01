@@ -93,8 +93,11 @@ On success this writes, byte-verbatim or rendered from a template in
   Bash hook that fires only on `git commit`, denying compound stage-and-commit forms and
   staged secret-shaped content (see the template's own header for the full check list).
 - `.harness/harness.json` and `.harness/features.json` skeletons with `project`/`stack`/
-  `created` filled in; `git_identity` and `team_structure` are left `null` here (this
-  step and Step 6, respectively, are the decisions that fill them).
+  `created` filled in, plus `plugin_version` (F068) when `${CLAUDE_PLUGIN_ROOT}/
+  .claude-plugin/plugin.json` is readable -- purely mechanical, unlike the two fields
+  below, so the stamp writes it directly rather than deferring it to a follow-up step;
+  `git_identity` and `team_structure` are left `null` here (this step and Step 6,
+  respectively, are the decisions that fill them).
 - `.gitignore` gains `.harness/SESSION_INCOMPLETE`, appended idempotently.
 
 **`.harness/features.json`'s feature schema.** Each feature's shape (the 16 fields, which
@@ -170,6 +173,13 @@ Model Selection table (the single bindings table) at the time you run this -- if
 table has since been requalified to different bindings, use those instead of the
 `opus`/`sonnet`/`opus` shown here. Schema: `schemas/feature.schema.json`'s
 `$defs/harness_worker_block`.
+
+`plugin_version` (F068) is NOT a follow-up step here, unlike `git_identity` and
+`worker` above -- unlike those two, it needs no user decision and no live subprocess
+probe, only a file already sitting next to `scripts/stamp.sh` on disk, so the stamp
+itself writes it directly (see `scripts/stamp.sh`'s own comments). `harness-doctor`
+(F068) compares it against the currently installed plugin on later runs and offers to
+bootstrap or refresh it via `--fix` if it's ever missing or stale.
 
 **3. Write `.harness/context_summary.md`** -- this carries real project judgment (domain,
 constraints, architecture), never zero-decision content, so it stays hand-authored:

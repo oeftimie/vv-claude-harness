@@ -333,6 +333,55 @@ def check_feature_test_files(project_dir):
     return findings
 
 
+def check_version_drift(project_dir, plugin_root):
+    """F068: harness.json's optional plugin_version field records the plugin
+    version a project was last synced against. Round-1 review (PR #113) found
+    that treating absence as silently valid (mirroring the F016 worker block)
+    left the check permanently inert for every pre-existing project: nothing
+    but this check's own --fix ever writes plugin_version, and a check that
+    never fires never fires its fixer either. Absence is instead classified
+    like the harness_state.py "upgrade available" case (see
+    _check_optional_v5_hooks): reported, fixable, not a hard error -- a
+    project that has simply never run doctor --fix since F068 shipped is not
+    broken, just behind."""
+    if not plugin_root:
+        return []  # can't compare without knowing the running plugin's version
+    manifest_path = os.path.join(plugin_root, ".claude-plugin", "plugin.json")
+    if not os.path.isfile(manifest_path):
+        return []
+    try:
+        with open(manifest_path) as fh:
+            current = json.load(fh).get("version")
+    except (OSError, ValueError):
+        return []
+    if not current:
+        return []
+    harness_path = os.path.join(project_dir, ".harness", "harness.json")
+    if not os.path.isfile(harness_path):
+        return []  # already reported by check_harness_state_files
+    try:
+        with open(harness_path) as fh:
+            recorded = json.load(fh).get("plugin_version")
+    except (OSError, ValueError):
+        return []  # already reported by check_harness_state_files
+    if recorded == current:
+        return []
+    if not recorded:
+        return [Finding(
+            f"upgrade available: .harness/harness.json has no plugin_version "
+            f"recorded (currently installed plugin is '{current}')",
+            "run doctor --fix to record it",
+            fix_id="update_plugin_version",
+        )]
+    return [Finding(
+        f".harness/harness.json records plugin_version '{recorded}', but the "
+        f"currently installed plugin is '{current}'",
+        "review CHANGELOG.md between the two versions for hook/skill changes, "
+        "then re-run doctor --fix to update the recorded version",
+        fix_id="update_plugin_version",
+    )]
+
+
 def check_mld_non_injection(project_dir, plugin_root):
     mld_dir = os.path.join(project_dir, ".harness", "mld")
     if not os.path.isdir(mld_dir):
@@ -362,6 +411,7 @@ def run_checks(project_dir, plugin_root):
     findings.extend(check_gitignore(project_dir))
     findings.extend(check_harness_state_files(project_dir, plugin_root))
     findings.extend(check_feature_test_files(project_dir))
+    findings.extend(check_version_drift(project_dir, plugin_root))
     findings.extend(check_mld_non_injection(project_dir, plugin_root))
     return findings
 

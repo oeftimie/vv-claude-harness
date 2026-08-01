@@ -140,6 +140,21 @@ def _copy_harness_state(project_dir, plugin_root):
     return copied
 
 
+def _update_plugin_version(project_dir, plugin_root):
+    if not plugin_root:
+        return False
+    manifest = _load_json(os.path.join(plugin_root, ".claude-plugin", "plugin.json"))
+    if manifest is None or not manifest.get("version"):
+        return False
+    harness_path = os.path.join(project_dir, ".harness", "harness.json")
+    harness = _load_json(harness_path)
+    if harness is None:
+        return False
+    harness["plugin_version"] = manifest["version"]
+    _write_json(harness_path, harness)
+    return True
+
+
 def _load_json(path):
     if not os.path.isfile(path):
         return None
@@ -162,4 +177,5 @@ _FIXERS = {
     "add_settings_wiring": _add_settings_wiring,
     "append_gitignore": _append_gitignore,
     "copy_harness_state": _copy_harness_state,
+    "update_plugin_version": _update_plugin_version,
 }

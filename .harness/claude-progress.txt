@@ -939,3 +939,28 @@
   remaining item in the backlog, per Ovidiu's standing instruction to keep
   working through everything without waiting for check-ins.
 - Blockers: none.
+
+## Session N+1 - 2026-08-01
+- F067 round-1 review (review-pr112-f067, REQUEST CHANGES) found a critical
+  defect: F055's original "TeammateIdle carries no teammate identity" claim
+  was FALSE, caused by a WebFetch truncation on a 2900+ line docs page. Raw
+  curl confirmed teammate_name IS present. Corrected everywhere F067 and
+  F055 assert it (hooks, template, protocol.md, maintenance-runbook.md,
+  features.json), filed F069 for the remaining occurrences outside this
+  PR's scope (agents/reviewer.md, README.md, a proposed CHANGELOG.md fix).
+  Round 2: APPROVE plus one non-blocking nit (F055's own features.json
+  entry needed a forward pointer to its correction), folded in before
+  merge. PR #112 merged, reviewer released.
+- F068: implemented a real plugin_version drift check in harness-doctor
+  (doctor.py + fixes.py), since .harness/harness.json had no version field
+  in any project. Added the initial-recording step to harness-init/SKILL.md
+  and a 6th INSTALL.md upgrade step, mirroring the F016 worker-block
+  pattern. Also fixed two adjacent pre-existing doc gaps in the same "What
+  it checks" list (a mislabeled "Version drift" item, and F066's test_file
+  check never being documented there). 14 new assertions, all
+  mutation-tested. Not yet merged as of this entry (on branch
+  eovidiu/f068-version-drift-check, tests green).
+- Tests: 1476/1476 passing (full_test is the gate).
+- Next: open PR for F068, spawn a reviewer, iterate to APPROVE, merge. Then
+  F069 (design pass needed before implementation -- see its own notes).
+- Blockers: none.

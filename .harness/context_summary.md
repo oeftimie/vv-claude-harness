@@ -6,8 +6,8 @@ This file is referenced in CLAUDE.md and loaded every session.
 ## Active Context
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
 - Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues) is now COMPLETE, all shipped through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up), F018/OVI-66 (PR #103), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md), F020/OVI-59 (skills/harness-improve/SKILL.md), F021/OVI-60 (evals/README.md + evals/orientation-recovery.md, this session, filed F066+F067 as follow-ups). See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. With F021 shipped, ALL 21 original OVI-44 sub-issues are done -- remaining queued work is discovered follow-ups only: F063, F064, F066, F067 (all `pending`), worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge).
-- No other locally-discovered work is queued.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. With F021 shipped, ALL 21 original OVI-44 sub-issues are done -- remaining queued work is discovered follow-ups only, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge). F063-F068 are all shipped (F063 PR #108, F064 PR #109, F065 PR #110, F066 PR #111, F067 PR #112, F068 single-session on `eovidiu/f068-version-drift-check`, not yet merged as of this entry). Only F069 remains `pending`.
+- F069 (filed during F067's round-1 review): the broader correction for F055's falsified "TeammateIdle carries no teammate identity" claim, covering `agents/reviewer.md`, `README.md`, a proposed (not silent) `CHANGELOG.md` fix since it's Human-Owned, and the real design question of whether `check-remaining-tasks.sh` should key its escape hatch off `teammate_name` directly now that it's confirmed present. Needs its own design pass before implementation, not a quick mechanical extension -- see F069's own `notes` for corroborating live evidence gathered during F067's review cycle.
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -1377,3 +1377,40 @@ session-end.sh at the next SessionStart.
   *end* of the session, not folding it into the last feature's own
   Meta-Session entry -- the two are different checkpoints even when they
   land in the same session. Noting this explicitly so it isn't repeated.
+
+## Meta-Session 2026-08-01 (F068: real plugin_version drift check)
+- Design decision made without asking (standing autonomous instruction):
+  F068's own description offered a binary choice -- implement a real check,
+  or correct the doc to stop claiming one. Chose to implement, since
+  `.harness/harness.json` had no version field at all in any project
+  (confirmed by reading the template and this repo's own harness.json
+  before writing any code) and the F016 worker-block pattern (optional
+  field, absence-is-valid, defensive plugin_root skip) was directly
+  reusable rather than needing new design.
+- Scope accuracy: 3 undeclared-but-disclosed expansions beyond the 3-file
+  declared scope: `skills/harness-doctor/fixes.py` (the real check needed a
+  real `--fix` action, living alongside the other four fixers already
+  there), `skills/harness-init/SKILL.md` (new projects need to start with a
+  recorded `plugin_version`, mirroring the worker-block step), and
+  `INSTALL.md` (the doctor SKILL.md's own text claims `--fix` does "exactly
+  the N mechanical steps in INSTALL.md's upgrade section" -- had to add a
+  step there to keep that claim true).
+- Caught two pre-existing, adjacent documentation gaps while editing the
+  same "What it checks" list this feature needed to extend: item 6 was
+  already mislabeled "Version drift" for something that was never a real
+  version comparison (stale PostCompact block + missing v5 artifacts,
+  renamed to "v5 upgrade staleness" to avoid colliding with this feature's
+  actual check), and F066's own test_file check had never been documented
+  in this list at all despite existing in doctor.py and the frontmatter
+  description. Both fixed as part of the same edit rather than filed as
+  further follow-ups, since they were directly adjacent to work already in
+  progress, not a new investigation.
+- Discovery lineage: F068 was itself a discovered follow-up (via F066), not
+  a source of further discoveries this round.
+- Model calibration: single-session, no sub-agents spawned.
+- Plan approval: not applicable -- single-session implementation.
+- Mutation testing: 3 targeted mutations (comparison forced to always
+  report clean, absent-recorded guard removed, fixer made a no-op that
+  returns True without writing), each confirmed to fail exactly the
+  assertions meant to catch that specific defect class, nothing else. Full
+  suite 1476/1476 throughout.
