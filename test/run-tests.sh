@@ -8103,12 +8103,32 @@ else
   fail "f017: conformance-tester.md is missing the attribution line"
 fi
 
-# Edge case/NFR: token cost is documented (one sonnet pass per elevated feature).
-if grep -q "F017/OVI-65" "$REPO_ROOT/rules/agent-teams-protocol.md" \
-  && grep -q "one Sonnet pass" "$REPO_ROOT/rules/agent-teams-protocol.md"; then
+# Edge case/NFR: token cost is documented (one sonnet pass per elevated feature),
+# anchored to the actual Cost Considerations section rather than anywhere in the
+# file -- the assertion message claims a specific section, so the check should too
+# (PR #102 round 2 review: relocating the line elsewhere in the file still passed
+# a whole-file grep).
+COST_SECTION_ERRORS=$(python3 - "$REPO_ROOT/rules/agent-teams-protocol.md" <<'PYEOF'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+match = re.search(r"## Cost Considerations\n(.*?)(?=\n## )", text, re.DOTALL)
+if not match:
+    print("could not find the Cost Considerations section")
+    sys.exit(0)
+section = match.group(1)
+if "F017/OVI-65" not in section:
+    print("Cost Considerations section does not mention F017/OVI-65")
+if "one Sonnet pass" not in section:
+    print("Cost Considerations section does not mention the one-Sonnet-pass cost")
+PYEOF
+)
+if [ -z "$COST_SECTION_ERRORS" ]; then
   pass "f017: the token cost NFR is documented in rules/agent-teams-protocol.md's Cost Considerations"
 else
-  fail "f017: the token cost NFR is not documented"
+  fail "f017: token cost NFR -- $COST_SECTION_ERRORS"
 fi
 
 # AC4: harness-continue documents the trigger conditions and the spawn prompt

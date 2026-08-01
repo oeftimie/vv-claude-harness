@@ -401,7 +401,10 @@ When all teammates complete:
      Phase 1. This is a live decision the lead makes in-session, not a field read back
      from `features.json` — if Phase 1 happened in an earlier, now-compacted context
      and the decision isn't in current context, treat this condition as unknown rather
-     than assuming false.
+     than assuming false. Since this whole step is optional, don't spawn the
+     conformance tester on an unknown condition alone — mention the ambiguity to the
+     user (e.g. "this feature may have needed plan approval, but I don't have that
+     decision in context; run a conformance check anyway?") and let them decide.
 
    (Neither condition is a durable, machine-checkable field on the feature object
    today; persisting `risk` on `features.json` so this trigger doesn't depend on the
