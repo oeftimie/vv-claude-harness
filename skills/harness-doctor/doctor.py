@@ -299,6 +299,40 @@ def _check_context_summary(harness_dir):
     )]
 
 
+TEST_FILE_CHECK_STATUSES = ("passing", "in-progress")
+
+
+def check_feature_test_files(project_dir):
+    """F066: a passing/in-progress feature's test_file is a claim, not a fact --
+    session-start.sh faithfully reports whatever features.json says, and nothing
+    validates that the referenced path actually resolves. This closes that gap as
+    a report-only structural check (there is no fixer: doctor can't invent a
+    missing test file, only surface that the claim doesn't hold)."""
+    features_path = os.path.join(project_dir, ".harness", "features.json")
+    if not os.path.isfile(features_path):
+        return []  # already reported by check_harness_state_files
+    try:
+        with open(features_path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []  # already reported by check_harness_state_files
+    findings = []
+    for feature in data.get("features", []):
+        if feature.get("status") not in TEST_FILE_CHECK_STATUSES:
+            continue
+        test_file = feature.get("test_file")
+        if not test_file:
+            continue
+        if not os.path.isfile(os.path.join(project_dir, test_file)):
+            findings.append(Finding(
+                f"{feature.get('id', '?')} is {feature['status']} but its test_file "
+                f"'{test_file}' does not exist in the working tree",
+                "correct test_file to the real path, or reset the feature's status "
+                "if the work it claims was never actually committed",
+            ))
+    return findings
+
+
 def check_mld_non_injection(project_dir, plugin_root):
     mld_dir = os.path.join(project_dir, ".harness", "mld")
     if not os.path.isdir(mld_dir):
@@ -327,6 +361,7 @@ def run_checks(project_dir, plugin_root):
     findings.extend(check_settings(project_dir))
     findings.extend(check_gitignore(project_dir))
     findings.extend(check_harness_state_files(project_dir, plugin_root))
+    findings.extend(check_feature_test_files(project_dir))
     findings.extend(check_mld_non_injection(project_dir, plugin_root))
     return findings
 
