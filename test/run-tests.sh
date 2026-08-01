@@ -6022,7 +6022,7 @@ with open(path, "w") as fh:
 PYEOF
 OUT=$(run_doctor "$DIR_DOC_PASSING_NULL_TESTFILE" 2>&1)
 RC=$?
-assert_rc_nonzero "$RC" "hd: a passing feature with null test_file doesn't crash doctor.py"
+assert_rc_nonzero "$RC" "hd: a passing feature with null test_file is a finding, not silent"
 assert_not_contains "$OUT" "Traceback" \
   "hd: F066's null-test_file guard doesn't crash (rc_nonzero alone would also pass on a crash)"
 assert_not_contains "$OUT" "F001 is" \
