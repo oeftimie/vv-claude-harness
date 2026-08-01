@@ -409,6 +409,7 @@ claude
 | `rules/task-completion.md` | Task completion checklist |
 | `templates/CLAUDE.md` | Core engineering standards template (manual copy to `~/.claude/`) |
 | `test/` | Fixture-based hook test suite, run in CI |
+| `evals/` | Proportionate behavioral evals: does an intervention change what the agent actually does, not just its terminology (semi-manual, not CI-wired) |
 
 ### The spec gate
 
