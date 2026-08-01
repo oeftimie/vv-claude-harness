@@ -736,3 +736,50 @@
   follow-ups), per Ovidiu's standing instruction to keep working through everything
   from Linear without waiting for check-ins.
 - Blockers: none.
+
+## Session 34 - 2026-08-01 (F021/OVI-60: eval method doc + orientation-recovery eval)
+- Feature: F021 - eval method doc + first behavioral eval (orientation recovery A/B)
+- Status: complete. ALL 21 original Linear OVI-44 sub-issues (F001-F021) are now
+  shipped; only discovered follow-ups remain queued (F063, F064, F066, F067).
+- New evals/README.md (vv's eval contract, adapted from harness-engineering's eval
+  method, CC BY 4.0) and evals/orientation-recovery.md (the first executed eval).
+- The spec's literal `claude -p` subprocess protocol was attempted first and
+  confirmed blocked in this sandboxed session (auth failure, zero cost) without
+  touching credential-store configuration. Substituted fresh general-purpose
+  subagents given the real captured hook stdout (or nothing) as prompt content --
+  disclosed as a known deviation in the eval doc, not silently substituted.
+- Caught and fixed a real capture defect mid-eval, flagged by an eval subject
+  itself (not by me): an initial orientation-text capture had leaked a
+  SESSION_INCOMPLETE-gated warning block from an unrelated scratch directory used
+  earlier for an auth test. Discarded the entire first batch of 3 condition-A
+  runs, re-captured cleanly against the actual fixture, reran. Documented as a
+  worked example of the invalid-result checklist catching a real defect.
+- Result: "investigate further" (not keep/remove) -- all 6 valid runs (3
+  corrected condition-A + 3 condition-B) converged on identical behavior
+  (verify state against git, discover the shared fixture's own data/reality
+  mismatch, refuse to proceed, escalate) regardless of orientation. Zero of 6
+  runs claimed F003 or wrote any file. Likely cause: a dominant confound (this
+  fixture's state is re-derivable in one tool call), not evidence orientation is
+  worthless in general. A second, smaller deviation (a hint sentence given only
+  to the corrected condition-A batch) is also disclosed, not hidden.
+- Discovered and filed as follow-ups (both out of F021's scope): F066 (no hook
+  validates a passing feature's test_file actually exists on disk -- found
+  independently by 2 of 6 eval subjects) and F067 (TeammateIdle's escape hatch is
+  tool-based, not assignment-based; 5 of 6 eval subjects hit an idle-nudge loop
+  after finishing their read-only assignment and needed explicit shutdown --
+  same root gap F055 partially addressed, recurring for ad-hoc read-only
+  subagent assignments F055's reviewer-specific fix doesn't cover).
+- One overreach noted, not reversed: an eval subagent wrote unprompted to this
+  session's own persistent auto-memory store outside its assigned scratch
+  directory. Content was accurate and kept; surfaced to Ovidiu as a real scope
+  overreach, not filed as a feature (no vv mechanism failed -- the subagent had
+  an unrestricted Write tool it wasn't told not to use for this).
+- Tests: 1433/1433 passing (full_test is the gate; +5 F021 assertions, all
+  mutation-tested). One test-scoping gap found and fixed along the way: the
+  decision-word check initially matched the framing sentence in "Decision
+  informed" too, not just the actual verdict -- tightened to require a
+  "### Decision:" heading.
+- Next: F063, F064, F066, F067 (all discovered follow-ups, all `pending`), per
+  Ovidiu's standing instruction to keep working through everything without
+  waiting for check-ins.
+- Blockers: none.
