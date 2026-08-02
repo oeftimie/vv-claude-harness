@@ -6,8 +6,9 @@ This file is referenced in CLAUDE.md and loaded every session.
 ## Active Context
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
 - Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues) is now COMPLETE, all shipped through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up), F018/OVI-66 (PR #103), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md), F020/OVI-59 (skills/harness-improve/SKILL.md), F021/OVI-60 (evals/README.md + evals/orientation-recovery.md, this session, filed F066+F067 as follow-ups). See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. With F021 shipped, ALL 21 original OVI-44 sub-issues are done -- remaining queued work is discovered follow-ups only, worked in the same autonomous loop (implement -> TDD/mutation-test -> review -> merge). F063-F068 are all shipped and merged (F063 PR #108, F064 PR #109, F065 PR #110, F066 PR #111, F067 PR #112, F068 PR #113 -- both F067 and F068 needed 2 review rounds, see their own Meta-Session entries for what each round caught). Only F069 remains `pending`.
-- F069 (filed during F067's round-1 review): the broader correction for F055's falsified "TeammateIdle carries no teammate identity" claim, covering `agents/reviewer.md`, `README.md`, a proposed (not silent) `CHANGELOG.md` fix since it's Human-Owned, and the real design question of whether `check-remaining-tasks.sh` should key its escape hatch off `teammate_name` directly now that it's confirmed present. Needs its own design pass before implementation, not a quick mechanical extension -- see F069's own `notes` for corroborating live evidence gathered during F067's review cycle.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. With F021 shipped, ALL 21 original OVI-44 sub-issues are done, and ALL discovered follow-ups (F023-F069) are now shipped or merge-pending as of this entry -- F063-F068 merged (PRs #108-#113, F067 and F068 each needed 2 review rounds, see their own Meta-Session entries); F069 implemented, tests green, not yet PR'd/reviewed/merged as of this entry.
+- F069's one remaining loose end, by design: a proposed correction for `CHANGELOG.md`'s copy of the same falsified claim, recorded in F069's own `notes` field, deliberately NOT applied (CHANGELOG.md is Human-Owned -- propose entries, Ovidiu controls versions). Needs his sign-off, not further autonomous action.
+- No other locally-discovered work is queued as of this entry. The next session should confirm F069 merged and check whether Ovidiu has responded to the CHANGELOG.md proposal.
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -1449,3 +1450,59 @@ session-end.sh at the next SessionStart.
   field. Folded in all non-blocking nits post-APPROVE without a third
   review round, since each was independently mutation-verified before
   committing. PR #113 merged at 322220f. Full suite 1480/1480 final.
+
+## Meta-Session 2026-08-02 (F069: correct the falsified TeammateIdle identity claim)
+- Design decision made without asking (standing autonomous instruction):
+  the real question this feature exists to answer -- should
+  check-remaining-tasks.sh key its escape hatch off teammate_name now that
+  it's confirmed present -- was investigated and DECLINED, not built.
+  Three reasons: no enforced naming contract behind teammate_name (this
+  session's own reviewer-naming convention is ad hoc, not a platform or
+  repo-level schema); a wrong guess is asymmetric (a false positive --
+  wrongly suppressing a nudge for a teammate that legitimately has more
+  work -- is a silent failure, worse than the current bounded, visible
+  cost of one extra decline per stale nudge); and the closest existing
+  precedent for a similar per-teammate discriminator (F055's
+  `.claude/teammate-scope.txt`) was already rejected once for the
+  identical concurrency reason. Recorded as a considered-and-declined
+  design decision in rules/agent-teams-protocol.md, not a Known
+  Limitation (that heading is reserved for platform ceilings this repo
+  cannot change).
+- Scope accuracy: no undeclared expansions -- every file touched
+  (agents/reviewer.md, README.md, check-remaining-tasks.sh + template,
+  rules/agent-teams-protocol.md, test/run-tests.sh, .harness/features.json)
+  was already in F069's declared scope. CHANGELOG.md was in scope but
+  deliberately NOT edited (Human-Owned; proposed correction recorded in
+  F069's own notes for Ovidiu's sign-off instead).
+- Caught my own metadata mistake while writing this feature's own
+  approaches_tried: initially misattributed a second uncorrected instance
+  of the false claim to F059 based on a stale grep-line-number read;
+  re-checked directly and found it was actually F055's own `description`
+  field (only `notes` had been corrected in F067's round-1) -- corrected
+  the attribution before committing, not after. A live instance of this
+  session's own "ground-truth every claim, including your own" discipline.
+- Hit the line-wrap-vs-grep gotcha twice in one sitting (agents/reviewer.md
+  and README.md both), the same recurring pattern this repo has hit
+  before (F059, F067) -- fixed both by keeping the matched phrase on one
+  source line, never by reflowing the test to match.
+- Caught myself repeating F067's own round-1 mistake (a duplicate
+  drift-detection assertion for check-remaining-tasks.sh's live/template
+  sync, when the pre-existing F047 loop already covers it) while drafting
+  this feature's own tests -- removed before running the suite, not after
+  a review caught it. Worth noting: the SAME reviewer-caught mistake
+  recurring within a different feature's own first-draft tests suggests
+  this specific gotcha (redundant per-file drift checks) is worth a
+  standing reminder rather than relying on each feature's author to
+  remember it fresh.
+- Discovery lineage: F069 was itself a discovered follow-up (via F067),
+  not a source of further discoveries this round.
+- Model calibration: single-session, no sub-agents spawned.
+- Plan approval: not applicable -- single-session implementation.
+- Mutation testing: 4 targeted mutations (reverting each of
+  agents/reviewer.md, README.md, rules/agent-teams-protocol.md's new
+  section, and check-remaining-tasks.sh's comment independently), each
+  confirmed to fail exactly the assertions guarding that file, nothing
+  else. Full suite 1487/1487 throughout.
+- This closes the entire F023-F069 locally-discovered chain. Only a
+  human sign-off on the proposed CHANGELOG.md correction remains
+  outstanding, by design (Human-Owned file).
