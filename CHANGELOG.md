@@ -2,6 +2,125 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.0.0 (2026-08-02)
+
+**The v5 upgrade: absorbing harness-engineering's evidence and meta loops.** A comparative
+analysis against lopopolo/harness-engineering (CC BY 4.0) found vv-harness strong on
+mechanical enforcement and distribution but with three real gaps: feedback that never
+flowed back into the harness itself, proof that stopped at coverage percentage, and no
+maintenance loop against weekly platform drift. This release closes all three, adapting
+the applicable ideas rather than transplanting them (per HE's own doctrine), plus
+mechanisms from two further harnesses reconciled in wave 2: AlexCiortan/setlist (CC BY
+4.0) and nodera-studio/agent-os (MIT). 21 planned capabilities, tracked as Linear epic
+OVI-44.
+
+**Correctness first (P0).** Scope enforcement is now armed in the actual spawn path
+(`harness-continue`'s Phase 2 writes `.claude/teammate-scope.txt` on every teammate
+spawn; previously the only instruction to create it lived in prose nobody executed).
+Single-owner truth fixes: the version line, dates, and identity checks now agree with
+`plugin.json` and each other. The 5 per-project hook templates gained real test coverage
+(previously excluded from both `bash -n` and the fixture suite) and were then hardened
+against roughly 30 parsing and evasion edge cases found by adversarial dogfooding —
+quoting, redirects, ANSI-C escapes, compound commands, flag-taking short options, and
+more, all in `enforce-scope.sh.template` and `commit-gate.sh.template`.
+
+**One concept, one owner (P1).** `schemas/feature.schema.json` is now the single
+canonical definition of the `features.json` envelope and the feature object, enforced by
+a stdlib-only validator (`scripts/validate-features.py`, no `jsonschema` dependency) wired
+into the test suite and into `harness-doctor`. A shared `harness_state.py` module
+replaces per-hook reimplementations of `features.json` parsing across
+`verify-task-quality.sh` and `check-remaining-tasks.sh`.
+
+**Authority and proof (P2).** Lead-only ownership of `.harness/` state files
+(`features.json`, `context_summary.md`, `claude-progress.txt`) is now mechanically
+enforced, not just documented — `enforce-scope.sh` blocks a teammate write to any of the
+three regardless of its assigned scope, with a best-effort Bash-write backstop for the
+same three plus scope boundaries generally. Features gained claim-matched proof: a
+`proof` object (claim, evidence type, artifact, what the evidence did NOT establish),
+per-feature `coverage_target` overrides for claim types unit coverage measures poorly,
+and a `delivered` closure field for PR-shipped projects. The readiness stamp's HMAC key
+now resolves from a three-source chain (macOS Keychain, a mode-600 key file, or an
+explicitly-discouraged env var) instead of Keychain only, so the spec gate's signing
+recipe is exercised on Linux CI for the first time.
+
+**Feedback becomes infrastructure (P3).** `.harness/mld/` gives the harness a builder-only
+telemetry channel (Mistakes/Learnings/Desires) with a hard, tested non-injection
+guarantee: `session-start.sh` never reads it, on any SessionStart source. The Phase 5.5
+retrospective gained a promotion pass (classify each observed pattern to its smallest
+durable owner: spawn-prompt tweak, rule edit, hook change, schema field, agent
+definition, or plugin skill) and an ablation pass (retain/revise/remove controls that
+fired zero times or produced only friction), with candidate lifecycle tracking
+(score, status, decay) recorded in `.harness/HARNESS_BACKLOG.md`.
+
+**Continuous maintenance (P4).** `docs/maintenance-runbook.md` is the loop that watches
+for platform drift on Claude Code's experimental Agent Teams surface: a weekly CI probe,
+a monthly live-agent probe checklist, and durable state in `MAINTENANCE_LOG.md` where a
+quiet no-op run is a successful run, not a skipped one. Every documented workaround now
+carries an explicit retirement condition. A new optional `worker` block in
+`harness.json` records the CLI version and model bindings an epoch's operational metrics
+belong to, with a requalification checklist (`docs/requalification.md`) triggered on a
+version-delta jump — including a mandatory subtraction pass, since a worker upgrade can
+absorb scaffolding a harness project no longer needs.
+
+**Meta and distribution (P5).** A new root `AGENTS.md` (plus nested guides under
+`skills/` and `test/`) gives non-Claude agents (Codex, Cursor) a real map of this repo,
+with `CLAUDE.md` reduced to a one-line import and a small Claude-specific overlay. The
+new `harness-improve` skill runs HE's improve-one-harnessed-job loop: record a job
+contract, observe the baseline, make one intervention, verify at the claim boundary a
+guardrail actually prevents. `evals/` documents the eval method (decision-first,
+one-intervention, fresh-sessions) and ships the first behavioral eval, an orientation-
+recovery A/B.
+
+**Two new health-check and safety mechanisms (wave 2).** `skills/harness-doctor/` is a
+report-first, idempotent instance health check with an optional `--fix` upgrade mode —
+it replaces the five-step manual upgrade INSTALL.md used to document, and now also
+tracks `plugin_version` drift between a project's recorded sync point and the currently
+installed plugin, bootstrapping or refreshing that field on `--fix`. `scripts/stamp.sh`
+is the deterministic file emitter behind `/harness-init`: "never hand-write what a stamp
+can emit; never stamp what a decision shapes" — every framework-fixed file (hooks
+byte-verbatim, settings templated, `plugin_version` read directly from the plugin's own
+manifest) comes from the stamp, with new-mode collision pre-flight and upgrade-mode
+byte-identical-only overwrites. A new commit-content gate (`commit-gate.sh`) denies
+compound stage-and-commit forms and staged secret-shaped content before they land.
+
+**Two new review mechanisms.** `agents/conformance-tester.md` derives behavior tests
+from a feature's verified spec alone — it never reads the implementation diff, the
+implementer's completion message, or the implementer's own tests, closing the
+reward-hacking surface where a single context that writes both code and tests can
+satisfy a bug with a test that matches the bug. An optional dual-engine review
+(`review.second_engine` in `harness.json`) runs a second, independently-run reviewer
+(e.g. Codex) blind to the first, with explicit synthesis rules: dedupe by defect not
+line, a single-engine CRITICAL survives, cross-engine agreement raises confidence,
+provenance checked against `git show <merge-base>:<file>` before labeling a finding NEW
+vs. PRE-EXISTING.
+
+**The TeammateIdle identity correction.** This release also corrects a claim shipped
+since v4.1.0: the `TeammateIdle` hook payload does carry the teammate's `teammate_name`
+(and deprecated `team_name`) — it was never true that the hook has no way to know which
+teammate is idling. The original claim traced to a documentation fetch that truncated
+before reaching the relevant section of a long reference page and silently answered from
+the wrong table; a raw fetch of the same page corrected it. The hook still doesn't act on
+`teammate_name` — that remains a deliberate design decision (`rules/agent-teams-protocol.md`),
+not a platform limitation: the field is caller-chosen free text with no enforced naming
+contract, and a wrong automated guess (silently suppressing a nudge for a teammate that
+legitimately has more work) is worse than the current bounded, visible cost of one extra
+decline per stale nudge. The correct remedy — the lead releasing a role-limited or
+scoped-one-shot teammate promptly once its work is delivered — already existed as a rule
+and simply needed to be followed, not mechanized around.
+
+**Dogfooding found the rest.** This repo ran its own harness on itself for the entire
+upgrade (`/harness-init` on vv-claude-harness, per the epic's self-execution protocol).
+Beyond the 21 planned issues, that surfaced and fixed 48 further defects — mostly the
+scope-enforcement hardening pass above, plus a `harness-doctor` check that a
+`passing`/`in-progress` feature's `test_file` actually exists, a mutation-testing gap in
+`fixes.py`'s settings-wiring drift check, and the TeammateIdle-idle-nudge scope gaps this
+entry already covers. Full per-defect detail lives in this repo's own `.harness/features.json`,
+not restated here at that granularity.
+
+**Tests**: `test/run-tests.sh` carries 1489 assertions covering every mechanism above
+plus the hardening pass, with each non-trivial check mutation-tested against the
+specific defect it guards.
+
 ### v4.2.2 (2026-07-04)
 
 **A go-ahead is durable.** In practice, sessions governed by the template's "present a
