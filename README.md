@@ -1,6 +1,6 @@
 # VV Claude Code Harness
 
-A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through four major versions into a native Claude Code plugin built on the platform's Agent Teams primitives.
+A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through five major versions into a native Claude Code plugin built on the platform's Agent Teams primitives.
 
 See [CHANGELOG.md](./CHANGELOG.md) for the current version and history.
 
@@ -51,7 +51,7 @@ Three reasons:
 * **Transparency**: When an agent goes off the rails, you can open `task_plan.md` and see exactly what it thinks it's doing. You can't really debug a vector database when an agent starts hallucinating. Files are inspectable, editable, and version-controlled.
 * **Structure**: Anthropic specifically chose JSON for their features file because, [as they noted](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), "the model is less likely to inappropriately change or overwrite JSON files compared to Markdown files." Structured formats create implicit contracts. The agent knows that `passes: false` means work remains. It knows not to delete entries. The file format itself enforces discipline.
 
-## The evolution: v2.0 to v4.2
+## The evolution: v2.0 to v5.0
 
 ### v2.0: The foundation (January 2026)
 
@@ -183,6 +183,39 @@ memorizing names. No alias for the old names: replace, don't deprecate. v4.2.1 f
 spec-gate content to reference the schema via `${CLAUDE_PLUGIN_ROOT}` so plugin-internal
 paths resolve for installed users, not just inside this repo.
 
+### v5.0: The evidence and meta loops (August 2026)
+
+A comparative analysis against lopopolo/harness-engineering (CC BY 4.0) — a methodology
+corpus rather than an execution harness — found vv-harness strong on mechanical
+enforcement and distribution but missing three things: feedback that never flowed back
+into the harness itself, proof that stopped at coverage percentage, and no maintenance
+loop against weekly platform drift. v5.0 closes all three, adapting the applicable ideas
+rather than copying file layouts or policies, plus mechanisms reconciled from two
+further harnesses: AlexCiortan/setlist (CC BY 4.0) and nodera-studio/agent-os (MIT).
+
+New capabilities: `harness-doctor` (a report-first health check with a `--fix` upgrade
+mode, now including plugin-version drift detection); `scripts/stamp.sh` (a deterministic
+file emitter behind `/harness-init` — never hand-write what a stamp can emit); a
+commit-content gate denying compound stage-and-commit forms and staged secret-shaped
+content; `.harness/mld/` builder-only telemetry with a hard, tested non-injection
+guarantee; a promotion-and-ablation pass in the Phase 5.5 retrospective that routes
+observed patterns to their smallest durable owner instead of letting them evaporate in
+prose; a platform-drift maintenance loop (`docs/maintenance-runbook.md`) with weekly CI
+probes and explicit retirement conditions on every documented workaround; a `worker`
+epoch record with a requalification checklist (including a mandatory subtraction pass);
+an author-blind conformance tester that derives tests from a verified spec alone, never
+the implementation diff; an optional dual-engine review; and a root `AGENTS.md` routing
+layer for non-Claude agents working on this repo. Full detail in the
+[v5.0.0 changelog entry](./CHANGELOG.md).
+
+Dogfooding the upgrade on this repo's own harness surfaced 48 further defects beyond the
+21 planned — mostly hardening `enforce-scope.sh`/`commit-gate.sh` against parsing and
+evasion edge cases, plus a `harness-doctor` check that a feature's claimed `test_file`
+actually exists. That process also caught and corrected a claim shipped since v4.1.0: the
+`TeammateIdle` hook payload does carry a teammate's name — the original "no teammate
+identity" claim traced to a documentation fetch that silently answered from the wrong
+section of a long reference page.
+
 ## Architecture
 
 ### Global (travels with you)
@@ -218,6 +251,9 @@ vv-harness/                                            # Plugin root
 ├── schemas/
 │   ├── readiness-stamp.md                             # Stamp, hashing, HMAC, park/resolution contracts
 │   └── feature.schema.json                            # Canonical features.json envelope + feature object
+├── scripts/
+│   ├── stamp.sh                                       # Deterministic file emitter for /harness-init (+ upgrade mode)
+│   └── validate-features.py                           # Stdlib features.json validator, run by harness-doctor
 └── templates/
     └── CLAUDE.md                                      # Core standards template (manual copy to ~/.claude/)
 ```
@@ -233,14 +269,17 @@ project-root/
 │   └── hooks/
 │       ├── verify-task-quality.sh                     # TaskCompleted enforcement
 │       ├── check-remaining-tasks.sh                   # TeammateIdle prompted reassignment
-│       ├── enforce-scope.sh                           # PreToolUse scope enforcement
+│       ├── enforce-scope.sh                           # PreToolUse scope enforcement (incl. lead-owned state)
 │       ├── verify-git-identity.sh                     # PreToolUse git identity verification
+│       ├── commit-gate.sh                             # PreToolUse commit-content gate (secret scan)
+│       ├── harness_state.py                           # Shared features.json read/write module
 │       └── statusline.sh                              # Project copy of the plugin status line
 └── .harness/
-    ├── harness.json                                   # Config + git identity + team structure
+    ├── harness.json                                   # Config, git identity, team structure, plugin_version
     ├── features.json                                  # Feature tracking (with scope, dependencies)
     ├── context_summary.md                             # Decisions, patterns, gotchas, active context
     ├── claude-progress.txt                            # Session-boundary handoff
+    ├── mld/                                           # Optional: builder-only Mistakes/Learnings/Desires
     ├── SESSION_INCOMPLETE                             # Discipline gaps from last session (gitignored)
     └── init.sh                                        # Build/test script
 ```
@@ -407,6 +446,8 @@ claude
 | `skills/harness-improve/` | Observation-first improvement loop: record a job contract, observe the baseline, one intervention, verify at the claim boundary |
 | `agents/` | Declarative teammate definitions (feature-implementer, layer-implementer, researcher, reviewer, spec-verification, reverification-guard, conformance-tester) |
 | `schemas/` | Data contracts published for external consumers (readiness stamp, park/resolution formats) |
+| `scripts/stamp.sh` | Deterministic file emitter for `/harness-init`, new + upgrade mode |
+| `scripts/validate-features.py` | Stdlib `features.json` validator, run by harness-doctor and CI |
 | `hooks/` | Plugin continuity hooks: session-start, session-end, statusline |
 | `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |
 | `rules/code-quality.md` | Mechanical code quality limits |
