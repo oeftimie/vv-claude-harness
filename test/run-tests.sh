@@ -9252,7 +9252,13 @@ echo "== OVI-106: harness-continue's smoke test actually runs smoke_test =="
 # sites that invoke it (Step 2.5's code block, and the setup checklist's
 # item 4) rather than just one -- they duplicated the same bug.
 HC_SKILL_OVI106="$REPO_ROOT/skills/harness-continue/SKILL.md"
-if grep -q '\./\.harness/init\.sh smoke_test' "$HC_SKILL_OVI106"; then
+# Step 2.5's fenced code block puts the invocation alone on its own line, so
+# an unanchored substring match on '.../init.sh smoke_test' is satisfied by
+# checklist item 4's line too -- it would still pass even if Step 2.5 itself
+# were reverted to a bare invocation, since item 4 alone contains the
+# substring. Anchor to the whole line instead: a bare, unqualified
+# invocation (no trailing argument) must not appear anywhere in the file.
+if ! grep -qE '^\./\.harness/init\.sh$' "$HC_SKILL_OVI106"; then
   pass "mnt (OVI-106): harness-continue/SKILL.md's Step 2.5 code block passes smoke_test explicitly"
 else
   fail "mnt (OVI-106): harness-continue/SKILL.md's Step 2.5 still invokes init.sh without an argument"
