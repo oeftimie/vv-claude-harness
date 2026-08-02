@@ -2087,6 +2087,29 @@
       "failure_reason": null,
       "discovered_via": null,
       "spec": null
+    },
+    {
+      "id": "F072",
+      "description": "OVI-106: skills/harness-continue/SKILL.md's Step 2.5 and setup checklist item 4 invoke `./.harness/init.sh` with no argument to run what the section calls a \"smoke test\", but init.sh's own default target is full_test, not smoke_test -- so the documented fast gate silently runs the full suite instead. Fix: pass `smoke_test` explicitly at both call sites, and add an inline note reconciling init.sh's full_test default with this section's smoke-test framing so a future editor doesn't reintroduce the bare invocation.",
+      "priority": 73,
+      "status": "passing",
+      "scope": [
+        "skills/harness-continue/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (documentation fix; verified via 3 grep-based regression assertions, one corrected in round 1 -- see notes)",
+      "notes": "First test-suite run had 1 failure from the test's own grep pattern (backtick-escaping mismatch against the actual inline note text), not from the SKILL.md fix itself; corrected the grep pattern, reran once clean at 1492/1492.\n\nROUND 1 (review of PR #122, review-pr122-f072): BLOCK. Assertion 1's pattern ('\\./\\.harness/init\\.sh smoke_test', unanchored) was satisfied by checklist item 4's line alone, so it stayed green even with Step 2.5 -- the primary site this feature exists to guard -- reverted to a bare invocation. Verified independently before fixing: reverted only Step 2.5's fix locally, confirmed the suite stayed 1492/1492 green (bug reproduced), applied the reviewer's suggested anchored-whole-line fix (`grep -qE '^\\./\\.harness/init\\.sh$'`), reverted Step 2.5 again -- now exactly the expected assertion fails, restored clean at 1492/1492. Assertions 2 and 3 were confirmed genuine guards, unchanged.",
+      "correction_cycles": 2,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Investigated 5 other bare `./.harness/init.sh` references in the repo for the same bug class; declined to touch agents/feature-implementer.md and agents/layer-implementer.md since neither makes an explicit \"smoke test\" timing claim the way harness-continue/SKILL.md does -- their bare invocation is consistent with intentionally wanting the full_test default, not a stale claim about speed."
+      ],
+      "failure_reason": null,
+      "discovered_via": "OVI-106 (Linear, investigated per Ovidiu's 2026-08-02 pickup instruction)",
+      "spec": null
     }
   ]
 }
