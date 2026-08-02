@@ -246,6 +246,7 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
     "(read before editing context_summary.md)."
   echo "Completion checklist: $CLAUDE_PLUGIN_ROOT/rules/task-completion.md" \
     "(read before declaring work complete)."
+  echo "Debugging discipline: $CLAUDE_PLUGIN_ROOT/rules/debugging.md (read before debugging a failure)."
 fi
 echo "Run /harness-continue for the full interactive flow (mode choice, smoke test, team plan)."
 exit 0
