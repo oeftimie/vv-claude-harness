@@ -108,16 +108,27 @@ def _add_settings_wiring(project_dir, plugin_root):
     return True
 
 
+# Mirrors doctor.py's REQUIRED_GITIGNORE_LINES (not imported, to keep this module
+# loadable standalone via sys.path.insert -- see doctor.py's own header comment on
+# why fixers stay out of the report path). Keep the two lists in sync.
+REQUIRED_GITIGNORE_LINES = (
+    ".harness/SESSION_INCOMPLETE",
+    ".harness/features.json.lock",
+)
+
+
 def _append_gitignore(project_dir, plugin_root):
     path = os.path.join(project_dir, ".gitignore")
     text = open(path).read() if os.path.isfile(path) else ""
     lines = [line.strip() for line in text.splitlines()]
-    if ".harness/SESSION_INCOMPLETE" in lines:
+    missing = [line for line in REQUIRED_GITIGNORE_LINES if line not in lines]
+    if not missing:
         return False
     with open(path, "a") as fh:
         if text and not text.endswith("\n"):
             fh.write("\n")
-        fh.write(".harness/SESSION_INCOMPLETE\n")
+        for line in missing:
+            fh.write(line + "\n")
     return True
 
 

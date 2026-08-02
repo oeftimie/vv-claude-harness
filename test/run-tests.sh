@@ -5872,7 +5872,7 @@ make_healthy_doctor_fixture() {
   }
 }
 SETTINGSEOF
-  printf '.harness/SESSION_INCOMPLETE\n' > "$1/.gitignore"
+  printf '.harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n' > "$1/.gitignore"
   cat >> "$1/.harness/context_summary.md" <<'CTXEOF'
 
 ## Cross-Cutting Concerns
@@ -6035,6 +6035,26 @@ if grep -q "stale placeholder" "$DIR_DOC_FIX/.claude/hooks/verify-task-quality.s
   fail "hd: --fix -- verify-task-quality.sh was not re-copied from the current template"
 else
   pass "hd: --fix -- verify-task-quality.sh was re-copied from the current template"
+fi
+
+# F077/OVI-107 follow-up: the real-world upgrade scenario -- a project already
+# initialized before OVI-107 shipped has SESSION_INCOMPLETE in .gitignore but not
+# the newer features.json.lock line. --fix must append the missing line, not
+# early-return because SOME required line is already present.
+DIR_DOC_GITIGNORE_UPGRADE="$WORK/doctor-gitignore-upgrade"
+make_healthy_doctor_fixture "$DIR_DOC_GITIGNORE_UPGRADE"
+printf '.harness/SESSION_INCOMPLETE\n' > "$DIR_DOC_GITIGNORE_UPGRADE/.gitignore"
+OUT=$(run_doctor "$DIR_DOC_GITIGNORE_UPGRADE")
+assert_contains "$OUT" ".gitignore is missing .harness/features.json.lock" \
+  "hd: a pre-OVI-107 project missing only the lock gitignore line is reported (F077)"
+FIX_OUT=$(run_doctor "$DIR_DOC_GITIGNORE_UPGRADE" --fix)
+assert_not_contains "$FIX_OUT" "features.json.lock" \
+  "hd: --fix appends the missing lock gitignore line even when SESSION_INCOMPLETE was already present (F077)"
+if grep -qxF ".harness/features.json.lock" "$DIR_DOC_GITIGNORE_UPGRADE/.gitignore" \
+  && grep -qxF ".harness/SESSION_INCOMPLETE" "$DIR_DOC_GITIGNORE_UPGRADE/.gitignore"; then
+  pass "hd: --fix -- .gitignore on disk has both required lines after upgrade (F077)"
+else
+  fail "hd: --fix -- .gitignore on disk is missing a required line after upgrade (F077)"
 fi
 
 # Spec item 2's whole point: an artifact whose current state MATCHES the last
@@ -6465,9 +6485,27 @@ with tempfile.TemporaryDirectory() as d:
 
     gitignore_path = os.path.join(d, ".gitignore")
     with open(gitignore_path, "w") as fh:
-        fh.write(".harness/SESSION_INCOMPLETE\n")
+        fh.write(".harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n")
     if fixes._append_gitignore(d, None) is not False:
-        errors.append("_append_gitignore should no-op when the line is already present")
+        errors.append("_append_gitignore should no-op when both required lines are present")
+
+    # F077/OVI-107 follow-up (round-1 review of PR #123): a project with ONLY the
+    # older SESSION_INCOMPLETE line must still get the newer lock line appended --
+    # the old contract's early-return on the FIRST line's presence made the lock
+    # line permanently unreachable for any already-initialized project.
+    with open(gitignore_path, "w") as fh:
+        fh.write(".harness/SESSION_INCOMPLETE\n")
+    if fixes._append_gitignore(d, None) is not True:
+        errors.append(
+            "_append_gitignore should append the missing lock line even when "
+            "SESSION_INCOMPLETE is already present (F077)"
+        )
+    with open(gitignore_path) as fh:
+        after_partial = fh.read()
+    if ".harness/features.json.lock" not in after_partial.splitlines():
+        errors.append(
+            "_append_gitignore did not actually write the missing lock line (F077)"
+        )
 
     if fixes._load_json(os.path.join(d, "does-not-exist.json")) is not None:
         errors.append("_load_json should return None for a missing file")

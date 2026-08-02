@@ -27,6 +27,14 @@ REQUIRED_CONTEXT_HEADINGS = (
     "## Meta-Patterns",
 )
 
+# F077/OVI-107 follow-up: two lines, not one -- .harness/features.json.lock joined
+# SESSION_INCOMPLETE post-OVI-107. _append_gitignore below must append whichever of
+# these are missing, not early-return on the presence of just the first.
+REQUIRED_GITIGNORE_LINES = (
+    ".harness/SESSION_INCOMPLETE",
+    ".harness/features.json.lock",
+)
+
 
 class Finding:
     def __init__(self, message, repair, fix_id=None):
@@ -234,12 +242,13 @@ def check_gitignore(project_dir):
                 "add !.claude/hooks/ and !.claude/settings.json exceptions, or stop "
                 "excluding .claude/ entirely",
             ))
-    if ".harness/SESSION_INCOMPLETE" not in lines:
-        findings.append(_with_drift(project_dir, ".gitignore", Finding(
-            ".gitignore is missing .harness/SESSION_INCOMPLETE",
-            "append '.harness/SESSION_INCOMPLETE' to .gitignore",
-            fix_id="append_gitignore",
-        )))
+    for required_line in REQUIRED_GITIGNORE_LINES:
+        if required_line not in lines:
+            findings.append(_with_drift(project_dir, ".gitignore", Finding(
+                f".gitignore is missing {required_line}",
+                f"append '{required_line}' to .gitignore",
+                fix_id="append_gitignore",
+            )))
     return findings
 
 
