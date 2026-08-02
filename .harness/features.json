@@ -2132,6 +2132,30 @@
       "failure_reason": null,
       "discovered_via": "OVI-82 (Linear, via OVI-73 handoff, investigated per Ovidiu's 2026-08-02 pickup instruction)",
       "spec": null
+    },
+    {
+      "id": "F075",
+      "description": "OVI-81: the harness has no dedicated TDD-loop rule file. Moved out of Ovidiu's personal ~/.claude/CLAUDE.md as part of OVI-73 (the harness should own development discipline, not the global file). Verified 2026-07-25 against vv-harness/4.2.2/rules/: the four shipped rule files (code-quality.md, task-completion.md, context-summary.md, agent-teams-protocol.md) never mention test-driven development or a red-green-refactor loop; task-completion.md requires tests to pass but never states they're written first. Fix: new rules/tdd.md with the 5-step process (write failing test, confirm it fails, write minimum code to pass, confirm success, refactor) and coverage-bar language from the issue spec, wired into session-start.sh's rule-pointer block alongside the other 5 rule files (agent-teams-protocol, code-quality, context-summary, task-completion, and F074/OVI-82's new debugging.md).",
+      "priority": 75,
+      "status": "passing",
+      "scope": [
+        "rules/tdd.md",
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F074"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "9 new suite assertions: the session-start.sh pointer is present when CLAUDE_PLUGIN_ROOT is set (1) and absent when unset (1); rules/tdd.md exists (1), all 5 process steps are present (5), the no-exceptions rule is stated (1), and the unmeasurable-coverage-is-a-blocker rule is stated (1). Mutation-tested both mechanisms independently: removing the session-start.sh pointer line fails exactly its own assertion; renaming step 4 ('Confirm success' -> 'Verify it works') fails exactly that step's assertion. Full suite 1529/1529 both before and after restoring each mutation.",
+      "notes": "Branched from F074/OVI-82's branch (not main) since both features touch the same session-start.sh rule-pointer block -- avoids a guaranteed merge conflict on adjacent lines. OVI-81's own issue text explicitly cites OVI-73's finding that this exact discipline lived as always-on CLAUDE.md prose for a full measurement window and buggy_code still led the friction table at 33% -- prose alone didn't move it, the coverage gate and adversarial review did. Carried that framing into the rule file's own closing section ('Why this is a gate, not prose') rather than treating rules/tdd.md as a second copy of the same ineffective prose in a new location.",
+      "correction_cycles": 1,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "OVI-81 (Linear, via OVI-73 handoff, investigated per Ovidiu's 2026-08-02 pickup instruction)",
+      "spec": null
     }
   ]
 }
