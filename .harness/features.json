@@ -2155,6 +2155,30 @@
       "failure_reason": null,
       "discovered_via": "F073",
       "spec": null
+    },
+    {
+      "id": "F077",
+      "description": "OVI-107 follow-up, found by review-pr120-f070 reading fixes.py incidentally during unrelated OVI-105/doctor work, after PR #120 (F070) had already merged to main: PR #120 added .harness/features.json.lock to .gitignore in two of the three places new projects/upgrades get it from (this repo's own .gitignore, and scripts/stamp.sh's init path) but not the third: doctor.py --fix's _append_gitignore fixer. Worse than a missing line -- the fixer was structurally unreachable for the affected population: it early-returned False whenever '.harness/SESSION_INCOMPLETE' (the only line it ever wrote) was already present, which is true for every already-initialized project, i.e. exactly the population the doctor --fix upgrade path exists to serve. Separately, doctor.py's check_gitignore never checked for the lock line's presence at all, so no Finding was ever generated to trigger the fixer in the first place. Fix: REQUIRED_GITIGNORE_LINES tuple (both lines) in both doctor.py and fixes.py; check_gitignore now reports a Finding per missing required line; _append_gitignore now appends whichever required lines are missing instead of early-returning on the presence of just the first one.",
+      "priority": 76,
+      "status": "passing",
+      "scope": [
+        "skills/harness-doctor/doctor.py",
+        "skills/harness-doctor/fixes.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F070"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "Direct fixes.py unit checks: _append_gitignore no-ops when both required lines are already present (updated from the old single-line version); appends the missing lock line even when SESSION_INCOMPLETE is already present, and the write is verified on disk (2 new checks replacing/extending the old one). End-to-end doctor.py CLI test: a fixture with only SESSION_INCOMPLETE in .gitignore is reported as missing the lock line; --fix appends it; both lines verified present on disk afterward (3 new assertions). Updated make_healthy_doctor_fixture to include both required lines (was silently unhealthy against the new check otherwise). Mutation-tested both halves of the fix independently: reverting doctor.py's check back to single-line fails exactly the 2 assertions that depend on the Finding being generated; reverting fixes.py's fixer back to the early-return shape fails exactly the 3 assertions that depend on the actual write. Full suite 1522/1522 both before and after restoring each mutation.",
+      "notes": "Not part of the original F070/OVI-107 PR (#120) -- discovered by review-pr120-f070 after that PR had already merged, while it was still active reading fixes.py for unrelated reasons. Filed and fixed same-session rather than left as a dangling follow-up, since the fixer's early-return bug is a real, already-shipped correctness gap (not a design question needing a decision) affecting every already-initialized project running doctor --fix.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F070 (review-pr120-f070, post-merge finding, 2026-08-02)",
+      "spec": null
     }
   ]
 }
