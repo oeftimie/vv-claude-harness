@@ -50,7 +50,7 @@ retrospective gained a promotion pass (classify each observed pattern to its sma
 durable owner: spawn-prompt tweak, rule edit, hook change, schema field, agent
 definition, or plugin skill) and an ablation pass (retain/revise/remove controls that
 fired zero times or produced only friction), with candidate lifecycle tracking
-(score, status, decay) recorded in `HARNESS_BACKLOG.md`.
+(score, status, decay) recorded in `.harness/HARNESS_BACKLOG.md`.
 
 **Continuous maintenance (P4).** `docs/maintenance-runbook.md` is the loop that watches
 for platform drift on Claude Code's experimental Agent Teams surface: a weekly CI probe,
@@ -118,7 +118,8 @@ entry already covers. Full per-defect detail lives in this repo's own `.harness/
 not restated here at that granularity.
 
 **Tests**: `test/run-tests.sh` carries 1489 assertions covering every mechanism above
-plus the hardening pass, each mutation-tested against the specific defect it guards.
+plus the hardening pass, with each non-trivial check mutation-tested against the
+specific defect it guards.
 
 ### v4.2.2 (2026-07-04)
 

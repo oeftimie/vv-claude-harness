@@ -247,6 +247,7 @@ vv-harness/                                            # Plugin root
 │   ├── agent-teams-protocol.md                        # Agent Teams rules (harness projects only)
 │   ├── code-quality.md                                # Mechanical code quality limits
 │   ├── context-summary.md                             # context_summary.md template + update rules
+│   ├── mld-review.md                                  # Cadence + disposition rules for .harness/mld/ entries
 │   └── task-completion.md                             # Completion checklist
 ├── schemas/
 │   ├── readiness-stamp.md                             # Stamp, hashing, HMAC, park/resolution contracts
@@ -452,6 +453,7 @@ claude
 | `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |
 | `rules/code-quality.md` | Mechanical code quality limits |
 | `rules/context-summary.md` | `context_summary.md` template and update rules |
+| `rules/mld-review.md` | Cadence and disposition rules for reviewing `.harness/mld/` entries |
 | `rules/task-completion.md` | Task completion checklist |
 | `templates/CLAUDE.md` | Core engineering standards template (manual copy to `~/.claude/`) |
 | `test/` | Fixture-based hook test suite, run in CI |
