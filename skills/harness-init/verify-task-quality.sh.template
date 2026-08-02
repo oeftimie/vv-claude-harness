@@ -9,9 +9,9 @@
 #   Stage 2: full_test  — complete suite with coverage
 # Failing at Stage 1 avoids the cost of a full test run.
 # correction_cycles is incremented in features.json on any rejection.
-# Formatting: this hook's features.json writes own indent=2, a trailing
-# newline, and atomic replacement (.tmp + mv); only the targeted feature
-# is modified.
+# Formatting: harness_state.py owns the write (indent=2, trailing newline,
+# atomic replace via a file lock + PID-suffixed tmp + os.replace, see its
+# own _with_file_lock/_write_atomic); only the targeted feature is modified.
 # Failure posture: fail-closed for the core gate -- a missing .harness/init.sh or any
 # smoke/full test failure rejects completion (exit 2). Fail-open/best-effort for the
 # correction_cycles bookkeeping side effect: a harness_state.py write failure there is
@@ -96,14 +96,17 @@ increment_correction_cycles() {
     if [ ! -f ".harness/features.json" ]; then
         return 0
     fi
-    # Clear any tmp orphaned by an earlier killed run: the guarded mv below
-    # must only ever promote a tmp that THIS invocation wrote.
-    rm -f .harness/features.json.tmp
+    # harness_state.py now owns the entire read-modify-write-rename cycle
+    # itself (file-locked, PID-suffixed tmp, os.replace) -- see its own
+    # _with_file_lock/_write_atomic. This wrapper used to rm -f a shared
+    # .tmp name and mv it into place after the fact, which raced under
+    # parallel TaskCompleted invocations (OVI-107): one invocation could
+    # delete another's in-flight tmp, or the whole-file mv could clobber a
+    # concurrent edit. There is nothing left for this shell wrapper to do
+    # but invoke the module and stay fail-open on its exit code, matching
+    # this hook's documented posture for the correction_cycles side effect.
     python3 "$STATE_MODULE" increment-correction-cycles .harness/features.json "$FEATURE_ID" \
         2>&1 || true
-    if [ -f ".harness/features.json.tmp" ]; then
-        mv .harness/features.json.tmp .harness/features.json
-    fi
 }
 
 # Stage 1: Smoke test (fast compile/syntax check)

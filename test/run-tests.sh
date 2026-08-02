@@ -1642,10 +1642,24 @@ else
   fail "ht: verify-task-quality lacks a '# Formatting:' header line"
 fi
 
-if grep -q 'mv ' "$TEMPLATES_DIR/verify-task-quality.sh.template"; then
-  pass "ht: verify-task-quality writes features.json atomically (.tmp + mv)"
+# OVI-107: the shell wrapper no longer does its own tmp/mv dance -- it
+# delegates the entire atomic write to harness_state.py (file lock +
+# PID-suffixed tmp + os.replace) and just invokes the module. Assert the
+# delegation and the absence of a shell-level rm/mv against the real path,
+# not a comment substring (this exact test previously passed for the wrong
+# reason: this file's own prose describing the *removed* mechanism still
+# contained the literal text "mv ").
+if grep -q 'increment-correction-cycles .harness/features.json' \
+    "$TEMPLATES_DIR/verify-task-quality.sh.template"; then
+  pass "ht: verify-task-quality delegates the features.json write to harness_state.py"
 else
-  fail "ht: verify-task-quality has no mv-based atomic write"
+  fail "ht: verify-task-quality no longer invokes harness_state.py's increment-correction-cycles"
+fi
+if grep -qE '(rm -f|mv) \.harness/features\.json\.tmp' \
+    "$TEMPLATES_DIR/verify-task-quality.sh.template"; then
+  fail "ht: verify-task-quality still does its own shell-level tmp/mv dance (OVI-107 regression)"
+else
+  pass "ht: verify-task-quality has no shell-level tmp/mv dance -- harness_state.py owns the write"
 fi
 
 # F047: this repo runs on its own harness, so its OWN live .claude/hooks/*.sh
@@ -4897,6 +4911,14 @@ else
   fail "ht (F050): valid feature_id's correction_cycles is $F003_CYCLES, expected 1"
 fi
 
+# OVI-107: harness_state.py now writes via a PID-suffixed tmp name
+# (features.json.<pid>.tmp) and os.replace, entirely inside its own file
+# lock -- the shell wrapper no longer does its own rm -f/mv over a shared
+# fixed .tmp name. A stale bare "features.json.tmp" left behind by a
+# pre-OVI-107 install is therefore genuinely orphaned: nothing in the new
+# flow ever reads, promotes, or removes that exact filename. It's inert
+# clutter, not a correctness hazard -- the test below only needs to confirm
+# it's ignored, not that it gets cleaned up.
 DIR_HQ4="$WORK/ht-quality-stale-tmp"
 make_fixture "$DIR_HQ4"
 install_hooks "$DIR_HQ4"
@@ -4906,17 +4928,17 @@ SUM_BEFORE=$(cksum < "$DIR_HQ4/.harness/features.json")
 OUT=$(run_hook "$DIR_HQ4" verify-task-quality.sh \
   '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
 RC=$?
-assert_rc2 "$RC" "ht: rejection with a stale tmp present still exits 2"
+assert_rc2 "$RC" "ht: rejection with a stale pre-OVI-107 tmp present still exits 2"
 SUM_AFTER=$(cksum < "$DIR_HQ4/.harness/features.json")
 if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
-  pass "ht: a stale features.json.tmp is never promoted over features.json"
+  pass "ht: a stale pre-OVI-107 features.json.tmp is never promoted over features.json"
 else
-  fail "ht: a stale features.json.tmp clobbered features.json"
+  fail "ht: a stale pre-OVI-107 features.json.tmp clobbered features.json"
 fi
-if [ -f "$DIR_HQ4/.harness/features.json.tmp" ]; then
-  fail "ht: the stale tmp should be cleared, not left to poison a later run"
+if grep -q "STALE GARBAGE NOT JSON" "$DIR_HQ4/.harness/features.json.tmp" 2>/dev/null; then
+  pass "ht: a stale pre-OVI-107 tmp is left alone (orphaned, never read by the new write path)"
 else
-  pass "ht: the stale tmp is cleared"
+  fail "ht: a stale pre-OVI-107 tmp was unexpectedly touched"
 fi
 
 set_f003_fields() {
@@ -5202,6 +5224,14 @@ print(data['features'][0]['correction_cycles'])
 "
 }
 
+# OVI-107: harness_state.py now writes via a PID-suffixed tmp name
+# (features.json.<pid>.tmp) and os.replace inside its own file lock, so no
+# test can predict the exact tmp filename in advance -- check the glob
+# instead of a fixed name.
+hs_has_leftover_tmp() {
+  ls "$1"/features.json.*.tmp >/dev/null 2>&1
+}
+
 # "json.dump(" (not "json.dump" alone) so json.dumps(...) -- serializing to a string,
 # not writing a file -- doesn't false-positive as a features.json write site.
 DUMP_HITS=$(grep -l "json.dump(" "$TEMPLATES_DIR"/*.template 2>/dev/null \
@@ -5240,7 +5270,7 @@ if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
 else
   fail "hs: increment on a missing feature id modified features.json"
 fi
-if [ -f "$HS_MISSING/features.json.tmp" ]; then
+if hs_has_leftover_tmp "$HS_MISSING"; then
   fail "hs: increment on a missing feature id left a tmp file"
 else
   pass "hs: increment on a missing feature id leaves no tmp file"
@@ -5252,15 +5282,16 @@ printf '{"features": [{"id": "F001", "status": "in-progress"}]}' > "$HS_INIT/fea
 OUT=$(hs_increment "$HS_INIT/features.json" F001 2>&1)
 RC=$?
 assert_rc0 "$RC" "hs: increment on an absent correction_cycles field exits 0"
-if [ -f "$HS_INIT/features.json.tmp" ]; then
-  CC=$(hs_read_correction_cycles "$HS_INIT/features.json.tmp")
-  if [ "$CC" = "1" ]; then
-    pass "hs: absent correction_cycles is initialized to 1"
-  else
-    fail "hs: correction_cycles was $CC, expected 1"
-  fi
+CC=$(hs_read_correction_cycles "$HS_INIT/features.json")
+if [ "$CC" = "1" ]; then
+  pass "hs: absent correction_cycles is initialized to 1"
 else
-  fail "hs: expected increment to write a .tmp file"
+  fail "hs: correction_cycles was $CC, expected 1"
+fi
+if hs_has_leftover_tmp "$HS_INIT"; then
+  fail "hs: a successful increment left an orphaned tmp file"
+else
+  pass "hs: a successful increment leaves no orphaned tmp file (os.replace promoted it)"
 fi
 
 HS_INIT_NULL="$WORK/hs-init-cc-null"
@@ -5270,7 +5301,7 @@ printf '{"features": [{"id": "F001", "status": "in-progress", "correction_cycles
 OUT=$(hs_increment "$HS_INIT_NULL/features.json" F001 2>&1)
 RC=$?
 assert_rc0 "$RC" "hs: increment on a null correction_cycles field exits 0"
-CC=$(hs_read_correction_cycles "$HS_INIT_NULL/features.json.tmp")
+CC=$(hs_read_correction_cycles "$HS_INIT_NULL/features.json")
 if [ "$CC" = "1" ]; then
   pass "hs: null correction_cycles is initialized to 1"
 else
@@ -5281,10 +5312,17 @@ HS_GATE="$WORK/hs-status-gate"
 mkdir -p "$HS_GATE"
 printf '{"features": [{"id": "F001", "status": "pending", "correction_cycles": 0}]}' \
   > "$HS_GATE/features.json"
+SUM_BEFORE=$(cksum < "$HS_GATE/features.json")
 OUT=$(hs_increment "$HS_GATE/features.json" F001 2>&1)
 RC=$?
 assert_rc0 "$RC" "hs: increment on a non-in-progress feature exits 0 (silent no-op)"
-if [ -f "$HS_GATE/features.json.tmp" ]; then
+SUM_AFTER=$(cksum < "$HS_GATE/features.json")
+if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
+  pass "hs: a non-in-progress feature performs no write"
+else
+  fail "hs: a non-in-progress feature modified features.json"
+fi
+if hs_has_leftover_tmp "$HS_GATE"; then
   fail "hs: a non-in-progress feature should not produce a tmp write"
 else
   pass "hs: a non-in-progress feature produces no tmp write"
@@ -5344,10 +5382,126 @@ chmod 755 "$HS_INTERRUPT"
 assert_rc_nonzero "$RC" "hs: a write failure (permission-denied dir) exits non-zero"
 assert_contains "$(cat "$HS_INTERRUPT/features.json")" '"correction_cycles": 0' \
   "hs: original features.json is unchanged after a write failure"
-if [ -f "$HS_INTERRUPT/features.json.tmp" ]; then
+if hs_has_leftover_tmp "$HS_INTERRUPT"; then
   fail "hs: a failed write left an orphaned tmp file"
 else
   pass "hs: a failed write leaves no orphaned tmp file"
+fi
+
+# OVI-107 regression tests: the actual race this feature closes.
+
+# (a) N concurrent increments on the SAME feature: every single increment
+# must land. This is the strongest form of "two simultaneous increments
+# both land" from this feature's own spec -- N=12 forces real lock
+# contention (some callers must genuinely wait), not just two calls that
+# might not overlap in time at all.
+HS_RACE_SAME="$WORK/hs-race-same-feature"
+mkdir -p "$HS_RACE_SAME"
+printf '{"features": [{"id": "F001", "status": "in-progress", "correction_cycles": 0}]}' \
+  > "$HS_RACE_SAME/features.json"
+RACE_N=12
+RACE_PIDS=()
+for _ in $(seq 1 "$RACE_N"); do
+  hs_increment "$HS_RACE_SAME/features.json" F001 >/dev/null 2>&1 &
+  RACE_PIDS+=($!)
+done
+for pid in "${RACE_PIDS[@]}"; do
+  wait "$pid"
+done
+RACE_CC=$(hs_read_correction_cycles "$HS_RACE_SAME/features.json" 2>/dev/null)
+if [ "$RACE_CC" = "$RACE_N" ]; then
+  pass "hs: $RACE_N concurrent increments on the same feature all land (correction_cycles == $RACE_N)"
+else
+  fail "hs: $RACE_N concurrent increments on the same feature lost writes -- correction_cycles is '$RACE_CC', expected $RACE_N"
+fi
+if hs_has_leftover_tmp "$HS_RACE_SAME"; then
+  fail "hs: concurrent same-feature increments left an orphaned tmp file"
+else
+  pass "hs: concurrent same-feature increments leave no orphaned tmp file"
+fi
+python3 -c "import json; json.load(open('$HS_RACE_SAME/features.json'))" 2>/dev/null
+if [ $? -eq 0 ]; then
+  pass "hs: features.json is still valid JSON after concurrent same-feature writes"
+else
+  fail "hs: features.json was corrupted by concurrent same-feature writes"
+fi
+
+# (b) concurrent increments on TWO DIFFERENT features: neither write should
+# clobber the other. This is the whole-file-last-write-wins failure mode
+# OVI-107 named specifically (a coordinator's edit to an unrelated feature
+# silently overwritten) -- (a) alone wouldn't catch it, since it only ever
+# touches one feature.
+HS_RACE_DIFF="$WORK/hs-race-different-features"
+mkdir -p "$HS_RACE_DIFF"
+cat > "$HS_RACE_DIFF/features.json" <<'JSON'
+{"features": [
+  {"id": "F001", "status": "in-progress", "correction_cycles": 0},
+  {"id": "F002", "status": "in-progress", "correction_cycles": 0}
+]}
+JSON
+hs_increment "$HS_RACE_DIFF/features.json" F001 >/dev/null 2>&1 &
+RACE_DIFF_PID1=$!
+hs_increment "$HS_RACE_DIFF/features.json" F002 >/dev/null 2>&1 &
+RACE_DIFF_PID2=$!
+wait "$RACE_DIFF_PID1"
+wait "$RACE_DIFF_PID2"
+RACE_DIFF_ERRORS=$(python3 -c "
+import json
+data = json.load(open('$HS_RACE_DIFF/features.json'))
+by_id = {f['id']: f.get('correction_cycles') for f in data['features']}
+errors = []
+if by_id.get('F001') != 1:
+    errors.append(f\"F001 correction_cycles is {by_id.get('F001')!r}, expected 1\")
+if by_id.get('F002') != 1:
+    errors.append(f\"F002 correction_cycles is {by_id.get('F002')!r}, expected 1\")
+for e in errors:
+    print(e)
+" 2>&1)
+if [ -z "$RACE_DIFF_ERRORS" ]; then
+  pass "hs: concurrent increments on two different features both land, neither clobbers the other"
+else
+  fail "hs: concurrent different-feature increments -- $RACE_DIFF_ERRORS"
+fi
+
+# The permission-denied test above exercises "the lock file could not be
+# opened at all"; this exercises the genuinely different path -- the lock
+# file opens fine but another process is actively holding it, so
+# _with_file_lock's poll-until-deadline loop must actually run and give up.
+# Costs ~5-6s of wall-clock (LOCK_TIMEOUT_SECONDS): a real bounded wait, not
+# a mock, is the only way to prove the timeout path itself isn't silently
+# broken (e.g. deadline math that never fires, or a hang).
+HS_LOCK_TIMEOUT="$WORK/hs-lock-timeout"
+mkdir -p "$HS_LOCK_TIMEOUT"
+printf '{"features": [{"id": "F001", "status": "in-progress", "correction_cycles": 0}]}' \
+  > "$HS_LOCK_TIMEOUT/features.json"
+python3 -c "
+import fcntl, time
+fh = open('$HS_LOCK_TIMEOUT/features.json.lock', 'a+')
+fcntl.flock(fh, fcntl.LOCK_EX)
+time.sleep(6)
+fcntl.flock(fh, fcntl.LOCK_UN)
+" &
+LOCK_HOLDER_PID=$!
+sleep 0.5
+START=$(date +%s)
+OUT=$(hs_increment "$HS_LOCK_TIMEOUT/features.json" F001 2>&1)
+RC=$?
+END=$(date +%s)
+wait "$LOCK_HOLDER_PID"
+assert_rc_nonzero "$RC" "hs: increment exits non-zero when the lock is genuinely held by another process"
+assert_contains "$OUT" "timed out waiting for lock" \
+  "hs: increment reports the lock timeout on stderr, not a silent failure"
+ELAPSED=$((END - START))
+if [ "$ELAPSED" -ge 4 ] && [ "$ELAPSED" -le 8 ]; then
+  pass "hs: the lock wait was bounded (~5s), not instant-fail or a hang ($ELAPSED s)"
+else
+  fail "hs: lock wait took ${ELAPSED}s, expected roughly LOCK_TIMEOUT_SECONDS (5s)"
+fi
+CC_AFTER=$(hs_read_correction_cycles "$HS_LOCK_TIMEOUT/features.json")
+if [ "$CC_AFTER" = "0" ]; then
+  pass "hs: a timed-out increment leaves the original file untouched"
+else
+  fail "hs: a timed-out increment modified features.json anyway (correction_cycles is $CC_AFTER)"
 fi
 
 DIR_HS_PLAIN="$WORK/hs-delegate-plain"
