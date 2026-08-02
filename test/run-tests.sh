@@ -166,6 +166,8 @@ assert_contains "$OUT" "rules/context-summary.md" \
   "o: orientation includes the context-summary pointer"
 assert_contains "$OUT" "rules/task-completion.md" \
   "o: orientation includes the task-completion pointer"
+assert_contains "$OUT" "rules/debugging.md (read before debugging a failure)" \
+  "o (OVI-82): orientation includes the debugging pointer"
 
 # OVI-105: a feature description has no length cap in practice -- this
 # repo's own features.json has carried one past 13,000 chars. Exercise BOTH
@@ -240,6 +242,8 @@ assert_not_contains "$OUT" "<vv-harness plugin root>" \
   "y: no placeholder literal when CLAUDE_PLUGIN_ROOT is unset"
 assert_not_contains "$OUT" "rules/code-quality.md" \
   "y: no rule-pointer lines when CLAUDE_PLUGIN_ROOT is unset"
+assert_not_contains "$OUT" "rules/debugging.md" \
+  "y (OVI-82): the debugging pointer is also suppressed when CLAUDE_PLUGIN_ROOT is unset"
 assert_contains "$OUT" "## Harness orientation" \
   "y: orientation still prints when CLAUDE_PLUGIN_ROOT is unset"
 
@@ -9591,6 +9595,24 @@ if grep -q "own default target is \`full_test\`, not \`smoke_test\`" "$HC_SKILL_
 else
   fail "mnt (OVI-106): no inline note reconciling init.sh's full_test default with the smoke-test wording"
 fi
+
+echo ""
+echo "== OVI-82: rules/debugging.md exists with the required four-phase structure =="
+
+DEBUG_RULE="$REPO_ROOT/rules/debugging.md"
+if [ -f "$DEBUG_RULE" ]; then
+  pass "rd (OVI-82): rules/debugging.md exists"
+else
+  fail "rd (OVI-82): rules/debugging.md is missing"
+fi
+assert_contains "$(cat "$DEBUG_RULE" 2>/dev/null)" "NEVER fix a symptom or add a workaround" \
+  "rd (OVI-82): states the root-cause-only rule"
+for PHASE in "Phase 1" "Phase 2" "Phase 3" "Phase 4"; do
+  assert_contains "$(cat "$DEBUG_RULE" 2>/dev/null)" "$PHASE" \
+    "rd (OVI-82): $PHASE is present"
+done
+assert_contains "$(cat "$DEBUG_RULE" 2>/dev/null)" "is not a negative result until the command is known to have run" \
+  "rd (OVI-82): the empty-result-is-not-a-negative-result gotcha (OVI-68) is included"
 
 echo ""
 echo "== shell syntax =="
