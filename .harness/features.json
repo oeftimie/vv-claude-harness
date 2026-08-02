@@ -2205,7 +2205,7 @@
     {
       "id": "F075",
       "description": "OVI-81: the harness has no dedicated TDD-loop rule file. Moved out of Ovidiu's personal ~/.claude/CLAUDE.md as part of OVI-73 (the harness should own development discipline, not the global file). Verified 2026-07-25 against vv-harness/4.2.2/rules/: the four shipped rule files (code-quality.md, task-completion.md, context-summary.md, agent-teams-protocol.md) never mention test-driven development or a red-green-refactor loop; task-completion.md requires tests to pass but never states they're written first. Fix: new rules/tdd.md with the 5-step process (write failing test, confirm it fails, write minimum code to pass, confirm success, refactor) and coverage-bar language from the issue spec, wired into session-start.sh's rule-pointer block alongside the other 5 rule files (agent-teams-protocol, code-quality, context-summary, task-completion, and F074/OVI-82's new debugging.md).",
-      "priority": 75,
+      "priority": 78,
       "status": "passing",
       "scope": [
         "rules/tdd.md",
