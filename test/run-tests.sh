@@ -9638,6 +9638,139 @@ assert_contains "$(cat "$TDD_RULE" 2>/dev/null)" "report that as a blocker rathe
   "rt (OVI-81): unmeasurable coverage must be reported as a blocker, not silently skipped"
 
 echo ""
+echo "== OVI-103: release-consistency CI check =="
+
+RC_YML="$REPO_ROOT/.github/workflows/release-consistency.yml"
+if [ -f "$RC_YML" ]; then
+  RC_YML_ERRORS=$(python3 - "$RC_YML" 2>&1 <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+errors = []
+
+if "\t" in text:
+    errors.append("contains a literal tab character")
+
+try:
+    import yaml
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        errors.append(f"does not parse as YAML: {exc}")
+        data = None
+    if isinstance(data, dict):
+        on = data.get(True, data.get("on"))
+        push = on.get("push") if isinstance(on, dict) else None
+        if not isinstance(push, dict) or "main" not in (push.get("branches") or []):
+            errors.append("'on.push.branches' does not include main")
+        if not isinstance(on, dict) or "workflow_dispatch" not in on:
+            errors.append("'on.workflow_dispatch' is missing")
+        jobs = data.get("jobs") if isinstance(data, dict) else None
+        if not isinstance(jobs, dict) or not jobs:
+            errors.append("'jobs' is missing or empty")
+        else:
+            issue_step_found = False
+            for job in jobs.values():
+                perms = job.get("permissions") if isinstance(job, dict) else None
+                if not isinstance(perms, dict) or perms.get("issues") != "write":
+                    errors.append("a job is missing permissions.issues: write")
+                for step in (job.get("steps") or []) if isinstance(job, dict) else []:
+                    if not isinstance(step, dict):
+                        continue
+                    if "github-script" in (step.get("uses") or ""):
+                        issue_step_found = True
+                        if step.get("if") != "failure()":
+                            errors.append(
+                                "the github-script step is not gated on if: failure()"
+                            )
+            if not issue_step_found:
+                errors.append("no github-script step found")
+except ImportError:
+    if "workflow_dispatch" not in text:
+        errors.append("no 'workflow_dispatch' key found (structural check)")
+    if "jobs:" not in text:
+        errors.append("no 'jobs' key found (structural check)")
+    if "issues: write" not in text:
+        errors.append("no 'issues: write' permission found (structural check)")
+
+for e in errors:
+    print(e)
+PYEOF
+  )
+  if [ -z "$RC_YML_ERRORS" ]; then
+    pass "rc: release-consistency.yml is well-formed with push-to-main + workflow_dispatch"
+  else
+    fail "rc: release-consistency.yml -- $RC_YML_ERRORS"
+  fi
+  if grep -q "CHANGELOG.md" "$RC_YML"; then
+    pass "rc: release-consistency.yml checks the manifest version against CHANGELOG.md"
+  else
+    fail "rc: release-consistency.yml does not check CHANGELOG.md"
+  fi
+  if grep -q "refs/tags/v\$VERSION" "$RC_YML"; then
+    pass "rc: release-consistency.yml checks for a matching git tag"
+  else
+    fail "rc: release-consistency.yml does not check for a matching git tag"
+  fi
+  if grep -q "marketplace.json" "$RC_YML"; then
+    pass "rc: release-consistency.yml checks marketplace.json agreement"
+  else
+    fail "rc: release-consistency.yml does not check marketplace.json"
+  fi
+  if grep -q "issues.create" "$RC_YML"; then
+    pass "rc: release-consistency.yml opens an issue on drift"
+  else
+    fail "rc: release-consistency.yml does not open an issue on drift"
+  fi
+else
+  fail "rc: .github/workflows/release-consistency.yml does not exist"
+fi
+
+# Functional check: run the same three checks release-consistency.yml's script step
+# runs, directly against this repo's actual current state, without invoking GitHub
+# Actions -- confirms the logic itself is correct, not just that the YAML looks right.
+RC_FUNC_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import json
+import subprocess
+import sys
+
+root = sys.argv[1]
+errors = []
+
+manifest = json.load(open(f"{root}/.claude-plugin/plugin.json"))
+version = manifest["version"]
+
+changelog = open(f"{root}/CHANGELOG.md").read()
+if f"### v{version} " not in changelog:
+    errors.append(f"CHANGELOG.md has no '### v{version}' heading")
+
+tag_check = subprocess.run(
+    ["git", "-C", root, "rev-parse", f"refs/tags/v{version}"],
+    capture_output=True,
+)
+if tag_check.returncode != 0:
+    errors.append(f"no git tag v{version} exists")
+
+marketplace = json.load(open(f"{root}/.claude-plugin/marketplace.json"))
+match = next(
+    (p for p in marketplace.get("plugins", []) if p.get("name") == manifest["name"]),
+    None,
+)
+if not match or match.get("source") != "./":
+    errors.append("marketplace.json has no matching plugin entry")
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$RC_FUNC_ERRORS" ]; then
+  pass "rc: this repo's own current state passes the release-consistency checks"
+else
+  fail "rc: this repo's own current state fails release-consistency -- $RC_FUNC_ERRORS"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
