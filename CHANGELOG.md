@@ -2,6 +2,39 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.0.1 (2026-08-02)
+
+**Three correctness fixes from an external code review pass** (feedback_vivi.md, verified
+against commit `6a4f7d3` post-v5.0.0), tracked as Linear issues OVI-105/106/107. A pure
+bugfix patch release — no new capability, nothing additive. The same review's remaining,
+additive follow-ups (OVI-104/81/82) are queued for a future minor release, not bundled
+here.
+
+`features.json` writes could race under parallel `TaskCompleted` hooks (OVI-107):
+`harness_state.py`'s write path used a fixed tmp filename that one concurrent invocation
+could delete out from under another, and the atomic rename lived in the shell wrapper,
+split across two processes, not one. `harness_state.py` now owns the entire
+lock-acquire + read + modify + write + rename cycle itself (`fcntl.flock` on a
+persistent `.lock` file, PID-suffixed tmp names, `os.replace`) — stress-tested to
+120-way concurrency with zero lost writes; the old design measurably lost 8-9 of 12
+concurrent increments.
+
+`session-start.sh`'s orientation could exceed the platform's 10,000-char output cap
+(OVI-105): the next-claimable feature's full description printed untruncated, and a
+single long description (13,222 chars measured on this repo's own `features.json`)
+could crowd out the git-identity warning and rule pointers that print after it. Now
+truncated to 200 chars with a pointer to the full text, in both code paths that print
+it.
+
+`/harness-continue`'s documented "smoke test" (Step 2.5) actually ran the full test
+suite (OVI-106): a bare `./.harness/init.sh` invocation hits `init.sh`'s own
+`full_test` default, not `smoke_test`. Both call sites now pass `smoke_test`
+explicitly.
+
+**Tests**: `test/run-tests.sh` carries 1510 assertions, up from 1489 — the concurrency,
+truncation, and smoke-test regressions above are each independently pinned and
+mutation-tested.
+
 ### v5.0.0 (2026-08-02)
 
 **The v5 upgrade: absorbing harness-engineering's evidence and meta loops.** A comparative
