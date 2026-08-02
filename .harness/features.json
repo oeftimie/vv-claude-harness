@@ -2225,6 +2225,29 @@
       "failure_reason": null,
       "discovered_via": "OVI-81 (Linear, via OVI-73 handoff, investigated per Ovidiu's 2026-08-02 pickup instruction)",
       "spec": null
+    },
+    {
+      "id": "F078",
+      "description": "OVI-103's last outstanding task: 'Add a CI check that manifest <-> tag <-> changelog <-> marketplace source agree.' The other 3 tasks (bump plugin.json, update CHANGELOG.md, tag and publish the release) were already resolved by v5.0.0's release; this was the only unimplemented one. Discovered while closing OVI-103 out that the gap it names is real and current: v5.0.0, v5.0.1, and v5.1.0 (this session's own releases) were never git-tagged or published as GitHub Releases -- v4.2.2 was still showing as 'Latest' on GitHub despite main being 3 versions ahead in plugin.json. Fixed the immediate gap by creating and pushing the 3 missing tags plus GitHub Releases, then added .github/workflows/release-consistency.yml (runs on push to main + workflow_dispatch, matching maintenance.yml's own established pattern of surfacing drift via a GitHub issue rather than blocking a PR, since a tag can't exist before the version-bumping commit that creates it is merged) to catch a recurrence: plugin.json's version must have a matching CHANGELOG.md heading, a matching git tag, and marketplace.json must still resolve to the same plugin name/source (marketplace.json carries no independent version by design, per AGENTS.md's 'version lives ONLY in plugin.json' rule, so this is a structural sanity check rather than a version-drift check).",
+      "priority": 79,
+      "status": "passing",
+      "scope": [
+        ".github/workflows/release-consistency.yml",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "6 new suite assertions: YAML structural validity (push-to-main + workflow_dispatch + issues:write + failure()-gated issue step), 3 grep-based checks that the script actually checks CHANGELOG/tag/marketplace, the issues.create call is present, and a FUNCTIONAL check that runs the same 3-part logic directly against this repo's real current state (not just structural presence) and confirms it reports clean. Mutation-tested the structural layer: replacing the literal string 'marketplace.json' throughout the workflow file fails exactly the marketplace-check assertion, nothing else. Separately proved the functional logic itself (not just the test wrapping it) genuinely detects gaps, not just passes tautologically on real data: ran the identical Python snippet against a synthetic scratch repo with a mismatched version (9.9.9, no matching tag or CHANGELOG heading) and confirmed it reported both gaps correctly. Full suite 1547/1547 both before and after restoring the mutation.",
+      "notes": "Not part of the original 8-issue investigation's per-issue plan -- discovered mid-close-out while verifying OVI-103 could actually be marked Done, and fixed same-session per the standing 'pick them all up' authorization rather than filed as a dangling follow-up, since the underlying gap (3 unpublished releases) was a live, already-shipped problem, not a design question.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Considered making this a PR-blocking check (on: push + pull_request, like test.yml) instead of a push-to-main-only drift monitor. Declined: a tag for the CURRENT version being bumped cannot exist until AFTER the version-bump commit itself is merged, so a PR-time check would always fail on any release PR by construction -- the check only makes sense post-merge, matching how the existing maintenance.yml handles inherently-post-merge drift too."
+      ],
+      "failure_reason": null,
+      "discovered_via": "OVI-103 (close-out verification, 2026-08-02)",
+      "spec": null
     }
   ]
 }
