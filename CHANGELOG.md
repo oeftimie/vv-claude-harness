@@ -80,9 +80,11 @@ not a bug). Local-only, network-free, and silent when no feature carries a `spec
 **Fix: `TeammateIdle` no longer assigns implementation work to the reviewer.** The
 `check-remaining-tasks.sh` template offered the next pending feature to any idle
 teammate, including a reviewer that just finished a review and has no Edit/Write tools.
-The `TeammateIdle` hook payload carries no teammate identity to gate on mechanically, so
-the fix lives in `agents/reviewer.md` instead: its Constraints section now instructs the
-reviewer to decline an offered implementation feature and message the lead. Because this
+The `TeammateIdle` hook payload does carry the teammate's `teammate_name`, but the hook
+itself does not use it to decide whether to fire — a deliberate design decision (see F069
+in `rules/agent-teams-protocol.md`), not a missing field. The fix lives in
+`agents/reviewer.md` instead: its Constraints section now instructs the reviewer to
+decline an offered implementation feature and message the lead. Because this
 ships in the plugin's own agent definition rather than a per-project hook template, it
 reaches every project on the next `/plugin update vv-harness`; no `/harness-init`
 re-run required.
