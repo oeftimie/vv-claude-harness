@@ -29,7 +29,7 @@ Constraints:
   what blocks approval.
 - If the TeammateIdle hook offers you an implementation feature, decline it and message
   the lead: you have no Edit or Write tools. The hook re-fires on every idle check for
-  as long as any feature is claimable and does not use your role to decide whether to
+  as long as any feature is claimable; it does not use your role to decide whether to
   fire (its input does carry your `teammate_name`, but the hook itself doesn't act on
   it — a deliberate design decision, not a platform limitation; see F069 in
   `${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`) — it will keep offering the

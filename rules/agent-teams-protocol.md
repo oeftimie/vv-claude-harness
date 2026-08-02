@@ -246,21 +246,36 @@ for three reasons, not because it was too hard to build:
    already-done teammate reads one more nudge and declines it) is real but bounded and
    visible in the transcript. Trading a bounded, visible cost for a risk of a silent one
    is the wrong direction.
-3. **The precedent for a shared, per-teammate discriminator already failed once.** F055's
-   own `approaches_tried` rejected `.claude/teammate-scope.txt` (a single shared file)
-   as a role-carrier for exactly this reason: it cannot distinguish concurrent
-   teammates from each other. A hardcoded name pattern has the same shape of problem --
-   it substitutes a guess for a real identity contract.
+3. **The correct remedy already exists in this protocol, and a hook patch would hide
+   that it isn't being used.** The residual cost a mechanical carve-out would save --
+   one extra decline-and-end-turn per stale nudge -- is a direct symptom of the lead
+   not sending `shutdown_request` promptly once a role-limited or scoped-one-shot
+   teammate's work is done, which the "Early release" rule above and its Extension
+   already require. Patching the hook to suppress nudges mechanically would treat the
+   symptom (the nudge itself) instead of the cause (a slow release), and would make a
+   lead's own delay invisible instead of visible in the transcript. (An earlier draft
+   of this reason cited `.claude/teammate-scope.txt`'s rejection -- F055's own
+   `approaches_tried` -- as a matching precedent; that comparison doesn't actually
+   transfer: `teammate-scope.txt` failed because a single shared file can't
+   distinguish *concurrent* teammates from each other, a problem `teammate_name`
+   doesn't have, since it's supplied per invocation. Corrected during round-1 review
+   of this feature.)
 
 The prose-based fix (F067) already resolves the correctness question (a properly-
 behaving teammate does not act on a stale nudge); what remains is a bounded, visible,
 non-silent efficiency cost -- borne out live, twice, by `review-pr112-f067` and
-`review-pr113-f068` both declining repeated nudges after their work was delivered. This
-is not filed as a Known Limitation (that heading is for platform ceilings this repo
-cannot change); it is a design decision, reversible if the platform ever ships a real
-per-teammate discriminator field (see the retirement condition `docs/maintenance-
-runbook.md` probe item 6 already tracks) or if this repo adopts an enforced,
-documented naming convention with its own validation -- neither exists today.
+`review-pr113-f068` both declining repeated nudges after their work was delivered. A
+middle ground was considered and rejected too: a lead-authored, static allowlist of
+idle-exempt teammate names (a lookup table checked at nudge time, not a role carrier
+written per spawn like `teammate-scope.txt`, so reason 3's concurrency point doesn't
+apply to it, and a wrong entry is an explicit auditable act rather than a pattern-match
+guess). Declined for the same reason as the general case -- reason 3 already names the
+correct remedy, and an allowlist is still a hook-side patch for a lead-side discipline
+gap. This is not filed as a Known Limitation (that heading is for platform ceilings
+this repo cannot change); it is a design decision, revisitable if the platform ever
+ships a teammate-role/type discriminator field distinct from the plain `teammate_name`
+already present (see `docs/maintenance-runbook.md` probe item 6, extended by F069) or
+if this repo adopts and enforces its own naming convention -- neither exists today.
 
 ## Dual-Engine Review (optional, F018/OVI-66)
 
@@ -496,7 +511,7 @@ The harness installs two hooks that enforce quality mechanically:
 > IS present (confirmed above). `check-remaining-tasks.sh` still doesn't use it, so it
 > stays role-blind in practice, not because it has to but by deliberate choice -- see
 > the corrected comment in `check-remaining-tasks.sh` itself and the "Considered and
-> declined" note below (F069): a mechanical fix keying the escape hatch off
+> declined" note above (F069): a mechanical fix keying the escape hatch off
 > `teammate_name` is technically buildable but was investigated and declined, not
 > merely deferred.
 
