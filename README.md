@@ -190,8 +190,14 @@ corpus rather than an execution harness — found vv-harness strong on mechanica
 enforcement and distribution but missing three things: feedback that never flowed back
 into the harness itself, proof that stopped at coverage percentage, and no maintenance
 loop against weekly platform drift. v5.0 closes all three, adapting the applicable ideas
-rather than copying file layouts or policies, plus mechanisms reconciled from two
-further harnesses: AlexCiortan/setlist (CC BY 4.0) and nodera-studio/agent-os (MIT).
+rather than copying file layouts or policies, plus mechanisms adapted from two further
+harnesses: [AlexCiortan/setlist](https://github.com/alexciortan/setlist) (CC BY 4.0),
+whose two-phase bootstrap doctrine — "never hand-write what a stamp can emit" — shaped
+`harness-doctor`, `scripts/stamp.sh`, the hostile-gate tests, and the commit-content
+gate; and [nodera-studio/agent-os](https://github.com/nodera-studio/agent-os) (MIT),
+whose author-blind conformance-test-writer and independent-engines review doctrine
+shaped the conformance tester and the optional dual-engine review below. Both are worth
+reading directly if you're building your own harness.
 
 New capabilities: `harness-doctor` (a report-first health check with a `--fix` upgrade
 mode, now including plugin-version drift detection); `scripts/stamp.sh` (a deterministic
