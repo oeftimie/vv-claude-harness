@@ -167,6 +167,74 @@ assert_contains "$OUT" "rules/context-summary.md" \
 assert_contains "$OUT" "rules/task-completion.md" \
   "o: orientation includes the task-completion pointer"
 
+# OVI-105: a feature description has no length cap in practice -- this
+# repo's own features.json has carried one past 13,000 chars. Exercise BOTH
+# code paths that print "Next claimable:" (the delegated harness_state.py
+# path and the inline fallback), since the truncation logic is duplicated
+# between them and a copy-paste slip could leave one path unfixed while the
+# other looks fine.
+LONG_DESC_LEN=13222
+LONG_DESC=$(python3 -c "print('X' * $LONG_DESC_LEN)")
+
+DIR_LONGDESC_FALLBACK="$WORK/long-description-fallback"
+make_fixture "$DIR_LONGDESC_FALLBACK"
+python3 - "$DIR_LONGDESC_FALLBACK/.harness/features.json" "$LONG_DESC" <<'PYEOF'
+import json
+import sys
+path, long_desc = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["description"] = long_desc
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start_with_root "$DIR_LONGDESC_FALLBACK" '{"source":"startup"}' "$REPO_ROOT")
+LEN=${#OUT}
+if [ "$LEN" -lt 4000 ]; then
+  pass "o (OVI-105, fallback path): orientation with a $LONG_DESC_LEN-char description stays under 4000 chars ($LEN)"
+else
+  fail "o (OVI-105, fallback path): orientation is $LEN chars with a $LONG_DESC_LEN-char description, expected under 4000"
+fi
+assert_contains "$OUT" "Next claimable: F003" \
+  "o (OVI-105, fallback path): the feature id still appears when its description is truncated"
+assert_contains "$OUT" "$LONG_DESC_LEN chars total, see .harness/features.json for the full description" \
+  "o (OVI-105, fallback path): the truncation marker names the real length and points at the full text"
+assert_contains "$OUT" "rules/task-completion.md" \
+  "o (OVI-105, fallback path): later orientation content still fits after truncation"
+
+DIR_LONGDESC_DELEGATED="$WORK/long-description-delegated"
+make_fixture "$DIR_LONGDESC_DELEGATED"
+mkdir -p "$DIR_LONGDESC_DELEGATED/.claude/hooks"
+cp "$TEMPLATES_DIR/harness_state.py.template" "$DIR_LONGDESC_DELEGATED/.claude/hooks/harness_state.py"
+chmod +x "$DIR_LONGDESC_DELEGATED/.claude/hooks/harness_state.py"
+python3 - "$DIR_LONGDESC_DELEGATED/.harness/features.json" "$LONG_DESC" <<'PYEOF'
+import json
+import sys
+path, long_desc = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["description"] = long_desc
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_session_start_with_root "$DIR_LONGDESC_DELEGATED" '{"source":"startup"}' "$REPO_ROOT")
+LEN=${#OUT}
+if [ "$LEN" -lt 4000 ]; then
+  pass "o (OVI-105, delegated path): orientation with a $LONG_DESC_LEN-char description stays under 4000 chars ($LEN)"
+else
+  fail "o (OVI-105, delegated path): orientation is $LEN chars with a $LONG_DESC_LEN-char description, expected under 4000"
+fi
+assert_contains "$OUT" "Next claimable: F003" \
+  "o (OVI-105, delegated path): the feature id still appears when its description is truncated"
+assert_contains "$OUT" "$LONG_DESC_LEN chars total, see .harness/features.json for the full description" \
+  "o (OVI-105, delegated path): the truncation marker names the real length and points at the full text"
+
 OUT=$(run_session_start "$DIR_A" '{"source":"startup"}')
 assert_not_contains "$OUT" "<vv-harness plugin root>" \
   "y: no placeholder literal when CLAUDE_PLUGIN_ROOT is unset"
