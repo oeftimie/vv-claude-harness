@@ -5880,7 +5880,7 @@ make_healthy_doctor_fixture() {
   }
 }
 SETTINGSEOF
-  printf '.harness/SESSION_INCOMPLETE\n' > "$1/.gitignore"
+  printf '.harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n' > "$1/.gitignore"
   cat >> "$1/.harness/context_summary.md" <<'CTXEOF'
 
 ## Cross-Cutting Concerns
@@ -6008,6 +6008,7 @@ PYEOF
 rm "$DIR_DOC_FIX/.claude/hooks/statusline.sh"
 printf '' > "$DIR_DOC_FIX/.gitignore"
 rm "$DIR_DOC_FIX/.claude/hooks/harness_state.py"
+rm "$DIR_DOC_FIX/.claude/hooks/commit-gate.sh"
 printf '# stale placeholder\n' > "$DIR_DOC_FIX/.claude/hooks/verify-task-quality.sh"
 chmod +x "$DIR_DOC_FIX/.claude/hooks/verify-task-quality.sh"
 FIX_OUT=$(run_doctor "$DIR_DOC_FIX" --fix)
@@ -6017,6 +6018,15 @@ assert_not_contains "$FIX_OUT" "statusline.sh' is missing" "hd: --fix restores s
 assert_not_contains "$FIX_OUT" "SESSION_INCOMPLETE" "hd: --fix appends the gitignore entry"
 assert_not_contains "$FIX_OUT" "harness_state.py not present" \
   "hd: --fix restores harness_state.py"
+assert_not_contains "$FIX_OUT" "commit-gate.sh not present" \
+  "hd: --fix restores commit-gate.sh (F073/OVI-104)"
+if [ -x "$DIR_DOC_FIX/.claude/hooks/commit-gate.sh" ] \
+  && cmp -s "$DIR_DOC_FIX/.claude/hooks/commit-gate.sh" \
+    "$TEMPLATES_DIR/commit-gate.sh.template"; then
+  pass "hd: --fix -- commit-gate.sh on disk matches the plugin template (F073/OVI-104)"
+else
+  fail "hd: --fix -- commit-gate.sh on disk does not match the plugin template (F073/OVI-104)"
+fi
 if grep -q '"PostCompact"' "$DIR_DOC_FIX/.claude/settings.json"; then
   fail "hd: --fix -- settings.json still has a PostCompact block on disk"
 else
@@ -6033,6 +6043,26 @@ if grep -q "stale placeholder" "$DIR_DOC_FIX/.claude/hooks/verify-task-quality.s
   fail "hd: --fix -- verify-task-quality.sh was not re-copied from the current template"
 else
   pass "hd: --fix -- verify-task-quality.sh was re-copied from the current template"
+fi
+
+# F077/OVI-107 follow-up: the real-world upgrade scenario -- a project already
+# initialized before OVI-107 shipped has SESSION_INCOMPLETE in .gitignore but not
+# the newer features.json.lock line. --fix must append the missing line, not
+# early-return because SOME required line is already present.
+DIR_DOC_GITIGNORE_UPGRADE="$WORK/doctor-gitignore-upgrade"
+make_healthy_doctor_fixture "$DIR_DOC_GITIGNORE_UPGRADE"
+printf '.harness/SESSION_INCOMPLETE\n' > "$DIR_DOC_GITIGNORE_UPGRADE/.gitignore"
+OUT=$(run_doctor "$DIR_DOC_GITIGNORE_UPGRADE")
+assert_contains "$OUT" ".gitignore is missing .harness/features.json.lock" \
+  "hd: a pre-OVI-107 project missing only the lock gitignore line is reported (F077)"
+FIX_OUT=$(run_doctor "$DIR_DOC_GITIGNORE_UPGRADE" --fix)
+assert_not_contains "$FIX_OUT" "features.json.lock" \
+  "hd: --fix appends the missing lock gitignore line even when SESSION_INCOMPLETE was already present (F077)"
+if grep -qxF ".harness/features.json.lock" "$DIR_DOC_GITIGNORE_UPGRADE/.gitignore" \
+  && grep -qxF ".harness/SESSION_INCOMPLETE" "$DIR_DOC_GITIGNORE_UPGRADE/.gitignore"; then
+  pass "hd: --fix -- .gitignore on disk has both required lines after upgrade (F077)"
+else
+  fail "hd: --fix -- .gitignore on disk is missing a required line after upgrade (F077)"
 fi
 
 # Spec item 2's whole point: an artifact whose current state MATCHES the last
@@ -6098,13 +6128,48 @@ OUT=$(run_doctor "$DIR_DOC_MLD_OK")
 assert_not_contains "$OUT" "non-injection" \
   "hd: .harness/mld/ present with the real (mld-free) session-start.sh is not a finding"
 
-# mld/ present but no plugin root available at all -> can't check, no finding.
+# mld/ present but no plugin root available at all -> the specific mld check
+# can't run (F073/OVI-104: this is now covered by the consolidated
+# CLAUDE_PLUGIN_ROOT-unset finding below; check for the specific check's own
+# finding text, not the bare substring "non-injection", which now legitimately
+# appears in the consolidated finding's own text too).
 DIR_DOC_MLD_NOROOT="$WORK/doctor-mld-noroot"
 make_healthy_doctor_fixture "$DIR_DOC_MLD_NOROOT"
 mkdir -p "$DIR_DOC_MLD_NOROOT/.harness/mld"
 OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_MLD_NOROOT")
-assert_not_contains "$OUT" "non-injection" \
-  "hd: .harness/mld/ present with no CLAUDE_PLUGIN_ROOT set produces no finding"
+assert_not_contains "$OUT" "non-injection guarantee broken" \
+  "hd: .harness/mld/ present with no CLAUDE_PLUGIN_ROOT set produces no mld-specific finding"
+
+# F073/OVI-104: CLAUDE_PLUGIN_ROOT unset silently skipped 4 checks (commit-gate
+# presence, features.json cross-validation, plugin_version drift, mld
+# non-injection) with zero indication to the user. One consolidated Finding
+# now covers all 4 in a single message, instead of either 4 separate
+# skip-warnings or the prior silence.
+DIR_DOC_NOROOT="$WORK/doctor-plugin-root-unset"
+make_healthy_doctor_fixture "$DIR_DOC_NOROOT"
+OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_NOROOT")
+assert_contains "$OUT" \
+  "CLAUDE_PLUGIN_ROOT is not set -- 4 checks could not run and were silently skipped" \
+  "hd: CLAUDE_PLUGIN_ROOT unset produces one consolidated finding (F073/OVI-104)"
+assert_contains "$OUT" "commit-gate.sh presence" \
+  "hd: consolidated finding names commit-gate.sh presence"
+assert_contains "$OUT" "features.json cross-validation" \
+  "hd: consolidated finding names features.json cross-validation"
+assert_contains "$OUT" "plugin_version drift" \
+  "hd: consolidated finding names plugin_version drift"
+assert_contains "$OUT" "the .harness/mld/ non-injection guarantee" \
+  "hd: consolidated finding names the mld non-injection guarantee"
+FINDING_COUNT=$(printf '%s' "$OUT" | grep -c "CLAUDE_PLUGIN_ROOT is not set")
+if [ "$FINDING_COUNT" = "1" ]; then
+  pass "hd: the CLAUDE_PLUGIN_ROOT-unset finding appears exactly once, not once per check"
+else
+  fail "hd: the CLAUDE_PLUGIN_ROOT-unset finding appeared $FINDING_COUNT times, expected 1"
+fi
+
+# Plugin root set -> the consolidated finding does not appear at all.
+OUT=$(run_doctor "$DIR_DOC_NOROOT")
+assert_not_contains "$OUT" "CLAUDE_PLUGIN_ROOT is not set" \
+  "hd: the consolidated finding does not appear when CLAUDE_PLUGIN_ROOT is set"
 
 # mld/ present, plugin root set, but that root has no hooks/session-start.sh at all.
 DIR_DOC_MLD_NOFILE="$WORK/doctor-mld-nofile"
@@ -6345,13 +6410,17 @@ assert_contains "$OUT" \
   "upgrade available: .harness/harness.json has no plugin_version recorded (currently installed plugin is '$DOCTOR_PLUGIN_VERSION')" \
   "hd: F068's absent-version finding names the currently installed plugin"
 
-# plugin_root can't be determined -> nothing to compare against, no finding even
-# though the recorded value is genuinely stale, and even for the absent case.
+# plugin_root can't be determined -> nothing to compare against, so the specific
+# drift/absent finding is skipped even though the recorded value is genuinely
+# stale (and even for the absent case) -- F073/OVI-104 covers the skip itself
+# via the consolidated CLAUDE_PLUGIN_ROOT-unset finding, so check for the
+# specific per-check message's absence, not the substring "plugin_version"
+# (which now legitimately appears in the consolidated finding's own text).
 OUT=$(run_doctor_with_root "$DIR_DOC_VERSION_DRIFT" "")
-assert_not_contains "$OUT" "plugin_version" \
+assert_not_contains "$OUT" "records plugin_version" \
   "hd: F068's drift check is skipped, not falsely healthy or crashing, when plugin_root is unknown"
 OUT=$(run_doctor_with_root "$DIR_DOC_VERSION_ABSENT" "")
-assert_not_contains "$OUT" "plugin_version" \
+assert_not_contains "$OUT" "has no plugin_version recorded" \
   "hd: F068's absent-version check is also skipped when plugin_root is unknown"
 
 # --fix updates a drifted recording and the result is idempotent.
@@ -6387,8 +6456,8 @@ else
   fail "hd: F068's --fix writes the real version when bootstrapping, not a placeholder -- got '$RECORDED_AFTER_BOOTSTRAP', wanted '$DOCTOR_PLUGIN_VERSION'"
 fi
 
-# fixes.py: the five single-purpose fixers' no-op ("already resolved" or
-# "can't act") branches are unreachable through the CLI (apply_fixes only invokes
+# fixes.py: the single-purpose fixers' no-op ("already resolved" or "can't
+# act") branches are unreachable through the CLI (apply_fixes only invokes
 # a fix_id when a finding actually calls for it), so exercise them directly.
 FIXES_ERRORS=$(python3 - "$REPO_ROOT/skills/harness-doctor" 2>&1 <<'PYEOF'
 import json
@@ -6412,12 +6481,39 @@ with tempfile.TemporaryDirectory() as d:
         errors.append("_copy_statusline should no-op when plugin_root is None")
     if fixes._copy_harness_state(d, None) is not False:
         errors.append("_copy_harness_state should no-op when plugin_root is None")
+    if fixes._copy_commit_gate(d, None) is not False:
+        errors.append("_copy_commit_gate should no-op when plugin_root is None (F073/OVI-104)")
+    missing_template_root = os.path.join(d, "plugin-root-no-commit-gate-template")
+    os.makedirs(os.path.join(missing_template_root, "skills", "harness-init"))
+    if fixes._copy_commit_gate(d, missing_template_root) is not False:
+        errors.append(
+            "_copy_commit_gate should no-op when the plugin has no "
+            "commit-gate.sh.template (F073/OVI-104)"
+        )
 
     gitignore_path = os.path.join(d, ".gitignore")
     with open(gitignore_path, "w") as fh:
-        fh.write(".harness/SESSION_INCOMPLETE\n")
+        fh.write(".harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n")
     if fixes._append_gitignore(d, None) is not False:
-        errors.append("_append_gitignore should no-op when the line is already present")
+        errors.append("_append_gitignore should no-op when both required lines are present")
+
+    # F077/OVI-107 follow-up (round-1 review of PR #123): a project with ONLY the
+    # older SESSION_INCOMPLETE line must still get the newer lock line appended --
+    # the old contract's early-return on the FIRST line's presence made the lock
+    # line permanently unreachable for any already-initialized project.
+    with open(gitignore_path, "w") as fh:
+        fh.write(".harness/SESSION_INCOMPLETE\n")
+    if fixes._append_gitignore(d, None) is not True:
+        errors.append(
+            "_append_gitignore should append the missing lock line even when "
+            "SESSION_INCOMPLETE is already present (F077)"
+        )
+    with open(gitignore_path) as fh:
+        after_partial = fh.read()
+    if ".harness/features.json.lock" not in after_partial.splitlines():
+        errors.append(
+            "_append_gitignore did not actually write the missing lock line (F077)"
+        )
 
     if fixes._load_json(os.path.join(d, "does-not-exist.json")) is not None:
         errors.append("_load_json should return None for a missing file")
