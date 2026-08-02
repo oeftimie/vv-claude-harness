@@ -140,6 +140,20 @@ def _copy_harness_state(project_dir, plugin_root):
     return copied
 
 
+def _copy_commit_gate(project_dir, plugin_root):
+    if not plugin_root:
+        return False
+    src = os.path.join(plugin_root, "skills", "harness-init", "commit-gate.sh.template")
+    if not os.path.isfile(src):
+        return False
+    dest_dir = os.path.join(project_dir, ".claude", "hooks")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, "commit-gate.sh")
+    shutil.copyfile(src, dest)
+    os.chmod(dest, 0o755)
+    return True
+
+
 def _update_plugin_version(project_dir, plugin_root):
     if not plugin_root:
         return False
@@ -177,5 +191,6 @@ _FIXERS = {
     "add_settings_wiring": _add_settings_wiring,
     "append_gitignore": _append_gitignore,
     "copy_harness_state": _copy_harness_state,
+    "copy_commit_gate": _copy_commit_gate,
     "update_plugin_version": _update_plugin_version,
 }

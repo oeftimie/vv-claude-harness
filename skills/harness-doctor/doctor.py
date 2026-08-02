@@ -129,6 +129,7 @@ def _check_optional_v5_hooks(hooks_dir, plugin_root):
             'copy from the plugin: cp "${CLAUDE_PLUGIN_ROOT}/skills/harness-init/'
             'commit-gate.sh.template" .claude/hooks/commit-gate.sh && '
             "chmod +x .claude/hooks/commit-gate.sh",
+            fix_id="copy_commit_gate",
         ))
     return findings
 
@@ -403,6 +404,37 @@ def check_mld_non_injection(project_dir, plugin_root):
     return []
 
 
+# OVI-104: commit-gate.sh presence (_check_optional_v5_hooks), features.json
+# cross-validation (_run_features_validator via check_harness_state_files),
+# plugin_version drift (check_version_drift), and the .harness/mld/
+# non-injection guarantee (check_mld_non_injection) all silently return no
+# findings when plugin_root is falsy -- each one individually correct (none
+# can compare against a plugin it can't locate), but four independent silent
+# skips add up to a "healthy" report that quietly verified less than it
+# looks like it did. One consolidated Finding here, instead of teaching each
+# of the four to also self-report, keeps the skip visible without repeating
+# the same "set CLAUDE_PLUGIN_ROOT" advice four times.
+PLUGIN_ROOT_GATED_CHECKS = (
+    "commit-gate.sh presence",
+    "features.json cross-validation against the plugin's schema",
+    "plugin_version drift",
+    "the .harness/mld/ non-injection guarantee",
+)
+
+
+def check_plugin_root_unset(plugin_root):
+    if plugin_root:
+        return []
+    checks = ", ".join(PLUGIN_ROOT_GATED_CHECKS)
+    return [Finding(
+        f"CLAUDE_PLUGIN_ROOT is not set -- {len(PLUGIN_ROOT_GATED_CHECKS)} checks could not "
+        f"run and were silently skipped: {checks}",
+        "set CLAUDE_PLUGIN_ROOT to the plugin's install directory and re-run doctor for a "
+        "complete report (Claude Code sets it automatically when the plugin is active; a "
+        "manual or CI invocation of doctor.py must set it explicitly)",
+    )]
+
+
 def run_checks(project_dir, plugin_root):
     findings = []
     findings.extend(check_dependencies())
@@ -413,6 +445,7 @@ def run_checks(project_dir, plugin_root):
     findings.extend(check_feature_test_files(project_dir))
     findings.extend(check_version_drift(project_dir, plugin_root))
     findings.extend(check_mld_non_injection(project_dir, plugin_root))
+    findings.extend(check_plugin_root_unset(plugin_root))
     return findings
 
 
