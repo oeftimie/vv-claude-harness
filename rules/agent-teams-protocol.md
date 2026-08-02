@@ -266,11 +266,11 @@ behaving teammate does not act on a stale nudge); what remains is a bounded, vis
 non-silent efficiency cost -- borne out live, twice, by `review-pr112-f067` and
 `review-pr113-f068` both declining repeated nudges after their work was delivered. A
 middle ground was considered and rejected too: a lead-authored, static allowlist of
-idle-exempt teammate names (a lookup table checked at nudge time, not a role carrier
-written per spawn like `teammate-scope.txt`, so reason 3's concurrency point doesn't
-apply to it, and a wrong entry is an explicit auditable act rather than a pattern-match
-guess). Declined for the same reason as the general case -- reason 3 already names the
-correct remedy, and an allowlist is still a hook-side patch for a lead-side discipline
+idle-exempt teammate names (a lookup table checked at nudge time, unlike
+`teammate-scope.txt`'s per-spawn role carrier, and a wrong entry is an explicit
+auditable act rather than a pattern-match guess). Declined for the same reason as the
+general case -- reason 3 already names the correct remedy, and an allowlist is still a
+hook-side patch for a lead-side discipline
 gap. This is not filed as a Known Limitation (that heading is for platform ceilings
 this repo cannot change); it is a design decision, revisitable if the platform ever
 ships a teammate-role/type discriminator field distinct from the plain `teammate_name`

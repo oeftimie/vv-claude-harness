@@ -148,7 +148,9 @@ way.
    **Retirement condition**: re-fetch `code.claude.com/docs/en/hooks`'s common
    input fields; if a team-role/lead-vs-teammate discriminator field appears,
    record F061 here as FIXED; if a task-list snapshot field appears, record
-   F067 here as FIXED; if a teammate-role/type discriminator field appears (distinct from the plain `teammate_name` already present), record F069's design decision here as worth revisiting (the three can retire
+   F067 here as FIXED; if a teammate-role/type discriminator field appears
+   (distinct from the plain `teammate_name` already present), record F069's
+   design decision here as worth revisiting (the three can retire
    independently of each other).
    Removing either limitation callout and updating the corresponding hook
    template to use the new field, or reopening F069's declined design

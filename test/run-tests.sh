@@ -9237,7 +9237,7 @@ fi
 # condition maintenance-runbook.md's probe item 6 "already tracks" -- pin that
 # item 6 was actually extended to reference F069, not just F061/F067.
 if grep -q "declined teammate-role carve-out (F069)" "$REPO_ROOT/docs/maintenance-runbook.md" \
-  && grep -q "record F069's design decision here as worth revisiting" "$REPO_ROOT/docs/maintenance-runbook.md"; then
+  && grep -q "design decision here as worth revisiting" "$REPO_ROOT/docs/maintenance-runbook.md"; then
   pass "f069: maintenance-runbook.md's probe item 6 is actually wired to F069's retirement condition, not just referenced"
 else
   fail "f069: maintenance-runbook.md's probe item 6 does not reference F069's retirement condition"
