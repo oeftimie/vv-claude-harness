@@ -2040,6 +2040,29 @@
       "failure_reason": null,
       "discovered_via": "F067",
       "spec": null
+    },
+    {
+      "id": "F071",
+      "description": "[OVI-105] P1: session-start orientation can hit the 10k platform output cap. hooks/session-start.sh prints the next claimable feature's full description untruncated in both the delegated (harness_state.py) and fallback code paths. Plain stdout to the model is capped at 10,000 chars (the hook's own header comment). Measured on the dogfooding repo: the longest description in .harness/features.json was 13,222 chars -- a single feature could blow past the cap by itself, truncating more important recovery information (the git-identity mismatch warning and every rule pointer print AFTER the description). The existing test (<4000 chars) passed only because the fixture's descriptions were 20-26 characters, never exercising the real-world case. Fix: truncate the printed description to 200 chars with a pointer to the full text in features.json, in both code paths (they duplicate this logic, so both needed the same fix and both needed independent test coverage).",
+      "priority": 72,
+      "status": "passing",
+      "scope": [
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "7 new assertions: fallback path (orientation stays under 4000 chars with a 13,222-char description matching the real-world length OVI-105 cited, the feature id still appears, the truncation marker names the real length and points at the full text, later rule-pointer content still fits) and delegated path (same 3 checks, minus the later-content check since that fixture doesn't exercise the rule-pointer section identically). Mutation-tested: reverted ONLY the delegated path's truncation logic, confirmed exactly its own 2 assertions fail while all 4 fallback-path assertions stay green -- proves the two paths are independently pinned, not one test accidentally covering both. Full suite 1496/1496.",
+      "notes": "Second item in the v5.0.1 patch batch (after F070/OVI-107), per the critical-thinker-reviewed plan. Design choice: 200-char truncation length, tight enough that even several long-ish descriptions plus the rest of orientation stay well under the 4000-char budget test this repo already enforces, with margin below the platform's actual 10,000-char cap. The rationale (protect what prints AFTER the description, not just trim verbosity) is stated inline as a comment, per feedback that the 'why' matters more than the number itself. Duplicated the fix across both session-start.sh code paths (delegated and fallback) since the file already duplicates this printing logic for different reasons (v5+ projects with harness_state.py vs. older projects without it) -- did not attempt to de-duplicate the two paths as part of this fix, since that's a larger refactor outside OVI-105's scope.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Confirmed the claim directly rather than trusting the issue text: grepped hooks/session-start.sh for both 'desc = f.get(\"description\"' sites, confirmed neither truncated, confirmed the existing <4000-char test's fixture descriptions were all under 30 chars (never exercising the real-world length). Picked 13,222 chars for the test fixture to match the real length OVI-105's own investigation cited, not an arbitrary round number."
+      ],
+      "failure_reason": null,
+      "discovered_via": null,
+      "spec": null
     }
   ]
 }
