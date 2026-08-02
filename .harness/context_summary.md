@@ -6,9 +6,9 @@ This file is referenced in CLAUDE.md and loaded every session.
 ## Active Context
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
 - Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues) is now COMPLETE, all shipped through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up), F018/OVI-66 (PR #103), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md), F020/OVI-59 (skills/harness-improve/SKILL.md), F021/OVI-60 (evals/README.md + evals/orientation-recovery.md, this session, filed F066+F067 as follow-ups). See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
-- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. With F021 shipped, ALL 21 original OVI-44 sub-issues are done, and ALL discovered follow-ups (F023-F069) are now shipped or merge-pending as of this entry -- F063-F068 merged (PRs #108-#113, F067 and F068 each needed 2 review rounds, see their own Meta-Session entries); F069 implemented, tests green, not yet PR'd/reviewed/merged as of this entry.
-- F069's one remaining loose end, by design: a proposed correction for `CHANGELOG.md`'s copy of the same falsified claim, recorded in F069's own `notes` field, deliberately NOT applied (CHANGELOG.md is Human-Owned -- propose entries, Ovidiu controls versions). Needs his sign-off, not further autonomous action.
-- No other locally-discovered work is queued as of this entry. The next session should confirm F069 merged and check whether Ovidiu has responded to the CHANGELOG.md proposal.
+- Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. THE ENTIRE OVI-44 EPIC IS NOW COMPLETE: all 21 original Linear sub-issues plus all 48 locally-discovered follow-ups (F023-F069), 69 features total, every one `passing` and merged (F063-F069 via PRs #108-#115; F067, F068, and F069 each needed 2 review rounds -- see their own Meta-Session entries for what each round caught).
+- One loose end remains, by design, not oversight: a proposed correction for `CHANGELOG.md`'s copy of F055's falsified "TeammateIdle carries no teammate identity" claim, recorded in F069's own `notes` field with two options (a rewrite or a bracketed pointer). Deliberately NOT applied -- `CHANGELOG.md` is Human-Owned (propose entries, Ovidiu controls versions). Needs his sign-off, not further autonomous action. This is the only open item in the entire project as of this entry.
+- No locally-discovered work is queued. A future session picking up this project should: (1) check whether Ovidiu has responded to the CHANGELOG.md proposal, and (2) treat the absence of a `pending`/`in-progress` feature in `features.json` as a real signal that new work needs to be scoped from scratch (a fresh Linear epic, a new user request), not assumed to still exist somewhere unlisted.
 
 ## Cross-Cutting Concerns
 - Stack: custom (shell hooks + JSON manifests + markdown skills; no application code)
@@ -1503,6 +1503,31 @@ session-end.sh at the next SessionStart.
   section, and check-remaining-tasks.sh's comment independently), each
   confirmed to fail exactly the assertions guarding that file, nothing
   else. Full suite 1487/1487 throughout.
-- This closes the entire F023-F069 locally-discovered chain. Only a
-  human sign-off on the proposed CHANGELOG.md correction remains
-  outstanding, by design (Human-Owned file).
+- ROUND 1 (review-pr115-f069): APPROVE with 8 non-blocking findings, all
+  folded in. The substantive one: the reviewer pushed back (as asked) on
+  reason 3 of the "Considered and declined" design section and was right
+  -- the `.claude/teammate-scope.txt` precedent it cited doesn't actually
+  transfer, since that precedent failed on CONCURRENCY (one shared file
+  can't distinguish concurrent teammates) and `teammate_name` doesn't
+  have that failure mode (supplied per invocation). Replaced with the
+  actually-sound argument: the correct remedy (prompt lead release,
+  F059's own rule) already exists; a mechanical patch would hide that it
+  isn't being used, not fix the cause. Also caught: a fifth occurrence of
+  the false claim my own grep was too narrow to find, and a purely
+  negative test assertion that a reviewer mutation (deleting the whole
+  guarded comment, not just reverting it) passed cleanly.
+- ROUND 2: APPROVE, all 8 re-verified as genuinely fixed independently
+  (not trusted from the round-1 summary). 2 more nits folded in: a
+  dangling cross-reference (the SAME label "reason 3" pointing at two
+  different arguments two sentences apart, after round-1's rewrite), and
+  a FIFTH instance of this feature's own recurring line-wrap-vs-grep
+  gotcha (a 210-char outlier line, 2.5x the file's next-longest) --
+  fixed this time by shortening the test's own anchor to something
+  guaranteed to survive a normal wrap, rather than stretching the source
+  a fifth time, per the reviewer's explicit naming of that as the
+  durable fix. PR #115 merged.
+- This closes the ENTIRE F023-F069 locally-discovered chain, and with it
+  the entire OVI-44 epic (21 Linear sub-issues + 48 locally-discovered
+  follow-ups, 69 features total, all `passing`). Only a human sign-off on
+  the proposed CHANGELOG.md correction remains outstanding, by design
+  (Human-Owned file) -- not autonomous work.
