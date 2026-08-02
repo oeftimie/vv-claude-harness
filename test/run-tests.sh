@@ -5320,10 +5320,7 @@ else
   pass "hs: a failed write leaves no orphaned tmp file"
 fi
 
-# OVI-107 regression tests: the actual race this feature closes. Both are
-# skipped, not silently passed, if the shell/python toolchain can't launch
-# background jobs the way this test expects -- an environment problem
-# should never masquerade as a passing concurrency proof.
+# OVI-107 regression tests: the actual race this feature closes.
 
 # (a) N concurrent increments on the SAME feature: every single increment
 # must land. This is the strongest form of "two simultaneous increments
