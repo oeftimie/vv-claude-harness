@@ -4490,7 +4490,8 @@ else
 fi
 
 # F055: the TeammateIdle hook re-fires on every idle check regardless of teammate
-# role (no identity in the payload), so a reviewer that declines an offered
+# role (the hook itself doesn't act on the payload's teammate_name, a deliberate
+# design decision -- see F069), so a reviewer that declines an offered
 # implementation feature must not re-message the lead on every repeat -- that
 # discipline has to live in the agent definition, since only it knows the role.
 if grep -q "Send that decline message only once per review assignment" "$REPO_ROOT/agents/reviewer.md" \
@@ -6729,7 +6730,7 @@ fi
 # Pin that the retirement condition is actually wired to a probe, not just
 # stated and left unchecked.
 RUNBOOK_MD="$REPO_ROOT/docs/maintenance-runbook.md"
-if grep -q "Lead/teammate hook-blindness (F061) and TeammateIdle task-list blindness" "$RUNBOOK_MD" \
+if grep -q "Lead/teammate hook-blindness (F061)" "$RUNBOOK_MD" \
   && grep -q "record F061 here as FIXED" "$RUNBOOK_MD"; then
   pass "mnt (F061): the maintenance runbook has a probe wired to F061's retirement condition"
 else
@@ -9162,6 +9163,84 @@ if [ -z "$F065_ERRORS" ]; then
   pass "f065: README.md mentions every skills/*/SKILL.md directory in both the plugin tree and the component table"
 else
   fail "f065: $F065_ERRORS"
+fi
+
+echo ""
+echo "== F069: correct the falsified TeammateIdle identity claim =="
+
+# F055's original claim (TeammateIdle carries no teammate identity at all) was
+# found false during F067's round-1 review. F069 covers the remaining false
+# claims F067 didn't touch: agents/reviewer.md and README.md.
+if grep -q "it has no teammate identity" "$REPO_ROOT/agents/reviewer.md"; then
+  fail "f069: agents/reviewer.md still asserts the falsified 'no teammate identity' claim"
+else
+  pass "f069: agents/reviewer.md no longer asserts the falsified claim"
+fi
+if grep -q "does not use your role to decide whether to" "$REPO_ROOT/agents/reviewer.md" \
+  && grep -q "carry your \`teammate_name\`" "$REPO_ROOT/agents/reviewer.md"; then
+  pass "f069: agents/reviewer.md states the corrected fact (teammate_name present, hook doesn't act on it)"
+else
+  fail "f069: agents/reviewer.md missing the corrected TeammateIdle fact"
+fi
+
+if grep -q "the hook payload carries" "$REPO_ROOT/README.md" && grep -q "no teammate identity" "$REPO_ROOT/README.md"; then
+  fail "f069: README.md still asserts the falsified 'no teammate identity' claim"
+else
+  pass "f069: README.md no longer asserts the falsified claim"
+fi
+if grep -q "use the payload's \`teammate_name\` to decide whether to fire" "$REPO_ROOT/README.md"; then
+  pass "f069: README.md states the corrected fact"
+else
+  fail "f069: README.md missing the corrected TeammateIdle fact"
+fi
+
+# The design question F067 deliberately deferred: should check-remaining-tasks.sh
+# key its escape hatch off teammate_name mechanically? Investigated and declined
+# -- pin the decision, its three reasons, and the retirement condition, matching
+# how F061's Known Limitation callout is pinned.
+if grep -q "Considered and declined: a \`teammate_name\`-keyed mechanical carve-out (F069)" \
+  "$REPO_ROOT/rules/agent-teams-protocol.md"; then
+  pass "f069: rules/agent-teams-protocol.md documents the considered-and-declined design decision"
+else
+  fail "f069: rules/agent-teams-protocol.md missing the considered-and-declined section"
+fi
+F069_REASON_COUNT=$(grep -c "^[0-9]\. \*\*No enforced naming contract\|^[0-9]\. \*\*A wrong guess is asymmetric\|^[0-9]\. \*\*The correct remedy already exists" "$REPO_ROOT/rules/agent-teams-protocol.md")
+if [ "$F069_REASON_COUNT" -eq 3 ]; then
+  pass "f069: all three declined-design reasons are present"
+else
+  fail "f069: expected 3 declined-design reasons, found $F069_REASON_COUNT"
+fi
+
+# check-remaining-tasks.sh's comment must no longer say the mechanical fix is
+# merely "tracked as a follow-up" (implying still-open/undecided) -- it was
+# investigated and declined, a closed design question, not a pending TODO.
+if grep -q "tracked as a follow-up, not done here" "$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh"; then
+  fail "f069: check-remaining-tasks.sh still frames the mechanical fix as merely deferred, not declined"
+else
+  pass "f069: check-remaining-tasks.sh no longer frames the mechanical fix as merely deferred"
+fi
+# round-1 review (PR #115): the assertion above was a pure negative tripwire --
+# deleting the entire declined-decision comment (not just reverting to the old
+# wording) still passed it, since there was no positive counterpart pinning what
+# should be there instead.
+if grep -q "Investigated and declined (F069)" "$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh"; then
+  pass "f069: check-remaining-tasks.sh positively states the declined (not deferred) design decision"
+else
+  fail "f069: check-remaining-tasks.sh is missing the declined-design-decision comment entirely"
+fi
+# The pre-existing F047 drift-detection loop (~line 1592) already diffs
+# check-remaining-tasks.sh's live copy against its template on every run; no
+# separate assertion needed here even though this feature edited both (F067's
+# round-1 review already flagged this exact duplication once).
+
+# round-1 review (PR #115, finding #7): the protocol.md text claims a retirement
+# condition maintenance-runbook.md's probe item 6 "already tracks" -- pin that
+# item 6 was actually extended to reference F069, not just F061/F067.
+if grep -q "declined teammate-role carve-out (F069)" "$REPO_ROOT/docs/maintenance-runbook.md" \
+  && grep -q "design decision here as worth revisiting" "$REPO_ROOT/docs/maintenance-runbook.md"; then
+  pass "f069: maintenance-runbook.md's probe item 6 is actually wired to F069's retirement condition, not just referenced"
+else
+  fail "f069: maintenance-runbook.md's probe item 6 does not reference F069's retirement condition"
 fi
 
 echo ""

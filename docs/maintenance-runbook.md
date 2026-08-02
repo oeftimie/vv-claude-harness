@@ -115,10 +115,10 @@ way.
    entry still reflects a real, current Claude model choice (rather than a
    stale name kept out of inertia) and to remove it if it stops being one.
 
-6. **Lead/teammate hook-blindness (F061) and TeammateIdle task-list blindness
-   (F067) limitations.** Both are the same underlying probe action (re-fetch
-   the same docs page for a new field), so this item covers both rather than
-   duplicating the fetch.
+6. **Lead/teammate hook-blindness (F061), TeammateIdle task-list blindness
+   (F067), and the declined teammate-role carve-out (F069).** All three are
+   the same underlying probe action (re-fetch the same docs page for a new
+   field), so this item covers all of them rather than duplicating the fetch.
    - `rules/agent-teams-protocol.md`'s "Known limitation (F061)" callout
      documents that no hook-facing field or environment variable distinguishes
      the lead's own session from a teammate's, confirmed against
@@ -135,13 +135,24 @@ way.
      check had truncated before reaching the relevant section of the page;
      a raw fetch corrected it. `teammate_name` being present does not close
      the task-list-snapshot gap this item's retirement condition tracks.)
-   No existing probe covers either: item 3 above checks `TaskCompleted`/
-   `TeammateIdle`/`SessionStart`/`SessionEnd` PAYLOAD SHAPE for regressions,
-   not PreToolUse/TeammateIdle hook input for a NEW field's addition.
+   - `rules/agent-teams-protocol.md`'s "Considered and declined" note (F069)
+     documents that `teammate_name` is present but carries no role/type
+     information -- it identifies WHICH teammate, not WHAT KIND. The
+     mechanical carve-out question (should `check-remaining-tasks.sh`
+     pattern-match it) was declined on that basis, not deferred pending a
+     future field.
+   No existing probe covers any of the three: item 3 above checks
+   `TaskCompleted`/`TeammateIdle`/`SessionStart`/`SessionEnd` PAYLOAD SHAPE
+   for regressions, not PreToolUse/TeammateIdle hook input for a NEW field's
+   addition.
    **Retirement condition**: re-fetch `code.claude.com/docs/en/hooks`'s common
    input fields; if a team-role/lead-vs-teammate discriminator field appears,
    record F061 here as FIXED; if a task-list snapshot field appears, record
-   F067 here as FIXED (the two can retire independently of each other).
+   F067 here as FIXED; if a teammate-role/type discriminator field appears
+   (distinct from the plain `teammate_name` already present), record F069's
+   design decision here as worth revisiting (the three can retire
+   independently of each other).
    Removing either limitation callout and updating the corresponding hook
-   template to use the new field is a separate, explicit, approval-required
-   follow-up — not automatically performed as part of a probe run.
+   template to use the new field, or reopening F069's declined design
+   decision, is a separate, explicit, approval-required follow-up — not
+   automatically performed as part of a probe run.

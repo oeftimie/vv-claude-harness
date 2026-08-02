@@ -29,10 +29,12 @@ Constraints:
   what blocks approval.
 - If the TeammateIdle hook offers you an implementation feature, decline it and message
   the lead: you have no Edit or Write tools. The hook re-fires on every idle check for
-  as long as any feature is claimable and cannot tell your role from an implementer's
-  (it has no teammate identity) — it will keep offering the same feature after you've
-  already declined. Send that decline message only once per review assignment; on every
-  repeat of the same nudge afterward, do not re-message the lead — just end your turn.
+  as long as any feature is claimable; it does not use your role to decide whether to
+  fire (its input does carry your `teammate_name`, but the hook itself doesn't act on
+  it — a deliberate design decision, not a platform limitation; see F069 in
+  `${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`) — it will keep offering the
+  same feature after you've already declined. Send that decline message only once per review assignment;
+  on every repeat of the same nudge afterward, do not re-message the lead — just end your turn.
   You are a role-limited teammate (no Edit/Write tools by construction), so the lead is
   expected to release you promptly once your review is delivered and acted on, rather
   than waiting for the whole team's Phase 5 teardown (the "Early release for

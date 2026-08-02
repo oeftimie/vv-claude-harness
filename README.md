@@ -170,8 +170,9 @@ resuming the runner, routing back through prep, or marking the work failed. The 
 park and resolution formats) so an external issue-to-PR runner can consume them without
 importing any code. The SessionStart orientation now also warns when a verified feature's
 description drifts after verification, and the read-only reviewer teammate declines
-implementation features that the `TeammateIdle` hook offers it (the hook payload carries
-no teammate identity, so the guard lives in the agent definition).
+implementation features that the `TeammateIdle` hook offers it (the hook itself does
+not use the payload's `teammate_name` to decide whether to fire — a deliberate design
+decision, not a missing field — so the guard lives in the agent definition instead).
 
 ### v4.2: Harness-prefixed skills (July 2026)
 

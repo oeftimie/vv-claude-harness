@@ -975,3 +975,24 @@
   mechanical corrections to agents/reviewer.md, README.md, and a proposed
   CHANGELOG.md fix for Ovidiu's sign-off.
 - Blockers: none.
+
+## Session N+2 - 2026-08-02
+- F069: corrected the remaining false "TeammateIdle carries no teammate
+  identity" claims in agents/reviewer.md and README.md, plus a second,
+  previously-missed occurrence in F055's own features.json description
+  field (only its notes had been fixed in F067). Design pass on the real
+  question (should check-remaining-tasks.sh key its escape hatch off
+  teammate_name mechanically): investigated and DECLINED -- no enforced
+  naming contract, a wrong guess is asymmetric (silent failure vs. a
+  bounded visible cost), and the closest precedent (F055's shared
+  teammate-scope.txt) already failed for the same concurrency reason.
+  Recorded in rules/agent-teams-protocol.md as a considered-and-declined
+  design decision, not a Known Limitation. Proposed (not applied) the
+  matching CHANGELOG.md correction, recorded in F069's notes for Ovidiu's
+  sign-off since that file is Human-Owned.
+- Tests: 1487/1487 passing, 7 new assertions, all mutation-tested.
+- Next: open PR for F069, spawn a reviewer, iterate to APPROVE, merge.
+  This closes the entire F023-F069 locally-discovered chain -- after
+  F069 merges, nothing autonomous remains queued; the only outstanding
+  item is Ovidiu's sign-off on the CHANGELOG.md proposal.
+- Blockers: none.
