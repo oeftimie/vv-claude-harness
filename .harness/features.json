@@ -2110,6 +2110,75 @@
       "failure_reason": null,
       "discovered_via": "OVI-106 (Linear, investigated per Ovidiu's 2026-08-02 pickup instruction)",
       "spec": null
+    },
+    {
+      "id": "F073",
+      "description": "OVI-104 (remaining sub-tasks): doctor.py's commit-gate.sh 'upgrade available' finding had no --fix support (unlike its harness_state.py sibling), so a project with a missing commit-gate.sh had to be fixed by hand even under --fix. Separately, 4 of doctor.py's checks (commit-gate.sh presence, features.json cross-validation, plugin_version drift, .harness/mld/ non-injection) each silently return no findings when CLAUDE_PLUGIN_ROOT is unset -- individually correct (none can compare against a plugin it can't locate), but four independent silent skips add up to a 'healthy' report that verified less than it looks like it did. Fix: (1) a copy_commit_gate fixer mirroring copy_harness_state; (2) one consolidated Finding naming all 4 skipped checks and how to restore them, instead of 4 separate silent skips or 4 separate warnings.",
+      "priority": 74,
+      "status": "passing",
+      "scope": [
+        "skills/harness-doctor/doctor.py",
+        "skills/harness-doctor/fixes.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "9 new suite assertions: --fix restores commit-gate.sh + matches the plugin template (2); the consolidated finding appears with all 4 check names and exactly once, not per-check (6); the consolidated finding is absent when CLAUDE_PLUGIN_ROOT is set (1). Plus 2 direct fixes.py unit checks (_copy_commit_gate no-ops on None plugin_root and on a plugin_root missing the template). 3 pre-existing tests updated (not weakened) from asserting the bare absence of substrings that now legitimately appear in the consolidated finding's own text ('plugin_version', 'non-injection') to asserting the absence of each specific check's own finding text instead. Mutation-tested both new mechanisms independently: reverting the fix_id wiring fails exactly the 2 --fix assertions; reverting the check_plugin_root_unset() call in run_checks fails exactly the 6 consolidated-finding assertions. Full suite 1498/1498 both before and after restoring.",
+      "notes": "Scoped from the v5.0.1-plan.md investigation: OVI-104's CANONICAL_WIRING drift sub-task was already fixed in an earlier session (see F063); this feature covers only the two sub-tasks that remained open. Sequenced into the v5.1.0 batch (not v5.0.1) per the critical-thinker's release-split recommendation: this is additive capability (a new fixer, a new check), not a pure bug fix.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Considered adding the CLAUDE_PLUGIN_ROOT-unset warning inline to each of the 4 gated check functions instead of one consolidated Finding in run_checks(). Declined: that would print the same 'set CLAUDE_PLUGIN_ROOT' advice up to 4 times per run, and each individual check has no way to know the other 3 are also skipped -- only run_checks() has that full picture."
+      ],
+      "failure_reason": null,
+      "discovered_via": "OVI-104 (Linear, investigated per Ovidiu's 2026-08-02 pickup instruction)",
+      "spec": null
+    },
+    {
+      "id": "F076",
+      "description": "commit-gate.sh false-positive: a commit message subject line sourced from a heredoc (`git commit -m \"$(cat <<'EOF' ... EOF)\"`) that contains an embedded double-quoted phrase (e.g. `... commit-gate.sh \"upgrade available\" support`) gets denied as a compound-stage-and-commit risk, even as a standalone commit with nothing staged in the same command. CORRECTED (2026-08-02): originally attributed to the literal token `--fix` appearing in the message (discovered live during F073/OVI-104's own commit, whose natural message needed that word) -- round-1 review (review-pr123-f073) tested 15 variants and found `--fix` alone, in isolation, is consistently ALLOWED, correctly flagging the original attribution as unverified. Re-investigated by reproducing the exact original failing command directly against commit-gate.sh (feeding it the same JSON shape test/run-tests.sh's own run_commit_gate() helper uses) rather than inferring from the live tool denial alone, then bisecting the message content line by line. Confirmed root cause: an embedded double-quoted phrase inside the heredoc body is sufficient and necessary to reproduce the deny -- neither `--fix` nor an embedded apostrophe alone reproduces it, and stripping the embedded double-quotes from an otherwise-identical message allows it every time. Needs someone to read commit-gate.sh's quote-scanning logic (the file's own header comments describe a '--' argument-separator and quote-boundary scan) to find where an embedded double-quote inside the message body is mistaken for a shell-level quote boundary.",
+      "priority": 75,
+      "status": "pending",
+      "scope": [
+        ".claude/hooks/commit-gate.sh",
+        "skills/harness-init/commit-gate.sh.template"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Reproduction commands (feed to `bash .claude/hooks/commit-gate.sh` via the same JSON shape as test/run-tests.sh's bash_command_json/run_commit_gate helpers): a heredoc-sourced `-m` message containing `commit-gate.sh \"upgrade available\" support` (embedded double-quotes, no apostrophe, no --fix) is DENIED. The identical message with the double-quotes removed is ALLOWED. `--fix` and an embedded apostrophe were each tested in isolation (heredoc, no double-quotes) and both ALLOWED.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F073",
+      "spec": null
+    },
+    {
+      "id": "F077",
+      "description": "OVI-107 follow-up, found by review-pr120-f070 reading fixes.py incidentally during unrelated OVI-105/doctor work, after PR #120 (F070) had already merged to main: PR #120 added .harness/features.json.lock to .gitignore in two of the three places new projects/upgrades get it from (this repo's own .gitignore, and scripts/stamp.sh's init path) but not the third: doctor.py --fix's _append_gitignore fixer. Worse than a missing line -- the fixer was structurally unreachable for the affected population: it early-returned False whenever '.harness/SESSION_INCOMPLETE' (the only line it ever wrote) was already present, which is true for every already-initialized project, i.e. exactly the population the doctor --fix upgrade path exists to serve. Separately, doctor.py's check_gitignore never checked for the lock line's presence at all, so no Finding was ever generated to trigger the fixer in the first place. Fix: REQUIRED_GITIGNORE_LINES tuple (both lines) in both doctor.py and fixes.py; check_gitignore now reports a Finding per missing required line; _append_gitignore now appends whichever required lines are missing instead of early-returning on the presence of just the first one.",
+      "priority": 76,
+      "status": "passing",
+      "scope": [
+        "skills/harness-doctor/doctor.py",
+        "skills/harness-doctor/fixes.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F070"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "Direct fixes.py unit checks: _append_gitignore no-ops when both required lines are already present (updated from the old single-line version); appends the missing lock line even when SESSION_INCOMPLETE is already present, and the write is verified on disk (2 new checks replacing/extending the old one). End-to-end doctor.py CLI test: a fixture with only SESSION_INCOMPLETE in .gitignore is reported as missing the lock line; --fix appends it; both lines verified present on disk afterward (3 new assertions). Updated make_healthy_doctor_fixture to include both required lines (was silently unhealthy against the new check otherwise). Mutation-tested both halves of the fix independently: reverting doctor.py's check back to single-line fails exactly the 2 assertions that depend on the Finding being generated; reverting fixes.py's fixer back to the early-return shape fails exactly the 3 assertions that depend on the actual write. Full suite 1522/1522 both before and after restoring each mutation.",
+      "notes": "Not part of the original F070/OVI-107 PR (#120) -- discovered by review-pr120-f070 after that PR had already merged, while it was still active reading fixes.py for unrelated reasons. Filed and fixed same-session rather than left as a dangling follow-up, since the fixer's early-return bug is a real, already-shipped correctness gap (not a design question needing a decision) affecting every already-initialized project running doctor --fix.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F070 (review-pr120-f070, post-merge finding, 2026-08-02)",
+      "spec": null
     }
   ]
 }

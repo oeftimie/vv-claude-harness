@@ -108,16 +108,27 @@ def _add_settings_wiring(project_dir, plugin_root):
     return True
 
 
+# Mirrors doctor.py's REQUIRED_GITIGNORE_LINES (not imported, to keep this module
+# loadable standalone via sys.path.insert -- see doctor.py's own header comment on
+# why fixers stay out of the report path). Keep the two lists in sync.
+REQUIRED_GITIGNORE_LINES = (
+    ".harness/SESSION_INCOMPLETE",
+    ".harness/features.json.lock",
+)
+
+
 def _append_gitignore(project_dir, plugin_root):
     path = os.path.join(project_dir, ".gitignore")
     text = open(path).read() if os.path.isfile(path) else ""
     lines = [line.strip() for line in text.splitlines()]
-    if ".harness/SESSION_INCOMPLETE" in lines:
+    missing = [line for line in REQUIRED_GITIGNORE_LINES if line not in lines]
+    if not missing:
         return False
     with open(path, "a") as fh:
         if text and not text.endswith("\n"):
             fh.write("\n")
-        fh.write(".harness/SESSION_INCOMPLETE\n")
+        for line in missing:
+            fh.write(line + "\n")
     return True
 
 
@@ -138,6 +149,20 @@ def _copy_harness_state(project_dir, plugin_root):
         os.chmod(dest, 0o755)
         copied = True
     return copied
+
+
+def _copy_commit_gate(project_dir, plugin_root):
+    if not plugin_root:
+        return False
+    src = os.path.join(plugin_root, "skills", "harness-init", "commit-gate.sh.template")
+    if not os.path.isfile(src):
+        return False
+    dest_dir = os.path.join(project_dir, ".claude", "hooks")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, "commit-gate.sh")
+    shutil.copyfile(src, dest)
+    os.chmod(dest, 0o755)
+    return True
 
 
 def _update_plugin_version(project_dir, plugin_root):
@@ -177,5 +202,6 @@ _FIXERS = {
     "add_settings_wiring": _add_settings_wiring,
     "append_gitignore": _append_gitignore,
     "copy_harness_state": _copy_harness_state,
+    "copy_commit_gate": _copy_commit_gate,
     "update_plugin_version": _update_plugin_version,
 }
