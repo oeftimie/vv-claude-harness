@@ -2040,6 +2040,30 @@
       "failure_reason": null,
       "discovered_via": "F067",
       "spec": null
+    },
+    {
+      "id": "F073",
+      "description": "OVI-104 (remaining sub-tasks): doctor.py's commit-gate.sh 'upgrade available' finding had no --fix support (unlike its harness_state.py sibling), so a project with a missing commit-gate.sh had to be fixed by hand even under --fix. Separately, 4 of doctor.py's checks (commit-gate.sh presence, features.json cross-validation, plugin_version drift, .harness/mld/ non-injection) each silently return no findings when CLAUDE_PLUGIN_ROOT is unset -- individually correct (none can compare against a plugin it can't locate), but four independent silent skips add up to a 'healthy' report that verified less than it looks like it did. Fix: (1) a copy_commit_gate fixer mirroring copy_harness_state; (2) one consolidated Finding naming all 4 skipped checks and how to restore them, instead of 4 separate silent skips or 4 separate warnings.",
+      "priority": 71,
+      "status": "passing",
+      "scope": [
+        "skills/harness-doctor/doctor.py",
+        "skills/harness-doctor/fixes.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "9 new suite assertions: --fix restores commit-gate.sh + matches the plugin template (2); the consolidated finding appears with all 4 check names and exactly once, not per-check (6); the consolidated finding is absent when CLAUDE_PLUGIN_ROOT is set (1). Plus 2 direct fixes.py unit checks (_copy_commit_gate no-ops on None plugin_root and on a plugin_root missing the template). 3 pre-existing tests updated (not weakened) from asserting the bare absence of substrings that now legitimately appear in the consolidated finding's own text ('plugin_version', 'non-injection') to asserting the absence of each specific check's own finding text instead. Mutation-tested both new mechanisms independently: reverting the fix_id wiring fails exactly the 2 --fix assertions; reverting the check_plugin_root_unset() call in run_checks fails exactly the 6 consolidated-finding assertions. Full suite 1498/1498 both before and after restoring.",
+      "notes": "Scoped from the v5.0.1-plan.md investigation: OVI-104's CANONICAL_WIRING drift sub-task was already fixed in an earlier session (see F063); this feature covers only the two sub-tasks that remained open. Sequenced into the v5.1.0 batch (not v5.0.1) per the critical-thinker's release-split recommendation: this is additive capability (a new fixer, a new check), not a pure bug fix.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Considered adding the CLAUDE_PLUGIN_ROOT-unset warning inline to each of the 4 gated check functions instead of one consolidated Finding in run_checks(). Declined: that would print the same 'set CLAUDE_PLUGIN_ROOT' advice up to 4 times per run, and each individual check has no way to know the other 3 are also skipped -- only run_checks() has that full picture."
+      ],
+      "failure_reason": null,
+      "discovered_via": "OVI-104 (Linear, investigated per Ovidiu's 2026-08-02 pickup instruction)",
+      "spec": null
     }
   ]
 }
