@@ -4490,7 +4490,8 @@ else
 fi
 
 # F055: the TeammateIdle hook re-fires on every idle check regardless of teammate
-# role (no identity in the payload), so a reviewer that declines an offered
+# role (the hook itself doesn't act on the payload's teammate_name, a deliberate
+# design decision -- see F069), so a reviewer that declines an offered
 # implementation feature must not re-message the lead on every repeat -- that
 # discipline has to live in the agent definition, since only it knows the role.
 if grep -q "Send that decline message only once per review assignment" "$REPO_ROOT/agents/reviewer.md" \
@@ -9163,6 +9164,65 @@ if [ -z "$F065_ERRORS" ]; then
 else
   fail "f065: $F065_ERRORS"
 fi
+
+echo ""
+echo "== F069: correct the falsified TeammateIdle identity claim =="
+
+# F055's original claim (TeammateIdle carries no teammate identity at all) was
+# found false during F067's round-1 review. F069 covers the remaining false
+# claims F067 didn't touch: agents/reviewer.md and README.md.
+if grep -q "it has no teammate identity" "$REPO_ROOT/agents/reviewer.md"; then
+  fail "f069: agents/reviewer.md still asserts the falsified 'no teammate identity' claim"
+else
+  pass "f069: agents/reviewer.md no longer asserts the falsified claim"
+fi
+if grep -q "does not use your role to decide whether to" "$REPO_ROOT/agents/reviewer.md" \
+  && grep -q "carry your \`teammate_name\`" "$REPO_ROOT/agents/reviewer.md"; then
+  pass "f069: agents/reviewer.md states the corrected fact (teammate_name present, hook doesn't act on it)"
+else
+  fail "f069: agents/reviewer.md missing the corrected TeammateIdle fact"
+fi
+
+if grep -q "the hook payload carries" "$REPO_ROOT/README.md" && grep -q "no teammate identity" "$REPO_ROOT/README.md"; then
+  fail "f069: README.md still asserts the falsified 'no teammate identity' claim"
+else
+  pass "f069: README.md no longer asserts the falsified claim"
+fi
+if grep -q "does not use the payload's \`teammate_name\`" "$REPO_ROOT/README.md"; then
+  pass "f069: README.md states the corrected fact"
+else
+  fail "f069: README.md missing the corrected TeammateIdle fact"
+fi
+
+# The design question F067 deliberately deferred: should check-remaining-tasks.sh
+# key its escape hatch off teammate_name mechanically? Investigated and declined
+# -- pin the decision, its three reasons, and the retirement condition, matching
+# how F061's Known Limitation callout is pinned.
+if grep -q "Considered and declined: a \`teammate_name\`-keyed mechanical carve-out (F069)" \
+  "$REPO_ROOT/rules/agent-teams-protocol.md"; then
+  pass "f069: rules/agent-teams-protocol.md documents the considered-and-declined design decision"
+else
+  fail "f069: rules/agent-teams-protocol.md missing the considered-and-declined section"
+fi
+F069_REASON_COUNT=$(grep -c "^[0-9]\. \*\*No enforced naming contract\|^[0-9]\. \*\*A wrong guess is asymmetric\|^[0-9]\. \*\*The precedent for a shared" "$REPO_ROOT/rules/agent-teams-protocol.md")
+if [ "$F069_REASON_COUNT" -eq 3 ]; then
+  pass "f069: all three declined-design reasons are present"
+else
+  fail "f069: expected 3 declined-design reasons, found $F069_REASON_COUNT"
+fi
+
+# check-remaining-tasks.sh's comment must no longer say the mechanical fix is
+# merely "tracked as a follow-up" (implying still-open/undecided) -- it was
+# investigated and declined, a closed design question, not a pending TODO.
+if grep -q "tracked as a follow-up, not done here" "$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh"; then
+  fail "f069: check-remaining-tasks.sh still frames the mechanical fix as merely deferred, not declined"
+else
+  pass "f069: check-remaining-tasks.sh reflects the declined (not deferred) design decision"
+fi
+# The pre-existing F047 drift-detection loop (~line 1592) already diffs
+# check-remaining-tasks.sh's live copy against its template on every run; no
+# separate assertion needed here even though this feature edited both (F067's
+# round-1 review already flagged this exact duplication once).
 
 echo ""
 echo "== shell syntax =="

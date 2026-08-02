@@ -209,8 +209,8 @@ acted on) and has nothing left to claim, the lead SHOULD send it a `shutdown_req
 promptly rather than waiting for Phase 5 -- distinguishing the two cases is a judgment
 call for the lead today (F055's original claim that the hook has no teammate identity
 to key off was found FALSE during F067's own review -- `TeammateIdle`'s input does
-carry `teammate_name`; `check-remaining-tasks.sh` just doesn't use it yet, a tracked
-follow-up, not this rule's fix).
+carry `teammate_name`; `check-remaining-tasks.sh` deliberately does not use it, see
+F069 below).
 
 **Extension to scoped one-shot assignments (F067).** The same early-release logic
 applies to a teammate that is NOT role-limited by construction (it has Edit/Write, e.g.
@@ -226,6 +226,41 @@ lead is responsible for recognizing this case and releasing the teammate promptl
 same judgment call F059 already assigns for role-limited teammates -- do not wait for
 the teammate to talk itself out of the loop, and do not let it claim unrelated work just
 to stop the nudging.
+
+**Considered and declined: a `teammate_name`-keyed mechanical carve-out (F069).** Now
+that `teammate_name` is confirmed present in `TeammateIdle`'s input (see the correction
+above), the obvious next question is whether `check-remaining-tasks.sh` should pattern-
+match against it directly -- e.g. skip the nudge when the name looks like a review-only
+teammate -- instead of leaning entirely on lead judgment. Investigated and declined,
+for three reasons, not because it was too hard to build:
+
+1. **No enforced naming contract.** `teammate_name` is caller-chosen free text at spawn
+   time (the `name` parameter to the Agent/Task tool), with no platform-level or
+   repo-level schema behind it. This session's own reviewer names
+   (`review-pr112-f067`, `review-pr113-f068`) are an ad hoc convention the lead applied
+   consistently *this session*, not a guaranteed cross-session or cross-project
+   contract a hook could safely pattern-match against.
+2. **A wrong guess is asymmetric.** A false positive (wrongly suppressing the nudge for
+   a teammate that legitimately has more work to claim) is a silent failure -- work sits
+   unclaimed with no visible signal. The current cost of a false negative (an
+   already-done teammate reads one more nudge and declines it) is real but bounded and
+   visible in the transcript. Trading a bounded, visible cost for a risk of a silent one
+   is the wrong direction.
+3. **The precedent for a shared, per-teammate discriminator already failed once.** F055's
+   own `approaches_tried` rejected `.claude/teammate-scope.txt` (a single shared file)
+   as a role-carrier for exactly this reason: it cannot distinguish concurrent
+   teammates from each other. A hardcoded name pattern has the same shape of problem --
+   it substitutes a guess for a real identity contract.
+
+The prose-based fix (F067) already resolves the correctness question (a properly-
+behaving teammate does not act on a stale nudge); what remains is a bounded, visible,
+non-silent efficiency cost -- borne out live, twice, by `review-pr112-f067` and
+`review-pr113-f068` both declining repeated nudges after their work was delivered. This
+is not filed as a Known Limitation (that heading is for platform ceilings this repo
+cannot change); it is a design decision, reversible if the platform ever ships a real
+per-teammate discriminator field (see the retirement condition `docs/maintenance-
+runbook.md` probe item 6 already tracks) or if this repo adopts an enforced,
+documented naming convention with its own validation -- neither exists today.
 
 ## Dual-Engine Review (optional, F018/OVI-66)
 
@@ -459,10 +494,11 @@ The harness installs two hooks that enforce quality mechanically:
 > **Correction, not a separate limitation**: F055's original claim that the
 > `TeammateIdle` payload "carries no teammate identity" was FALSE -- `teammate_name`
 > IS present (confirmed above). `check-remaining-tasks.sh` still doesn't use it, so it
-> stays role-blind in practice, but that is a design gap now known to be fixable, not
-> a platform limitation -- see the corrected comment in `check-remaining-tasks.sh`
-> itself and the Extension note below. A real mechanical fix (keying the escape hatch
-> off `teammate_name`) is a tracked follow-up, not done as part of F067.
+> stays role-blind in practice, not because it has to but by deliberate choice -- see
+> the corrected comment in `check-remaining-tasks.sh` itself and the "Considered and
+> declined" note below (F069): a mechanical fix keying the escape hatch off
+> `teammate_name` is technically buildable but was investigated and declined, not
+> merely deferred.
 
 Post-compaction recovery is handled by the plugin's SessionStart hook (matcher
 `compact`), which re-injects orientation directly into model context after `/compact`

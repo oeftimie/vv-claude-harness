@@ -25,8 +25,11 @@
 # silently answered from the common-fields table instead): the payload DOES carry
 # `teammate_name` (plus deprecated `team_name`). This script still does not use it --
 # INPUT is read and discarded below -- so it stays role-blind IN PRACTICE, but that is
-# now a design choice/gap, not a platform limitation. A real fix (keying the escape
-# hatch off `teammate_name`) is possible and tracked as a follow-up, not done here.
+# now a design choice, not a platform limitation. Investigated and declined (F069):
+# `teammate_name` is caller-chosen free text with no enforced naming contract, and a
+# wrong guess (silently suppressing a nudge for a teammate that legitimately has more
+# work) is worse than the current bounded, visible cost of one extra decline per
+# nudge. See "Considered and declined" in rules/agent-teams-protocol.md.
 # The guidance text below still applies uniformly to every teammate; the reviewer-
 # specific half of the original mitigation (declining once instead of re-messaging
 # the lead on every repeat) lives in agents/reviewer.md.
