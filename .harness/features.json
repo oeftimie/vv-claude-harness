@@ -2040,6 +2040,29 @@
       "failure_reason": null,
       "discovered_via": "F067",
       "spec": null
+    },
+    {
+      "id": "F072",
+      "description": "OVI-106: skills/harness-continue/SKILL.md's Step 2.5 and setup checklist item 4 invoke `./.harness/init.sh` with no argument to run what the section calls a \"smoke test\", but init.sh's own default target is full_test, not smoke_test -- so the documented fast gate silently runs the full suite instead. Fix: pass `smoke_test` explicitly at both call sites, and add an inline note reconciling init.sh's full_test default with this section's smoke-test framing so a future editor doesn't reintroduce the bare invocation.",
+      "priority": 71,
+      "status": "passing",
+      "scope": [
+        "skills/harness-continue/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "n/a (documentation fix; verified via 3 grep-based regression assertions)",
+      "notes": "First test-suite run had 1 failure from the test's own grep pattern (backtick-escaping mismatch against the actual inline note text), not from the SKILL.md fix itself; corrected the grep pattern, reran once clean at 1492/1492.",
+      "correction_cycles": 1,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Investigated 5 other bare `./.harness/init.sh` references in the repo for the same bug class; declined to touch agents/feature-implementer.md and agents/layer-implementer.md since neither makes an explicit \"smoke test\" timing claim the way harness-continue/SKILL.md does -- their bare invocation is consistent with intentionally wanting the full_test default, not a stale claim about speed."
+      ],
+      "failure_reason": null,
+      "discovered_via": "OVI-106 (Linear, investigated per Ovidiu's 2026-08-02 pickup instruction)",
+      "spec": null
     }
   ]
 }
