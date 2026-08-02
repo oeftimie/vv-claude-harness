@@ -231,6 +231,16 @@ truncated to 200 chars with a pointer to the full text); and `/harness-continue`
 documented "smoke test" actually ran the full suite (both call sites now pass
 `smoke_test` explicitly).
 
+The same review's additive follow-ups shipped in v5.1.0: `harness-doctor --fix` can now
+restore a missing `commit-gate.sh` and repair a project's `.gitignore` on upgrade even
+when it already carries an older required line (the fixer previously early-returned on
+the first line's presence, making a newer required line permanently unreachable for any
+already-initialized project); doctor's report now names all four checks it silently
+skips when `CLAUDE_PLUGIN_ROOT` is unset, in one consolidated finding, instead of staying
+quiet about each one individually; and two new rule files, `rules/debugging.md` (a
+four-phase systematic root-cause process) and `rules/tdd.md` (the 5-step TDD loop and
+coverage bar), join the SessionStart rule-pointer block.
+
 ## Architecture
 
 ### Global (travels with you)
@@ -262,8 +272,10 @@ vv-harness/                                            # Plugin root
 │   ├── agent-teams-protocol.md                        # Agent Teams rules (harness projects only)
 │   ├── code-quality.md                                # Mechanical code quality limits
 │   ├── context-summary.md                             # context_summary.md template + update rules
+│   ├── debugging.md                                   # Four-phase systematic root-cause process
 │   ├── mld-review.md                                  # Cadence + disposition rules for .harness/mld/ entries
-│   └── task-completion.md                             # Completion checklist
+│   ├── task-completion.md                             # Completion checklist
+│   └── tdd.md                                         # 5-step TDD loop + coverage bar
 ├── schemas/
 │   ├── readiness-stamp.md                             # Stamp, hashing, HMAC, park/resolution contracts
 │   └── feature.schema.json                            # Canonical features.json envelope + feature object
@@ -468,8 +480,10 @@ claude
 | `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |
 | `rules/code-quality.md` | Mechanical code quality limits |
 | `rules/context-summary.md` | `context_summary.md` template and update rules |
+| `rules/debugging.md` | Four-phase systematic root-cause debugging process |
 | `rules/mld-review.md` | Cadence and disposition rules for reviewing `.harness/mld/` entries |
 | `rules/task-completion.md` | Task completion checklist |
+| `rules/tdd.md` | 5-step TDD loop and coverage bar |
 | `templates/CLAUDE.md` | Core engineering standards template (manual copy to `~/.claude/`) |
 | `test/` | Fixture-based hook test suite, run in CI |
 | `evals/` | Proportionate behavioral evals: does an intervention change what the agent actually does, not just its terminology (semi-manual, not CI-wired) |

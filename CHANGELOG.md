@@ -2,6 +2,37 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.1.0 (2026-08-02)
+
+**The additive follow-ups from the same external code review pass that shipped v5.0.1**
+(feedback_vivi.md), tracked as Linear issues OVI-104, OVI-82, and OVI-81. New capability,
+not bugfixes, per the v5.0.1 entry's own note about keeping the two kinds of change out
+of the same patch release.
+
+`harness-doctor --fix` couldn't restore a missing `commit-gate.sh` (OVI-104): the
+"upgrade available" finding had no `fix_id`, unlike its `harness_state.py` sibling. A new
+`copy_commit_gate` fixer closes the gap. Separately, four of `doctor.py`'s checks
+(commit-gate.sh presence, `features.json` cross-validation, `plugin_version` drift, the
+`.harness/mld/` non-injection guarantee) each silently returned no findings when
+`CLAUDE_PLUGIN_ROOT` was unset — individually correct, but four independent silent skips
+added up to a "healthy" report that verified less than it looked like it did. One
+consolidated finding now names all four. Dogfooding this fix on itself surfaced a related,
+already-shipped bug: `doctor --fix`'s `.gitignore` fixer could never add a newer required
+line (`.harness/features.json.lock`, from v5.0.1's OVI-107 fix) for any already-initialized
+project, because it early-returned on the presence of an older required line alone. Fixed
+alongside — the fixer now appends whichever required lines are missing.
+
+Two new rule files join the SessionStart orientation's rule-pointer block, both moved out
+of Ovidiu's personal `~/.claude/CLAUDE.md` per a separate handoff (OVI-73: "the harness
+should own development discipline, not the global file"). `rules/debugging.md` (OVI-82)
+is a four-phase systematic root-cause process. `rules/tdd.md` (OVI-81) is the 5-step TDD
+loop and coverage bar, including the finding that this exact discipline as always-on
+CLAUDE.md prose didn't measurably reduce `buggy_code` — the coverage gate and adversarial
+review did.
+
+**Tests**: `test/run-tests.sh` carries 1541 assertions, up from 1510 — every new check and
+fixer above is independently pinned and mutation-tested.
+
 ### v5.0.1 (2026-08-02)
 
 **Three correctness fixes from an external code review pass** (feedback_vivi.md, verified
