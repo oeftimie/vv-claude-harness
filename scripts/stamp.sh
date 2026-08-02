@@ -25,8 +25,9 @@
 # and reported as a customization, never silently overwritten. Always exits
 # 0 (skipping a customization is success, not failure).
 #
-# The .gitignore SESSION_INCOMPLETE line is appended idempotently in both
-# modes, independent of collision handling for the other files.
+# The .gitignore SESSION_INCOMPLETE and features.json.lock lines are appended
+# idempotently in both modes, independent of collision handling for the
+# other files.
 set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -262,6 +263,9 @@ GITIGNORE="$TARGET_DIR/.gitignore"
 touch "$GITIGNORE"
 if ! grep -qxF '.harness/SESSION_INCOMPLETE' "$GITIGNORE"; then
   echo '.harness/SESSION_INCOMPLETE' >> "$GITIGNORE"
+fi
+if ! grep -qxF '.harness/features.json.lock' "$GITIGNORE"; then
+  echo '.harness/features.json.lock' >> "$GITIGNORE"
 fi
 
 echo "stamp.sh: mode=$MODE complete"

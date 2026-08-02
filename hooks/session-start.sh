@@ -72,6 +72,14 @@ PYEOF
 # copy exists (v5+ projects); fall back to the inline computation otherwise
 # (older projects initialized before this module existed).
 STATE_MODULE="$ROOT/.claude/hooks/harness_state.py"
+# OVI-105: a feature's description is free text with no length cap
+# (.harness/features.json has carried descriptions past 13,000 chars in real
+# use), and this whole script's stdout is what's capped at 10,000 chars
+# reaching the model (line 3 above). Truncating this one field to 200 chars
+# protects everything that prints AFTER it -- the git-identity mismatch
+# warning and every rule pointer below -- from being silently pushed past
+# the cap by one long description. The full text is never lost; it's still
+# in features.json, just not echoed whole into every session's orientation.
 if [ -f "$STATE_MODULE" ] && [ -f "$H/features.json" ]; then
   RESULT=$(python3 "$STATE_MODULE" next-claimable "$H/features.json" 2>/dev/null || true)
   if [ "$RESULT" = "no claimable feature" ]; then
@@ -84,6 +92,10 @@ try:
     f = data["next"]
     scope = ", ".join(f.get("scope") or [])
     desc = f.get("description", "")
+    DESC_LIMIT = 200
+    if len(desc) > DESC_LIMIT:
+        full_len = len(desc)
+        desc = desc[:DESC_LIMIT] + f"... ({full_len} chars total, see .harness/features.json for the full description)"
     print(f"Next claimable: {f.get('id', '?')} - {desc} (scope: {scope})")
 except Exception:
     pass
@@ -102,6 +114,10 @@ try:
         f = claimable[0]
         scope = ", ".join(f.get("scope") or [])
         desc = f.get("description", "")
+        DESC_LIMIT = 200
+        if len(desc) > DESC_LIMIT:
+            full_len = len(desc)
+            desc = desc[:DESC_LIMIT] + f"... ({full_len} chars total, see .harness/features.json for the full description)"
         print(f"Next claimable: {f.get('id', '?')} - {desc} (scope: {scope})")
     else:
         print("Next claimable: none (no pending or failed features)")
