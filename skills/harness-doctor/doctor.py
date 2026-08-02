@@ -416,7 +416,7 @@ def check_mld_non_injection(project_dir, plugin_root):
 # the same "set CLAUDE_PLUGIN_ROOT" advice four times.
 PLUGIN_ROOT_GATED_CHECKS = (
     "commit-gate.sh presence",
-    "features.json cross-validation against the plugin's schema",
+    "features.json cross-validation against the plugin's validator",
     "plugin_version drift",
     "the .harness/mld/ non-injection guarantee",
 )
