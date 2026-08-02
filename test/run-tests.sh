@@ -9244,6 +9244,31 @@ else
 fi
 
 echo ""
+echo "== OVI-106: harness-continue's smoke test actually runs smoke_test =="
+
+# init.sh.template defaults TARGET to full_test, not smoke_test -- a bare
+# `./.harness/init.sh` silently runs the full suite instead of the fast gate
+# harness-continue's own Step 2.5 describes ("the 15-second cost"). Pin both
+# sites that invoke it (Step 2.5's code block, and the setup checklist's
+# item 4) rather than just one -- they duplicated the same bug.
+HC_SKILL_OVI106="$REPO_ROOT/skills/harness-continue/SKILL.md"
+if grep -q '\./\.harness/init\.sh smoke_test' "$HC_SKILL_OVI106"; then
+  pass "mnt (OVI-106): harness-continue/SKILL.md's Step 2.5 code block passes smoke_test explicitly"
+else
+  fail "mnt (OVI-106): harness-continue/SKILL.md's Step 2.5 still invokes init.sh without an argument"
+fi
+if grep -q 'Run smoke test: `\./\.harness/init\.sh smoke_test`' "$HC_SKILL_OVI106"; then
+  pass "mnt (OVI-106): harness-continue/SKILL.md's setup checklist item 4 passes smoke_test explicitly"
+else
+  fail "mnt (OVI-106): harness-continue/SKILL.md's setup checklist item 4 still invokes init.sh without an argument"
+fi
+if grep -q "own default target is \`full_test\`, not \`smoke_test\`" "$HC_SKILL_OVI106"; then
+  pass "mnt (OVI-106): the mismatch between init.sh's default and this step's own smoke-test framing is documented inline"
+else
+  fail "mnt (OVI-106): no inline note reconciling init.sh's full_test default with the smoke-test wording"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
