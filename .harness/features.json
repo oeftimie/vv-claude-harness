@@ -2110,6 +2110,28 @@
       "failure_reason": null,
       "discovered_via": "OVI-106 (Linear, investigated per Ovidiu's 2026-08-02 pickup instruction)",
       "spec": null
+    },
+    {
+      "id": "F074",
+      "description": "OVI-82: the harness has no documented systematic-debugging procedure. Moved out of Ovidiu's personal ~/.claude/CLAUDE.md as part of OVI-73 (the harness should own development discipline, not the global file). Verified 2026-07-25 against vv-harness/4.2.2/rules/: 'root cause' appears 0 times in code-quality.md, context-summary.md, and agent-teams-protocol.md, and only incidentally in task-completion.md. Fix: new rules/debugging.md with the four-phase process (root cause investigation, pattern analysis, hypothesis and testing, implementation rules) from the issue spec, wired into session-start.sh's rule-pointer block so it's surfaced at session start like the other 4 rule files. Includes the OVI-68 gotcha (a check that errors must report UNKNOWN, never PASS -- an empty/clean result is not a negative result until the command is known to have run).",
+      "priority": 74,
+      "status": "passing",
+      "scope": [
+        "rules/debugging.md",
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "8 new suite assertions: the session-start.sh pointer is present when CLAUDE_PLUGIN_ROOT is set (1) and absent when unset (1, extending the existing y: suppression test); rules/debugging.md exists (1), states the root-cause-only rule (1), all 4 phase headers are present (4), and the OVI-68 gotcha text is included (1). Mutation-tested both mechanisms independently: removing the session-start.sh pointer line fails exactly its own assertion; renaming Phase 3's header fails exactly the Phase-3-present assertion. Full suite 1519/1519 both before and after restoring each mutation.",
+      "notes": "Measured the real char-budget impact before adding the pointer line, since PR #121's review flagged this repo's own live orientation as already thin on headroom against the platform's 10k cap (3,903/4000 chars measured then). Re-measured now: this repo's live orientation (its own real .harness/ state, not the test fixture) is 4,401 chars BEFORE this feature's change, already over the informal 4000 target -- a pre-existing condition from natural growth (73 features, long context_summary.md), not something this feature introduces at meaningful scale. This feature's own pointer line adds ~198 chars to that. The shipped regression test itself (which exercises a lean synthetic fixture, not this repo's live state) stays comfortably under budget at 1831/4000. The underlying platform-cap risk is OVI-105's still-open 'total output budget' task (tracked there, not duplicated here).",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "OVI-82 (Linear, via OVI-73 handoff, investigated per Ovidiu's 2026-08-02 pickup instruction)",
+      "spec": null
     }
   ]
 }
