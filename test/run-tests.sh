@@ -168,6 +168,8 @@ assert_contains "$OUT" "rules/task-completion.md" \
   "o: orientation includes the task-completion pointer"
 assert_contains "$OUT" "rules/debugging.md (read before debugging a failure)" \
   "o (OVI-82): orientation includes the debugging pointer"
+assert_contains "$OUT" "rules/tdd.md (read before implementing a feature or bugfix)" \
+  "o (OVI-81): orientation includes the tdd pointer"
 
 # OVI-105: a feature description has no length cap in practice -- this
 # repo's own features.json has carried one past 13,000 chars. Exercise BOTH
@@ -244,6 +246,8 @@ assert_not_contains "$OUT" "rules/code-quality.md" \
   "y: no rule-pointer lines when CLAUDE_PLUGIN_ROOT is unset"
 assert_not_contains "$OUT" "rules/debugging.md" \
   "y (OVI-82): the debugging pointer is also suppressed when CLAUDE_PLUGIN_ROOT is unset"
+assert_not_contains "$OUT" "rules/tdd.md" \
+  "y (OVI-81): the tdd pointer is also suppressed when CLAUDE_PLUGIN_ROOT is unset"
 assert_contains "$OUT" "## Harness orientation" \
   "y: orientation still prints when CLAUDE_PLUGIN_ROOT is unset"
 
@@ -9517,6 +9521,25 @@ for PHASE in "Phase 1" "Phase 2" "Phase 3" "Phase 4"; do
 done
 assert_contains "$(cat "$DEBUG_RULE" 2>/dev/null)" "is not a negative result until the command is known to have run" \
   "rd (OVI-82): the empty-result-is-not-a-negative-result gotcha (OVI-68) is included"
+
+echo ""
+echo "== OVI-81: rules/tdd.md exists with the required 5-step process =="
+
+TDD_RULE="$REPO_ROOT/rules/tdd.md"
+if [ -f "$TDD_RULE" ]; then
+  pass "rt (OVI-81): rules/tdd.md exists"
+else
+  fail "rt (OVI-81): rules/tdd.md is missing"
+fi
+for STEP in "Write failing test" "Confirm it fails" "Write minimum code to pass" \
+  "Confirm success" "Refactor"; do
+  assert_contains "$(cat "$TDD_RULE" 2>/dev/null)" "$STEP" \
+    "rt (OVI-81): 5-step process includes '$STEP'"
+done
+assert_contains "$(cat "$TDD_RULE" 2>/dev/null)" "No exceptions unless tooling is broken" \
+  "rt (OVI-81): states the no-exceptions rule"
+assert_contains "$(cat "$TDD_RULE" 2>/dev/null)" "report that as a blocker rather than skipping it silently" \
+  "rt (OVI-81): unmeasurable coverage must be reported as a blocker, not silently skipped"
 
 echo ""
 echo "== shell syntax =="

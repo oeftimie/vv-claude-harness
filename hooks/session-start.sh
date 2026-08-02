@@ -247,6 +247,7 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
   echo "Completion checklist: $CLAUDE_PLUGIN_ROOT/rules/task-completion.md" \
     "(read before declaring work complete)."
   echo "Debugging discipline: $CLAUDE_PLUGIN_ROOT/rules/debugging.md (read before debugging a failure)."
+  echo "TDD process: $CLAUDE_PLUGIN_ROOT/rules/tdd.md (read before implementing a feature or bugfix)."
 fi
 echo "Run /harness-continue for the full interactive flow (mode choice, smoke test, team plan)."
 exit 0
