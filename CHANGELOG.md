@@ -6,8 +6,9 @@ Version history for the VV Claude Code Harness. The current version lives in `.c
 
 **Three correctness fixes from an external code review pass** (feedback_vivi.md, verified
 against commit `6a4f7d3` post-v5.0.0), tracked as Linear issues OVI-105/106/107. A pure
-bugfix patch release — no new capability, nothing additive; see v5.1.0 for the review's
-remaining, additive follow-ups.
+bugfix patch release — no new capability, nothing additive. The same review's remaining,
+additive follow-ups (OVI-104/81/82) are queued for a future minor release, not bundled
+here.
 
 `features.json` writes could race under parallel `TaskCompleted` hooks (OVI-107):
 `harness_state.py`'s write path used a fixed tmp filename that one concurrent invocation
