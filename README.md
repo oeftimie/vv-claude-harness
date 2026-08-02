@@ -222,6 +222,15 @@ actually exists. That process also caught and corrected a claim shipped since v4
 identity" claim traced to a documentation fetch that silently answered from the wrong
 section of a long reference page.
 
+A follow-up code review found three more correctness bugs, fixed in v5.0.1: `features.json`
+writes could race and silently lose `correction_cycles` increments under parallel
+`TaskCompleted` hooks (now a single-process lock-and-atomic-write cycle in
+`harness_state.py`, stress-tested to 120-way concurrency); `session-start.sh`'s orientation
+could exceed the platform's 10,000-char output cap on a long feature description (now
+truncated to 200 chars with a pointer to the full text); and `/harness-continue`'s
+documented "smoke test" actually ran the full suite (both call sites now pass
+`smoke_test` explicitly).
+
 ## Architecture
 
 ### Global (travels with you)

@@ -44,10 +44,10 @@ Do not skip this.
 Run the project's build/test smoke test:
 
 ```bash
-./.harness/init.sh
+./.harness/init.sh smoke_test
 ```
 
-This is a gate, not a diagnostic. Its purpose is to confirm the environment is in a known-good state BEFORE any changes. If it fails, you know the problem is pre-existing, not something you introduced. Run it within the first 5 actions of every session. No exceptions. The 15-second cost prevents 15-minute debugging sessions later.
+This is a gate, not a diagnostic. Its purpose is to confirm the environment is in a known-good state BEFORE any changes. If it fails, you know the problem is pre-existing, not something you introduced. Run it within the first 5 actions of every session. No exceptions. The 15-second cost prevents 15-minute debugging sessions later. (OVI-106: `init.sh`'s own default target is `full_test`, not `smoke_test` -- pass the argument explicitly, or this step silently runs the full suite instead of the fast gate this section describes.)
 
 If it fails unexpectedly, `/harness-doctor` can help narrow down why — it structurally
 checks hook presence/executability, `.claude/settings.json` wiring, `.gitignore`
@@ -166,7 +166,7 @@ TaskCreate({ subject: "F001: Update context_summary.md with learnings", descript
 
 Use `TaskUpdate` to mark each task `in_progress` when starting and `completed` when done. Task updates must happen at the moment of state change, not in batch. The rule: when you finish something, the NEXT action is `TaskUpdate` — before responding to the user, before starting the next task. If planned tasks no longer match reality (scope changed, new work appeared), update or delete stale tasks immediately. A stale task list is worse than no task list because it creates false confidence about state.
 
-4. Run smoke test: `./.harness/init.sh`
+4. Run smoke test: `./.harness/init.sh smoke_test`
 
 ### Implement with TDD
 
