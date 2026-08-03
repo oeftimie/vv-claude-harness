@@ -2424,18 +2424,20 @@
       "id": "F086",
       "description": "release-consistency.yml opens a new GitHub issue on every push to main while drift persists, with no dedupe check -- unlike maintenance.yml's weekly-cron failure mode, a merge-happy main branch could push repeatedly while a release is mid-flight (tag not yet created) and open one issue per push. Add a `github.rest.issues.listForRepo` title check before `issues.create` (list open issues titled `Release consistency drift on v{version}`, skip creation if one already exists), matching the title format already used. Related, same root cause: a release-bump merge opens an issue that must be closed by hand after the tag is pushed, since pushing a tag doesn't re-trigger the push-to-main workflow -- consider whether the issue body should note this explicitly so it isn't mistaken for a still-open problem after the tag lands.",
       "priority": 87,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         ".github/workflows/release-consistency.yml"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "2 new suite assertions: a structural grep-based check that release-consistency.yml calls issues.listForRepo and checks `.some((issue) => issue.title === title)` before creating, and a check that the issue body explains the tag push will not auto-close it. Mutation-tested both: removing the dedupe block fails exactly the dedupe assertion (1567/1568); removing the close-by-hand note fails exactly that assertion (1567/1568); restored, full suite 1568/1568 clean. Beyond the suite (which only does static/structural checks on the YAML, per this repo pattern -- there is no live GitHub Actions runner in the test suite), functionally verified the actual extracted JS logic with a mocked `github`/`context` object under node: (1) no existing issue -> creates one; (2) an existing open issue with the identical title -> skips creation entirely; (3) an existing open issue for a different version -> still creates. Also confirmed the created issue body contains the close-by-hand note.",
       "notes": "",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Considered filtering listForRepo by a label instead of a title match, to make the dedupe check cheaper/more precise. Declined: the workflow does not currently apply any label to the drift issue, and adding one only for dedupe purposes would be scope beyond what F086 asked for."
+      ],
       "failure_reason": null,
       "discovered_via": "F078 (PR #137 round-2 review, N2, 2026-08-03)",
       "spec": null
