@@ -9200,6 +9200,72 @@ assert_rc0 "$RC" "cg: 'git commit -m \"x\" & echo done' passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "cg: a real background '&' after a clean commit has no deny fields"
 
+# F076: a heredoc-sourced commit message (this project's own documented
+# convention: `git commit -m "$(cat <<'EOF' ... EOF)"`) containing an
+# embedded, unescaped double-quoted phrase in its body was falsely denied as
+# compound-stage-and-commit. Root cause: mask_quotes()'s own quote-pairing
+# regex has no concept of heredoc syntax, so it paired the real opening
+# quote of the -m argument with the FIRST embedded quote inside the heredoc
+# body instead of the argument's real closing quote -- leaving a stretch of
+# real, unmasked body text in between that split_tokens() then split on its
+# own internal space, producing a trailing fragment token that
+# has_staging_flag() misread as a bare pathspec argument (F052). Fixed by
+# masking heredoc bodies (mask_heredocs()) before mask_quotes() ever runs.
+CG_HEREDOC_QUOTE_CMD=$'git commit -m "$(cat <<\'EOF\'\nfix: close python-side prefix-matching test gap, document residual (round 2, PR #96)\n\nAdded a check that commit-gate.sh "upgrade available" support handles\nthe case correctly.\nEOF\n)"'
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_QUOTE_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: F076 heredoc commit message with an embedded quoted phrase passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: F076 heredoc commit message with an embedded quoted phrase has no deny fields"
+
+# Same shape, two separate embedded quoted phrases in the same body -- proves
+# mask_heredocs() removes ALL embedded quotes from the pairing scan, not just
+# the first pair.
+CG_HEREDOC_TWO_QUOTES_CMD=$'git commit -m "$(cat <<\'EOF\'\nfix: handle "first phrase" and also "second phrase" in one message\nEOF\n)"'
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_TWO_QUOTES_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: F076 heredoc message with two embedded quoted phrases passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: F076 two-embedded-quote heredoc message has no deny fields"
+
+# Unquoted delimiter (<<EOF, not <<'EOF') needs the identical fix: an
+# embedded quote's shell-expansion behavior differs (unquoted heredocs
+# expand $-substitutions inside), but that has no bearing on mask_heredocs(),
+# which masks the body regardless of how the delimiter itself was quoted.
+CG_HEREDOC_UNQUOTED_DELIM_CMD=$'git commit -m "$(cat <<EOF\nfix: unquoted delimiter with an embedded "quoted phrase" here\nEOF\n)"'
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_UNQUOTED_DELIM_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: F076 unquoted-delimiter heredoc with an embedded quote passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: F076 unquoted-delimiter heredoc has no deny fields"
+
+# <<- (indented) variant: the terminator line may be preceded by tabs, which
+# mask_heredocs() must still recognize as the real terminator.
+CG_HEREDOC_INDENTED_CMD=$'git commit -m "$(cat <<-\'EOF\'\nfix: indented delimiter with an embedded "quoted phrase" here\n\tEOF\n)"'
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_INDENTED_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: F076 <<- indented-terminator heredoc with an embedded quote passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "cg: F076 indented-terminator heredoc has no deny fields"
+
+# Safety: a REAL staging flag alongside a heredoc message with an embedded
+# quote must still deny -- mask_heredocs() must never hide a genuine flag
+# that lies OUTSIDE the heredoc body itself.
+CG_HEREDOC_REAL_DASHA_CMD=$'git commit -a -m "$(cat <<\'EOF\'\nfix: something with an embedded "quoted phrase" here\nEOF\n)"'
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_REAL_DASHA_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: F076 real -a flag with a heredoc message still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F076 real -a flag is not hidden by the heredoc-body mask"
+
+# Safety: a genuine 'git add' followed by 'git commit -m <heredoc>' (two real
+# segments, separated by a real newline BEFORE the heredoc even starts) must
+# still deny as compound-stage-and-commit.
+CG_HEREDOC_REAL_COMPOUND_CMD=$'git add newfile.txt\ngit commit -m "$(cat <<\'EOF\'\nfix: something with an embedded "quoted phrase" here\nEOF\n)"'
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_REAL_COMPOUND_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: F076 real 'git add' + heredoc 'git commit' still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F076 real compound stage+commit is not hidden by the heredoc-body mask"
+
 echo ""
 echo "== agent frontmatter =="
 
