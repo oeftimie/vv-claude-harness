@@ -10053,10 +10053,18 @@ PYEOF
   else
     fail "rc: release-consistency.yml does not dedupe against an already-open drift issue"
   fi
-  if grep -q "does not re-trigger this workflow" "$RC_YML"; then
+  # F086 round-2 (review-pr139-f086, N1): listForRepo defaults to 30 results and
+  # mixes in pull requests, so the drift issue could fall off the page behind
+  # unrelated open issues/PRs -- guard both the page size and the PR filter.
+  if grep -q "per_page: 100" "$RC_YML" && grep -q "!issue.pull_request" "$RC_YML"; then
+    pass "rc: release-consistency.yml's dedupe check isn't defeated by pagination or PRs"
+  else
+    fail "rc: release-consistency.yml's dedupe check doesn't guard against pagination/PR noise"
+  fi
+  if grep -q "nothing in this workflow closes issues" "$RC_YML"; then
     pass "rc: release-consistency.yml's issue body notes it must be closed by hand"
   else
-    fail "rc: release-consistency.yml's issue body does not explain the tag push won't auto-close it"
+    fail "rc: release-consistency.yml's issue body does not explain the issue won't auto-close"
   fi
 else
   fail "rc: .github/workflows/release-consistency.yml does not exist"
