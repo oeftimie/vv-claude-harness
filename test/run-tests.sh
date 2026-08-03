@@ -5531,6 +5531,78 @@ else
   fail "hs: next-claimable output differs -- plain: '$NEXT_PLAIN' module: '$NEXT_MODULE'"
 fi
 
+# F084/PR#120 round-1 review NIT-4: _with_file_lock's flock retry loop used to
+# catch bare OSError, treating a permanent error (e.g. ENOLCK -- errno 77,
+# "no locks available", distinct from EWOULDBLOCK/EAGAIN which flock(LOCK_NB)
+# raises as BlockingIOError on genuine contention) identically to normal
+# retry-worthy contention: it burned the full LOCK_TIMEOUT_SECONDS before
+# reporting the misleading "timed out waiting for lock" message. Simulate a
+# permanent flock failure by monkeypatching fcntl.flock to raise a real
+# ENOLCK OSError (verified via `python3 -c "import errno; print(errno.ENOLCK)"`
+# -- NOT EALREADY/37, which this repo's own investigation found ALSO maps to
+# BlockingIOError and would have made this test pass for the wrong reason)
+# and confirm the lock attempt fails fast, not after a ~5s wait.
+HS_PERMANENT_ERROR_ERRORS=$(python3 - "$STATE_MODULE_TEMPLATE" 2>&1 <<'PYEOF'
+import errno
+import importlib.util
+import time
+import sys
+from importlib.machinery import SourceFileLoader
+
+module_path = sys.argv[1]
+errors = []
+
+loader = SourceFileLoader("hs_permanent_error", module_path)
+spec = importlib.util.spec_from_file_location(
+    "hs_permanent_error", module_path, loader=loader
+)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+import fcntl
+
+if errno.ENOLCK == errno.EWOULDBLOCK or errno.ENOLCK == errno.EAGAIN:
+    errors.append("this platform's ENOLCK aliases EWOULDBLOCK/EAGAIN -- test premise invalid here")
+else:
+    def raise_permanent_error(fh, flags):
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    real_flock = fcntl.flock
+    fcntl.flock = raise_permanent_error
+    try:
+        import contextlib
+        import io
+        # _with_file_lock's own stderr diagnostic is expected and correct
+        # here -- it's what confirms harness_state.py reported the real
+        # cause (verified separately in NIT-2's test coverage). Swallow it
+        # so it doesn't get mixed into this script's own errors-only output
+        # via the outer 2>&1.
+        start = time.time()
+        with contextlib.redirect_stderr(io.StringIO()):
+            result = module._with_file_lock("/tmp/hs-permanent-error-test.json", lambda: "should not run")
+        elapsed = time.time() - start
+    finally:
+        fcntl.flock = real_flock
+
+    if result is not None:
+        errors.append(f"_with_file_lock should return None on a permanent flock error, got {result!r}")
+    if elapsed >= module.LOCK_TIMEOUT_SECONDS:
+        errors.append(
+            f"a permanent flock error took {elapsed:.3f}s -- burned the full "
+            f"LOCK_TIMEOUT_SECONDS instead of failing fast"
+        )
+
+for e in errors:
+    print(e)
+PYEOF
+)
+rm -f /tmp/hs-permanent-error-test.json.lock
+if [ -z "$HS_PERMANENT_ERROR_ERRORS" ]; then
+  pass "hs (F084): a permanent flock error (ENOLCK) fails fast, not after the full lock timeout"
+else
+  fail "hs (F084): $HS_PERMANENT_ERROR_ERRORS"
+fi
+
 echo ""
 echo "== F013: mechanical stamp for harness-init =="
 

@@ -72,10 +72,21 @@ def _with_file_lock(path, fn):
                 fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 acquired = True
                 break
-            except OSError:
+            except BlockingIOError:
+                # Genuine contention (EWOULDBLOCK/EAGAIN) -- another process
+                # holds the lock. Worth retrying until the deadline.
                 if time.time() >= deadline:
                     break
                 time.sleep(LOCK_POLL_SECONDS)
+            except OSError as exc:
+                # PR #120 round-1 review NIT-4: a permanent error (e.g. ENOLCK,
+                # or EINVAL on a filesystem without flock support) is not
+                # contention and retrying it for the full LOCK_TIMEOUT_SECONDS
+                # only delays reporting the real problem, then reports it
+                # under the misleading "timed out" message. Report and stop
+                # immediately instead.
+                print(f"harness_state: flock failed on {lock_path}: {exc}", file=sys.stderr)
+                return None
         if not acquired:
             print(f"harness_state: timed out waiting for lock on {lock_path}", file=sys.stderr)
             return None
