@@ -10049,12 +10049,24 @@ else
   fail "rc: .github/workflows/release-consistency.yml does not exist"
 fi
 
-# Functional check: run the same three checks release-consistency.yml's script step
-# runs, directly against this repo's actual current state, without invoking GitHub
-# Actions -- confirms the logic itself is correct, not just that the YAML looks right.
+# Functional check: run release-consistency.yml's CHANGELOG and marketplace logic
+# (not the tag check -- see below) directly against this repo's actual current
+# state, without invoking GitHub Actions -- confirms the logic itself is correct,
+# not just that the YAML looks right.
+#
+# The tag check is deliberately excluded here, not just deferred: this suite runs
+# on every push AND pull_request (test.yml), including release-bump PRs where
+# plugin.json and CHANGELOG.md are updated but the version's git tag cannot exist
+# yet -- tags are only created after the bump commit merges (see F078's
+# approaches_tried). Asserting the tag here would make every release PR's CI
+# permanently red, exactly the failure mode this design avoids by using an
+# issue-on-drift workflow (release-consistency.yml, push-to-main only) instead of
+# a PR-blocking check. The static check above already confirms
+# release-consistency.yml's script contains the tag assertion; that's sufficient
+# coverage for the tag-check logic without running it against live repo state here.
 RC_FUNC_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import json
-import subprocess
+import re
 import sys
 
 root = sys.argv[1]
@@ -10064,15 +10076,8 @@ manifest = json.load(open(f"{root}/.claude-plugin/plugin.json"))
 version = manifest["version"]
 
 changelog = open(f"{root}/CHANGELOG.md").read()
-if f"### v{version} " not in changelog:
+if not re.search(rf"^### v{re.escape(version)}( |$)", changelog, re.MULTILINE):
     errors.append(f"CHANGELOG.md has no '### v{version}' heading")
-
-tag_check = subprocess.run(
-    ["git", "-C", root, "rev-parse", f"refs/tags/v{version}"],
-    capture_output=True,
-)
-if tag_check.returncode != 0:
-    errors.append(f"no git tag v{version} exists")
 
 marketplace = json.load(open(f"{root}/.claude-plugin/marketplace.json"))
 match = next(
@@ -10092,14 +10097,16 @@ else
   fail "rc: this repo's own current state fails release-consistency -- $RC_FUNC_ERRORS"
 fi
 
-# The check above needs git tags to be present, but actions/checkout@v4
-# defaults to a shallow, tag-less clone (depth 1) -- confirmed live: this
-# exact suite failed in GitHub Actions with "no git tag vX.Y.Z exists" for a
-# tag that genuinely existed on the remote, reproduced locally via
-# `git clone --depth 1 file://...` and fixed by fetching full history.
-# Guard test.yml's own checkout config so this can't silently regress. A bare
-# grep for the literal string would false-pass on this very comment (which
-# names "fetch-depth: 0" in prose) -- parse the YAML structurally instead.
+# actions/checkout@v4 defaults to a shallow, tag-less clone (depth 1) --
+# confirmed live: before RC_FUNC_ERRORS dropped its own tag assertion (see
+# comment above), this exact suite failed in GitHub Actions with "no git tag
+# vX.Y.Z exists" for a tag that genuinely existed on the remote, reproduced
+# locally via `git clone --depth 1 file://...` and fixed by fetching full
+# history. Keep full history in test.yml regardless, as a durable guard: if
+# run-tests.sh ever grows another tag-dependent check, it silently breaks in CI
+# without this, the same way it did here. A bare grep for the literal string
+# would false-pass on this very comment (which names "fetch-depth: 0" in
+# prose) -- parse the YAML structurally instead.
 TEST_YML="$REPO_ROOT/.github/workflows/test.yml"
 TEST_YML_FETCH_DEPTH_ERRORS=$(python3 - "$TEST_YML" 2>&1 <<'PYEOF'
 import sys

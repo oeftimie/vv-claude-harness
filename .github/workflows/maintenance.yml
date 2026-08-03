@@ -12,7 +12,13 @@ jobs:
       contents: read
       issues: write
     steps:
+      # F078/OVI-103 review (PR #137, round 1): keep full history here too, so
+      # this workflow's run of test/run-tests.sh never regresses into the
+      # shallow-clone/no-tags failure test.yml hit -- see that file's checkout
+      # step for the incident this guards against.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install latest Claude Code CLI (retry once on flake)
         id: install

@@ -24,7 +24,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           GAPS=""
 
-          if ! grep -qF "### v$VERSION " CHANGELOG.md; then
+          if ! grep -qE "^### v${VERSION//./\\.}( |\$)" CHANGELOG.md; then
             GAPS="$GAPS
           - .claude-plugin/plugin.json's version ($VERSION) has no matching '### v$VERSION' heading in CHANGELOG.md"
           fi
