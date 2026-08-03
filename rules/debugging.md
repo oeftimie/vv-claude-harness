@@ -11,7 +11,7 @@ Find the root cause. NEVER fix a symptom or add a workaround.
   editing code ("I think the crash is X because Y, I'll fix it by Z"). Costs one message
   and lets the human correct a wrong model early.
 - An empty or clean result is not a negative result until the command is known to have run.
-  A check that errors must report UNKNOWN, never PASS — a silently-missing tool or a query
+  A check that errors out must report UNKNOWN, never PASS — a silently-missing tool or a query
   that exits 0 without actually executing looks identical to a genuine clean result unless
   you confirm the command ran.
 

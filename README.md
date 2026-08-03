@@ -235,8 +235,8 @@ The same review's additive follow-ups shipped in v5.1.0: `harness-doctor --fix` 
 restore a missing `commit-gate.sh` and repair a project's `.gitignore` on upgrade even
 when it already carries an older required line (the fixer previously early-returned on
 the first line's presence, making a newer required line permanently unreachable for any
-already-initialized project); doctor's report now names all four checks it silently
-skips when `CLAUDE_PLUGIN_ROOT` is unset, in one consolidated finding, instead of staying
+already-initialized project); doctor's report now names the checks it silently skips
+when `CLAUDE_PLUGIN_ROOT` is unset, in one consolidated finding, instead of staying
 quiet about each one individually; and two new rule files, `rules/debugging.md` (a
 four-phase systematic root-cause process) and `rules/tdd.md` (the 5-step TDD loop and
 coverage bar), join the SessionStart rule-pointer block.
