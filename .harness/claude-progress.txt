@@ -1019,3 +1019,34 @@
   features.json as a real "scope something new" signal, not a gap to
   paper over.
 - Blockers: none.
+
+## Session N+1 - 2026-08-03
+- Feature: F078/OVI-103 - release-consistency CI check
+- Status: complete, merged (PR #137, commit 692224c on main)
+- Tests: 1566/1566 passing on synced main; `validate-features.py` clean;
+  `harness-doctor` self-check clean (one expected finding: CLAUDE_PLUGIN_ROOT
+  unset when doctor.py is run manually outside a Claude Code plugin context --
+  not a regression).
+- Decisions: PR went through 3 review rounds (review-pr137-f078) before merge.
+  Round 1 caught a real CI failure: actions/checkout@v4 defaults to a shallow,
+  tag-less clone, so the new tag-existence check failed in Actions even though
+  the tag existed on the remote -- fixed with fetch-depth: 0 on test.yml.
+  Round 2 caught two more: (a) maintenance.yml had the identical shallow-clone
+  gap and would have failed its Monday cron; (b) more importantly, the new
+  test suite's own functional check (RC_FUNC_ERRORS) asserted a git tag exists
+  for the CURRENT plugin.json version -- but that suite runs on every push AND
+  pull_request, including release-bump PRs where the tag genuinely can't exist
+  yet, so every future release PR's CI would have gone permanently red. This
+  reintroduced, one layer down, the exact design problem release-consistency.yml
+  itself was built to avoid (hence it reports via issue instead of blocking a
+  PR). Fixed by dropping the tag assertion from the PR-gating functional check
+  entirely -- the static YAML check already confirms release-consistency.yml's
+  own script still contains the tag assertion, so coverage moved, not lost.
+  Round 3: clean APPROVE. F086 filed as a follow-up for a related non-blocking
+  gap (no dedupe on the drift-issue creation, so repeated pushes while drift
+  persists would open one issue per push).
+- Next: F086 (issue dedupe, priority 87, pending) is the only queued item.
+  OVI-103 closed Done in Linear with a summary comment. This closes out the
+  entire original 8-issue external-review scope (OVI-103/104/105/106/107/108,
+  OVI-81/82) plus all locally-discovered follow-ups from this arc.
+- Blockers: none.
