@@ -10056,7 +10056,10 @@ PYEOF
   # F086 round-2 (review-pr139-f086, N1): listForRepo defaults to 30 results and
   # mixes in pull requests, so the drift issue could fall off the page behind
   # unrelated open issues/PRs -- guard both the page size and the PR filter.
-  if grep -q "per_page: 100" "$RC_YML" && grep -q "!issue.pull_request" "$RC_YML"; then
+  # A bare "per_page: 100" grep is satisfied by the explanatory comment above
+  # the real call (review-pr139-f086, round 2) -- require the trailing comma,
+  # which only the actual argument line has.
+  if grep -q "per_page: 100," "$RC_YML" && grep -q "!issue.pull_request" "$RC_YML"; then
     pass "rc: release-consistency.yml's dedupe check isn't defeated by pagination or PRs"
   else
     fail "rc: release-consistency.yml's dedupe check doesn't guard against pagination/PR noise"
