@@ -2248,6 +2248,30 @@
       "failure_reason": null,
       "discovered_via": "F074 (review-pr125-f074, nits N3/N4, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
       "spec": null
+    },
+    {
+      "id": "F083",
+      "description": "PR #120 (F070/OVI-107) round-1 review NIT-2, deferred at merge as 'minor, pre-existing, but newly load-bearing', picked up now per Ovidiu's 'work until blocked' instruction: verify-task-quality.sh.template's increment_correction_cycles() invoked harness_state.py with `2>&1`, merging its stderr diagnostics (e.g. 'timed out waiting for lock') onto the function's own STDOUT. Every one of this function's 3 call sites is on the exit-2 rejection path, and Claude Code discards a hook's stdout entirely on exit 2, surfacing only stderr to the blocked agent -- so any diagnostic this function could ever produce was silently buried, exactly when the hook is already rejecting completion and the diagnostic matters most. Fix: removed `2>&1`, letting harness_state.py's stderr (it never writes to stdout on this code path) flow straight through to the hook's own stderr.",
+      "priority": 80,
+      "status": "passing",
+      "scope": [
+        "skills/harness-init/verify-task-quality.sh.template",
+        ".claude/hooks/verify-task-quality.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F070"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "3 new suite assertions: harness_state.py's own diagnostic (invoked the same way the fixed template now does, no 2>&1) never lands on stdout and does land on stderr, using a fast no-matching-feature error path rather than the existing 6-second lock-timeout wait; plus a structural grep confirming the shell wrapper's own call site genuinely dropped the 2>&1 (not just that harness_state.py behaves correctly in isolation -- the wrapper could still re-merge them). Mutation-tested: reverting the template's call site back to 2>&1 fails exactly the structural grep assertion and the pre-existing template/live-copy drift check (F047, since only the template was mutated), nothing else -- confirms the two harness_state.py-level assertions correctly isolate that layer from the wrapper layer. Manually verified the actual runtime effect before writing the test (per this repo's own debugging.md discipline): held the lock in a background process, invoked harness_state.py the fixed way, confirmed empirically that stdout was empty and stderr alone carried the timeout message. Full suite 1544/1544 both before and after restoring the mutation.",
+      "notes": "Verified all 3 call sites of increment_correction_cycles (lines ~124, 135, 168 in the template) are exclusively on paths ending in `exit 2` before concluding the fix has no downside -- there is no success-path invocation where stdout output would have mattered differently.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F070 (review-pr120-f070, NIT-2, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
     }
   ]
 }
