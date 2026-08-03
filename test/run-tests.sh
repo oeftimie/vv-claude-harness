@@ -5531,6 +5531,94 @@ else
   fail "hs: next-claimable output differs -- plain: '$NEXT_PLAIN' module: '$NEXT_MODULE'"
 fi
 
+# F082/PR#120 round-1 review NIT-3: fcntl is Unix-only and used only by the
+# write path (_with_file_lock). Importing it at module level made every
+# read-only verb (load, next-claimable, counts) fail to import on a
+# hypothetical platform without fcntl, even though none of them touch the
+# lock. Moved the import inside _with_file_lock; prove read-only verbs
+# genuinely don't need it by blocking the import via sys.modules before
+# harness_state loads and confirming they still run.
+DIR_HS_NOFCNTL="$WORK/hs-no-fcntl"
+make_fixture "$DIR_HS_NOFCNTL"
+HS_NOFCNTL_ERRORS=$(python3 - "$STATE_MODULE_TEMPLATE" "$DIR_HS_NOFCNTL/.harness/features.json" 2>&1 <<'PYEOF'
+import importlib.util
+import sys
+from importlib.machinery import SourceFileLoader
+
+module_path, features_path = sys.argv[1], sys.argv[2]
+errors = []
+
+
+class BlockFcntl:
+    def find_spec(self, name, path, target=None):
+        if name == "fcntl":
+            raise ImportError("fcntl deliberately blocked for this test")
+        return None
+
+
+blocker = BlockFcntl()
+sys.meta_path.insert(0, blocker)
+try:
+    # spec_from_file_location can't infer a loader from the ".template"
+    # suffix on its own -- pass SourceFileLoader explicitly so it's treated
+    # as Python source despite the non-.py filename.
+    loader = SourceFileLoader("harness_state_nofcntl", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "harness_state_nofcntl", module_path, loader=loader
+    )
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError as exc:
+        errors.append(f"harness_state.py failed to import with fcntl blocked: {exc}")
+        module = None
+
+    if module is not None:
+        try:
+            valid = module.load_valid_features(features_path)
+            if not isinstance(valid, list):
+                errors.append("load_valid_features did not return a list")
+        except Exception as exc:
+            errors.append(f"load_valid_features raised with fcntl blocked: {exc}")
+
+        try:
+            import contextlib
+            import io
+            # cmd_counts prints its own JSON to stdout; discard it here so it
+            # doesn't get mixed into this script's own errors-only output.
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = module.cmd_counts(features_path)
+            if rc != 0:
+                errors.append(f"cmd_counts returned {rc}, expected 0")
+        except Exception as exc:
+            errors.append(f"cmd_counts raised with fcntl blocked: {exc}")
+
+        try:
+            module._with_file_lock(features_path, lambda: None)
+            errors.append(
+                "_with_file_lock should have raised ImportError with fcntl "
+                "blocked, but returned normally"
+            )
+        except ImportError:
+            pass
+        except Exception as exc:
+            errors.append(
+                f"_with_file_lock raised the wrong exception type with fcntl "
+                f"blocked: {type(exc).__name__}: {exc}"
+            )
+finally:
+    sys.meta_path.remove(blocker)
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$HS_NOFCNTL_ERRORS" ]; then
+  pass "hs (F082): read-only verbs (load, counts) work with fcntl unavailable; the write path still needs it"
+else
+  fail "hs (F082): $HS_NOFCNTL_ERRORS"
+fi
+
 echo ""
 echo "== F013: mechanical stamp for harness-init =="
 

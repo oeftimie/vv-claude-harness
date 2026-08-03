@@ -2271,6 +2271,32 @@
       "failure_reason": null,
       "discovered_via": "F073 (review-pr123-f073, nit N3, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
       "spec": null
+    },
+    {
+      "id": "F082",
+      "description": "PR #120 (F070/OVI-107) round-1 review NIT-3, deferred at merge as 'real but scoped past what this feature needs to ship correctly', picked up now per Ovidiu's 'work until blocked' instruction: harness_state.py.template's top-level `import fcntl` made the ENTIRE module Unix-only, including every read-only verb (load, next-claimable, counts) that never touches the lock -- only the write path (increment-correction-cycles, via _with_file_lock) actually needs fcntl. The reviewer's own suggested one-line mitigation: move the import inside _with_file_lock, confining the Unix dependency to the write path. Applied exactly that, synced the live .claude/hooks/harness_state.py copy to match.",
+      "priority": 81,
+      "status": "passing",
+      "scope": [
+        "skills/harness-init/harness_state.py.template",
+        ".claude/hooks/harness_state.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F070"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "1 new suite assertion, but a substantial one: blocks fcntl's import via a sys.meta_path finder (raising ImportError for that specific module name, using the modern find_spec API -- the legacy find_module/load_module finder protocol was tried first and silently failed to actually block the import on Python 3.14, caught by testing the blocking mechanism standalone before trusting it in the suite), loads harness_state.py.template via importlib with an explicit SourceFileLoader (spec_from_file_location can't infer a loader from the .template suffix on its own), then confirms load_valid_features and cmd_counts (read-only) both succeed with fcntl unavailable, while _with_file_lock (write path) correctly raises ImportError. Also caught and fixed a test-authoring bug of my own during this same feature: cmd_counts prints its own JSON to stdout internally, which was leaking into the errors-only output channel my test checks -- wrapped that one call in contextlib.redirect_stdout to isolate it. Mutation-tested: reverting the fix (import fcntl back at module level, in only the template file -- deliberately leaving the live copy fixed, to exercise it) fails both the new F082 assertion AND the pre-existing F047 template/live-copy drift check, since the two files now genuinely differ; restored both files, reran clean. Full suite 1542/1542 both before and after restoring.",
+      "notes": "Reviewer's own framing: 'inferred not verified (macOS-only box)... I could not test this' -- correctly hedged at the time since PR #120's review ran on a real macOS/Linux box with fcntl always available, so the reviewer couldn't empirically prove the read-only verbs would work without it. This feature closes that gap: the sys.meta_path blocking technique proves it directly on this same box, without needing an actual non-Unix platform to test on.\n\nROUND 1 (review of PR #132, review-pr132-f082): APPROVE-WITH-NITS. Independently re-verified the empirical claims with fresh evidence (60 concurrent increment processes landed 60/60 with the fix; a negative control with the lock neutered lost 8/60 -- confirms the lock is doing real work, not vacuous), and independently re-confirmed the legacy-finder dead end (find_module/load_module silently fails to block on Python 3.14.4). One real nit: the new test and its own coverage note both mislabeled this feature's id as F081 (an unrelated, already-merged feature -- PR #125/F074's nits) instead of F082. Fixed.",
+      "correction_cycles": 2,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "First attempt at the sys.meta_path blocking mechanism used the legacy find_module/load_module finder protocol -- verified standalone before trusting it in the suite (per this repo's own debugging.md discipline: confirm the mechanism actually works before relying on it) and found it silently did NOT block the import on Python 3.14 (the legacy protocol was removed from CPython's import machinery). Switched to the modern find_spec API, re-verified standalone, confirmed it genuinely blocks the import before using it in the real test."
+      ],
+      "failure_reason": null,
+      "discovered_via": "F070 (review-pr120-f070, NIT-3, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
     }
   ]
 }
