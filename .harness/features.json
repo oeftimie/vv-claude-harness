@@ -2227,9 +2227,178 @@
       "spec": null
     },
     {
+      "id": "F081",
+      "description": "PR #125 (F074/OVI-82) round-1 review nits N3/N4, deferred at merge as 'take or leave' optional polish, picked up now per Ovidiu's 'work until blocked' instruction. N3 (test-anchoring precision): the 4 test assertions pinning rules/debugging.md's Phase headers matched the bare substring 'Phase N' anywhere in the file, not the actual '## Phase N' markdown heading -- adequate in practice (the reviewer's own mutation happened to still catch it) but didn't pin the structure the feature actually claims to guarantee. N4 (wording): 'A check that errors must report UNKNOWN, never PASS' reads as a garden-path sentence on first parse ('a check that errors' misreads as a complete noun phrase before the sentence resolves). Fixed both: assertions now match '## Phase N' exactly; the sentence now reads 'A check that errors out must report UNKNOWN, never PASS'.",
+      "priority": 79,
+      "status": "passing",
+      "scope": [
+        "rules/debugging.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F074"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "No new assertions (existing 4 Phase-header assertions tightened in place, same count). Mutation-tested the anchoring fix specifically: replaced the real '## Phase 3' heading with a differently-worded heading that still contains the bare substring 'Phase 3' elsewhere in prose (e.g. '(formerly Phase 3)') -- confirmed this now correctly fails the anchored assertion, where the OLD unanchored version would have passed incorrectly (a live demonstration of the gap N3 identified, not just a hypothetical). Restored, reran clean. The wording fix (N4) has no test dependency on the exact changed phrase -- confirmed via grep that no assertion matches the literal string 'A check that errors must report' before changing it. Full suite 1541/1541 throughout.",
+      "notes": "Both nits were explicitly optional ('take or leave') at F074's merge. Folded in now that they're cheap and no higher-priority work is queued.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F074 (review-pr125-f074, nits N3/N4, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
+    },
+    {
+      "id": "F080",
+      "description": "PR #123 (F073/OVI-104) round-1 review nit N3, deferred at merge as a 'not a defect... harmless' minor over-report, picked up now per Ovidiu's 'work until blocked' instruction: check_plugin_root_unset's consolidated finding unconditionally listed 'the .harness/mld/ non-injection guarantee' among the checks skipped due to CLAUDE_PLUGIN_ROOT being unset, even for the common case of a project with no .harness/mld/ directory at all -- check_mld_non_injection already no-ops on a missing mld/ dir BEFORE it even looks at plugin_root, so that check was never going to run regardless of the unset variable. Fix: check_plugin_root_unset now takes project_dir too and only includes the mld line when .harness/mld/ actually exists, so the count (and the message) accurately reflects what CLAUDE_PLUGIN_ROOT specifically caused to be skipped.",
+      "priority": 80,
+      "status": "passing",
+      "scope": [
+        "skills/harness-doctor/doctor.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F073"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "Net +2 assertions (1 existing assertion changed from a positive mld-phrase check to a negative one on the no-mld fixture, plus 2 new assertions on a second fixture WITH .harness/mld/ present, confirming the count rises to 4 and the mld phrase appears in that case). Mutation-tested: reverting to the old unconditional-inclusion behavior fails exactly the 2 assertions that depend on the mld line being conditional (the '3 checks' count on the no-mld fixture, and the negative 'does not contain the mld phrase' assertion on that same fixture), nothing else. Full suite 1543/1543 both before and after restoring the mutation.",
+      "notes": "Reviewer's own framing at the time was 'harmless... not a defect', so this was correctly left unfixed at F073's merge rather than blocking it. Small enough and cheap enough to fold in now that other higher-priority work is clear.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F073 (review-pr123-f073, nit N3, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
+    },
+    {
+      "id": "F082",
+      "description": "PR #120 (F070/OVI-107) round-1 review NIT-3, deferred at merge as 'real but scoped past what this feature needs to ship correctly', picked up now per Ovidiu's 'work until blocked' instruction: harness_state.py.template's top-level `import fcntl` made the ENTIRE module Unix-only, including every read-only verb (load, next-claimable, counts) that never touches the lock -- only the write path (increment-correction-cycles, via _with_file_lock) actually needs fcntl. The reviewer's own suggested one-line mitigation: move the import inside _with_file_lock, confining the Unix dependency to the write path. Applied exactly that, synced the live .claude/hooks/harness_state.py copy to match.",
+      "priority": 81,
+      "status": "passing",
+      "scope": [
+        "skills/harness-init/harness_state.py.template",
+        ".claude/hooks/harness_state.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F070"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "1 new suite assertion, but a substantial one: blocks fcntl's import via a sys.meta_path finder (raising ImportError for that specific module name, using the modern find_spec API -- the legacy find_module/load_module finder protocol was tried first and silently failed to actually block the import on Python 3.14, caught by testing the blocking mechanism standalone before trusting it in the suite), loads harness_state.py.template via importlib with an explicit SourceFileLoader (spec_from_file_location can't infer a loader from the .template suffix on its own), then confirms load_valid_features and cmd_counts (read-only) both succeed with fcntl unavailable, while _with_file_lock (write path) correctly raises ImportError. Also caught and fixed a test-authoring bug of my own during this same feature: cmd_counts prints its own JSON to stdout internally, which was leaking into the errors-only output channel my test checks -- wrapped that one call in contextlib.redirect_stdout to isolate it. Mutation-tested: reverting the fix (import fcntl back at module level, in only the template file -- deliberately leaving the live copy fixed, to exercise it) fails both the new F082 assertion AND the pre-existing F047 template/live-copy drift check, since the two files now genuinely differ; restored both files, reran clean. Full suite 1542/1542 both before and after restoring.",
+      "notes": "Reviewer's own framing: 'inferred not verified (macOS-only box)... I could not test this' -- correctly hedged at the time since PR #120's review ran on a real macOS/Linux box with fcntl always available, so the reviewer couldn't empirically prove the read-only verbs would work without it. This feature closes that gap: the sys.meta_path blocking technique proves it directly on this same box, without needing an actual non-Unix platform to test on.\n\nROUND 1 (review of PR #132, review-pr132-f082): APPROVE-WITH-NITS. Independently re-verified the empirical claims with fresh evidence (60 concurrent increment processes landed 60/60 with the fix; a negative control with the lock neutered lost 8/60 -- confirms the lock is doing real work, not vacuous), and independently re-confirmed the legacy-finder dead end (find_module/load_module silently fails to block on Python 3.14.4). One real nit: the new test and its own coverage note both mislabeled this feature's id as F081 (an unrelated, already-merged feature -- PR #125/F074's nits) instead of F082. Fixed.",
+      "correction_cycles": 2,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "First attempt at the sys.meta_path blocking mechanism used the legacy find_module/load_module finder protocol -- verified standalone before trusting it in the suite (per this repo's own debugging.md discipline: confirm the mechanism actually works before relying on it) and found it silently did NOT block the import on Python 3.14 (the legacy protocol was removed from CPython's import machinery). Switched to the modern find_spec API, re-verified standalone, confirmed it genuinely blocks the import before using it in the real test."
+      ],
+      "failure_reason": null,
+      "discovered_via": "F070 (review-pr120-f070, NIT-3, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
+    },
+    {
+      "id": "F083",
+      "description": "PR #120 (F070/OVI-107) round-1 review NIT-2, deferred at merge as 'minor, pre-existing, but newly load-bearing', picked up now per Ovidiu's 'work until blocked' instruction: verify-task-quality.sh.template's increment_correction_cycles() invoked harness_state.py with `2>&1`, merging its stderr diagnostics (e.g. 'timed out waiting for lock') onto the function's own STDOUT. Every one of this function's 3 call sites is on the exit-2 rejection path, and Claude Code discards a hook's stdout entirely on exit 2, surfacing only stderr to the blocked agent -- so any diagnostic this function could ever produce was silently buried, exactly when the hook is already rejecting completion and the diagnostic matters most. Fix: removed `2>&1`, letting harness_state.py's stderr (it never writes to stdout on this code path) flow straight through to the hook's own stderr.",
+      "priority": 82,
+      "status": "passing",
+      "scope": [
+        "skills/harness-init/verify-task-quality.sh.template",
+        ".claude/hooks/verify-task-quality.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F070"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "3 new suite assertions: harness_state.py's own diagnostic (invoked the same way the fixed template now does, no 2>&1) never lands on stdout and does land on stderr, using a fast no-matching-feature error path rather than the existing 6-second lock-timeout wait; plus a structural grep confirming the shell wrapper's own call site genuinely dropped the 2>&1 (not just that harness_state.py behaves correctly in isolation -- the wrapper could still re-merge them). Mutation-tested: reverting the template's call site back to 2>&1 fails exactly the structural grep assertion and the pre-existing template/live-copy drift check (F047, since only the template was mutated), nothing else -- confirms the two harness_state.py-level assertions correctly isolate that layer from the wrapper layer. Manually verified the actual runtime effect before writing the test (per this repo's own debugging.md discipline): held the lock in a background process, invoked harness_state.py the fixed way, confirmed empirically that stdout was empty and stderr alone carried the timeout message. Full suite 1544/1544 both before and after restoring the mutation.",
+      "notes": "Verified all 3 call sites of increment_correction_cycles (lines ~124, 135, 168 in the template) are exclusively on paths ending in `exit 2` before concluding the fix has no downside -- there is no success-path invocation where stdout output would have mattered differently.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F070 (review-pr120-f070, NIT-2, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
+    },
+    {
+      "id": "F084",
+      "description": "PR #120 (F070/OVI-107) round-1 review NIT-4, deferred at merge as 'trivial... only matters on exotic filesystems', picked up now per Ovidiu's 'work until blocked' instruction: _with_file_lock's flock retry loop caught bare OSError, treating a permanent error (e.g. ENOLCK, or EINVAL on a filesystem without flock support) identically to normal retry-worthy contention -- it burned the full LOCK_TIMEOUT_SECONDS before reporting the misleading 'timed out waiting for lock' message. Fix: fcntl.flock(LOCK_NB) raises BlockingIOError specifically for EWOULDBLOCK/EAGAIN (verified empirically on this box, not assumed), a distinct OSError subclass; the retry loop now catches BlockingIOError for the retry-worthy case and any other OSError as a permanent failure, reported and returned immediately.",
+      "priority": 83,
+      "status": "passing",
+      "scope": [
+        "skills/harness-init/harness_state.py.template",
+        ".claude/hooks/harness_state.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F070"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "1 new suite assertion, but load-bearing: monkeypatches fcntl.flock to raise a real ENOLCK OSError (errno 77, verified via python3 -c \"import errno; print(errno.ENOLCK)\" -- NOT errno 37/EALREADY, which this feature's own investigation discovered ALSO maps to BlockingIOError in Python's OSError subclass hierarchy and would have made a naive test pass for the wrong reason), confirms _with_file_lock returns None in well under LOCK_TIMEOUT_SECONDS (fails fast) rather than the full 5s. Mutation-tested: reverting to a single bare `except OSError` fails exactly this assertion (measuring the full ~5s burn) plus the pre-existing template/live-copy drift check (only the template was mutated), nothing else. Full suite 1542/1542 both before and after restoring the mutation.",
+      "notes": "Two empirical dead ends worth recording, both caught before they became test bugs (per this repo's own debugging.md discipline: verify a mechanism works before trusting it). First: assumed errno 37 was ENOLCK without checking -- it's actually EALREADY, which (surprisingly) also maps to BlockingIOError, so a test built on it would have silently exercised the WRONG code path (the retry branch, not the permanent-error branch) while still nominally 'passing'. Second: the test's own capture of harness_state.py's stderr diagnostic collided with the outer `2>&1`, polluting the errors-only output channel -- the same class of bug (an in-process module test's own output colliding with the test script's error-reporting channel) hit and fixed in F082's cmd_counts test -- that fix used contextlib.redirect_stdout since cmd_counts prints to stdout; this one uses contextlib.redirect_stderr since harness_state.py writes its diagnostics to stderr, same pattern applied to the other channel.\n\nROUND 1 (review of PR #134, review-pr134-f084): APPROVE-WITH-NITS. Independently re-verified the errno claims fresh (EALREADY aliasing BlockingIOError is documented CPython behavior, keyed by errno symbol not numeric value, so portable across platforms where the numeric value of EALREADY differs from macOS), reproduced a REAL inter-process lock conflict (not just constructed exceptions) landing on BlockingIOError, and designed an additional mutation deleting the BlockingIOError branch entirely to test the platform-robustness question directly -- confirmed F070's own concurrency tests would catch such a regression loudly (4 failures including the original OVI-107 data-loss symptom), so the design choice is empirically backstopped, not resting on reasoning alone. Also verified the merge with F082 (already merged) auto-merges cleanly with no semantic conflict. Folded all 3 nits: hardcoded /tmp path replaced with $WORK (this repo's own temp-file convention, passed as a script argument since the heredoc is single-quote-delimited and doesn't expand shell variables); the timing assertion tightened from >= LOCK_TIMEOUT_SECONDS (would pass on a partial regression burning most, not all, of the timeout) to >= 1.0s; and the notes wording corrected to name which redirect (stdout vs stderr) each fix actually used.",
+      "correction_cycles": 2,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "First attempt used OSError(37, ...) believing 37 was ENOLCK; empirically checked with errno.ENOLCK and found it's actually 77, and that 37 (EALREADY) surprisingly also maps to BlockingIOError, not plain OSError, in Python's exception hierarchy. Corrected to the real ENOLCK value and re-verified standalone before trusting it in the suite."
+      ],
+      "failure_reason": null,
+      "discovered_via": "F070 (review-pr120-f070, NIT-4, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
+    },
+    {
+      "id": "F079",
+      "description": "OVI-105's third and final task, deferred at F071's merge (PR #121 review): 'Consider a total output budget for the whole orientation block.' Three sections of session-start.sh -- the SESSION_INCOMPLETE warning (head -15), claude-progress.txt's tail (tail -12), and context_summary.md's Active Context (head -20) -- are each capped by LINE count only, which bounds nothing if the lines themselves are long. F071's own review measured a pathological worst case of ~94,896 chars and a realistic worst case (at this repo's own observed max line lengths) of ~41.5k, both far past the platform's 10,000-char cap. Fix: a shared print_budgeted_block() bash function truncates each of the three sections to 2000 chars with a '... (N chars total, ... see <file> for the full text)' pointer, matching the truncate-and-point pattern F071 already shipped for the next-claimable feature's description.",
+      "priority": 84,
+      "status": "passing",
+      "scope": [
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F071"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "9 new suite assertions: for each of the 3 sections, a fixture with a single 5000-char line stays under the platform's 10,000-char cap and the truncation marker names the correct source file (2 assertions x 3 sections = 6), plus content printed after a truncated block still appears (1), and normal-sized content in all three sections is untouched -- neither truncated nor missing (2). Mutation-tested all 3 wiring points independently: removing the print_budgeted_block call from each of the 3 sections in turn fails exactly that section's marker-presence assertion, nothing else. Also mutation-tested the budget threshold itself: dropping BLOCK_CHAR_BUDGET to 5 breaks both new not-truncated assertions AND two pre-existing behavioral tests ('a: includes the Active Context bullets', 'h: surfaces the SESSION_INCOMPLETE contents') that use ordinary short fixture content -- confirms the mechanism is wired into the real content path, not just the synthetic long-line fixtures. Full suite 1550/1550 both before and after restoring each of the 4 mutations.",
+      "notes": "ROUND 1 (review of PR #128, review-pr128-f079): BLOCK. The original 2000-char budget's own claim -- 'deliberately generous... so the budget only bites on genuinely unusual input, not everyday use' -- was FALSE, and the reviewer proved it by measuring this repo's own live orientation: the real Active Context is 2422 chars, over the 2000 cap, so the fix was truncating ordinary, already-shipped content on every session, not just pathological input. That claim is corrected below, not repeated.\n\nRESOLVED: recalibrated to 2600 chars per section. Measured 'everything else' (features count, next-claimable, git-identity check, all 6 rule pointers) directly, using this repo's real non-scratchpad path (a scratchpad worktree's path is artificially long and inflates the 6-times-repeated $CLAUDE_PLUGIN_ROOT echo -- round-2 review confirmed the reviewer's own round-1 measurements had already used the correct dev-checkout path throughout, this repo's dev path just happens to be shorter than a real installed plugin cache path): 1848 chars using the dev checkout. 3 x 2600 + 1848 = 9648. Round-2 review measured a real installed plugin path is 481 chars of margin, not a fixed 352 -- the margin is genuinely path-length- and warning-state-dependent, corrected in the code comment rather than quoted as a derived constant. Verified directly against this repo's own live .harness/ state post-fix: 4961 chars total, zero truncation markers, matching main's original (pre-F079) length exactly. Added two regression tests using ~2400-char realistic content (not a synthetic 5000-char stress line) for claude-progress.txt and Active Context, mutation-tested by reverting to 2000 and confirming both fail correctly. Did not adopt the reviewer's alternative (a true shared/decreasing budget across the three call sites, which is what OVI-105's task literally asked for) -- the reviewer's own framing was 'more code; I would not insist on it', and a well-calibrated fixed-per-section budget resolves the reported regression without it; worth revisiting if content keeps growing.\n\nROUND 2 (review of PR #128, review-pr128-f079): APPROVE-WITH-NITS, block resolved -- confirmed independently (4638 chars, byte-identical to main, zero truncation markers; the reviewer noted the absolute number is a moving target since other work was landing on main concurrently, but the equality to main is the substantive, durable claim). 6 nits, none requiring another round: N1/N2/N6 (wording overstated the margin as a fixed derived number when it's path-length- and warning-state-dependent, and misattributed a path correction to the reviewer that they didn't actually need to make) -- corrected in both the code comment and here. N3 (the Next claimable line's `scope` field, same bug class as F071/F079 but not introduced by either, has no length cap -- measured 921 chars in an adversarial 12-path fixture) filed as a new follow-up feature, not fixed in this PR to avoid scope creep. N4 (multibyte: raising the budget to 2600 makes the byte-count worst case larger under LC_ALL=C, ~23,400 bytes for 3 sections of CJK content, vs main's 141,641 -- still a large improvement, unverified which unit the platform's 10,000-char cap actually uses) -- noted, no code change. N5 (the two new realistic-content tests guard against reverting below ~2404 chars, not specifically validating 2600 -- accurate description of what they do, not a defect).",
+      "correction_cycles": 2,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F071 (PR #121 round-1 review, review-pr121-f071, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
+    },
+    {
+      "id": "F085",
+      "description": "Found by review-pr128-f079's round-2 review (N3), filed as a follow-up rather than fixed inline to avoid scope creep on that PR: the 'Next claimable:' line's scope field -- scope = ', '.join(f.get('scope') or []) at hooks/session-start.sh's two next-claimable code paths -- has no length cap, sitting directly beside the 200-char-capped description on the same line. Same bug class as F071/OVI-105 and F079/OVI-105 (an unbounded field printed into the orientation), not introduced by either. Measured: 382 chars on this repo's real 'Next claimable:' line today; 921 chars in a 12-scope-path adversarial fixture. Not yet fixed -- needs the same truncate-and-point treatment already applied to description (F071) and the three line-count-capped sections (F079), or folding into a genuine total-orientation-budget redesign if one is ever built (F079's notes record this as a considered, declined alternative to the current fixed-per-section budgets).",
+      "priority": 85,
+      "status": "pending",
+      "scope": [
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F071",
+        "F079"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Filed, not yet triaged into a release batch. Low urgency today (382 chars real, well within the platform's 10,000-char cap even added to everything else measured for F079) but the same unbounded-field pattern this repo has twice already had to close elsewhere.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F079 (review-pr128-f079 round-2, nit N3)",
+      "spec": null
+    },
+    {
       "id": "F078",
       "description": "OVI-103's last outstanding task: 'Add a CI check that manifest <-> tag <-> changelog <-> marketplace source agree.' The other 3 tasks (bump plugin.json, update CHANGELOG.md, tag and publish the release) were already resolved by v5.0.0's release; this was the only unimplemented one. Discovered while closing OVI-103 out that the gap it names is real and current: v5.0.0, v5.0.1, and v5.1.0 (this session's own releases) were never git-tagged or published as GitHub Releases -- v4.2.2 was still showing as 'Latest' on GitHub despite main being 3 versions ahead in plugin.json. Fixed the immediate gap by creating and pushing the 3 missing tags plus GitHub Releases, then added .github/workflows/release-consistency.yml (runs on push to main + workflow_dispatch, matching maintenance.yml's own established pattern of surfacing drift via a GitHub issue rather than blocking a PR, since a tag can't exist before the version-bumping commit that creates it is merged) to catch a recurrence: plugin.json's version must have a matching CHANGELOG.md heading, a matching git tag, and marketplace.json must still resolve to the same plugin name/source (marketplace.json carries no independent version by design, per AGENTS.md's 'version lives ONLY in plugin.json' rule, so this is a structural sanity check rather than a version-drift check).",
-      "priority": 79,
+      "priority": 86,
       "status": "passing",
       "scope": [
         ".github/workflows/release-consistency.yml",

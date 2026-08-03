@@ -235,11 +235,21 @@ The same review's additive follow-ups shipped in v5.1.0: `harness-doctor --fix` 
 restore a missing `commit-gate.sh` and repair a project's `.gitignore` on upgrade even
 when it already carries an older required line (the fixer previously early-returned on
 the first line's presence, making a newer required line permanently unreachable for any
-already-initialized project); doctor's report now names all four checks it silently
-skips when `CLAUDE_PLUGIN_ROOT` is unset, in one consolidated finding, instead of staying
+already-initialized project); doctor's report now names the checks it silently skips
+when `CLAUDE_PLUGIN_ROOT` is unset, in one consolidated finding, instead of staying
 quiet about each one individually; and two new rule files, `rules/debugging.md` (a
 four-phase systematic root-cause process) and `rules/tdd.md` (the 5-step TDD loop and
 coverage bar), join the SessionStart rule-pointer block.
+
+Adversarial review of v5.0.1/v5.1.0's own fixes surfaced four more issues, closed in
+v5.1.1: `session-start.sh`'s orientation could still exceed the 10,000-char platform cap
+via three line-count-only-capped sections (SESSION_INCOMPLETE, `claude-progress.txt`,
+Active Context), now truncated the same way feature descriptions already were; a
+`CLAUDE_PLUGIN_ROOT`-unset finding named a check that was never going to run anyway;
+`harness_state.py`'s top-level `import fcntl` made read-only verbs Unix-only when only
+the write path needs it; a shell wrapper buried `harness_state.py`'s diagnostics on
+stdout, which Claude Code discards on the TaskCompleted hook's rejection path; and a
+permanent flock error was treated identically to ordinary lock contention.
 
 ## Architecture
 

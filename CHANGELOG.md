@@ -2,6 +2,36 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.1.1 (2026-08-03)
+
+**A round of adversarial review on v5.0.1/v5.1.0's own fixes, closing every deferred nit
+from those reviews plus completing OVI-105's third task.** Pure bugfixes and test-quality
+hardening -- no new capability.
+
+`hooks/session-start.sh`'s orientation could still exceed the platform's 10,000-char cap
+(OVI-105's third task): the `SESSION_INCOMPLETE` warning, `claude-progress.txt`'s tail, and
+`context_summary.md`'s Active Context were each capped by line count only, which bounds
+nothing if the lines themselves are long. Added the same truncate-and-point pattern
+already used for feature descriptions to all three -- calibrated once, then recalibrated
+after review caught the first value already truncating this repo's own real Active
+Context on ordinary content.
+
+Four nits deferred from the v5.0.1/v5.1.0 review rounds, picked up and fixed: `doctor.py`'s
+consolidated `CLAUDE_PLUGIN_ROOT`-unset finding named the `.harness/mld/` non-injection
+check even for projects with no `mld/` directory, where that check was never going to run
+regardless; `harness_state.py`'s top-level `import fcntl` made every read-only verb
+Unix-only, not just the write path that actually needs it; a shell wrapper merged
+`harness_state.py`'s stderr diagnostics onto its own stdout, which Claude Code discards
+entirely on the TaskCompleted hook's rejection path -- burying every diagnostic exactly
+when it mattered most; and a permanent flock error (e.g. `ENOLCK`) was treated identically
+to ordinary lock contention, burning the full lock timeout before reporting a misleading
+message.
+
+**Tests**: `test/run-tests.sh` carries 1559 assertions, up from 1541 -- every fix above is
+independently pinned and mutation-tested, several against empirically-verified failure
+modes (real inter-process lock contention, a real blocked import, real stdout/stderr
+channel separation) rather than only reasoned about.
+
 ### v5.1.0 (2026-08-02)
 
 **The additive follow-ups from the same external code review pass that shipped v5.0.1**

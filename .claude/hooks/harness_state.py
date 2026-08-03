@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import fcntl
 import json
 import os
 import sys
@@ -58,6 +57,11 @@ def _with_file_lock(path, fn):
     two processes end up believing they each hold the lock). The same lock
     file persists for the project's lifetime instead -- harmless, and
     gitignored the same way SESSION_INCOMPLETE is."""
+    # Imported here, not at module level (PR #120 round-1 review, NIT-3): fcntl
+    # is Unix-only, and it's needed only by the write path. Importing it at
+    # module level made every read-only verb (load, next-claimable, counts)
+    # Unix-only too, even though none of them ever call this function.
+    import fcntl
     lock_path = path + ".lock"
     try:
         lock_fh = open(lock_path, "a+")
@@ -72,10 +76,21 @@ def _with_file_lock(path, fn):
                 fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 acquired = True
                 break
-            except OSError:
+            except BlockingIOError:
+                # Genuine contention (EWOULDBLOCK/EAGAIN) -- another process
+                # holds the lock. Worth retrying until the deadline.
                 if time.time() >= deadline:
                     break
                 time.sleep(LOCK_POLL_SECONDS)
+            except OSError as exc:
+                # PR #120 round-1 review NIT-4: a permanent error (e.g. ENOLCK,
+                # or EINVAL on a filesystem without flock support) is not
+                # contention and retrying it for the full LOCK_TIMEOUT_SECONDS
+                # only delays reporting the real problem, then reports it
+                # under the misleading "timed out" message. Report and stop
+                # immediately instead.
+                print(f"harness_state: flock failed on {lock_path}: {exc}", file=sys.stderr)
+                return None
         if not acquired:
             print(f"harness_state: timed out waiting for lock on {lock_path}", file=sys.stderr)
             return None
