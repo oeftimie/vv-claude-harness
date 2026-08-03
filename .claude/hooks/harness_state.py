@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import fcntl
 import json
 import os
 import sys
@@ -58,6 +57,11 @@ def _with_file_lock(path, fn):
     two processes end up believing they each hold the lock). The same lock
     file persists for the project's lifetime instead -- harmless, and
     gitignored the same way SESSION_INCOMPLETE is."""
+    # Imported here, not at module level (PR #120 round-1 review, NIT-3): fcntl
+    # is Unix-only, and it's needed only by the write path. Importing it at
+    # module level made every read-only verb (load, next-claimable, counts)
+    # Unix-only too, even though none of them ever call this function.
+    import fcntl
     lock_path = path + ".lock"
     try:
         lock_fh = open(lock_path, "a+")
