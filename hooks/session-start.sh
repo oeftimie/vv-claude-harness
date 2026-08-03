@@ -58,7 +58,17 @@ echo "## Harness orientation (auto-injected)"
 # truncates each block's CHARACTER count too, same truncate-and-point pattern
 # already used for a feature's description below, so no single section can
 # consume the budget the sections after it need.
-BLOCK_CHAR_BUDGET=2000
+#
+# Round-1 review (review-pr128-f079) caught the first value (2000) truncating
+# THIS repo's own real Active Context (measured at 2422 chars) on ordinary,
+# already-shipped content -- not a pathological case, an active regression.
+# Recalibrated against a direct measurement of "everything else" (features
+# count, next-claimable, git-identity check, all 6 rule pointers) using this
+# repo's real, non-scratchpad path: 1848 chars. 3 x 2600 + 1848 = 9648,
+# leaving 352 chars of margin under the platform's 10,000-char hard cap even
+# if all three sections hit the cap simultaneously, while comfortably fitting
+# today's real Active Context (2422) with headroom for near-term growth.
+BLOCK_CHAR_BUDGET=2600
 print_budgeted_block() {
   local content
   content=$(cat)

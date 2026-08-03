@@ -311,6 +311,39 @@ assert_not_contains "$OUT" "truncated to fit the orientation budget" \
 assert_contains "$OUT" "short gap note" \
   "o (OVI-105): normal-sized SESSION_INCOMPLETE content still prints in full"
 
+# Round-1 review (review-pr128-f079) found the first budget value (2000) truncated
+# THIS repo's own real Active Context (measured 2422 chars) -- not pathological,
+# an active regression on ordinary shipped content. Regression-guard against
+# recalibrating too low again: a claude-progress.txt and an Active Context each
+# sized close to that real measurement (2400 chars, a single realistic paragraph,
+# not a synthetic 5000-char stress line) must print in full, untruncated.
+REALISTIC_LONG_TEXT=$(python3 -c "print('This session made steady progress on the harness. ' * 44)" | cut -c1-2400)
+
+DIR_BUDGET_PROGRESS_REALISTIC="$WORK/budget-progress-realistic"
+make_fixture "$DIR_BUDGET_PROGRESS_REALISTIC"
+printf '%s\n' "$REALISTIC_LONG_TEXT" > "$DIR_BUDGET_PROGRESS_REALISTIC/.harness/claude-progress.txt"
+OUT=$(run_session_start "$DIR_BUDGET_PROGRESS_REALISTIC" '{"source":"startup"}')
+assert_not_contains "$OUT" "truncated to fit the orientation budget" \
+  "o (OVI-105): a realistic ~2400-char claude-progress.txt is not truncated"
+
+DIR_BUDGET_CTX_REALISTIC="$WORK/budget-context-realistic"
+make_fixture "$DIR_BUDGET_CTX_REALISTIC"
+cat > "$DIR_BUDGET_CTX_REALISTIC/.harness/context_summary.md" <<EOF
+# Context Summary
+
+## Active Context
+$REALISTIC_LONG_TEXT
+
+## Cross-Cutting Concerns
+- none
+
+## Meta-Patterns
+- (none yet)
+EOF
+OUT=$(run_session_start "$DIR_BUDGET_CTX_REALISTIC" '{"source":"startup"}')
+assert_not_contains "$OUT" "truncated to fit the orientation budget" \
+  "o (OVI-105): a realistic ~2400-char Active Context is not truncated"
+
 OUT=$(run_session_start "$DIR_A" '{"source":"startup"}')
 assert_not_contains "$OUT" "<vv-harness plugin root>" \
   "y: no placeholder literal when CLAUDE_PLUGIN_ROOT is unset"
