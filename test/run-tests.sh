@@ -5565,6 +5565,94 @@ else
   fail "hs: next-claimable output differs -- plain: '$NEXT_PLAIN' module: '$NEXT_MODULE'"
 fi
 
+# F082/PR#120 round-1 review NIT-3: fcntl is Unix-only and used only by the
+# write path (_with_file_lock). Importing it at module level made every
+# read-only verb (load, next-claimable, counts) fail to import on a
+# hypothetical platform without fcntl, even though none of them touch the
+# lock. Moved the import inside _with_file_lock; prove read-only verbs
+# genuinely don't need it by blocking the import via sys.modules before
+# harness_state loads and confirming they still run.
+DIR_HS_NOFCNTL="$WORK/hs-no-fcntl"
+make_fixture "$DIR_HS_NOFCNTL"
+HS_NOFCNTL_ERRORS=$(python3 - "$STATE_MODULE_TEMPLATE" "$DIR_HS_NOFCNTL/.harness/features.json" 2>&1 <<'PYEOF'
+import importlib.util
+import sys
+from importlib.machinery import SourceFileLoader
+
+module_path, features_path = sys.argv[1], sys.argv[2]
+errors = []
+
+
+class BlockFcntl:
+    def find_spec(self, name, path, target=None):
+        if name == "fcntl":
+            raise ImportError("fcntl deliberately blocked for this test")
+        return None
+
+
+blocker = BlockFcntl()
+sys.meta_path.insert(0, blocker)
+try:
+    # spec_from_file_location can't infer a loader from the ".template"
+    # suffix on its own -- pass SourceFileLoader explicitly so it's treated
+    # as Python source despite the non-.py filename.
+    loader = SourceFileLoader("harness_state_nofcntl", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "harness_state_nofcntl", module_path, loader=loader
+    )
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError as exc:
+        errors.append(f"harness_state.py failed to import with fcntl blocked: {exc}")
+        module = None
+
+    if module is not None:
+        try:
+            valid = module.load_valid_features(features_path)
+            if not isinstance(valid, list):
+                errors.append("load_valid_features did not return a list")
+        except Exception as exc:
+            errors.append(f"load_valid_features raised with fcntl blocked: {exc}")
+
+        try:
+            import contextlib
+            import io
+            # cmd_counts prints its own JSON to stdout; discard it here so it
+            # doesn't get mixed into this script's own errors-only output.
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = module.cmd_counts(features_path)
+            if rc != 0:
+                errors.append(f"cmd_counts returned {rc}, expected 0")
+        except Exception as exc:
+            errors.append(f"cmd_counts raised with fcntl blocked: {exc}")
+
+        try:
+            module._with_file_lock(features_path, lambda: None)
+            errors.append(
+                "_with_file_lock should have raised ImportError with fcntl "
+                "blocked, but returned normally"
+            )
+        except ImportError:
+            pass
+        except Exception as exc:
+            errors.append(
+                f"_with_file_lock raised the wrong exception type with fcntl "
+                f"blocked: {type(exc).__name__}: {exc}"
+            )
+finally:
+    sys.meta_path.remove(blocker)
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$HS_NOFCNTL_ERRORS" ]; then
+  pass "hs (F082): read-only verbs (load, counts) work with fcntl unavailable; the write path still needs it"
+else
+  fail "hs (F082): $HS_NOFCNTL_ERRORS"
+fi
+
 echo ""
 echo "== F013: mechanical stamp for harness-init =="
 
@@ -6174,16 +6262,22 @@ OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_MLD_NOROOT")
 assert_not_contains "$OUT" "non-injection guarantee broken" \
   "hd: .harness/mld/ present with no CLAUDE_PLUGIN_ROOT set produces no mld-specific finding"
 
-# F073/OVI-104: CLAUDE_PLUGIN_ROOT unset silently skipped 4 checks (commit-gate
-# presence, features.json cross-validation, plugin_version drift, mld
-# non-injection) with zero indication to the user. One consolidated Finding
-# now covers all 4 in a single message, instead of either 4 separate
-# skip-warnings or the prior silence.
+# F073/OVI-104: CLAUDE_PLUGIN_ROOT unset silently skipped several checks
+# (commit-gate presence, features.json cross-validation, plugin_version drift,
+# and -- only when applicable -- mld non-injection) with zero indication to
+# the user. One consolidated Finding now covers them in a single message,
+# instead of either N separate skip-warnings or the prior silence.
+#
+# This fixture has no .harness/mld/ directory (round-1 review of PR #123,
+# N3): check_mld_non_injection already no-ops on a missing mld/ dir before it
+# even looks at plugin_root, so that check was never going to run regardless
+# of CLAUDE_PLUGIN_ROOT -- the consolidated finding must not claim it was
+# skipped BECAUSE of the unset variable when it wouldn't have run anyway.
 DIR_DOC_NOROOT="$WORK/doctor-plugin-root-unset"
 make_healthy_doctor_fixture "$DIR_DOC_NOROOT"
 OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_NOROOT")
 assert_contains "$OUT" \
-  "CLAUDE_PLUGIN_ROOT is not set -- 4 checks could not run and were silently skipped" \
+  "CLAUDE_PLUGIN_ROOT is not set -- 3 checks could not run and were silently skipped" \
   "hd: CLAUDE_PLUGIN_ROOT unset produces one consolidated finding (F073/OVI-104)"
 assert_contains "$OUT" "commit-gate.sh presence" \
   "hd: consolidated finding names commit-gate.sh presence"
@@ -6191,8 +6285,8 @@ assert_contains "$OUT" "features.json cross-validation" \
   "hd: consolidated finding names features.json cross-validation"
 assert_contains "$OUT" "plugin_version drift" \
   "hd: consolidated finding names plugin_version drift"
-assert_contains "$OUT" "the .harness/mld/ non-injection guarantee" \
-  "hd: consolidated finding names the mld non-injection guarantee"
+assert_not_contains "$OUT" "the .harness/mld/ non-injection guarantee" \
+  "hd (F073 round-1 nit N3): consolidated finding omits the mld check when .harness/mld/ doesn't exist"
 FINDING_COUNT=$(printf '%s' "$OUT" | grep -c "CLAUDE_PLUGIN_ROOT is not set")
 if [ "$FINDING_COUNT" = "1" ]; then
   pass "hd: the CLAUDE_PLUGIN_ROOT-unset finding appears exactly once, not once per check"
@@ -6204,6 +6298,18 @@ fi
 OUT=$(run_doctor "$DIR_DOC_NOROOT")
 assert_not_contains "$OUT" "CLAUDE_PLUGIN_ROOT is not set" \
   "hd: the consolidated finding does not appear when CLAUDE_PLUGIN_ROOT is set"
+
+# Mirror case: .harness/mld/ DOES exist -> the mld check WOULD have run if
+# CLAUDE_PLUGIN_ROOT were set, so the consolidated finding must include it.
+DIR_DOC_NOROOT_MLD="$WORK/doctor-plugin-root-unset-with-mld"
+make_healthy_doctor_fixture "$DIR_DOC_NOROOT_MLD"
+mkdir -p "$DIR_DOC_NOROOT_MLD/.harness/mld"
+OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_NOROOT_MLD")
+assert_contains "$OUT" \
+  "CLAUDE_PLUGIN_ROOT is not set -- 4 checks could not run and were silently skipped" \
+  "hd (F073 round-1 nit N3): with .harness/mld/ present, the count rises to 4"
+assert_contains "$OUT" "the .harness/mld/ non-injection guarantee" \
+  "hd (F073 round-1 nit N3): with .harness/mld/ present, the mld check is named"
 
 # mld/ present, plugin root set, but that root has no hooks/session-start.sh at all.
 DIR_DOC_MLD_NOFILE="$WORK/doctor-mld-nofile"
