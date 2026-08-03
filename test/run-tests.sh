@@ -239,6 +239,111 @@ assert_contains "$OUT" "Next claimable: F003" \
 assert_contains "$OUT" "$LONG_DESC_LEN chars total, see .harness/features.json for the full description" \
   "o (OVI-105, delegated path): the truncation marker names the real length and points at the full text"
 
+# OVI-105 (total output budget, 3rd task): SESSION_INCOMPLETE, claude-progress.txt,
+# and context_summary.md's Active Context are each line-count capped (head -15,
+# tail -12, head -20), which bounds nothing if the lines themselves are long. A
+# single pathological line in any of the three could still push the whole
+# orientation toward the platform's 10,000-char cap. Exercise all three with a
+# single very long line each -- the realistic adversarial case the line-count
+# cap alone can't catch.
+LONG_LINE=$(python3 -c "print('z' * 5000)")
+
+DIR_BUDGET_SI="$WORK/budget-session-incomplete"
+make_fixture "$DIR_BUDGET_SI"
+printf '%s\n' "$LONG_LINE" > "$DIR_BUDGET_SI/.harness/SESSION_INCOMPLETE"
+OUT=$(run_session_start "$DIR_BUDGET_SI" '{"source":"startup"}')
+LEN=${#OUT}
+if [ "$LEN" -lt 10000 ]; then
+  pass "o (OVI-105, SESSION_INCOMPLETE): orientation with a 5000-char line stays under the 10k platform cap ($LEN)"
+else
+  fail "o (OVI-105, SESSION_INCOMPLETE): orientation is $LEN chars, expected under 10000"
+fi
+assert_contains "$OUT" "chars total, truncated to fit the orientation budget; see .harness/SESSION_INCOMPLETE" \
+  "o (OVI-105, SESSION_INCOMPLETE): the truncation marker names the source file"
+assert_contains "$OUT" "Resolve these before starting new work." \
+  "o (OVI-105, SESSION_INCOMPLETE): content after the truncated block still prints"
+
+DIR_BUDGET_PROGRESS="$WORK/budget-claude-progress"
+make_fixture "$DIR_BUDGET_PROGRESS"
+printf '%s\n' "$LONG_LINE" > "$DIR_BUDGET_PROGRESS/.harness/claude-progress.txt"
+OUT=$(run_session_start "$DIR_BUDGET_PROGRESS" '{"source":"startup"}')
+LEN=${#OUT}
+if [ "$LEN" -lt 10000 ]; then
+  pass "o (OVI-105, claude-progress.txt): orientation with a 5000-char line stays under the 10k platform cap ($LEN)"
+else
+  fail "o (OVI-105, claude-progress.txt): orientation is $LEN chars, expected under 10000"
+fi
+assert_contains "$OUT" "chars total, truncated to fit the orientation budget; see .harness/claude-progress.txt" \
+  "o (OVI-105, claude-progress.txt): the truncation marker names the source file"
+
+DIR_BUDGET_CTX="$WORK/budget-context-summary"
+make_fixture "$DIR_BUDGET_CTX"
+cat > "$DIR_BUDGET_CTX/.harness/context_summary.md" <<EOF
+# Context Summary
+
+## Active Context
+$LONG_LINE
+
+## Cross-Cutting Concerns
+- none
+
+## Meta-Patterns
+- (none yet)
+EOF
+OUT=$(run_session_start "$DIR_BUDGET_CTX" '{"source":"startup"}')
+LEN=${#OUT}
+if [ "$LEN" -lt 10000 ]; then
+  pass "o (OVI-105, context_summary.md): orientation with a 5000-char line stays under the 10k platform cap ($LEN)"
+else
+  fail "o (OVI-105, context_summary.md): orientation is $LEN chars, expected under 10000"
+fi
+assert_contains "$OUT" "chars total, truncated to fit the orientation budget; see .harness/context_summary.md" \
+  "o (OVI-105, context_summary.md): the truncation marker names the source file"
+
+# Normal-sized content in all three sections must NOT be truncated -- the budget
+# only bites on the pathological case, not everyday use.
+DIR_BUDGET_NORMAL="$WORK/budget-normal"
+make_fixture "$DIR_BUDGET_NORMAL"
+printf 'short gap note\nsecond line\n' > "$DIR_BUDGET_NORMAL/.harness/SESSION_INCOMPLETE"
+OUT=$(run_session_start "$DIR_BUDGET_NORMAL" '{"source":"startup"}')
+assert_not_contains "$OUT" "truncated to fit the orientation budget" \
+  "o (OVI-105): normal-sized SESSION_INCOMPLETE content is not truncated"
+assert_contains "$OUT" "short gap note" \
+  "o (OVI-105): normal-sized SESSION_INCOMPLETE content still prints in full"
+
+# Round-1 review (review-pr128-f079) found the first budget value (2000) truncated
+# THIS repo's own real Active Context (measured 2422 chars) -- not pathological,
+# an active regression on ordinary shipped content. Regression-guard against
+# recalibrating too low again: a claude-progress.txt and an Active Context each
+# sized close to that real measurement (2400 chars, a single realistic paragraph,
+# not a synthetic 5000-char stress line) must print in full, untruncated.
+REALISTIC_LONG_TEXT=$(python3 -c "print('This session made steady progress on the harness. ' * 44)" | cut -c1-2400)
+
+DIR_BUDGET_PROGRESS_REALISTIC="$WORK/budget-progress-realistic"
+make_fixture "$DIR_BUDGET_PROGRESS_REALISTIC"
+printf '%s\n' "$REALISTIC_LONG_TEXT" > "$DIR_BUDGET_PROGRESS_REALISTIC/.harness/claude-progress.txt"
+OUT=$(run_session_start "$DIR_BUDGET_PROGRESS_REALISTIC" '{"source":"startup"}')
+assert_not_contains "$OUT" "truncated to fit the orientation budget" \
+  "o (OVI-105): a realistic ~2400-char claude-progress.txt is not truncated"
+
+DIR_BUDGET_CTX_REALISTIC="$WORK/budget-context-realistic"
+make_fixture "$DIR_BUDGET_CTX_REALISTIC"
+cat > "$DIR_BUDGET_CTX_REALISTIC/.harness/context_summary.md" <<EOF
+# Context Summary
+
+## Active Context
+$REALISTIC_LONG_TEXT
+
+## Cross-Cutting Concerns
+- none
+
+## Meta-Patterns
+- (none yet)
+EOF
+OUT=$(run_session_start "$DIR_BUDGET_CTX_REALISTIC" '{"source":"startup"}')
+assert_not_contains "$OUT" "truncated to fit the orientation budget" \
+  "o (OVI-105): a realistic ~2400-char Active Context is not truncated"
+
 OUT=$(run_session_start "$DIR_A" '{"source":"startup"}')
 assert_not_contains "$OUT" "<vv-harness plugin root>" \
   "y: no placeholder literal when CLAUDE_PLUGIN_ROOT is unset"

@@ -50,10 +50,45 @@ echo "## Harness orientation (auto-injected)"
 
 [ -n "$SESSION_ID" ] && echo "Session: $SESSION_ID"
 
+# OVI-105 (total output budget): SESSION_INCOMPLETE, claude-progress.txt, and
+# context_summary.md's Active Context are each capped by LINE count (head -15,
+# tail -12, head -20), which bounds nothing if the lines themselves are long --
+# a single pathological or just-unusually-verbose line can still push the whole
+# script's stdout toward the 10,000-char platform cap (line 3 above). This
+# truncates each block's CHARACTER count too, same truncate-and-point pattern
+# already used for a feature's description below, so no single section can
+# consume the budget the sections after it need.
+#
+# Round-1 review (review-pr128-f079) caught the first value (2000) truncating
+# THIS repo's own real Active Context (measured at 2422 chars) on ordinary,
+# already-shipped content -- not a pathological case, an active regression.
+# Recalibrated against a direct measurement of "everything else" (features
+# count, next-claimable, git-identity check, all 6 rule pointers): roughly
+# 1800-2900 chars depending on the installed CLAUDE_PLUGIN_ROOT path length
+# (echoed 6 times, once per rule pointer) and whether any of the several
+# optional WARNING blocks fire. Round-2 review measured the deployed-path
+# margin at ~480 chars in the ordinary case, not a fixed number -- this
+# constant is a judgment call sized to comfortably fit today's real Active
+# Context (2422) with room for near-term growth, not a value with an exact
+# derived margin against the platform's 10,000-char hard cap.
+BLOCK_CHAR_BUDGET=2600
+print_budgeted_block() {
+  local content
+  content=$(cat)
+  local len=${#content}
+  if [ "$len" -gt "$BLOCK_CHAR_BUDGET" ]; then
+    printf '%s\n' "${content:0:$BLOCK_CHAR_BUDGET}"
+    echo "    ... ($len chars total, truncated to fit the orientation budget; see $1 for the full text)"
+  else
+    printf '%s\n' "$content"
+  fi
+}
+
 if [ -f "$H/SESSION_INCOMPLETE" ]; then
   echo ""
   echo "WARNING: the previous session ended with unresolved discipline gaps:"
-  head -15 "$H/SESSION_INCOMPLETE" 2>/dev/null | sed 's/^/    /' || true
+  head -15 "$H/SESSION_INCOMPLETE" 2>/dev/null | sed 's/^/    /' \
+    | print_budgeted_block ".harness/SESSION_INCOMPLETE" || true
   echo "Resolve these before starting new work."
 fi
 
@@ -200,14 +235,16 @@ PYEOF
 if [ -f "$H/claude-progress.txt" ]; then
   echo ""
   echo "Last handoff (claude-progress.txt, last 12 lines):"
-  tail -12 "$H/claude-progress.txt" 2>/dev/null | sed 's/^/    /' || true
+  tail -12 "$H/claude-progress.txt" 2>/dev/null | sed 's/^/    /' \
+    | print_budgeted_block ".harness/claude-progress.txt" || true
 fi
 
 if [ -f "$H/context_summary.md" ]; then
   echo ""
   echo "Active Context (context_summary.md):"
   awk '/## Active Context/{p=1;next} /^## /{p=0} p' "$H/context_summary.md" 2>/dev/null \
-    | head -20 | sed 's/^/    /' || true
+    | head -20 | sed 's/^/    /' \
+    | print_budgeted_block ".harness/context_summary.md" || true
 fi
 
 EXPECTED_NAME=$(python3 -c '

@@ -2347,6 +2347,53 @@
       "failure_reason": null,
       "discovered_via": "F070 (review-pr120-f070, NIT-4, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
       "spec": null
+    },
+    {
+      "id": "F079",
+      "description": "OVI-105's third and final task, deferred at F071's merge (PR #121 review): 'Consider a total output budget for the whole orientation block.' Three sections of session-start.sh -- the SESSION_INCOMPLETE warning (head -15), claude-progress.txt's tail (tail -12), and context_summary.md's Active Context (head -20) -- are each capped by LINE count only, which bounds nothing if the lines themselves are long. F071's own review measured a pathological worst case of ~94,896 chars and a realistic worst case (at this repo's own observed max line lengths) of ~41.5k, both far past the platform's 10,000-char cap. Fix: a shared print_budgeted_block() bash function truncates each of the three sections to 2000 chars with a '... (N chars total, ... see <file> for the full text)' pointer, matching the truncate-and-point pattern F071 already shipped for the next-claimable feature's description.",
+      "priority": 84,
+      "status": "passing",
+      "scope": [
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F071"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "9 new suite assertions: for each of the 3 sections, a fixture with a single 5000-char line stays under the platform's 10,000-char cap and the truncation marker names the correct source file (2 assertions x 3 sections = 6), plus content printed after a truncated block still appears (1), and normal-sized content in all three sections is untouched -- neither truncated nor missing (2). Mutation-tested all 3 wiring points independently: removing the print_budgeted_block call from each of the 3 sections in turn fails exactly that section's marker-presence assertion, nothing else. Also mutation-tested the budget threshold itself: dropping BLOCK_CHAR_BUDGET to 5 breaks both new not-truncated assertions AND two pre-existing behavioral tests ('a: includes the Active Context bullets', 'h: surfaces the SESSION_INCOMPLETE contents') that use ordinary short fixture content -- confirms the mechanism is wired into the real content path, not just the synthetic long-line fixtures. Full suite 1550/1550 both before and after restoring each of the 4 mutations.",
+      "notes": "ROUND 1 (review of PR #128, review-pr128-f079): BLOCK. The original 2000-char budget's own claim -- 'deliberately generous... so the budget only bites on genuinely unusual input, not everyday use' -- was FALSE, and the reviewer proved it by measuring this repo's own live orientation: the real Active Context is 2422 chars, over the 2000 cap, so the fix was truncating ordinary, already-shipped content on every session, not just pathological input. That claim is corrected below, not repeated.\n\nRESOLVED: recalibrated to 2600 chars per section. Measured 'everything else' (features count, next-claimable, git-identity check, all 6 rule pointers) directly, using this repo's real non-scratchpad path (a scratchpad worktree's path is artificially long and inflates the 6-times-repeated $CLAUDE_PLUGIN_ROOT echo -- round-2 review confirmed the reviewer's own round-1 measurements had already used the correct dev-checkout path throughout, this repo's dev path just happens to be shorter than a real installed plugin cache path): 1848 chars using the dev checkout. 3 x 2600 + 1848 = 9648. Round-2 review measured a real installed plugin path is 481 chars of margin, not a fixed 352 -- the margin is genuinely path-length- and warning-state-dependent, corrected in the code comment rather than quoted as a derived constant. Verified directly against this repo's own live .harness/ state post-fix: 4961 chars total, zero truncation markers, matching main's original (pre-F079) length exactly. Added two regression tests using ~2400-char realistic content (not a synthetic 5000-char stress line) for claude-progress.txt and Active Context, mutation-tested by reverting to 2000 and confirming both fail correctly. Did not adopt the reviewer's alternative (a true shared/decreasing budget across the three call sites, which is what OVI-105's task literally asked for) -- the reviewer's own framing was 'more code; I would not insist on it', and a well-calibrated fixed-per-section budget resolves the reported regression without it; worth revisiting if content keeps growing.\n\nROUND 2 (review of PR #128, review-pr128-f079): APPROVE-WITH-NITS, block resolved -- confirmed independently (4638 chars, byte-identical to main, zero truncation markers; the reviewer noted the absolute number is a moving target since other work was landing on main concurrently, but the equality to main is the substantive, durable claim). 6 nits, none requiring another round: N1/N2/N6 (wording overstated the margin as a fixed derived number when it's path-length- and warning-state-dependent, and misattributed a path correction to the reviewer that they didn't actually need to make) -- corrected in both the code comment and here. N3 (the Next claimable line's `scope` field, same bug class as F071/F079 but not introduced by either, has no length cap -- measured 921 chars in an adversarial 12-path fixture) filed as a new follow-up feature, not fixed in this PR to avoid scope creep. N4 (multibyte: raising the budget to 2600 makes the byte-count worst case larger under LC_ALL=C, ~23,400 bytes for 3 sections of CJK content, vs main's 141,641 -- still a large improvement, unverified which unit the platform's 10,000-char cap actually uses) -- noted, no code change. N5 (the two new realistic-content tests guard against reverting below ~2404 chars, not specifically validating 2600 -- accurate description of what they do, not a defect).",
+      "correction_cycles": 2,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F071 (PR #121 round-1 review, review-pr121-f071, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
+    },
+    {
+      "id": "F085",
+      "description": "Found by review-pr128-f079's round-2 review (N3), filed as a follow-up rather than fixed inline to avoid scope creep on that PR: the 'Next claimable:' line's scope field -- scope = ', '.join(f.get('scope') or []) at hooks/session-start.sh's two next-claimable code paths -- has no length cap, sitting directly beside the 200-char-capped description on the same line. Same bug class as F071/OVI-105 and F079/OVI-105 (an unbounded field printed into the orientation), not introduced by either. Measured: 382 chars on this repo's real 'Next claimable:' line today; 921 chars in a 12-scope-path adversarial fixture. Not yet fixed -- needs the same truncate-and-point treatment already applied to description (F071) and the three line-count-capped sections (F079), or folding into a genuine total-orientation-budget redesign if one is ever built (F079's notes record this as a considered, declined alternative to the current fixed-per-section budgets).",
+      "priority": 85,
+      "status": "pending",
+      "scope": [
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F071",
+        "F079"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Filed, not yet triaged into a release batch. Low urgency today (382 chars real, well within the platform's 10,000-char cap even added to everything else measured for F079) but the same unbounded-field pattern this repo has twice already had to close elsewhere.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F079 (review-pr128-f079 round-2, nit N3)",
+      "spec": null
     }
   ]
 }
