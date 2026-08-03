@@ -10092,6 +10092,71 @@ else
   fail "rc: this repo's own current state fails release-consistency -- $RC_FUNC_ERRORS"
 fi
 
+# The check above needs git tags to be present, but actions/checkout@v4
+# defaults to a shallow, tag-less clone (depth 1) -- confirmed live: this
+# exact suite failed in GitHub Actions with "no git tag vX.Y.Z exists" for a
+# tag that genuinely existed on the remote, reproduced locally via
+# `git clone --depth 1 file://...` and fixed by fetching full history.
+# Guard test.yml's own checkout config so this can't silently regress. A bare
+# grep for the literal string would false-pass on this very comment (which
+# names "fetch-depth: 0" in prose) -- parse the YAML structurally instead.
+TEST_YML="$REPO_ROOT/.github/workflows/test.yml"
+TEST_YML_FETCH_DEPTH_ERRORS=$(python3 - "$TEST_YML" 2>&1 <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+errors = []
+
+try:
+    import yaml
+    with open(path) as fh:
+        data = yaml.safe_load(fh)
+    checkout_ok = False
+    for job in (data.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            if "checkout" in (step.get("uses") or ""):
+                if (step.get("with") or {}).get("fetch-depth") == 0:
+                    checkout_ok = True
+    if not checkout_ok:
+        errors.append(
+            "no checkout step has fetch-depth: 0 -- tag-dependent checks will "
+            "silently fail in CI on a shallow clone"
+        )
+except ImportError:
+    # Structural fallback: require the exact "with: / fetch-depth: 0" pair
+    # directly beneath a checkout step, not just the substring anywhere
+    # (which a comment mentioning it would also satisfy).
+    lines = open(path).read().splitlines()
+    checkout_ok = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if "uses: actions/checkout" in stripped:
+            following = lines[i + 1:i + 4]
+            if any(
+                "fetch-depth: 0" in l and not l.strip().startswith("#")
+                for l in following
+            ):
+                checkout_ok = True
+    if not checkout_ok:
+        errors.append(
+            "no checkout step has fetch-depth: 0 (structural check) -- "
+            "tag-dependent checks will silently fail in CI on a shallow clone"
+        )
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$TEST_YML_FETCH_DEPTH_ERRORS" ]; then
+  pass "rc: test.yml's checkout step fetches full history (needed for tag-dependent checks)"
+else
+  fail "rc: $TEST_YML_FETCH_DEPTH_ERRORS"
+fi
+
 echo ""
 echo "== shell syntax =="
 

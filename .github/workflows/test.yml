@@ -8,5 +8,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # F078/OVI-103: actions/checkout@v4 defaults to a shallow, tag-less
+      # clone (depth 1). The new release-consistency check's own regression
+      # test (rc: this repo's own current state...) shells out to `git
+      # rev-parse refs/tags/vX.Y.Z`, which is genuinely absent in a shallow
+      # clone even when the tag exists on the remote -- reproduced locally
+      # via `git clone --depth 1 file://...`, confirmed `git fetch --unshallow`
+      # (equivalent to fetch-depth: 0) resolves it. Full history is needed for
+      # this suite to see what it's actually testing.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - run: bash test/run-tests.sh
