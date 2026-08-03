@@ -9630,8 +9630,8 @@ fi
 assert_contains "$(cat "$DEBUG_RULE" 2>/dev/null)" "NEVER fix a symptom or add a workaround" \
   "rd (OVI-82): states the root-cause-only rule"
 for PHASE in "Phase 1" "Phase 2" "Phase 3" "Phase 4"; do
-  assert_contains "$(cat "$DEBUG_RULE" 2>/dev/null)" "$PHASE" \
-    "rd (OVI-82): $PHASE is present"
+  assert_contains "$(cat "$DEBUG_RULE" 2>/dev/null)" "## $PHASE" \
+    "rd (OVI-82): $PHASE is present as a heading"
 done
 assert_contains "$(cat "$DEBUG_RULE" 2>/dev/null)" "is not a negative result until the command is known to have run" \
   "rd (OVI-82): the empty-result-is-not-a-negative-result gotcha (OVI-68) is included"

@@ -2227,9 +2227,32 @@
       "spec": null
     },
     {
+      "id": "F081",
+      "description": "PR #125 (F074/OVI-82) round-1 review nits N3/N4, deferred at merge as 'take or leave' optional polish, picked up now per Ovidiu's 'work until blocked' instruction. N3 (test-anchoring precision): the 4 test assertions pinning rules/debugging.md's Phase headers matched the bare substring 'Phase N' anywhere in the file, not the actual '## Phase N' markdown heading -- adequate in practice (the reviewer's own mutation happened to still catch it) but didn't pin the structure the feature actually claims to guarantee. N4 (wording): 'A check that errors must report UNKNOWN, never PASS' reads as a garden-path sentence on first parse ('a check that errors' misreads as a complete noun phrase before the sentence resolves). Fixed both: assertions now match '## Phase N' exactly; the sentence now reads 'A check that errors out must report UNKNOWN, never PASS'.",
+      "priority": 79,
+      "status": "passing",
+      "scope": [
+        "rules/debugging.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F074"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "No new assertions (existing 4 Phase-header assertions tightened in place, same count). Mutation-tested the anchoring fix specifically: replaced the real '## Phase 3' heading with a differently-worded heading that still contains the bare substring 'Phase 3' elsewhere in prose (e.g. '(formerly Phase 3)') -- confirmed this now correctly fails the anchored assertion, where the OLD unanchored version would have passed incorrectly (a live demonstration of the gap N3 identified, not just a hypothetical). Restored, reran clean. The wording fix (N4) has no test dependency on the exact changed phrase -- confirmed via grep that no assertion matches the literal string 'A check that errors must report' before changing it. Full suite 1541/1541 throughout.",
+      "notes": "Both nits were explicitly optional ('take or leave') at F074's merge. Folded in now that they're cheap and no higher-priority work is queued.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F074 (review-pr125-f074, nits N3/N4, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
+    },
+    {
       "id": "F080",
       "description": "PR #123 (F073/OVI-104) round-1 review nit N3, deferred at merge as a 'not a defect... harmless' minor over-report, picked up now per Ovidiu's 'work until blocked' instruction: check_plugin_root_unset's consolidated finding unconditionally listed 'the .harness/mld/ non-injection guarantee' among the checks skipped due to CLAUDE_PLUGIN_ROOT being unset, even for the common case of a project with no .harness/mld/ directory at all -- check_mld_non_injection already no-ops on a missing mld/ dir BEFORE it even looks at plugin_root, so that check was never going to run regardless of the unset variable. Fix: check_plugin_root_unset now takes project_dir too and only includes the mld line when .harness/mld/ actually exists, so the count (and the message) accurately reflects what CLAUDE_PLUGIN_ROOT specifically caused to be skipped.",
-      "priority": 79,
+      "priority": 80,
       "status": "passing",
       "scope": [
         "skills/harness-doctor/doctor.py",
