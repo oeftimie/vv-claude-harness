@@ -5531,7 +5531,7 @@ else
   fail "hs: next-claimable output differs -- plain: '$NEXT_PLAIN' module: '$NEXT_MODULE'"
 fi
 
-# F081/PR#120 round-1 review NIT-3: fcntl is Unix-only and used only by the
+# F082/PR#120 round-1 review NIT-3: fcntl is Unix-only and used only by the
 # write path (_with_file_lock). Importing it at module level made every
 # read-only verb (load, next-claimable, counts) fail to import on a
 # hypothetical platform without fcntl, even though none of them touch the
@@ -5556,7 +5556,8 @@ class BlockFcntl:
         return None
 
 
-sys.meta_path.insert(0, BlockFcntl())
+blocker = BlockFcntl()
+sys.meta_path.insert(0, blocker)
 try:
     # spec_from_file_location can't infer a loader from the ".template"
     # suffix on its own -- pass SourceFileLoader explicitly so it's treated
@@ -5606,16 +5607,16 @@ try:
                 f"blocked: {type(exc).__name__}: {exc}"
             )
 finally:
-    sys.meta_path.pop(0)
+    sys.meta_path.remove(blocker)
 
 for e in errors:
     print(e)
 PYEOF
 )
 if [ -z "$HS_NOFCNTL_ERRORS" ]; then
-  pass "hs (F081): read-only verbs (load, counts) work with fcntl unavailable; the write path still needs it"
+  pass "hs (F082): read-only verbs (load, counts) work with fcntl unavailable; the write path still needs it"
 else
-  fail "hs (F081): $HS_NOFCNTL_ERRORS"
+  fail "hs (F082): $HS_NOFCNTL_ERRORS"
 fi
 
 echo ""
