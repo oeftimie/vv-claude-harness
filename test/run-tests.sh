@@ -9266,6 +9266,36 @@ RC=$?
 assert_rc0 "$RC" "cg: F076 real 'git add' + heredoc 'git commit' still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: F076 real compound stage+commit is not hidden by the heredoc-body mask"
 
+# Round-1 review of PR #141 (F076): the first version of this fix masked the
+# heredoc terminator's own trailing newline too, on the reasoning that bash
+# resumes the SAME logical line right after the terminator. That's only true
+# when the heredoc's operator line is itself part of an UNCLOSED construct
+# (an open quote or "$(" still waiting for its closer) -- when the operator
+# line is instead a COMPLETE, standalone command, masking that newline glued
+# whatever came AFTER the heredoc onto the tail of the masked body, hiding a
+# real compound stage+commit immediately following it. These three cover the
+# shapes round-1 review found live (a bare `-a` flag, a real `add && commit`,
+# and a trailing pathspec argument), each with a real, standalone heredoc
+# (unrelated to any commit message) directly followed by the real git
+# invocation on the very next line.
+CG_HEREDOC_TRAILING_DASHA_CMD=$'cat <<EOF\nsome body\nEOF\ngit commit -a -m x'
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_TRAILING_DASHA_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: F076 round-1 heredoc followed by a real 'git commit -a' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F076 round-1 a real -a after a standalone heredoc is not hidden by the mask"
+
+CG_HEREDOC_TRAILING_ADDCOMMIT_CMD=$'cat <<EOF > notes.txt\nbody\nEOF\ngit add . && git commit -m x'
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_TRAILING_ADDCOMMIT_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: F076 round-1 heredoc followed by real 'git add && git commit' exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F076 round-1 a real add+commit after a standalone heredoc is not hidden by the mask"
+
+CG_HEREDOC_TRAILING_PATHSPEC_CMD=$'cat <<\'EOF\'\nbody\nEOF\ngit commit -m x file.txt'
+OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_TRAILING_PATHSPEC_CMD")
+RC=$?
+assert_rc0 "$RC" "cg: F076 round-1 heredoc followed by a real trailing pathspec exits 0 (JSON deny)"
+assert_deny_json "$OUT" "cg: F076 round-1 a real trailing pathspec after a standalone heredoc is not hidden by the mask"
+
 echo ""
 echo "== agent frontmatter =="
 
