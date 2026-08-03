@@ -88,11 +88,33 @@
 # Check 0's quote handling (mask_quotes/unquote_token) covers single/double/
 # ANSI-C quoting only; recursive or nested quoting is out of scope, consistent
 # with this repo's existing pattern-based-and-evadable-by-construction posture
-# for Bash-command hooks. A quoted span containing a heredoc body is not
-# masked correctly (the quote-matching regex doesn't cross heredoc syntax) --
-# if the heredoc body's literal text happens to read like a staging command,
-# this can produce a false denial (fail-closed, over-blocking); accepted,
-# same evadable-by-construction posture.
+# for Bash-command hooks. A heredoc body's own content is masked before
+# mask_quotes() runs (mask_heredocs(), F076), so an embedded quote character
+# inside a heredoc-sourced commit message no longer defeats the outer quote
+# pairing -- CORRECTED (2026-08-03): a prior revision of this comment accepted
+# this as an unfixable, evadable-by-construction limitation; ground-truthed
+# live (a heredoc'd commit message containing an embedded double-quoted
+# phrase was falsely denied as compound-stage-and-commit) and closed instead.
+# ROUND 1 of that same fix (F076/PR #141) masked the heredoc terminator's own
+# trailing newline too, which introduced a REAL GATE BYPASS, not a mere
+# false-positive: a genuine compound stage+commit immediately after a
+# standalone (non-quote-nested) heredoc's terminator line went undetected,
+# since command_segments() no longer saw the following "git" as starting a
+# new segment (round-1 review of PR #141, caught before merge). Fixed by NOT
+# masking that newline -- see mask_heredocs()'s own comment for why leaving
+# it real is what correctly distinguishes the two cases. Two residuals
+# remain, both accepted: (1) mask_heredocs() has no awareness of REAL quote
+# spans (it runs before mask_quotes()), so "<<WORD"-shaped text sitting
+# INSIDE an already-quoted string can be misread as a genuine heredoc opener,
+# and a later coincidental standalone line matching that word would then
+# mask real content (including a real compound stage+commit) between them as
+# if it were heredoc body -- fail-open, but requires deliberately
+# constructing both the fake opener and the coincidental terminator line, not
+# something ordinary usage produces (same round-1 review); (2) a heredoc
+# body that itself happens to contain a line matching some OTHER,
+# coincidental heredoc delimiter word could still be mis-masked. Both are the
+# same evadable-by-construction, pattern-based (not a real shell parser)
+# posture accepted throughout this file.
 # parse_command joins backslash-newline shell continuations (outside quotes)
 # into a single space before segmenting, so `git \` + newline + `commit -m x`
 # is recognized as one git-commit invocation rather than being split into two
@@ -349,6 +371,118 @@ EM_DASH_PATTERN = re.compile("\u2014")
 
 QUOTE_SPAN_PATTERN = re.compile(r"\$'(?:[^'\\]|\\.)*'|'[^']*'|\"(?:[^\"\\]|\\.)*\"")
 
+# Matches a heredoc operator (<<, or <<- for the tab-stripping indented form)
+# and captures its delimiter word, however it's quoted: '<<' not preceded by
+# another '<' (excludes the <<< here-string operator, a different construct
+# entirely), then the delimiter as single-quoted, double-quoted, or bare.
+HEREDOC_OPENER_PATTERN = re.compile(
+    r"(?<!<)<<(-)?\s*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([^\s'\"<>();&|\n]+))"
+)
+
+
+def mask_heredocs(command):
+    # Replaces a heredoc's ENTIRE body -- from the end of the line carrying
+    # its "<<DELIM" operator through the end of the line containing the bare
+    # terminator, inclusive -- with same-length NUL characters, exactly like
+    # mask_quotes() does for a quoted span (see its own comment for why
+    # length-preserving matters: callers slice the ORIGINAL text using
+    # positions found in this masked copy). Bash's own rule for where a
+    # heredoc body ends is a line consisting of ONLY the delimiter (optionally
+    # preceded by tabs, and ONLY tabs, when the operator is "<<-"); this
+    # mirrors that rule via MULTILINE ^...$ anchoring rather than a fixed
+    # substring search, which would falsely stop at a delimiter occurrence
+    # embedded inside a longer line of body text.
+    #
+    # This exists because mask_quotes()'s own QUOTE_SPAN_PATTERN has no
+    # concept of heredoc syntax: a heredoc body containing a literal,
+    # unescaped quote character (e.g. a commit message authored as
+    # `git commit -m "$(cat <<'EOF' ... some text "quoted" here ... EOF)"`,
+    # this project's own documented convention for multi-line commit
+    # messages) is invisible to it. mask_quotes() naively pairs the FIRST
+    # unescaped double-quote it finds (the real one opening the -m argument)
+    # with the NEXT one it finds anywhere in the string -- which, with an
+    # embedded quote inside the heredoc body, is that quote's OPENING
+    # character, not the argument's real closing quote. The result: the -m
+    # argument gets split into two masked spans with a stretch of REAL,
+    # unmasked heredoc-body text sandwiched between them. split_tokens()
+    # then reads a real space inside that unmasked stretch as a token
+    # boundary, shattering what should be ONE shell word into multiple
+    # tokens -- confirmed live: the trailing fragment token doesn't start
+    # with "-", so has_staging_flag() reads it as a bare pathspec argument
+    # (the F052 check) and DENIES compound-stage-and-commit on a commit that
+    # stages nothing (F076). Masking the heredoc body FIRST, before
+    # mask_quotes() ever runs its quote-pairing scan, removes the embedded
+    # quote characters from that scan entirely, so mask_quotes() correctly
+    # pairs the real opening quote with the real closing one on the far side
+    # of the (now-masked) heredoc.
+    #
+    # The terminator line's own trailing newline is deliberately NOT masked
+    # (mask_end stops AT it, not past it) -- an earlier version of this fix
+    # masked through that newline too, reasoning that bash resumes the SAME
+    # logical line right after the terminator. That reasoning only holds
+    # when the heredoc's operator line is itself part of an UNCLOSED
+    # construct (an open quote or "$(" still waiting for its closer, as in
+    # the motivating `-m "$(cat <<'EOF' ... EOF)"` case) -- there,
+    # mask_quotes()'s OWN quote-pairing scan (which runs AFTER this
+    # function, on this function's output) is what correctly re-absorbs
+    # that newline as part of the still-open quoted span, since the
+    # embedded quotes inside the now-masked body no longer confuse it. When
+    # the heredoc's operator line is instead a COMPLETE, standalone command
+    # (`cat <<EOF` with nothing left open), that reasoning is false, and
+    # masking the newline glued whatever came after the heredoc onto the
+    # tail of the masked body -- a REAL GATE BYPASS, not just a usability
+    # false-positive (round-1 review of PR #141): `cat <<EOF\nbody\nEOF\ngit
+    # commit -a -m x` genuinely stages and commits in one step in real bash,
+    # but command_segments() no longer saw "git" as the start of that
+    # segment (its first token was masked body content instead), so
+    # segment_subcommand() never recognized it and has_staging_flag() never
+    # ran. Leaving the newline unmasked fixes this: when it truly needs to
+    # be treated as non-separating, mask_quotes()'s subsequent pass already
+    # handles that; when it doesn't, it now correctly still separates.
+    #
+    # Narrow, accepted residual: a single-line command containing text that
+    # merely LOOKS like a heredoc operator (no real newline follows it on
+    # the same line) is left alone (line_end == -1 below), which covers the
+    # overwhelming majority of ordinary commit messages that just happen to
+    # mention "<<" in prose. This function has no awareness of REAL quote
+    # spans either (it runs BEFORE mask_quotes()), so a "<<WORD"-shaped
+    # sequence sitting INSIDE an already-quoted string (e.g. a commit
+    # message `git commit -m 'x <<EOF'`, where "<<EOF" is just part of the
+    # quoted literal value, not real heredoc syntax) can still be
+    # misidentified as a genuine heredoc opener -- if a LATER line then
+    # coincidentally matches that same word standalone, everything between
+    # gets masked as if it were heredoc body, which IS fail-open (real
+    # content between them, including a real compound stage+commit, would
+    # be hidden). This requires deliberately constructing both the fake
+    # "<<WORD" text and a coincidental standalone terminator-shaped line
+    # afterward -- not something ordinary usage produces by accident, and
+    # the same evadable-by-construction, pattern-based (not a real shell
+    # parser) posture accepted elsewhere in this file -- but it is a real,
+    # not merely coincidental, residual, and remains open (round-1 review
+    # of PR #141; not closed by this fix).
+    out = list(command)
+    for m in HEREDOC_OPENER_PATTERN.finditer(command):
+        indent, single_q, double_q, bare = m.group(1), m.group(2), m.group(3), m.group(4)
+        delimiter = single_q if single_q is not None else (double_q if double_q is not None else bare)
+        if not delimiter:
+            continue
+        line_end = command.find("\n", m.end())
+        if line_end == -1:
+            continue
+        body_start = line_end + 1
+        terminator = re.compile(
+            r"^" + (r"\t*" if indent else "") + re.escape(delimiter) + r"$",
+            re.MULTILINE,
+        )
+        term_match = terminator.search(command, body_start)
+        if not term_match:
+            continue
+        term_line_end = command.find("\n", term_match.end())
+        mask_end = term_line_end if term_line_end != -1 else len(command)
+        for i in range(body_start, mask_end):
+            out[i] = "\0"
+    return "".join(out)
+
 
 def mask_quotes(command):
     # Replaces each quoted span (single, double, ANSI-C $'...') with a same-
@@ -368,10 +502,17 @@ def mask_quotes(command):
     # (enforce-scope.sh.template/F023, same root cause: quote-erasure
     # deleting content load-bearing for the gate's decision), then
     # independently confirmed in THIS hook and fixed as F025 (PR #44).
+    #
+    # Heredoc bodies are masked FIRST (mask_heredocs(), F076) so an embedded
+    # quote character inside one is never seen by QUOTE_SPAN_PATTERN's own
+    # pairing scan at all -- see mask_heredocs()'s own comment for the
+    # failure this closes. Both masking passes are length-preserving, so
+    # running one on top of the other still leaves the result aligned
+    # character-for-character with the original command.
     def repl(m):
         return "\0" * len(m.group(0))
 
-    return QUOTE_SPAN_PATTERN.sub(repl, command)
+    return QUOTE_SPAN_PATTERN.sub(repl, mask_heredocs(command))
 
 
 ANSI_C_SIMPLE_ESCAPES = {
