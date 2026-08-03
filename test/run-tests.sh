@@ -6140,16 +6140,22 @@ OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_MLD_NOROOT")
 assert_not_contains "$OUT" "non-injection guarantee broken" \
   "hd: .harness/mld/ present with no CLAUDE_PLUGIN_ROOT set produces no mld-specific finding"
 
-# F073/OVI-104: CLAUDE_PLUGIN_ROOT unset silently skipped 4 checks (commit-gate
-# presence, features.json cross-validation, plugin_version drift, mld
-# non-injection) with zero indication to the user. One consolidated Finding
-# now covers all 4 in a single message, instead of either 4 separate
-# skip-warnings or the prior silence.
+# F073/OVI-104: CLAUDE_PLUGIN_ROOT unset silently skipped several checks
+# (commit-gate presence, features.json cross-validation, plugin_version drift,
+# and -- only when applicable -- mld non-injection) with zero indication to
+# the user. One consolidated Finding now covers them in a single message,
+# instead of either N separate skip-warnings or the prior silence.
+#
+# This fixture has no .harness/mld/ directory (round-1 review of PR #123,
+# N3): check_mld_non_injection already no-ops on a missing mld/ dir before it
+# even looks at plugin_root, so that check was never going to run regardless
+# of CLAUDE_PLUGIN_ROOT -- the consolidated finding must not claim it was
+# skipped BECAUSE of the unset variable when it wouldn't have run anyway.
 DIR_DOC_NOROOT="$WORK/doctor-plugin-root-unset"
 make_healthy_doctor_fixture "$DIR_DOC_NOROOT"
 OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_NOROOT")
 assert_contains "$OUT" \
-  "CLAUDE_PLUGIN_ROOT is not set -- 4 checks could not run and were silently skipped" \
+  "CLAUDE_PLUGIN_ROOT is not set -- 3 checks could not run and were silently skipped" \
   "hd: CLAUDE_PLUGIN_ROOT unset produces one consolidated finding (F073/OVI-104)"
 assert_contains "$OUT" "commit-gate.sh presence" \
   "hd: consolidated finding names commit-gate.sh presence"
@@ -6157,8 +6163,8 @@ assert_contains "$OUT" "features.json cross-validation" \
   "hd: consolidated finding names features.json cross-validation"
 assert_contains "$OUT" "plugin_version drift" \
   "hd: consolidated finding names plugin_version drift"
-assert_contains "$OUT" "the .harness/mld/ non-injection guarantee" \
-  "hd: consolidated finding names the mld non-injection guarantee"
+assert_not_contains "$OUT" "the .harness/mld/ non-injection guarantee" \
+  "hd (F073 round-1 nit N3): consolidated finding omits the mld check when .harness/mld/ doesn't exist"
 FINDING_COUNT=$(printf '%s' "$OUT" | grep -c "CLAUDE_PLUGIN_ROOT is not set")
 if [ "$FINDING_COUNT" = "1" ]; then
   pass "hd: the CLAUDE_PLUGIN_ROOT-unset finding appears exactly once, not once per check"
@@ -6170,6 +6176,18 @@ fi
 OUT=$(run_doctor "$DIR_DOC_NOROOT")
 assert_not_contains "$OUT" "CLAUDE_PLUGIN_ROOT is not set" \
   "hd: the consolidated finding does not appear when CLAUDE_PLUGIN_ROOT is set"
+
+# Mirror case: .harness/mld/ DOES exist -> the mld check WOULD have run if
+# CLAUDE_PLUGIN_ROOT were set, so the consolidated finding must include it.
+DIR_DOC_NOROOT_MLD="$WORK/doctor-plugin-root-unset-with-mld"
+make_healthy_doctor_fixture "$DIR_DOC_NOROOT_MLD"
+mkdir -p "$DIR_DOC_NOROOT_MLD/.harness/mld"
+OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_NOROOT_MLD")
+assert_contains "$OUT" \
+  "CLAUDE_PLUGIN_ROOT is not set -- 4 checks could not run and were silently skipped" \
+  "hd (F073 round-1 nit N3): with .harness/mld/ present, the count rises to 4"
+assert_contains "$OUT" "the .harness/mld/ non-injection guarantee" \
+  "hd (F073 round-1 nit N3): with .harness/mld/ present, the mld check is named"
 
 # mld/ present, plugin root set, but that root has no hooks/session-start.sh at all.
 DIR_DOC_MLD_NOFILE="$WORK/doctor-mld-nofile"
