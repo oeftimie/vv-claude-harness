@@ -2401,15 +2401,16 @@
       "priority": 86,
       "status": "passing",
       "scope": [
-        ".github/workflows/release-consistency.yml",
-        "test/run-tests.sh"
+        ".github/workflows/test.yml",
+        "test/run-tests.sh",
+        ".github/workflows/release-consistency.yml"
       ],
       "depends_on": [],
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
       "coverage": "6 new suite assertions: YAML structural validity (push-to-main + workflow_dispatch + issues:write + failure()-gated issue step), 3 grep-based checks that the script actually checks CHANGELOG/tag/marketplace, the issues.create call is present, and a FUNCTIONAL check that runs the same 3-part logic directly against this repo's real current state (not just structural presence) and confirms it reports clean. Mutation-tested the structural layer: replacing the literal string 'marketplace.json' throughout the workflow file fails exactly the marketplace-check assertion, nothing else. Separately proved the functional logic itself (not just the test wrapping it) genuinely detects gaps, not just passes tautologically on real data: ran the identical Python snippet against a synthetic scratch repo with a mismatched version (9.9.9, no matching tag or CHANGELOG heading) and confirmed it reported both gaps correctly. Full suite 1547/1547 both before and after restoring the mutation.",
-      "notes": "Not part of the original 8-issue investigation's per-issue plan -- discovered mid-close-out while verifying OVI-103 could actually be marked Done, and fixed same-session per the standing 'pick them all up' authorization rather than filed as a dangling follow-up, since the underlying gap (3 unpublished releases) was a live, already-shipped problem, not a design question.",
-      "correction_cycles": 0,
+      "notes": "Not part of the original 8-issue investigation's per-issue plan -- discovered mid-close-out while verifying OVI-103 could actually be marked Done, and fixed same-session per the standing 'pick them all up' authorization rather than filed as a dangling follow-up, since the underlying gap (3 unpublished releases) was a live, already-shipped problem, not a design question.\n\nCorrection after the branch merged main and was actually pushed to GitHub for the first time (Ovidiu re-scoped the gh token's OAuth permissions to include 'workflow', unblocking the push): CI genuinely failed with 'no git tag v5.1.1 exists' -- actions/checkout@v4 defaults to a shallow, tag-less clone (depth 1), so the new release-consistency-check's own regression test (which shells out to `git rev-parse refs/tags/vX.Y.Z`) never had tags to find in CI, even though the tag genuinely exists on the remote. Reproduced directly via a real shallow clone (`git clone --depth 1 file://...`), confirmed `git fetch --unshallow` resolves it, then added `fetch-depth: 0` to test.yml's checkout step. Also added a regression guard on test.yml's own config -- caught during mutation-testing that a naive `grep -q \"fetch-depth: 0\"` false-passes against this very fix's own explanatory comment (which names the literal string in prose), so the guard parses the YAML structurally instead (with an ImportError fallback to a comment-aware structural grep, matching this repo's own established pattern for maintenance.yml's equivalent check -- PyYAML is not installed in this dev environment, so only the fallback branch was actually exercised locally).",
+      "correction_cycles": 1,
       "scope_expansions": [],
       "approaches_tried": [
         "Considered making this a PR-blocking check (on: push + pull_request, like test.yml) instead of a push-to-main-only drift monitor. Declined: a tag for the CURRENT version being bumped cannot exist until AFTER the version-bump commit itself is merged, so a PR-time check would always fail on any release PR by construction -- the check only makes sense post-merge, matching how the existing maintenance.yml handles inherently-post-merge drift too."
