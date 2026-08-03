@@ -5542,14 +5542,14 @@ fi
 # -- NOT EALREADY/37, which this repo's own investigation found ALSO maps to
 # BlockingIOError and would have made this test pass for the wrong reason)
 # and confirm the lock attempt fails fast, not after a ~5s wait.
-HS_PERMANENT_ERROR_ERRORS=$(python3 - "$STATE_MODULE_TEMPLATE" 2>&1 <<'PYEOF'
+HS_PERMANENT_ERROR_ERRORS=$(python3 - "$STATE_MODULE_TEMPLATE" "$WORK/hs-permanent-error-test.json" 2>&1 <<'PYEOF'
 import errno
 import importlib.util
 import time
 import sys
 from importlib.machinery import SourceFileLoader
 
-module_path = sys.argv[1]
+module_path, test_features_path = sys.argv[1], sys.argv[2]
 errors = []
 
 loader = SourceFileLoader("hs_permanent_error", module_path)
@@ -5579,24 +5579,29 @@ else:
         # via the outer 2>&1.
         start = time.time()
         with contextlib.redirect_stderr(io.StringIO()):
-            result = module._with_file_lock("/tmp/hs-permanent-error-test.json", lambda: "should not run")
+            result = module._with_file_lock(test_features_path, lambda: "should not run")
         elapsed = time.time() - start
     finally:
         fcntl.flock = real_flock
 
     if result is not None:
         errors.append(f"_with_file_lock should return None on a permanent flock error, got {result!r}")
-    if elapsed >= module.LOCK_TIMEOUT_SECONDS:
+    # Failing fast should take a small fraction of a second, not burn any
+    # meaningful portion of the 5s LOCK_TIMEOUT_SECONDS -- a looser bound
+    # (e.g. >= LOCK_TIMEOUT_SECONDS) would still pass on a partial regression
+    # that burns most, but not all, of the timeout (round-1 review nit).
+    if elapsed >= 1.0:
         errors.append(
-            f"a permanent flock error took {elapsed:.3f}s -- burned the full "
-            f"LOCK_TIMEOUT_SECONDS instead of failing fast"
+            f"a permanent flock error took {elapsed:.3f}s -- expected well under "
+            f"1s (failing fast), not burning a meaningful fraction of "
+            f"LOCK_TIMEOUT_SECONDS ({module.LOCK_TIMEOUT_SECONDS}s)"
         )
 
 for e in errors:
     print(e)
 PYEOF
 )
-rm -f /tmp/hs-permanent-error-test.json.lock
+rm -f "$WORK/hs-permanent-error-test.json.lock"
 if [ -z "$HS_PERMANENT_ERROR_ERRORS" ]; then
   pass "hs (F084): a permanent flock error (ENOLCK) fails fast, not after the full lock timeout"
 else
