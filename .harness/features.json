@@ -2225,6 +2225,29 @@
       "failure_reason": null,
       "discovered_via": "OVI-81 (Linear, via OVI-73 handoff, investigated per Ovidiu's 2026-08-02 pickup instruction)",
       "spec": null
+    },
+    {
+      "id": "F079",
+      "description": "OVI-105's third and final task, deferred at F071's merge (PR #121 review): 'Consider a total output budget for the whole orientation block.' Three sections of session-start.sh -- the SESSION_INCOMPLETE warning (head -15), claude-progress.txt's tail (tail -12), and context_summary.md's Active Context (head -20) -- are each capped by LINE count only, which bounds nothing if the lines themselves are long. F071's own review measured a pathological worst case of ~94,896 chars and a realistic worst case (at this repo's own observed max line lengths) of ~41.5k, both far past the platform's 10,000-char cap. Fix: a shared print_budgeted_block() bash function truncates each of the three sections to 2000 chars with a '... (N chars total, ... see <file> for the full text)' pointer, matching the truncate-and-point pattern F071 already shipped for the next-claimable feature's description.",
+      "priority": 79,
+      "status": "passing",
+      "scope": [
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F071"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "9 new suite assertions: for each of the 3 sections, a fixture with a single 5000-char line stays under the platform's 10,000-char cap and the truncation marker names the correct source file (2 assertions x 3 sections = 6), plus content printed after a truncated block still appears (1), and normal-sized content in all three sections is untouched -- neither truncated nor missing (2). Mutation-tested all 3 wiring points independently: removing the print_budgeted_block call from each of the 3 sections in turn fails exactly that section's marker-presence assertion, nothing else. Also mutation-tested the budget threshold itself: dropping BLOCK_CHAR_BUDGET to 5 breaks both new not-truncated assertions AND two pre-existing behavioral tests ('a: includes the Active Context bullets', 'h: surfaces the SESSION_INCOMPLETE contents') that use ordinary short fixture content -- confirms the mechanism is wired into the real content path, not just the synthetic long-line fixtures. Full suite 1550/1550 both before and after restoring each of the 4 mutations.",
+      "notes": "2000-char-per-section budget chosen so 3 unbounded sections (6000 chars worst case) plus the rest of the orientation (features count, next-claimable, git identity, rule pointers -- roughly 1500-2000 chars typically) stays safely under the platform's 10,000-char hard cap even in the pathological case, with real margin. Deliberately generous relative to typical content (15/12/20 real lines at this repo's own observed max widths of 845-928 chars would still fit well under 2000 in the ordinary case) so the budget only bites on genuinely unusual input, not everyday use. Did not attempt to unify this with the existing 200-char single-field DESC_LIMIT truncation (different granularity -- one bounds a single JSON field, this bounds a whole multi-line shell block -- sharing a constant would couple two independently-tunable budgets for no real benefit).",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F071 (PR #121 round-1 review, review-pr121-f071, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
     }
   ]
 }
