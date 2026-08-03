@@ -1,0 +1,91 @@
+name: release-consistency
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify manifest, CHANGELOG, tag, and release agree
+        id: verify
+        run: |
+          set -uo pipefail
+          VERSION=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          GAPS=""
+
+          if ! grep -qE "^### v${VERSION//./\\.}( |\$)" CHANGELOG.md; then
+            GAPS="$GAPS
+          - .claude-plugin/plugin.json's version ($VERSION) has no matching '### v$VERSION' heading in CHANGELOG.md"
+          fi
+
+          if ! git rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            GAPS="$GAPS
+          - no git tag v$VERSION exists for the current plugin.json version"
+          fi
+
+          # marketplace.json carries no independent version by design (AGENTS.md: the
+          # version lives ONLY in plugin.json) -- what CAN drift is its plugin entry's
+          # name/source no longer resolving to this same manifest.
+          PLUGIN_NAME=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['name'])")
+          MARKETPLACE_OK=$(python3 -c "
+          import json
+          manifest = json.load(open('.claude-plugin/plugin.json'))
+          marketplace = json.load(open('.claude-plugin/marketplace.json'))
+          plugins = marketplace.get('plugins', [])
+          match = next((p for p in plugins if p.get('name') == manifest['name']), None)
+          print('yes' if match and match.get('source') == './' else 'no')
+          ")
+          if [ "$MARKETPLACE_OK" != "yes" ]; then
+            GAPS="$GAPS
+          - marketplace.json has no plugin entry named '$PLUGIN_NAME' with source './' matching plugin.json's name"
+          fi
+
+          if [ -n "$GAPS" ]; then
+            echo "gaps<<GAPEOF" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "$GAPS" >> "$GITHUB_OUTPUT"
+            echo "GAPEOF" >> "$GITHUB_OUTPUT"
+            echo "### Release consistency: DRIFT" >> "$GITHUB_STEP_SUMMARY"
+            printf '%s\n' "$GAPS" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "### Release consistency: clean (v$VERSION)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open an issue on drift
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          version: ${{ steps.verify.outputs.version }}
+          gaps: ${{ steps.verify.outputs.gaps }}
+        with:
+          script: |
+            const version = process.env.version || 'unknown'
+            const gaps = process.env.gaps || '(no detail captured)'
+            const body = [
+              `.claude-plugin/plugin.json currently records version ${version}, but this`,
+              'check found a gap between the manifest, CHANGELOG.md, and the git tag:',
+              '',
+              gaps,
+              '',
+              'This is the release-desync failure mode OVI-103 was filed for: users on',
+              '`/plugin update` only receive a version once the manifest is bumped, so a',
+              'bumped manifest with no matching tag/release/changelog entry means the',
+              'published state and main have drifted apart. Fix by completing whichever',
+              'release step was skipped (CHANGELOG entry, git tag, or GitHub release).',
+            ].join('\n')
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Release consistency drift on v${version}`,
+              body,
+            })

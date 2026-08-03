@@ -2394,6 +2394,51 @@
       "failure_reason": null,
       "discovered_via": "F079 (review-pr128-f079 round-2, nit N3)",
       "spec": null
+    },
+    {
+      "id": "F078",
+      "description": "OVI-103's last outstanding task: 'Add a CI check that manifest <-> tag <-> changelog <-> marketplace source agree.' The other 3 tasks (bump plugin.json, update CHANGELOG.md, tag and publish the release) were already resolved by v5.0.0's release; this was the only unimplemented one. Discovered while closing OVI-103 out that the gap it names is real and current: v5.0.0, v5.0.1, and v5.1.0 (this session's own releases) were never git-tagged or published as GitHub Releases -- v4.2.2 was still showing as 'Latest' on GitHub despite main being 3 versions ahead in plugin.json. Fixed the immediate gap by creating and pushing the 3 missing tags plus GitHub Releases, then added .github/workflows/release-consistency.yml (runs on push to main + workflow_dispatch, matching maintenance.yml's own established pattern of surfacing drift via a GitHub issue rather than blocking a PR, since a tag can't exist before the version-bumping commit that creates it is merged) to catch a recurrence: plugin.json's version must have a matching CHANGELOG.md heading, a matching git tag, and marketplace.json must still resolve to the same plugin name/source (marketplace.json carries no independent version by design, per AGENTS.md's 'version lives ONLY in plugin.json' rule, so this is a structural sanity check rather than a version-drift check).",
+      "priority": 86,
+      "status": "passing",
+      "scope": [
+        ".github/workflows/test.yml",
+        "test/run-tests.sh",
+        ".github/workflows/release-consistency.yml",
+        ".github/workflows/maintenance.yml"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "7 new suite assertions (was 6; +1 for the test.yml fetch-depth guard added in the CI-failure correction): YAML structural validity (push-to-main + workflow_dispatch + issues:write + failure()-gated issue step), 3 grep-based checks that the script actually checks CHANGELOG/tag/marketplace, the issues.create call is present, a FUNCTIONAL check that runs the CHANGELOG + marketplace logic (not the tag check -- see round-2 correction below) directly against this repo's real current state, and a structural guard that test.yml's checkout step has fetch-depth: 0. Mutation-tested the structural layer: replacing the literal string 'marketplace.json' throughout the workflow file fails exactly the marketplace-check assertion, nothing else. Separately proved the functional logic itself detects gaps, not just passes tautologically on real data: ran the identical Python snippet against a synthetic scratch repo with a mismatched version (9.9.9, no matching tag or CHANGELOG heading) and confirmed it reported both gaps correctly. Full suite 1566/1566 both before and after each mutation (current count; supersedes the stale 1547/1547 figure from the first pass).",
+      "notes": "Not part of the original 8-issue investigation's per-issue plan -- discovered mid-close-out while verifying OVI-103 could actually be marked Done, and fixed same-session per the standing 'pick them all up' authorization rather than filed as a dangling follow-up, since the underlying gap (3 unpublished releases) was a live, already-shipped problem, not a design question.\n\nCorrection after the branch merged main and was actually pushed to GitHub for the first time (Ovidiu re-scoped the gh token's OAuth permissions to include 'workflow', unblocking the push): CI genuinely failed with 'no git tag v5.1.1 exists' -- actions/checkout@v4 defaults to a shallow, tag-less clone (depth 1), so the new release-consistency-check's own regression test (which shells out to `git rev-parse refs/tags/vX.Y.Z`) never had tags to find in CI, even though the tag genuinely exists on the remote. Reproduced directly via a real shallow clone (`git clone --depth 1 file://...`), confirmed `git fetch --unshallow` resolves it, then added `fetch-depth: 0` to test.yml's checkout step. Also added a regression guard on test.yml's own config -- caught during mutation-testing that a naive `grep -q \"fetch-depth: 0\"` false-passes against this very fix's own explanatory comment (which names the literal string in prose), so the guard parses the YAML structurally instead (with an ImportError fallback to a comment-aware structural grep, matching this repo's own established pattern for maintenance.yml's equivalent check -- PyYAML is not installed in this dev environment, so only the fallback branch was actually exercised locally).\n\nRound-2 correction (PR #137 review, review-pr137-f078, BLOCK verdict): two blocking findings, both fixed and mutation-verified before re-review.\nB1: maintenance.yml ran the same test/run-tests.sh under a bare actions/checkout@v4 (no fetch-depth: 0), so the Monday cron would have hit the identical shallow-clone failure test.yml already hit. Added fetch-depth: 0 to maintenance.yml's checkout step too.\nB2 (design flaw, not just a CI config gap): the functional check (RC_FUNC_ERRORS in test/run-tests.sh) asserted a git tag exists for the CURRENT plugin.json version, but this suite runs on every push AND pull_request via test.yml -- including release-bump PRs, where plugin.json and CHANGELOG.md are updated pre-merge but the tag cannot exist until after the bump commit merges. That would have made every future release-bump PR's CI permanently red, exactly the failure mode approaches_tried already argued against (hence release-consistency.yml itself is push-to-main-only, not PR-blocking) -- the flaw was that the new test suite's functional check reintroduced the same mistake one layer down. Fixed by removing the tag assertion from RC_FUNC_ERRORS entirely; the static YAML check earlier in the same section already confirms release-consistency.yml's script contains the tag assertion, so tag-check coverage isn't lost, only moved out of the PR-gating path. Verified by simulating a release-bump state (plugin.json bumped to 9.9.9, CHANGELOG.md given a matching heading, no v9.9.9 tag created) and confirming the full suite still passes 1566/1566 -- before this fix it would have failed on the missing tag.\nN3 (non-blocking, fixed in the same pass since it was a 2-line change on code already touched): tightened the CHANGELOG heading match from a bare `grep -qF \"### v$VERSION \"` (and the equivalent Python substring check) to an anchored `^### v$VERSION( |$)` pattern (grep -E / re.search with MULTILINE), so a heading with no trailing date (e.g. `### v5.1.1` with no `(date)` suffix) is still recognized instead of reporting a false drift alarm. Mutation-tested both the bash and Python versions directly: a `v5.1.11` heading correctly does NOT match a `v5.1.1` query in either.\nN2 (issue-dedupe on repeated drift) filed separately as F086, not fixed here -- real design work, not a quick correction.",
+      "correction_cycles": 2,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Considered making this a PR-blocking check (on: push + pull_request, like test.yml) instead of a push-to-main-only drift monitor. Declined: a tag for the CURRENT version being bumped cannot exist until AFTER the version-bump commit itself is merged, so a PR-time check would always fail on any release PR by construction -- the check only makes sense post-merge, matching how the existing maintenance.yml handles inherently-post-merge drift too."
+      ],
+      "failure_reason": null,
+      "discovered_via": "OVI-103 (close-out verification, 2026-08-02)",
+      "spec": null
+    },
+    {
+      "id": "F086",
+      "description": "release-consistency.yml opens a new GitHub issue on every push to main while drift persists, with no dedupe check -- unlike maintenance.yml's weekly-cron failure mode, a merge-happy main branch could push repeatedly while a release is mid-flight (tag not yet created) and open one issue per push. Add a `github.rest.issues.listForRepo` title check before `issues.create` (list open issues titled `Release consistency drift on v{version}`, skip creation if one already exists), matching the title format already used. Related, same root cause: a release-bump merge opens an issue that must be closed by hand after the tag is pushed, since pushing a tag doesn't re-trigger the push-to-main workflow -- consider whether the issue body should note this explicitly so it isn't mistaken for a still-open problem after the tag lands.",
+      "priority": 87,
+      "status": "pending",
+      "scope": [
+        ".github/workflows/release-consistency.yml"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "F078 (PR #137 round-2 review, N2, 2026-08-03)",
+      "spec": null
     }
   ]
 }

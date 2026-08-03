@@ -9960,6 +9960,211 @@ assert_contains "$(cat "$TDD_RULE" 2>/dev/null)" "report that as a blocker rathe
   "rt (OVI-81): unmeasurable coverage must be reported as a blocker, not silently skipped"
 
 echo ""
+echo "== OVI-103: release-consistency CI check =="
+
+RC_YML="$REPO_ROOT/.github/workflows/release-consistency.yml"
+if [ -f "$RC_YML" ]; then
+  RC_YML_ERRORS=$(python3 - "$RC_YML" 2>&1 <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+errors = []
+
+if "\t" in text:
+    errors.append("contains a literal tab character")
+
+try:
+    import yaml
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        errors.append(f"does not parse as YAML: {exc}")
+        data = None
+    if isinstance(data, dict):
+        on = data.get(True, data.get("on"))
+        push = on.get("push") if isinstance(on, dict) else None
+        if not isinstance(push, dict) or "main" not in (push.get("branches") or []):
+            errors.append("'on.push.branches' does not include main")
+        if not isinstance(on, dict) or "workflow_dispatch" not in on:
+            errors.append("'on.workflow_dispatch' is missing")
+        jobs = data.get("jobs") if isinstance(data, dict) else None
+        if not isinstance(jobs, dict) or not jobs:
+            errors.append("'jobs' is missing or empty")
+        else:
+            issue_step_found = False
+            for job in jobs.values():
+                perms = job.get("permissions") if isinstance(job, dict) else None
+                if not isinstance(perms, dict) or perms.get("issues") != "write":
+                    errors.append("a job is missing permissions.issues: write")
+                for step in (job.get("steps") or []) if isinstance(job, dict) else []:
+                    if not isinstance(step, dict):
+                        continue
+                    if "github-script" in (step.get("uses") or ""):
+                        issue_step_found = True
+                        if step.get("if") != "failure()":
+                            errors.append(
+                                "the github-script step is not gated on if: failure()"
+                            )
+            if not issue_step_found:
+                errors.append("no github-script step found")
+except ImportError:
+    if "workflow_dispatch" not in text:
+        errors.append("no 'workflow_dispatch' key found (structural check)")
+    if "jobs:" not in text:
+        errors.append("no 'jobs' key found (structural check)")
+    if "issues: write" not in text:
+        errors.append("no 'issues: write' permission found (structural check)")
+
+for e in errors:
+    print(e)
+PYEOF
+  )
+  if [ -z "$RC_YML_ERRORS" ]; then
+    pass "rc: release-consistency.yml is well-formed with push-to-main + workflow_dispatch"
+  else
+    fail "rc: release-consistency.yml -- $RC_YML_ERRORS"
+  fi
+  if grep -q "CHANGELOG.md" "$RC_YML"; then
+    pass "rc: release-consistency.yml checks the manifest version against CHANGELOG.md"
+  else
+    fail "rc: release-consistency.yml does not check CHANGELOG.md"
+  fi
+  if grep -q "refs/tags/v\$VERSION" "$RC_YML"; then
+    pass "rc: release-consistency.yml checks for a matching git tag"
+  else
+    fail "rc: release-consistency.yml does not check for a matching git tag"
+  fi
+  if grep -q "marketplace.json" "$RC_YML"; then
+    pass "rc: release-consistency.yml checks marketplace.json agreement"
+  else
+    fail "rc: release-consistency.yml does not check marketplace.json"
+  fi
+  if grep -q "issues.create" "$RC_YML"; then
+    pass "rc: release-consistency.yml opens an issue on drift"
+  else
+    fail "rc: release-consistency.yml does not open an issue on drift"
+  fi
+else
+  fail "rc: .github/workflows/release-consistency.yml does not exist"
+fi
+
+# Functional check: run release-consistency.yml's CHANGELOG and marketplace logic
+# (not the tag check -- see below) directly against this repo's actual current
+# state, without invoking GitHub Actions -- confirms the logic itself is correct,
+# not just that the YAML looks right.
+#
+# The tag check is deliberately excluded here, not just deferred: this suite runs
+# on every push AND pull_request (test.yml), including release-bump PRs where
+# plugin.json and CHANGELOG.md are updated but the version's git tag cannot exist
+# yet -- tags are only created after the bump commit merges (see F078's
+# approaches_tried). Asserting the tag here would make every release PR's CI
+# permanently red, exactly the failure mode this design avoids by using an
+# issue-on-drift workflow (release-consistency.yml, push-to-main only) instead of
+# a PR-blocking check. The static check above already confirms
+# release-consistency.yml's script contains the tag assertion; that's sufficient
+# coverage for the tag-check logic without running it against live repo state here.
+RC_FUNC_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import json
+import re
+import sys
+
+root = sys.argv[1]
+errors = []
+
+manifest = json.load(open(f"{root}/.claude-plugin/plugin.json"))
+version = manifest["version"]
+
+changelog = open(f"{root}/CHANGELOG.md").read()
+if not re.search(rf"^### v{re.escape(version)}( |$)", changelog, re.MULTILINE):
+    errors.append(f"CHANGELOG.md has no '### v{version}' heading")
+
+marketplace = json.load(open(f"{root}/.claude-plugin/marketplace.json"))
+match = next(
+    (p for p in marketplace.get("plugins", []) if p.get("name") == manifest["name"]),
+    None,
+)
+if not match or match.get("source") != "./":
+    errors.append("marketplace.json has no matching plugin entry")
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$RC_FUNC_ERRORS" ]; then
+  pass "rc: this repo's own current state passes the release-consistency checks"
+else
+  fail "rc: this repo's own current state fails release-consistency -- $RC_FUNC_ERRORS"
+fi
+
+# actions/checkout@v4 defaults to a shallow, tag-less clone (depth 1) --
+# confirmed live: before RC_FUNC_ERRORS dropped its own tag assertion (see
+# comment above), this exact suite failed in GitHub Actions with "no git tag
+# vX.Y.Z exists" for a tag that genuinely existed on the remote, reproduced
+# locally via `git clone --depth 1 file://...` and fixed by fetching full
+# history. Keep full history in test.yml regardless, as a durable guard: if
+# run-tests.sh ever grows another tag-dependent check, it silently breaks in CI
+# without this, the same way it did here. A bare grep for the literal string
+# would false-pass on this very comment (which names "fetch-depth: 0" in
+# prose) -- parse the YAML structurally instead.
+TEST_YML="$REPO_ROOT/.github/workflows/test.yml"
+TEST_YML_FETCH_DEPTH_ERRORS=$(python3 - "$TEST_YML" 2>&1 <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+errors = []
+
+try:
+    import yaml
+    with open(path) as fh:
+        data = yaml.safe_load(fh)
+    checkout_ok = False
+    for job in (data.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            if "checkout" in (step.get("uses") or ""):
+                if (step.get("with") or {}).get("fetch-depth") == 0:
+                    checkout_ok = True
+    if not checkout_ok:
+        errors.append(
+            "no checkout step has fetch-depth: 0 -- tag-dependent checks will "
+            "silently fail in CI on a shallow clone"
+        )
+except ImportError:
+    # Structural fallback: require the exact "with: / fetch-depth: 0" pair
+    # directly beneath a checkout step, not just the substring anywhere
+    # (which a comment mentioning it would also satisfy).
+    lines = open(path).read().splitlines()
+    checkout_ok = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if "uses: actions/checkout" in stripped:
+            following = lines[i + 1:i + 4]
+            if any(
+                "fetch-depth: 0" in l and not l.strip().startswith("#")
+                for l in following
+            ):
+                checkout_ok = True
+    if not checkout_ok:
+        errors.append(
+            "no checkout step has fetch-depth: 0 (structural check) -- "
+            "tag-dependent checks will silently fail in CI on a shallow clone"
+        )
+
+for e in errors:
+    print(e)
+PYEOF
+)
+if [ -z "$TEST_YML_FETCH_DEPTH_ERRORS" ]; then
+  pass "rc: test.yml's checkout step fetches full history (needed for tag-dependent checks)"
+else
+  fail "rc: $TEST_YML_FETCH_DEPTH_ERRORS"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
