@@ -105,8 +105,13 @@ increment_correction_cycles() {
     # concurrent edit. There is nothing left for this shell wrapper to do
     # but invoke the module and stay fail-open on its exit code, matching
     # this hook's documented posture for the correction_cycles side effect.
+    # No `2>&1` here (PR #120 round-1 review, NIT-2): harness_state.py
+    # already writes every diagnostic to its own stderr; merging that onto
+    # this function's stdout would bury it, since Claude Code discards a
+    # hook's stdout entirely on exit 2 (see the header comment above) and
+    # every call site of this function is on the exit-2 rejection path.
     python3 "$STATE_MODULE" increment-correction-cycles .harness/features.json "$FEATURE_ID" \
-        2>&1 || true
+        || true
 }
 
 # Stage 1: Smoke test (fast compile/syntax check)

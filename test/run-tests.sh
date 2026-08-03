@@ -5512,6 +5512,40 @@ else
   fail "hs: a timed-out increment modified features.json anyway (correction_cycles is $CC_AFTER)"
 fi
 
+# F083/PR#120 round-1 review NIT-2: verify-task-quality.sh.template's
+# increment_correction_cycles() used to merge harness_state.py's stderr onto
+# its OWN stdout via `2>&1`, and every call site of that function is on the
+# exit-2 rejection path -- where Claude Code discards a hook's stdout
+# entirely and surfaces only stderr to the agent. That merge silently buried
+# every diagnostic this function could ever produce. Confirm the fix
+# directly: run harness_state.py the same way the (now-fixed) template
+# invokes it -- no `2>&1` -- against a fixture with no matching feature id
+# (a fast error path, no lock-timeout wait needed), and confirm the
+# diagnostic lands on stderr only, never stdout.
+HS_STDERR_CHECK="$WORK/hs-stderr-routing"
+mkdir -p "$HS_STDERR_CHECK"
+printf '{"features": [{"id": "F001", "status": "in-progress", "correction_cycles": 0}]}' \
+  > "$HS_STDERR_CHECK/features.json"
+HS_STDOUT_ONLY=$(python3 "$STATE_MODULE_TEMPLATE" increment-correction-cycles \
+  "$HS_STDERR_CHECK/features.json" F404_NOT_A_REAL_FEATURE 2>/dev/null)
+HS_STDERR_ONLY=$(python3 "$STATE_MODULE_TEMPLATE" increment-correction-cycles \
+  "$HS_STDERR_CHECK/features.json" F404_NOT_A_REAL_FEATURE 2>&1 1>/dev/null)
+assert_empty "$HS_STDOUT_ONLY" \
+  "hs (F083): harness_state.py's diagnostic never lands on stdout"
+assert_contains "$HS_STDERR_ONLY" "no feature with id" \
+  "hs (F083): harness_state.py's diagnostic lands on stderr"
+
+# The shell wrapper's own call site: grep the template directly to confirm
+# the `2>&1` that used to merge them is genuinely gone (not just that
+# harness_state.py itself behaves -- the wrapper could still re-merge them).
+VTQ_TEMPLATE="$TEMPLATES_DIR/verify-task-quality.sh.template"
+if grep -A1 'increment-correction-cycles .harness/features.json "\$FEATURE_ID"' "$VTQ_TEMPLATE" \
+  | grep -q '2>&1'; then
+  fail "hs (F083): verify-task-quality.sh.template still merges stderr onto stdout at the increment call site"
+else
+  pass "hs (F083): verify-task-quality.sh.template no longer merges stderr onto stdout at the increment call site"
+fi
+
 DIR_HS_PLAIN="$WORK/hs-delegate-plain"
 make_fixture "$DIR_HS_PLAIN"
 OUT_PLAIN=$(run_session_start "$DIR_HS_PLAIN" '{"source":"startup"}')
