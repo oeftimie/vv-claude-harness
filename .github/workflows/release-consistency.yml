@@ -71,6 +71,22 @@ jobs:
           script: |
             const version = process.env.version || 'unknown'
             const gaps = process.env.gaps || '(no detail captured)'
+            const title = `Release consistency drift on v${version}`
+
+            // F086: this workflow runs on every push to main. Without a dedupe
+            // check, repeated pushes while a release is mid-flight (tag not yet
+            // created) would open one issue per push -- check for an existing
+            // open issue with the same title first.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+            })
+            if (existing.data.some((issue) => issue.title === title)) {
+              console.log(`An open issue titled "${title}" already exists -- skipping creation.`)
+              return
+            }
+
             const body = [
               `.claude-plugin/plugin.json currently records version ${version}, but this`,
               'check found a gap between the manifest, CHANGELOG.md, and the git tag:',
@@ -82,10 +98,14 @@ jobs:
               'bumped manifest with no matching tag/release/changelog entry means the',
               'published state and main have drifted apart. Fix by completing whichever',
               'release step was skipped (CHANGELOG entry, git tag, or GitHub release).',
+              '',
+              'Note: pushing the missing tag does not re-trigger this workflow (it only',
+              'runs on push to main), so once the tag lands this issue will not close',
+              'itself -- close it by hand.',
             ].join('\n')
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Release consistency drift on v${version}`,
+              title,
               body,
             })

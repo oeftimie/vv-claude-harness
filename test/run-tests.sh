@@ -10045,6 +10045,19 @@ PYEOF
   else
     fail "rc: release-consistency.yml does not open an issue on drift"
   fi
+  # F086: repeated pushes to main while drift persists (release mid-flight, tag
+  # not yet created) must not open one issue per push -- guard that the script
+  # checks for an existing open issue with the same title before creating one.
+  if grep -q "issues.listForRepo" "$RC_YML" && grep -q "some((issue) => issue.title === title)" "$RC_YML"; then
+    pass "rc: release-consistency.yml skips issue creation when one is already open"
+  else
+    fail "rc: release-consistency.yml does not dedupe against an already-open drift issue"
+  fi
+  if grep -q "does not re-trigger this workflow" "$RC_YML"; then
+    pass "rc: release-consistency.yml's issue body notes it must be closed by hand"
+  else
+    fail "rc: release-consistency.yml's issue body does not explain the tag push won't auto-close it"
+  fi
 else
   fail "rc: .github/workflows/release-consistency.yml does not exist"
 fi
