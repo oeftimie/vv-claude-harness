@@ -2403,7 +2403,8 @@
       "scope": [
         ".github/workflows/test.yml",
         "test/run-tests.sh",
-        ".github/workflows/release-consistency.yml"
+        ".github/workflows/release-consistency.yml",
+        ".github/workflows/maintenance.yml"
       ],
       "depends_on": [],
       "assigned_to": null,
