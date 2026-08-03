@@ -63,11 +63,14 @@ echo "## Harness orientation (auto-injected)"
 # THIS repo's own real Active Context (measured at 2422 chars) on ordinary,
 # already-shipped content -- not a pathological case, an active regression.
 # Recalibrated against a direct measurement of "everything else" (features
-# count, next-claimable, git-identity check, all 6 rule pointers) using this
-# repo's real, non-scratchpad path: 1848 chars. 3 x 2600 + 1848 = 9648,
-# leaving 352 chars of margin under the platform's 10,000-char hard cap even
-# if all three sections hit the cap simultaneously, while comfortably fitting
-# today's real Active Context (2422) with headroom for near-term growth.
+# count, next-claimable, git-identity check, all 6 rule pointers): roughly
+# 1800-2900 chars depending on the installed CLAUDE_PLUGIN_ROOT path length
+# (echoed 6 times, once per rule pointer) and whether any of the several
+# optional WARNING blocks fire. Round-2 review measured the deployed-path
+# margin at ~480 chars in the ordinary case, not a fixed number -- this
+# constant is a judgment call sized to comfortably fit today's real Active
+# Context (2422) with room for near-term growth, not a value with an exact
+# derived margin against the platform's 10,000-char hard cap.
 BLOCK_CHAR_BUDGET=2600
 print_budgeted_block() {
   local content
