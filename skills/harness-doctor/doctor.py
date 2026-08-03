@@ -415,14 +415,15 @@ def check_mld_non_injection(project_dir, plugin_root):
 
 # OVI-104: commit-gate.sh presence (_check_optional_v5_hooks), features.json
 # cross-validation (_run_features_validator via check_harness_state_files),
-# plugin_version drift (check_version_drift), and the .harness/mld/
-# non-injection guarantee (check_mld_non_injection) all silently return no
-# findings when plugin_root is falsy -- each one individually correct (none
-# can compare against a plugin it can't locate), but four independent silent
-# skips add up to a "healthy" report that quietly verified less than it
-# looks like it did. One consolidated Finding here, instead of teaching each
-# of the four to also self-report, keeps the skip visible without repeating
-# the same "set CLAUDE_PLUGIN_ROOT" advice four times.
+# plugin_version drift (check_version_drift), and -- when applicable, see
+# MLD_CHECK_NAME below -- the .harness/mld/ non-injection guarantee
+# (check_mld_non_injection) all silently return no findings when plugin_root
+# is falsy -- each one individually correct (none can compare against a
+# plugin it can't locate), but several independent silent skips add up to a
+# "healthy" report that quietly verified less than it looks like it did. One
+# consolidated Finding here, instead of teaching each check to also
+# self-report, keeps the skip visible without repeating the same "set
+# CLAUDE_PLUGIN_ROOT" advice once per check.
 PLUGIN_ROOT_GATED_CHECKS = (
     "commit-gate.sh presence",
     "features.json cross-validation against the plugin's validator",

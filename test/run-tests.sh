@@ -6164,7 +6164,7 @@ assert_contains "$OUT" "features.json cross-validation" \
 assert_contains "$OUT" "plugin_version drift" \
   "hd: consolidated finding names plugin_version drift"
 assert_not_contains "$OUT" "the .harness/mld/ non-injection guarantee" \
-  "hd (F077 round-1 nit N3): consolidated finding omits the mld check when .harness/mld/ doesn't exist"
+  "hd (F073 round-1 nit N3): consolidated finding omits the mld check when .harness/mld/ doesn't exist"
 FINDING_COUNT=$(printf '%s' "$OUT" | grep -c "CLAUDE_PLUGIN_ROOT is not set")
 if [ "$FINDING_COUNT" = "1" ]; then
   pass "hd: the CLAUDE_PLUGIN_ROOT-unset finding appears exactly once, not once per check"
@@ -6185,9 +6185,9 @@ mkdir -p "$DIR_DOC_NOROOT_MLD/.harness/mld"
 OUT=$(env -u CLAUDE_PLUGIN_ROOT python3 "$DOCTOR_PY" "$DIR_DOC_NOROOT_MLD")
 assert_contains "$OUT" \
   "CLAUDE_PLUGIN_ROOT is not set -- 4 checks could not run and were silently skipped" \
-  "hd (F077 round-1 nit N3): with .harness/mld/ present, the count rises to 4"
+  "hd (F073 round-1 nit N3): with .harness/mld/ present, the count rises to 4"
 assert_contains "$OUT" "the .harness/mld/ non-injection guarantee" \
-  "hd (F077 round-1 nit N3): with .harness/mld/ present, the mld check is named"
+  "hd (F073 round-1 nit N3): with .harness/mld/ present, the mld check is named"
 
 # mld/ present, plugin root set, but that root has no hooks/session-start.sh at all.
 DIR_DOC_MLD_NOFILE="$WORK/doctor-mld-nofile"
