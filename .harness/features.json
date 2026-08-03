@@ -2248,6 +2248,32 @@
       "failure_reason": null,
       "discovered_via": "F074 (review-pr125-f074, nits N3/N4, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
       "spec": null
+    },
+    {
+      "id": "F084",
+      "description": "PR #120 (F070/OVI-107) round-1 review NIT-4, deferred at merge as 'trivial... only matters on exotic filesystems', picked up now per Ovidiu's 'work until blocked' instruction: _with_file_lock's flock retry loop caught bare OSError, treating a permanent error (e.g. ENOLCK, or EINVAL on a filesystem without flock support) identically to normal retry-worthy contention -- it burned the full LOCK_TIMEOUT_SECONDS before reporting the misleading 'timed out waiting for lock' message. Fix: fcntl.flock(LOCK_NB) raises BlockingIOError specifically for EWOULDBLOCK/EAGAIN (verified empirically on this box, not assumed), a distinct OSError subclass; the retry loop now catches BlockingIOError for the retry-worthy case and any other OSError as a permanent failure, reported and returned immediately.",
+      "priority": 80,
+      "status": "passing",
+      "scope": [
+        "skills/harness-init/harness_state.py.template",
+        ".claude/hooks/harness_state.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F070"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "1 new suite assertion, but load-bearing: monkeypatches fcntl.flock to raise a real ENOLCK OSError (errno 77, verified via python3 -c \"import errno; print(errno.ENOLCK)\" -- NOT errno 37/EALREADY, which this feature's own investigation discovered ALSO maps to BlockingIOError in Python's OSError subclass hierarchy and would have made a naive test pass for the wrong reason), confirms _with_file_lock returns None in well under LOCK_TIMEOUT_SECONDS (fails fast) rather than the full 5s. Mutation-tested: reverting to a single bare `except OSError` fails exactly this assertion (measuring the full ~5s burn) plus the pre-existing template/live-copy drift check (only the template was mutated), nothing else. Full suite 1542/1542 both before and after restoring the mutation.",
+      "notes": "Two empirical dead ends worth recording, both caught before they became test bugs (per this repo's own debugging.md discipline: verify a mechanism works before trusting it). First: assumed errno 37 was ENOLCK without checking -- it's actually EALREADY, which (surprisingly) also maps to BlockingIOError, so a test built on it would have silently exercised the WRONG code path (the retry branch, not the permanent-error branch) while still nominally 'passing'. Second: the test's own capture of harness_state.py's stderr diagnostic collided with the outer `2>&1`, polluting the errors-only output channel -- same class of bug hit and fixed in F082's cmd_counts test, fixed here the same way (contextlib.redirect_stderr scoped to just the _with_file_lock call, not the whole script).",
+      "correction_cycles": 1,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "First attempt used OSError(37, ...) believing 37 was ENOLCK; empirically checked with errno.ENOLCK and found it's actually 77, and that 37 (EALREADY) surprisingly also maps to BlockingIOError, not plain OSError, in Python's exception hierarchy. Corrected to the real ENOLCK value and re-verified standalone before trusting it in the suite."
+      ],
+      "failure_reason": null,
+      "discovered_via": "F070 (review-pr120-f070, NIT-4, deferred at merge; picked up 2026-08-03 per Ovidiu's 'work until blocked' instruction)",
+      "spec": null
     }
   ]
 }
