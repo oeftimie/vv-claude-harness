@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 93,
-  "passing": 85,
+  "passing": 87,
   "features": [
     {
       "id": "F001",
