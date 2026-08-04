@@ -2526,7 +2526,14 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "2026-08-05 grilling session -- part of the dashboard chain (F088-F093).",
-      "spec": null
+      "spec": {
+        "hash": "00a14c7bb6b3e5cdb912121a427c2c815aaf4f66ed49e27d99898ee334ff2f66",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-08-05T00:00:00Z",
+        "source": "conversation"
+      },
+      "qa_binding": "integration"
     },
     {
       "id": "F090",
