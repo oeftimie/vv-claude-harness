@@ -2446,6 +2446,28 @@
       "failure_reason": null,
       "discovered_via": "F078 (PR #137 round-2 review, N2, 2026-08-03)",
       "spec": null
+    },
+    {
+      "id": "F087",
+      "description": "The readiness-stamp HMAC (schemas/readiness-stamp.md's mint/consumer recipe, implemented in skills/harness-issue-prep/SKILL.md Step 7) has no round-trip test anywhere in this repo. Re-verifying OVI-45's original finding on 2026-08-04 confirmed: `.harness/harness.json` has no `prep` key (harness-issue-prep runs in local-only mode on this repo today, so Step 7 never fires), and no file under `.harness/`, `MAINTENANCE_LOG.md`, or `docs/` contains the string `vv-harness-readiness-stamp` -- the mint has never actually minted a stamp here. Add a `test/run-tests.sh` fixture that exercises the full recipe headlessly (the `VV_HARNESS_STAMP_KEY` env-var key source from the documented 3-source resolution chain -- no macOS Keychain needed): compute `hmac(spec_hash|base_sha|lane|repo)` per the documented recipe, confirm it verifies, and confirm a tampered field (wrong spec_hash, wrong base_sha) fails verification. This closes the one gap the mint-side implementation doesn't already cover on its own -- a regression in the HMAC logic would otherwise go undetected until an unattended runner started depending on it.",
+      "priority": 88,
+      "status": "pending",
+      "scope": [
+        "skills/harness-issue-prep/SKILL.md",
+        "schemas/readiness-stamp.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Deliberately deferred, not urgent -- Ovidiu's call (2026-08-04): hold until closer to actually building the external unattended runner that would consume these stamps, since nothing configures or exercises stamping on this repo today. When picked up, also worth configuring `prep.stamp` in `.harness/harness.json` (currently absent, so Step 7 is a no-op regardless of this test) as part of the same pass, and checking that whatever runner gets built actually implements all six of schemas/readiness-stamp.md's \"Consumer verification rules\", not just the marker line.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "OVI-45 (comparative-analysis re-verification during this session, 2026-08-04): original analysis flagged spec-gate signing as macOS-Keychain-only; re-checking against current code found the 3-source key-resolution chain (Keychain, key-file, env var) already resolves that, but surfaced a different, still-real gap -- zero test coverage and zero live consumers on this repo.",
+      "spec": null
     }
   ]
 }
