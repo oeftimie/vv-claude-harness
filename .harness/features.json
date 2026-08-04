@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 64,
-  "passing": 53,
+  "total_features": 93,
+  "passing": 85,
   "features": [
     {
       "id": "F001",
@@ -2467,6 +2467,157 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "OVI-45 (comparative-analysis re-verification during this session, 2026-08-04): original analysis flagged spec-gate signing as macOS-Keychain-only; re-checking against current code found the 3-source key-resolution chain (Keychain, key-file, env var) already resolves that, but surfaced a different, still-real gap -- zero test coverage and zero live consumers on this repo.",
+      "spec": null
+    },
+    {
+      "id": "F088",
+      "description": "Dashboard event-log hook wiring (plugin-level, env-var gated). Add hooks/dashboard-log.sh, wired in hooks/hooks.json for PreToolUse, PostToolUse, SubagentStart, SubagentStop, PermissionRequest, PermissionDenied, TaskCreated, TaskCompleted, and TeammateIdle. When VV_HARNESS_DASHBOARD is unset the hook must exit immediately with near-zero overhead (no file I/O, no subprocess spawn beyond the hook invocation itself). When set, it appends one JSON line per event to a session-scoped log file under .harness/dashboard/<session_id>.jsonl, capturing at minimum: ts, hook_event_name, session_id, agent_id (when present), agent_type (when present), tool_name (when present), a short tool_input summary (not full file contents -- avoid bloating the log or leaking large payloads), teammate_name/team_name (when present), and for PermissionRequest/PermissionDenied the tool_name being gated. This is the foundational data source; it does not render anything and ships no server or frontend. Applies to every project with the plugin installed, not just this repo.",
+      "priority": 88,
+      "status": "pending",
+      "scope": [
+        "hooks/hooks.json",
+        "hooks/dashboard-log.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": "Env-var name VV_HARNESS_DASHBOARD chosen during the 2026-08-05 grilling session; must be set before the session it should watch is launched (hooks snapshot at Claude Code startup, so mid-session enablement is not possible -- this is a platform constraint, not a bug to work around). Log file path convention (.harness/dashboard/<session_id>.jsonl) is a starting proposal for harness-issue-prep to confirm or adjust; the constraint that matters is one log per session_id, discoverable by F090's server without the user typing a path. Known platform limitations to document, not solve, in this feature: (1) no parent-agent field exists anywhere in the hook payload set, so spawn ancestry cannot be reconstructed -- F091's graph is flat hub-and-spoke by design, not by omission; (2) agent_id/agent_type (tool-activity identity) and teammate_name/team_name (Agent-Teams identity) have no documented correlation field -- a teammate's custom spawn name will not be recoverable from tool-activity events, only its agent_type. Do not attempt to bridge either gap with a timing heuristic; both were explicitly declined during grilling as guesses presented as fact.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "2026-08-05 grilling session (mattpocock-skills:grilling) -- Ovidiu asked for a live web visualization of vv-harness subagent/gate/judge activity using animejs; this is the foundational data-source feature the rest of the dashboard chain (F089-F093) builds on.",
+      "spec": null
+    },
+    {
+      "id": "F089",
+      "description": "Gate-script decision-point instrumentation. Add logging calls (using F088's shared event-logging mechanism/convention) at each existing allow/block decision point in enforce-scope.sh, commit-gate.sh, verify-task-quality.sh, and check-remaining-tasks.sh -- in BOTH skills/harness-init/*.sh.template (the distribution source new projects get from /harness-init) AND this repo's own .claude/hooks/*.sh copies (dogfooding, per AGENTS.md's Path Resolution guidance that mutating the repo hook copy alone proves nothing -- both must change together). Each decision point logs the gate name, verdict (allow/block), and a short reason string when blocking. Purely additive -- no existing gate logic, matcher, or exit-code behavior may change. test/run-tests.sh must still pass unmodified in its existing assertions after this change (new assertions covering the added logging calls are expected and required).",
+      "priority": 89,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/enforce-scope.sh.template",
+        "skills/harness-init/commit-gate.sh.template",
+        "skills/harness-init/verify-task-quality.sh.template",
+        "skills/harness-init/check-remaining-tasks.sh.template",
+        ".claude/hooks/enforce-scope.sh",
+        ".claude/hooks/commit-gate.sh",
+        ".claude/hooks/verify-task-quality.sh",
+        ".claude/hooks/check-remaining-tasks.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F088"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": "This is what answers 'at which gate is an agent stopped' with an exact name and reason, rather than inferring it generically from a pending PreToolUse -- that generic-signal alternative was explicitly declined during the 2026-08-05 grilling session in favor of this more precise but more invasive approach. Two of the four target scripts are large (commit-gate.sh ~63KB, enforce-scope.sh ~108KB) -- read each fully before editing, add logging calls without restructuring surrounding logic, and re-run test/run-tests.sh after each file to catch a regression immediately rather than at the end.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "2026-08-05 grilling session -- part of the dashboard chain (F088-F093).",
+      "spec": null
+    },
+    {
+      "id": "F090",
+      "description": "Dashboard SSE server. A dependency-free Python stdlib HTTP server (e.g. hooks/dashboard/serve.py) that: (1) locates the event log for a given session (per F088's .harness/dashboard/<session_id>.jsonl convention, defaulting to the most recently modified log if no session_id is given), (2) tails it for new lines as they're appended, (3) serves a text/event-stream (SSE) endpoint that pushes each new parsed event to connected browser clients as it arrives, and (4) serves F091's static frontend page and vendored animejs asset. No new pip dependencies. Started manually (not auto-started by any hook) -- this feature ships the server only; F092 ships the command that launches it.",
+      "priority": 90,
+      "status": "pending",
+      "scope": [
+        "hooks/dashboard/serve.py",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F088"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": "SSE chosen over WebSocket during the 2026-08-05 grilling session specifically because the data flow is one-directional (server to browser only) and Python's http.server can do SSE with zero dependencies, matching this repo's existing zero-dependency posture (harness_state.py is stdlib-only). One session, one server, one log file -- no cross-session aggregation and no historical replay after a session ends, both explicitly declined during grilling.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "2026-08-05 grilling session -- part of the dashboard chain (F088-F093).",
+      "spec": null
+    },
+    {
+      "id": "F091",
+      "description": "Dashboard frontend. A single HTML page (served by F090's server) using a vendored local copy of animejs (no CDN) to render a live, animated node-graph / org-chart view of the current session: the lead agent as a center node, every tracked subagent (Agent Teams teammates, ad hoc Explore/general-purpose/research agents, and AI-integrity judge subagents alike) as a flat spoke off it -- flat by design, since no parent-agent field exists in the hook payload set (F088's notes). Nodes animate in on SubagentStart and out on SubagentStop, pulse on each PreToolUse/PostToolUse for that agent_id, and show a distinct badge/animation for each of three gate/judge categories: quality-gate hooks (F089's instrumented scripts), judge subagents (tracked like any other subagent via agent_type, e.g. hallucination-judge), and permission prompts (PermissionRequest/PermissionDenied). Teammate nodes are labeled by agent_type only, not teammate_name (no documented correlation between the two identity schemes -- see F088's notes). Connects to F090's SSE endpoint on load; no polling.",
+      "priority": 91,
+      "status": "pending",
+      "scope": [
+        "hooks/dashboard/index.html",
+        "hooks/dashboard/vendor/",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F090"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": "Visual metaphor (node graph / org chart, flat hub-and-spoke, three distinct gate/judge/permission badge categories, agent_type-only labeling) was chosen with previewed mockups during the 2026-08-05 grilling session -- see that session's transcript for the rejected alternatives (timeline/swim-lanes, mission-control cards) and why. animejs vendored under hooks/dashboard/vendor/ per the same session's decision to avoid a CDN dependency (offline-capable, no version drift across installs).",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "2026-08-05 grilling session -- part of the dashboard chain (F088-F093).",
+      "spec": null
+    },
+    {
+      "id": "F092",
+      "description": "/harness-dashboard skill. A new skill (slash command) that starts F090's server for the current or most recently modified dashboard log and opens the page in the default browser. Also documents, in its own SKILL.md body, the manual-launch flow: set VV_HARNESS_DASHBOARD=1 in the shell before starting the Claude Code session you want to watch, then run /harness-dashboard once that session is running to start the server and open the view. This is the only supported entry point -- no auto-start from SessionStart, per the 2026-08-05 grilling session's decision.",
+      "priority": 92,
+      "status": "pending",
+      "scope": [
+        "skills/harness-dashboard/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F090",
+        "F091"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": "Manual over auto-start was a deliberate choice: a SessionStart hook silently spawning a long-running background server on every session was judged too large a behavioral change to a hook every harness user's session already goes through.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "2026-08-05 grilling session -- part of the dashboard chain (F088-F093).",
+      "spec": null
+    },
+    {
+      "id": "F093",
+      "description": "Dashboard docs and plugin version bump. Update README.md and INSTALL.md to document the dashboard feature (what it shows, the VV_HARNESS_DASHBOARD env var, the /harness-dashboard command, and the stated known limitations -- flat hub-and-spoke graph, agent_type-only teammate labels, live-only/no history, one session at a time). Propose a CHANGELOG.md entry (human-owned -- propose, do not edit directly, per AGENTS.md). Bump the version in .claude-plugin/plugin.json (the sole version location per AGENTS.md).",
+      "priority": 93,
+      "status": "pending",
+      "scope": [
+        "README.md",
+        "INSTALL.md",
+        ".claude-plugin/plugin.json"
+      ],
+      "depends_on": [
+        "F088",
+        "F089",
+        "F090",
+        "F091",
+        "F092"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": "CHANGELOG.md entry is a proposal only, per AGENTS.md's Human-Owned documentation rule -- draft it and present it, do not commit it as part of this feature unless Ovidiu approves the exact wording.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "2026-08-05 grilling session -- part of the dashboard chain (F088-F093).",
       "spec": null
     }
   ]
