@@ -10901,6 +10901,408 @@ else
 fi
 
 echo ""
+echo "== F090: dashboard SSE server =="
+
+# hooks/dashboard/serve.py is exercised as a real subprocess over real HTTP --
+# this repo's first HTTP-testing precedent, so the pattern below (raw sockets
+# via two small stdlib-only python3 helpers, not curl) stays inside the
+# header's declared dependency set: "bash 3.2+, git, python3". Raw sockets
+# also matter specifically for the traversal test: a client library like
+# urllib may normalize ".." out of a URL before it ever reaches the server,
+# which would test the client, not serve.py's own containment logic.
+
+DASHBOARD_PY="$HOOKS_DIR/dashboard/serve.py"
+DASH_HELPERS="$WORK/dashboard-helpers"
+mkdir -p "$DASH_HELPERS"
+
+cat > "$DASH_HELPERS/raw_get.py" <<'PYEOF'
+#!/usr/bin/env python3
+"""Test helper (F090): sends one raw HTTP/1.0 GET over a plain socket (no
+client-side path normalization, unlike urllib) so traversal-attempt tests
+exercise serve.py's own containment logic rather than a client library's.
+Prints the status line, a blank line, then the raw response body."""
+import socket
+import sys
+
+
+def main():
+    host, port, path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+    with socket.create_connection((host, port), timeout=5) as sock:
+        request = "GET {} HTTP/1.0\r\nHost: {}\r\n\r\n".format(path, host)
+        sock.sendall(request.encode("utf-8"))
+        chunks = []
+        while True:
+            data = sock.recv(65536)
+            if not data:
+                break
+            chunks.append(data)
+    raw = b"".join(chunks)
+    header, _, body = raw.partition(b"\r\n\r\n")
+    status_line = header.split(b"\r\n", 1)[0].decode("utf-8", "replace")
+    sys.stdout.write(status_line + "\n\n")
+    sys.stdout.buffer.write(body)
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+cat > "$DASH_HELPERS/sse_reader.py" <<'PYEOF'
+#!/usr/bin/env python3
+"""Test helper (F090): connects to one SSE endpoint over a raw socket and
+appends each event's payload to outfile, one line per event, flushed
+immediately -- lets run-tests.sh observe timing-sensitive SSE behavior
+(backlog burst, partial-write deferral, truncation/deletion reset) by
+polling outfile at different points in time."""
+import socket
+import sys
+
+
+def main():
+    host, port, path, outfile = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+    sock = socket.create_connection((host, port))
+    request = "GET {} HTTP/1.0\r\nHost: {}\r\n\r\n".format(path, host)
+    sock.sendall(request.encode("utf-8"))
+    fh = sock.makefile("rb")
+    while True:
+        line = fh.readline()
+        if line in (b"\r\n", b"\n", b""):
+            break
+    with open(outfile, "a", buffering=1) as out:
+        while True:
+            line = fh.readline()
+            if not line:
+                break
+            if line.startswith(b"data: "):
+                payload = line[len(b"data: "):].rstrip(b"\r\n")
+                out.write(payload.decode("utf-8", "replace") + "\n")
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+# Extends the top-of-file EXIT trap (still removing $WORK) to also reap any
+# server/reader subprocess left running by a failed assertion mid-group, so
+# a test failure never leaves an orphaned server bound to a port across runs.
+DASHBOARD_PIDS=""
+trap 'rm -rf "$WORK"; for P in $DASHBOARD_PIDS; do kill "$P" 2>/dev/null; done' EXIT
+
+track_pid() {
+  DASHBOARD_PIDS="$DASHBOARD_PIDS $1"
+}
+
+free_port() {
+  python3 -c "
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+"
+}
+
+wait_for_port() {
+  local HOST="$1" PORT="$2" ATTEMPTS="${3:-50}" I=0
+  while [ "$I" -lt "$ATTEMPTS" ]; do
+    if python3 -c "
+import socket, sys
+s = socket.socket()
+s.settimeout(0.2)
+try:
+    s.connect((sys.argv[1], int(sys.argv[2])))
+except OSError:
+    sys.exit(1)
+s.close()
+" "$HOST" "$PORT" 2>/dev/null; then
+      return 0
+    fi
+    I=$((I + 1))
+    sleep 0.1
+  done
+  return 1
+}
+
+# Starts serve.py with $1 as its cwd (so its git-toplevel resolution matches
+# the fixture project), session id $2 (empty string omits the positional
+# arg, triggering auto-select), port $3, combined stdout+stderr to $4. The
+# background job is a direct child of this script (not of a command-
+# substitution subshell), so kill/wait on it behave normally afterward. Sets
+# the global SERVER_PID.
+start_dashboard_server() {
+  local DIR="$1" SESSION_ID="$2" PORT="$3" OUTFILE="$4"
+  if [ -n "$SESSION_ID" ]; then
+    (cd "$DIR" && exec python3 "$DASHBOARD_PY" "$SESSION_ID" --port "$PORT") >"$OUTFILE" 2>&1 &
+  else
+    (cd "$DIR" && exec python3 "$DASHBOARD_PY" --port "$PORT") >"$OUTFILE" 2>&1 &
+  fi
+  SERVER_PID=$!
+  track_pid "$SERVER_PID"
+}
+
+# Opens one SSE connection to 127.0.0.1:$1$2 and appends each event's
+# payload to $3 as it arrives, in the background. Sets the global READER_PID.
+start_sse_reader() {
+  local PORT="$1" URLPATH="$2" OUTFILE="$3"
+  python3 "$DASH_HELPERS/sse_reader.py" 127.0.0.1 "$PORT" "$URLPATH" "$OUTFILE" \
+    >"$WORK/reader-$PORT-$RANDOM.log" 2>&1 &
+  READER_PID=$!
+  track_pid "$READER_PID"
+}
+
+raw_get() {
+  python3 "$DASH_HELPERS/raw_get.py" 127.0.0.1 "$1" "$2"
+}
+
+echo "--- group 1: SSE backlog-then-stream, partial-write race, truncation reset, deletion re-wait ---"
+
+DIR1="$WORK/dash-1"
+make_fixture "$DIR1"
+mkdir -p "$DIR1/.harness/dashboard"
+SESSION1="dash-session-1"
+LOG1="$DIR1/.harness/dashboard/$SESSION1.jsonl"
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-BACKLOG-1"}\n' > "$LOG1"
+
+PORT1=$(free_port)
+start_dashboard_server "$DIR1" "$SESSION1" "$PORT1" "$WORK/server-1.out"
+wait_for_port 127.0.0.1 "$PORT1"
+assert_rc0 "$?" "dash: group1 server accepts connections on its bound port"
+
+CAPTURE1="$WORK/capture-1.txt"
+: > "$CAPTURE1"
+start_sse_reader "$PORT1" "/events" "$CAPTURE1"
+
+sleep 0.5
+assert_contains "$(cat "$CAPTURE1")" "F090-MARK-BACKLOG-1" \
+  "dash: pre-existing log content is replayed as a backlog burst on connect"
+
+# The critical partial-write race: append a JSON object WITHOUT its trailing
+# newline. A naive "read whatever's there" implementation would parse and
+# emit this immediately; the spec's byte-offset-to-last-newline design must
+# defer it until the newline actually arrives.
+printf '{"hook_event_name":"PostToolUse","marker":"F090-MARK-PARTIAL-2"}' >> "$LOG1"
+sleep 0.5
+assert_not_contains "$(cat "$CAPTURE1")" "F090-MARK-PARTIAL-2" \
+  "dash: a line without its trailing newline is not yet emitted (deferred, not discarded)"
+
+printf '\n' >> "$LOG1"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE1")" "F090-MARK-PARTIAL-2" \
+  "dash: completing the line's trailing newline lets it emit on the next poll"
+
+# Truncation: file shrinks below the last known offset -> tailing resets to
+# start over. A buggy implementation that kept the stale (now out-of-range)
+# offset would seek past the new EOF and never emit the next line.
+: > "$LOG1"
+sleep 0.3
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-TRUNC-3"}\n' >> "$LOG1"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE1")" "F090-MARK-TRUNC-3" \
+  "dash: a truncated log resets tailing and delivers subsequent content"
+
+# Deletion: the file disappears entirely -> tailing re-enters the
+# empty/re-awaited state rather than erroring; the server (and its other
+# threads) must stay up while nothing exists to tail.
+rm -f "$LOG1"
+sleep 0.3
+STATIC_DURING_WAIT=$(raw_get "$PORT1" "/serve.py")
+assert_contains "$STATIC_DURING_WAIT" "200" \
+  "dash: the server keeps serving static files while /events waits on a deleted log file"
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-RECREATE-4"}\n' > "$LOG1"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE1")" "F090-MARK-RECREATE-4" \
+  "dash: a log file re-created after deletion is replayed from scratch"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 2: malformed JSON line is skipped with a stderr warning, not fatal ---"
+
+DIR2="$WORK/dash-2"
+make_fixture "$DIR2"
+mkdir -p "$DIR2/.harness/dashboard"
+SESSION2="dash-session-2"
+LOG2="$DIR2/.harness/dashboard/$SESSION2.jsonl"
+printf 'this is not json at all\n' > "$LOG2"
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-VALID-5"}\n' >> "$LOG2"
+
+PORT2=$(free_port)
+start_dashboard_server "$DIR2" "$SESSION2" "$PORT2" "$WORK/server-2.out"
+wait_for_port 127.0.0.1 "$PORT2"
+assert_rc0 "$?" "dash: group2 server accepts connections on its bound port"
+
+CAPTURE2="$WORK/capture-2.txt"
+: > "$CAPTURE2"
+start_sse_reader "$PORT2" "/events" "$CAPTURE2"
+sleep 0.5
+
+assert_contains "$(cat "$CAPTURE2")" "F090-MARK-VALID-5" \
+  "dash: a valid line after a malformed one is still delivered"
+assert_not_contains "$(cat "$CAPTURE2")" "not json at all" \
+  "dash: the malformed line itself is never emitted as an SSE event"
+assert_contains "$(cat "$WORK/server-2.out")" "WARNING" \
+  "dash: a malformed JSON line logs a one-line stderr warning"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 3: static file serving, path-traversal containment ---"
+
+DIR3="$WORK/dash-3"
+make_fixture "$DIR3"
+SESSION3="dash-session-3-never-created"
+PORT3=$(free_port)
+start_dashboard_server "$DIR3" "$SESSION3" "$PORT3" "$WORK/server-3.out"
+wait_for_port 127.0.0.1 "$PORT3"
+assert_rc0 "$?" "dash: group3 server accepts connections on its bound port"
+
+STATIC_OUT=$(raw_get "$PORT3" "/serve.py")
+assert_contains "$STATIC_OUT" "HTTP/1.0 200" "dash: GET /serve.py returns 200"
+assert_contains "$STATIC_OUT" "Dashboard SSE server (F090)" \
+  "dash: the served file's own content is returned (matches serve.py's own header)"
+
+MISSING_OUT=$(raw_get "$PORT3" "/does-not-exist.txt")
+assert_contains "$MISSING_OUT" "404" "dash: a request for a nonexistent static file returns 404"
+
+TRAVERSAL_OUT=$(raw_get "$PORT3" "/../hooks.json")
+assert_not_contains "$TRAVERSAL_OUT" "HTTP/1.0 200" \
+  "dash: a traversal attempt to escape hooks/dashboard/ is not served with 200"
+assert_not_contains "$TRAVERSAL_OUT" "TeammateIdle" \
+  "dash: the traversal attempt never leaks hooks.json's actual content"
+
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 4: port-already-in-use fails fast, no silent fallback ---"
+
+DIR4="$WORK/dash-4"
+make_fixture "$DIR4"
+PORT4=$(free_port)
+start_dashboard_server "$DIR4" "dash-session-4a" "$PORT4" "$WORK/server-4a.out"
+wait_for_port 127.0.0.1 "$PORT4"
+assert_rc0 "$?" "dash: group4 first server accepts connections on its bound port"
+
+SECOND_OUT=$(cd "$DIR4" && python3 "$DASHBOARD_PY" "dash-session-4b" --port "$PORT4" 2>&1)
+SECOND_RC=$?
+assert_rc_nonzero "$SECOND_RC" "dash: a second server on the same port exits non-zero"
+assert_contains "$SECOND_OUT" "ERROR" "dash: the port-in-use failure prints a clear ERROR message"
+assert_contains "$SECOND_OUT" "already" "dash: the failure message explains the port is already bound"
+
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 5: session_id omitted -> most-recently-modified *.jsonl, tie-break on filename ---"
+
+DIR5="$WORK/dash-5"
+make_fixture "$DIR5"
+mkdir -p "$DIR5/.harness/dashboard"
+printf '{"marker":"F090-MARK-OLDEST"}\n' > "$DIR5/.harness/dashboard/a-session.jsonl"
+printf '{"marker":"F090-MARK-TIE-B"}\n' > "$DIR5/.harness/dashboard/b-session.jsonl"
+printf '{"marker":"F090-MARK-TIE-C"}\n' > "$DIR5/.harness/dashboard/c-session.jsonl"
+python3 -c "
+import os, time
+d = '$DIR5/.harness/dashboard'
+t = time.time()
+os.utime(os.path.join(d, 'a-session.jsonl'), (t - 10, t - 10))
+os.utime(os.path.join(d, 'b-session.jsonl'), (t, t))
+os.utime(os.path.join(d, 'c-session.jsonl'), (t, t))
+"
+
+PORT5=$(free_port)
+start_dashboard_server "$DIR5" "" "$PORT5" "$WORK/server-5.out"
+wait_for_port 127.0.0.1 "$PORT5"
+assert_rc0 "$?" "dash: group5 server accepts connections on its bound port"
+
+CAPTURE5="$WORK/capture-5.txt"
+: > "$CAPTURE5"
+start_sse_reader "$PORT5" "/events" "$CAPTURE5"
+sleep 0.5
+
+assert_contains "$(cat "$CAPTURE5")" "F090-MARK-TIE-C" \
+  "dash: with session_id omitted, the lexicographically-largest of two equal-mtime files wins"
+assert_not_contains "$(cat "$CAPTURE5")" "F090-MARK-TIE-B" \
+  "dash: the equal-mtime tie's loser is not the one tailed"
+assert_not_contains "$(cat "$CAPTURE5")" "F090-MARK-OLDEST" \
+  "dash: an older file is not selected over more-recently-modified ones"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 6: missing .harness/dashboard/ (and missing log file) waits instead of erroring ---"
+
+DIR6="$WORK/dash-6"
+make_fixture "$DIR6"
+SESSION6="dash-session-6"
+# .harness/dashboard/ does not exist at all yet -- make_fixture's baseline
+# fixture has no dashboard subdirectory.
+
+PORT6=$(free_port)
+start_dashboard_server "$DIR6" "$SESSION6" "$PORT6" "$WORK/server-6.out"
+wait_for_port 127.0.0.1 "$PORT6"
+assert_rc0 "$?" \
+  "dash: the server itself starts and binds even though .harness/dashboard/ doesn't exist yet"
+
+CAPTURE6="$WORK/capture-6.txt"
+: > "$CAPTURE6"
+start_sse_reader "$PORT6" "/events" "$CAPTURE6"
+sleep 0.4
+assert_empty "$(cat "$CAPTURE6")" \
+  "dash: /events emits nothing while the directory and log file don't exist yet"
+
+mkdir -p "$DIR6/.harness/dashboard"
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-WAIT-6"}\n' \
+  > "$DIR6/.harness/dashboard/$SESSION6.jsonl"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE6")" "F090-MARK-WAIT-6" \
+  "dash: once the directory and log file appear, the backlog is delivered"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 7: one client's disconnect doesn't affect other clients or the server ---"
+
+DIR7="$WORK/dash-7"
+make_fixture "$DIR7"
+mkdir -p "$DIR7/.harness/dashboard"
+SESSION7="dash-session-7"
+LOG7="$DIR7/.harness/dashboard/$SESSION7.jsonl"
+printf '{"marker":"F090-MARK-DISCONNECT-INIT"}\n' > "$LOG7"
+
+PORT7=$(free_port)
+start_dashboard_server "$DIR7" "$SESSION7" "$PORT7" "$WORK/server-7.out"
+wait_for_port 127.0.0.1 "$PORT7"
+assert_rc0 "$?" "dash: group7 server accepts connections on its bound port"
+SERVER_PID_7="$SERVER_PID"
+
+CAPTURE_A="$WORK/capture-7a.txt"
+CAPTURE_B="$WORK/capture-7b.txt"
+: > "$CAPTURE_A"
+: > "$CAPTURE_B"
+start_sse_reader "$PORT7" "/events" "$CAPTURE_A"
+READER_A="$READER_PID"
+start_sse_reader "$PORT7" "/events" "$CAPTURE_B"
+READER_B="$READER_PID"
+sleep 0.5
+
+# Kill client A's connection (simulates a broken pipe) with no advance
+# notice to the server; it only discovers this on its next write attempt.
+kill -9 "$READER_A" 2>/dev/null
+wait "$READER_A" 2>/dev/null
+sleep 0.2
+
+printf '{"marker":"F090-MARK-DISCONNECT-7"}\n' >> "$LOG7"
+sleep 0.5
+
+assert_contains "$(cat "$CAPTURE_B")" "F090-MARK-DISCONNECT-7" \
+  "dash: a second client keeps receiving events after a different client disconnects"
+kill -0 "$SERVER_PID_7" 2>/dev/null
+assert_rc0 "$?" "dash: the server process itself stays alive after a client disconnect"
+POST_DISCONNECT_STATIC=$(raw_get "$PORT7" "/serve.py")
+assert_contains "$POST_DISCONNECT_STATIC" "200" \
+  "dash: the server still serves new requests after a client disconnect"
+
+kill "$READER_B" 2>/dev/null; wait "$READER_B" 2>/dev/null
+kill "$SERVER_PID_7" 2>/dev/null; wait "$SERVER_PID_7" 2>/dev/null
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
