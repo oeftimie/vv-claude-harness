@@ -4,6 +4,54 @@ A harness system for Claude Code that solves multi-session continuity, parallel 
 
 See [CHANGELOG.md](./CHANGELOG.md) for the current version and history.
 
+## Install
+
+**Prerequisites:** Claude Code CLI, git initialized in your project, `python3`, and
+`jq` (`brew install jq` on macOS — used by the per-project build hooks `/harness-init`
+writes).
+
+From inside any Claude Code session:
+
+```
+/plugin marketplace add oeftimie/vv-claude-harness
+/plugin install vv-harness
+```
+
+Claude Code auto-discovers the plugin's skills, agents, and hooks. Then initialize any
+project that will span multiple sessions:
+
+```bash
+cd ~/Projects/MyApp
+claude
+/harness-init
+```
+
+Full prerequisites, migrating from the retired v3 installer, and optional setup (cost
+telemetry, spec-gate signing config) are in [INSTALL.md](./INSTALL.md).
+
+## Upgrade
+
+**The plugin itself:**
+
+```
+/plugin update vv-harness
+```
+
+Updates are atomic — each version gets its own cache directory, so there's nothing to
+clean up by hand. Updates land only when `.claude-plugin/plugin.json`'s version is
+bumped; that's the update cache key.
+
+**An existing harness-managed project**, after the plugin updates:
+
+```
+/harness-doctor          # report-first: what's out of date
+/harness-doctor --fix    # apply the fix
+```
+
+`--fix` mechanically applies every upgrade step (hook copies, `.gitignore` rules,
+`settings.json` wiring, the recorded `plugin_version`). See INSTALL.md's "Upgrading an
+existing harness project" for what it does under the hood.
+
 ---
 
 Every AI coding agent has the same Achilles heel: memory. Not the technical kind (context windows are growing). The practical kind. Start a complex project with Claude Code or Cursor. Work for an hour. Hit a context limit or close the session. Come back the next day. The agent has no idea what happened. It's like onboarding a new contractor every morning who's never seen the codebase.
@@ -441,22 +489,10 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The orientation hook stay
 
 ## Getting started
 
-The harness ships as a Claude Code plugin:
-
-1. Install via the `/plugin` flow below
-2. Migrating from the v3 installer? Follow the manual cleanup steps in [INSTALL.md](./INSTALL.md)
-3. Review [templates/CLAUDE.md](./templates/CLAUDE.md) for the core engineering standards template
-
-### Quick install
-
-From inside any Claude Code session:
-
-```
-/plugin marketplace add oeftimie/vv-claude-harness
-/plugin install vv-harness
-```
-
-Update later with `/plugin update vv-harness` — updates are atomic; each version gets its own cache directory. The v3 installer is retired: `./install` now only prints these instructions. See [INSTALL.md](./INSTALL.md) for migration from v3 and optional setup (cost telemetry, Agent Teams env flag, permissions).
+Install and Upgrade steps are above. Migrating from the retired v3 installer? Follow
+the manual cleanup steps in [INSTALL.md](./INSTALL.md). Review
+[templates/CLAUDE.md](./templates/CLAUDE.md) for the core engineering standards
+template.
 
 ### Usage
 
