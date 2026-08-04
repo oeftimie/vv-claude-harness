@@ -7,6 +7,7 @@
 # Harness transient session state
 .harness/SESSION_INCOMPLETE
 .harness/features.json.lock
+.harness/dashboard/
 
 # OS files
 .DS_Store

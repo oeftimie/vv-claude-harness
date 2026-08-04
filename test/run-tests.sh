@@ -82,6 +82,19 @@ run_statusline() {
   printf '%s' "$1" | bash "$HOOKS_DIR/statusline.sh"
 }
 
+# dashboard-log.sh is a plugin-root hook (like session-start.sh/session-end.sh/
+# statusline.sh above), invoked directly from hooks/, not installed into a
+# project's .claude/hooks/ -- so it's exercised the same way as those, not via
+# the run_hook() helper below (that one is specifically for the project-level
+# templates install_hooks() copies into .claude/hooks/).
+run_dashboard_log() {
+  (cd "$1" && printf '%s' "$2" | VV_HARNESS_DASHBOARD="$3" bash "$HOOKS_DIR/dashboard-log.sh")
+}
+
+run_dashboard_log_unset() {
+  (cd "$1" && printf '%s' "$2" | env -u VV_HARNESS_DASHBOARD bash "$HOOKS_DIR/dashboard-log.sh")
+}
+
 TEMPLATES_DIR="$REPO_ROOT/skills/harness-init"
 
 # Installs the hook templates into $1/.claude/hooks/ as executable .sh files,
@@ -969,6 +982,286 @@ OUT=$(run_statusline 'not json')
 RC=$?
 assert_rc0 "$RC" "k: garbage stdin exits 0"
 assert_empty "$OUT" "k: garbage stdin prints nothing"
+
+echo ""
+echo "== dashboard-log.sh (F088) =="
+
+DIR_DL="$WORK/dl"
+make_fixture "$DIR_DL"
+DL_LOG="$DIR_DL/.harness/dashboard/sess1.jsonl"
+
+# Disabled path: env unset, empty, or '0' -- must never write, always exit 0.
+OUT=$(run_dashboard_log_unset "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}')
+RC=$?
+assert_rc0 "$RC" "dl: disabled (env unset) exits 0"
+assert_empty "$OUT" "dl: disabled (env unset) prints nothing"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: disabled (env unset) creates no dashboard directory"
+else
+  fail "dl: disabled (env unset) creates no dashboard directory -- it exists"
+fi
+
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '')
+RC=$?
+assert_rc0 "$RC" "dl: disabled (env empty) exits 0"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: disabled (env empty) creates no dashboard directory"
+else
+  fail "dl: disabled (env empty) creates no dashboard directory -- it exists"
+fi
+
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '0')
+RC=$?
+assert_rc0 "$RC" "dl: disabled (env '0') exits 0"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: disabled (env '0') creates no dashboard directory"
+else
+  fail "dl: disabled (env '0') creates no dashboard directory -- it exists"
+fi
+
+# No .harness directory: enabled, but exits 0 and writes nothing.
+DIR_DL_PLAIN="$WORK/dl-plain"
+mkdir -p "$DIR_DL_PLAIN"
+OUT=$(run_dashboard_log "$DIR_DL_PLAIN" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: no .harness/ dir exits 0"
+if [ ! -e "$DIR_DL_PLAIN/.harness" ]; then
+  pass "dl: no .harness/ dir creates nothing"
+else
+  fail "dl: no .harness/ dir creates nothing -- .harness exists"
+fi
+
+# Empty/absent session_id: enabled, .harness/ present, but skip the write silently.
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: empty session_id exits 0"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: empty session_id writes no dashboard directory"
+else
+  fail "dl: empty session_id writes no dashboard directory -- it exists"
+fi
+
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: absent session_id exits 0"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: absent session_id writes no dashboard directory"
+else
+  fail "dl: absent session_id writes no dashboard directory -- it exists"
+fi
+
+# PreToolUse / Bash: summary is tool_input.description, never the raw command.
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/should-not-appear-in-log","description":"Clean up temp directory"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: PreToolUse/Bash exits 0"
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "PreToolUse"' "dl: PreToolUse/Bash logs hook_event_name"
+assert_contains "$LINE" '"session_id": "sess1"' "dl: PreToolUse/Bash logs session_id"
+assert_contains "$LINE" '"tool_name": "Bash"' "dl: PreToolUse/Bash logs tool_name"
+assert_contains "$LINE" '"summary": "Clean up temp directory"' "dl: PreToolUse/Bash summary is tool_input.description"
+assert_not_contains "$LINE" "should-not-appear-in-log" "dl: PreToolUse/Bash never logs the raw command"
+
+# Bash with no description falls back to the documented placeholder.
+> "$DL_LOG"
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo unlogged-command-text"}}' '1')
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "(no description)"' "dl: Bash with no description falls back to the placeholder"
+assert_not_contains "$LINE" "unlogged-command-text" "dl: Bash fallback never logs the raw command"
+
+# PostToolUse / Edit: summary is file_path only, never old_string/new_string content.
+> "$DL_LOG"
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PostToolUse","session_id":"sess1","tool_name":"Edit","tool_input":{"file_path":"src/foo.py","old_string":"leaked-old-secret","new_string":"leaked-new-secret"}}' '1')
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "PostToolUse"' "dl: PostToolUse/Edit logs hook_event_name"
+assert_contains "$LINE" '"summary": "src/foo.py"' "dl: PostToolUse/Edit summary is file_path"
+assert_not_contains "$LINE" "leaked-old-secret" "dl: PostToolUse/Edit never logs old_string"
+assert_not_contains "$LINE" "leaked-new-secret" "dl: PostToolUse/Edit never logs new_string"
+
+# Write: same file_path-only rule.
+> "$DL_LOG"
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PostToolUse","session_id":"sess1","tool_name":"Write","tool_input":{"file_path":"out.txt","content":"leaked-write-content"}}' '1')
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "out.txt"' "dl: Write summary is file_path"
+assert_not_contains "$LINE" "leaked-write-content" "dl: Write never logs content"
+
+# Read/Glob/Grep: file_path, pattern, or path -- whichever is present.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Read","tool_input":{"file_path":"src/bar.py"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "src/bar.py"' "dl: Read summary is file_path"
+
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Grep","tool_input":{"pattern":"needle","path":"src/"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "needle"' "dl: Grep summary prefers pattern"
+
+# WebFetch/WebSearch: url or query.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"WebFetch","tool_input":{"url":"https://example.com/page"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "https://example.com/page"' "dl: WebFetch summary is url"
+
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"WebSearch","tool_input":{"query":"vv harness dashboard"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "vv harness dashboard"' "dl: WebSearch summary is query"
+
+# Agent: subagent_type/description, never the full prompt.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Agent","tool_input":{"subagent_type":"Explore","prompt":"leaked-full-prompt-text"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "Explore"' "dl: Agent summary is subagent_type"
+assert_not_contains "$LINE" "leaked-full-prompt-text" "dl: Agent never logs the full prompt"
+
+# Summary is capped at 200 chars with a truncate-and-point marker (F071/F079 convention).
+> "$DL_LOG"
+LONG_PATH="src/$(python3 -c 'print("x" * 250)').py"
+run_dashboard_log "$DIR_DL" "$(python3 -c "import json; print(json.dumps({'hook_event_name':'PostToolUse','session_id':'sess1','tool_name':'Edit','tool_input':{'file_path':'$LONG_PATH'}}))")" '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" "chars total" "dl: an oversized summary is truncated with a chars-total marker"
+SUMMARY_LEN=$(python3 -c "import json; print(len(json.loads('''$LINE''')['summary']))" 2>/dev/null || echo 0)
+if [ "$SUMMARY_LEN" -le 260 ] && [ "$SUMMARY_LEN" -gt 0 ]; then
+  pass "dl: truncated summary stays close to the 200-char cap"
+else
+  fail "dl: truncated summary length out of bounds -- got $SUMMARY_LEN"
+fi
+
+# SubagentStart: agent_id/agent_type, no summary field.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"SubagentStart","session_id":"sess1","agent_id":"agent-42","agent_type":"Explore"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-42"' "dl: SubagentStart logs agent_id"
+assert_contains "$LINE" '"agent_type": "Explore"' "dl: SubagentStart logs agent_type"
+assert_not_contains "$LINE" '"summary"' "dl: SubagentStart has no summary field (no tool_name)"
+
+# SubagentStop: agent_id/agent_type, but never last_assistant_message content.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"SubagentStop","session_id":"sess1","agent_id":"agent-42","agent_type":"Explore","last_assistant_message":"leaked-subagent-transcript"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "SubagentStop"' "dl: SubagentStop logs hook_event_name"
+assert_contains "$LINE" '"agent_id": "agent-42"' "dl: SubagentStop logs agent_id"
+assert_not_contains "$LINE" "leaked-subagent-transcript" "dl: SubagentStop never logs last_assistant_message"
+
+# PermissionRequest: tool_name + redacted summary, per its own tool_input/tool_name shape.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PermissionRequest","session_id":"sess1","tool_name":"Write","tool_input":{"file_path":"out.txt","content":"leaked-permission-content"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "PermissionRequest"' "dl: PermissionRequest logs hook_event_name"
+assert_contains "$LINE" '"summary": "out.txt"' "dl: PermissionRequest summary follows the Write rule"
+assert_not_contains "$LINE" "leaked-permission-content" "dl: PermissionRequest never logs file content"
+
+# PermissionDenied: tool_name + redacted summary, never the denial reason.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PermissionDenied","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/nope","description":"cleanup"},"reason":"leaked-denial-reason"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "PermissionDenied"' "dl: PermissionDenied logs hook_event_name"
+assert_contains "$LINE" '"summary": "cleanup"' "dl: PermissionDenied summary follows the Bash rule"
+assert_not_contains "$LINE" "leaked-denial-reason" "dl: PermissionDenied never logs the denial reason"
+assert_not_contains "$LINE" "/tmp/nope" "dl: PermissionDenied never logs the raw command"
+
+# TaskCreated / TaskCompleted: only the common fields -- no task subject/metadata.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "TaskCreated"' "dl: TaskCreated logs hook_event_name"
+assert_contains "$LINE" '"session_id": "sess1"' "dl: TaskCreated logs session_id"
+
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCompleted","session_id":"sess1","task":{"subject":"leaked-task-subject","metadata":{"feature_id":"F999"}}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "TaskCompleted"' "dl: TaskCompleted logs hook_event_name"
+assert_not_contains "$LINE" "leaked-task-subject" "dl: TaskCompleted does not log the task subject (not in the field list)"
+
+# TeammateIdle: teammate_name and team_name, when present.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TeammateIdle","session_id":"sess1","teammate_name":"reviewer-1","team_name":"legacy-team"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"teammate_name": "reviewer-1"' "dl: TeammateIdle logs teammate_name"
+assert_contains "$LINE" '"team_name": "legacy-team"' "dl: TeammateIdle logs team_name"
+
+# Multiple events for the same session append, one JSON line each (single write() per line).
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1' >/dev/null
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCompleted","session_id":"sess1"}' '1' >/dev/null
+LINE_COUNT=$(wc -l < "$DL_LOG" | tr -d ' ')
+if [ "$LINE_COUNT" = "2" ]; then
+  pass "dl: repeated events append one JSON line each to the same session file"
+else
+  fail "dl: expected 2 appended lines, got $LINE_COUNT"
+fi
+for L in 1 2; do
+  LINE=$(sed -n "${L}p" "$DL_LOG")
+  if python3 -c "import json,sys; json.loads(sys.argv[1])" "$LINE" >/dev/null 2>&1; then
+    pass "dl: appended line $L is valid JSON"
+  else
+    fail "dl: appended line $L is not valid JSON: $LINE"
+  fi
+done
+
+# Unrecognized tool: no summary field, no crash, still exits 0 and logs common fields.
+> "$DL_LOG"
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"SomeFutureTool","tool_input":{"whatever":"leaked-unrecognized-tool-data"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: unrecognized tool_name still exits 0"
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"tool_name": "SomeFutureTool"' "dl: unrecognized tool still logs tool_name"
+assert_not_contains "$LINE" "leaked-unrecognized-tool-data" "dl: unrecognized tool never logs raw tool_input"
+assert_not_contains "$LINE" '"summary"' "dl: unrecognized tool has no summary field"
+
+# A write failure (unwritable dashboard dir) never blocks the tool call.
+DIR_DL_RO="$WORK/dl-readonly"
+make_fixture "$DIR_DL_RO"
+mkdir -p "$DIR_DL_RO/.harness/dashboard"
+chmod 555 "$DIR_DL_RO/.harness/dashboard"
+OUT=$(run_dashboard_log "$DIR_DL_RO" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: unwritable dashboard dir still exits 0"
+assert_empty "$OUT" "dl: unwritable dashboard dir prints nothing to stdout"
+chmod 755 "$DIR_DL_RO/.harness/dashboard"
+
+# mkdir -p itself failing (unwritable .harness/, dashboard/ doesn't exist yet)
+# never blocks the tool call either.
+DIR_DL_RO2="$WORK/dl-readonly2"
+make_fixture "$DIR_DL_RO2"
+chmod 555 "$DIR_DL_RO2/.harness"
+OUT=$(run_dashboard_log "$DIR_DL_RO2" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: unwritable .harness/ (mkdir -p fails) still exits 0"
+chmod 755 "$DIR_DL_RO2/.harness"
+if [ ! -e "$DIR_DL_RO2/.harness/dashboard" ]; then
+  pass "dl: unwritable .harness/ creates no dashboard directory"
+else
+  fail "dl: unwritable .harness/ creates no dashboard directory -- it exists"
+fi
+
+# Garbage stdin never crashes the hook.
+OUT=$(run_dashboard_log "$DIR_DL" 'not json' '1')
+RC=$?
+assert_rc0 "$RC" "dl: garbage stdin exits 0"
+
+# Regression guard: the disabled path (first-operation env check) stays well under
+# a generous 50ms bound -- not a benchmarked SLA, just a structural no-file-I/O check.
+DL_ELAPSED_MS=$(python3 -c "
+import subprocess, time, sys
+elapsed = []
+for _ in range(5):
+    start = time.time()
+    subprocess.run(
+        ['bash', '$HOOKS_DIR/dashboard-log.sh'],
+        input=b'{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"sess1\"}',
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        env={'PATH': '/usr/bin:/bin'},
+        cwd='$DIR_DL',
+    )
+    elapsed.append((time.time() - start) * 1000)
+print(max(elapsed))
+")
+DL_UNDER_BOUND=$(python3 -c "print(1 if $DL_ELAPSED_MS < 50 else 0)")
+if [ "$DL_UNDER_BOUND" = "1" ]; then
+  pass "dl: disabled path stays under the 50ms regression bound (max ${DL_ELAPSED_MS}ms)"
+else
+  fail "dl: disabled path exceeded the 50ms regression bound (max ${DL_ELAPSED_MS}ms)"
+fi
 
 echo ""
 echo "== manifests =="
@@ -6184,7 +6477,7 @@ make_healthy_doctor_fixture() {
   }
 }
 SETTINGSEOF
-  printf '.harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n' > "$1/.gitignore"
+  printf '.harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n.harness/dashboard/\n' > "$1/.gitignore"
   cat >> "$1/.harness/context_summary.md" <<'CTXEOF'
 
 ## Cross-Cutting Concerns
