@@ -119,6 +119,12 @@ run_hook_from_subdir() {
   (cd "$1/sub" && printf '%s' "$3" | CLAUDE_PROJECT_DIR="$1" "$1/.claude/hooks/$2")
 }
 
+# Same as run_hook(), but with VV_HARNESS_DASHBOARD set (default "1") -- for F089's
+# gate-script dashboard-logging assertions.
+run_hook_dashboard() {
+  (cd "$1" && printf '%s' "$3" | CLAUDE_PROJECT_DIR="$1" VV_HARNESS_DASHBOARD="${4:-1}" "$1/.claude/hooks/$2")
+}
+
 echo "== session-start.sh =="
 
 DIR_A="$WORK/a"
@@ -9588,6 +9594,323 @@ OUT=$(run_commit_gate "$DIR_CG_MVALUE" "$CG_HEREDOC_TRAILING_PATHSPEC_CMD")
 RC=$?
 assert_rc0 "$RC" "cg: F076 round-1 heredoc followed by a real trailing pathspec exits 0 (JSON deny)"
 assert_deny_json "$OUT" "cg: F076 round-1 a real trailing pathspec after a standalone heredoc is not hidden by the mask"
+
+echo ""
+echo "== F089: gate-script dashboard event logging =="
+
+# Builds a {hook_event_name, session_id, tool_input: {file_path|command: ...}}
+# payload -- the same shape enforce-scope.sh/commit-gate.sh already parse via
+# tool_input, plus the session_id/hook_event_name fields F089's own inline
+# logging snippet needs (neither bash_command_json() nor edit_json() above
+# include those).
+f089_edit_json() {
+  python3 -c "
+import json, sys
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': sys.argv[2],
+                   'tool_input': {'file_path': sys.argv[1]}}))
+" "$1" "$2"
+}
+
+f089_bash_json() {
+  python3 -c "
+import json, sys
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': sys.argv[2],
+                   'tool_input': {'command': sys.argv[1]}}))
+" "$1" "$2"
+}
+
+# --- enforce-scope.sh: 5 decision points (deny_json, the line-179 legacy
+# exit 2, the line-280ish legacy exit 2, one allow, one skipped) ---
+
+DIR_ES89="$WORK/f089-enforce-scope"
+make_fixture "$DIR_ES89"
+install_hooks "$DIR_ES89"
+ES89_LOG="$DIR_ES89/.harness/dashboard/es89sess.jsonl"
+
+# Skipped: no scope file at all -- this hook isn't applicable to this teammate.
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89/src/parser/x.py" "es89sess")")
+RC=$?
+assert_rc0 "$RC" "f089-es: no scope file still exits 0"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"gate": "enforce-scope"' "f089-es: skipped entry names the gate"
+assert_contains "$LINE" '"verdict": "skipped"' "f089-es: no scope file logs verdict=skipped"
+assert_not_contains "$LINE" '"verdict": "allow"' "f089-es: a not-applicable early exit is never logged as allow"
+
+printf 'src/parser/\n' > "$DIR_ES89/.claude/teammate-scope.txt"
+
+# Allow: an in-scope edit reaches the legacy while-loop's own exit 0.
+> "$ES89_LOG"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89/src/parser/x.py" "es89sess")")
+RC=$?
+assert_rc0 "$RC" "f089-es: an in-scope edit still exits 0"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' "f089-es: an in-scope edit logs verdict=allow"
+
+# Block (legacy exit 2, out-of-scope Edit/Write/MultiEdit denial).
+> "$ES89_LOG"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89/src/other/y.py" "es89sess")" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-es: an out-of-scope edit still exits 2"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-es: out-of-scope edit logs verdict=block"
+assert_contains "$LINE" '"finding": "scope-violation:out-of-scope-edit"' \
+  "f089-es: out-of-scope edit logs its finding class"
+assert_not_contains "$LINE" "src/other/y.py" \
+  "f089-es: the block entry never logs the raw file path"
+
+# Block (legacy exit 2 at the FILE_PATH_RC -eq 1 site -- a raw surrogate
+# crashes the extraction script's own print(), same F043 shape used elsewhere
+# in this file's own existing tests).
+> "$ES89_LOG"
+ES89_JSON_SURROGATE="{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"es89sess\",\"tool_input\":{\"file_path\":\"$DIR_ES89/src/parser/f089\ud800.py\"}}"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh "$ES89_JSON_SURROGATE" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-es: a surrogate-bearing file_path still exits 2"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-es: the unsafe-extraction site logs verdict=block"
+assert_contains "$LINE" '"finding": "scope-violation:unsafe-extraction"' \
+  "f089-es: the unsafe-extraction site logs its finding class"
+
+# Block (deny_json(), covering all five of its own call sites with one
+# instrumented site -- exercised here via a lead-owned state file denial).
+> "$ES89_LOG"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89/.harness/features.json" "es89sess")")
+RC=$?
+assert_rc0 "$RC" "f089-es: a lead-owned-file deny_json() denial still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f089-es: a lead-owned-file denial still emits the deny JSON"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-es: the deny_json() site logs verdict=block"
+assert_contains "$LINE" '"finding": "scope-violation"' "f089-es: the deny_json() site logs its finding class"
+assert_contains "$LINE" '"hook_event_name": "PreToolUse"' \
+  "f089-es: the deny_json() log entry carries hook_event_name from the payload"
+
+# Disabled by default: no VV_HARNESS_DASHBOARD set, same fixture/scope, must
+# not create a dashboard directory, and the gate's own verdict is unaffected.
+DIR_ES89_OFF="$WORK/f089-enforce-scope-disabled"
+make_fixture "$DIR_ES89_OFF"
+install_hooks "$DIR_ES89_OFF"
+printf 'src/parser/\n' > "$DIR_ES89_OFF/.claude/teammate-scope.txt"
+OUT=$(run_hook "$DIR_ES89_OFF" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89_OFF/src/other/y.py" "offsess")" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-es: disabled logging does not change the gate's own verdict"
+if [ ! -e "$DIR_ES89_OFF/.harness/dashboard" ]; then
+  pass "f089-es: disabled logging creates no dashboard directory"
+else
+  fail "f089-es: disabled logging creates no dashboard directory -- it exists"
+fi
+
+# --- commit-gate.sh: 3 decision points (both deny_json() call sites, one allow) ---
+
+DIR_CG89="$WORK/f089-commit-gate"
+make_fixture "$DIR_CG89"
+install_hooks "$DIR_CG89"
+CG89_LOG="$DIR_CG89/.harness/dashboard/cg89sess.jsonl"
+
+# Block (deny_json(), unparseable-command call site).
+CG89_JSON_SURROGATE="{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"cg89sess\",\"tool_input\":{\"command\":\"git commit -a -m wip\ud800\"}}"
+OUT=$(run_hook_dashboard "$DIR_CG89" commit-gate.sh "$CG89_JSON_SURROGATE")
+RC=$?
+assert_rc0 "$RC" "f089-cg: an unparseable command still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f089-cg: an unparseable command still emits the deny JSON"
+LINE=$(cat "$CG89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"gate": "commit-gate"' "f089-cg: block entry names the gate"
+assert_contains "$LINE" '"verdict": "block"' "f089-cg: the unparseable-command site logs verdict=block"
+assert_contains "$LINE" '"finding": "unparseable-command"' \
+  "f089-cg: the unparseable-command site logs its finding class"
+
+# Block (deny_json(), main()-computed-reason call site).
+> "$CG89_LOG"
+OUT=$(run_hook_dashboard "$DIR_CG89" commit-gate.sh \
+  "$(f089_bash_json 'git commit -a -m "test"' 'cg89sess')")
+RC=$?
+assert_rc0 "$RC" "f089-cg: compound-stage-and-commit still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f089-cg: compound-stage-and-commit still emits the deny JSON"
+LINE=$(cat "$CG89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-cg: the main()-computed site logs verdict=block"
+assert_contains "$LINE" '"finding": "compound-stage-and-commit"' \
+  "f089-cg: the main()-computed site derives its finding class from the existing reason prefix"
+
+# Allow: an ordinary non-commit command reaches the final exit 0.
+> "$CG89_LOG"
+OUT=$(run_hook_dashboard "$DIR_CG89" commit-gate.sh \
+  "$(f089_bash_json 'echo hello' 'cg89sess')")
+RC=$?
+assert_rc0 "$RC" "f089-cg: an ordinary non-commit command exits 0"
+LINE=$(cat "$CG89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' "f089-cg: an ordinary non-commit command logs verdict=allow"
+
+DIR_CG89_OFF="$WORK/f089-commit-gate-disabled"
+make_fixture "$DIR_CG89_OFF"
+install_hooks "$DIR_CG89_OFF"
+OUT=$(run_hook "$DIR_CG89_OFF" commit-gate.sh \
+  "$(f089_bash_json 'git commit -a -m "test"' 'offsess')")
+RC=$?
+assert_rc0 "$RC" "f089-cg: disabled logging does not change the gate's own verdict"
+if [ ! -e "$DIR_CG89_OFF/.harness/dashboard" ]; then
+  pass "f089-cg: disabled logging creates no dashboard directory"
+else
+  fail "f089-cg: disabled logging creates no dashboard directory -- it exists"
+fi
+
+# --- check-remaining-tasks.sh: 2 decision points (one block, one allow) ---
+
+DIR_CT89="$WORK/f089-check-remaining"
+make_fixture "$DIR_CT89"
+install_hooks "$DIR_CT89"
+CT89_LOG="$DIR_CT89/.harness/dashboard/ct89sess.jsonl"
+CT89_JSON=$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TeammateIdle', 'session_id': 'ct89sess'}))")
+
+OUT=$(run_hook_dashboard "$DIR_CT89" check-remaining-tasks.sh "$CT89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-ct: a claimable feature still exits 2"
+LINE=$(cat "$CT89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"gate": "check-remaining-tasks"' "f089-ct: block entry names the gate"
+assert_contains "$LINE" '"verdict": "block"' "f089-ct: a claimable feature logs verdict=block"
+assert_contains "$LINE" '"finding": "claimable-feature-pending"' \
+  "f089-ct: a claimable feature logs its finding class"
+assert_contains "$LINE" '"hook_event_name": "TeammateIdle"' \
+  "f089-ct: the log entry carries hook_event_name from the payload"
+
+python3 - "$DIR_CT89/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    feature["status"] = "passing"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+> "$CT89_LOG"
+OUT=$(run_hook_dashboard "$DIR_CT89" check-remaining-tasks.sh "$CT89_JSON")
+RC=$?
+assert_rc0 "$RC" "f089-ct: nothing claimable exits 0"
+LINE=$(cat "$CT89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' "f089-ct: nothing claimable logs verdict=allow"
+
+DIR_CT89_OFF="$WORK/f089-check-remaining-disabled"
+make_fixture "$DIR_CT89_OFF"
+install_hooks "$DIR_CT89_OFF"
+OUT=$(run_hook "$DIR_CT89_OFF" check-remaining-tasks.sh "$CT89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-ct: disabled logging does not change the gate's own verdict"
+if [ ! -e "$DIR_CT89_OFF/.harness/dashboard" ]; then
+  pass "f089-ct: disabled logging creates no dashboard directory"
+else
+  fail "f089-ct: disabled logging creates no dashboard directory -- it exists"
+fi
+
+# --- verify-task-quality.sh: 5 decision points (four block sites, one allow) ---
+
+DIR_VQ89A="$WORK/f089-verify-quality-noinit"
+make_fixture "$DIR_VQ89A"
+install_hooks "$DIR_VQ89A"
+VQ89A_LOG="$DIR_VQ89A/.harness/dashboard/vq89sess.jsonl"
+VQ89_JSON=$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'vq89sess', 'task': {'metadata': {'feature_id': 'F002'}}}))")
+
+OUT=$(run_hook_dashboard "$DIR_VQ89A" verify-task-quality.sh "$VQ89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: missing init.sh still exits 2"
+LINE=$(cat "$VQ89A_LOG" 2>/dev/null)
+assert_contains "$LINE" '"gate": "verify-task-quality"' "f089-vq: block entry names the gate"
+assert_contains "$LINE" '"verdict": "block"' "f089-vq: missing init.sh logs verdict=block"
+assert_contains "$LINE" '"finding": "missing-init-script"' \
+  "f089-vq: missing init.sh logs its finding class"
+
+DIR_VQ89B="$WORK/f089-verify-quality-smokefail"
+make_fixture "$DIR_VQ89B"
+install_hooks "$DIR_VQ89B"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_VQ89B/.harness/init.sh"
+VQ89B_LOG="$DIR_VQ89B/.harness/dashboard/vq89sess.jsonl"
+OUT=$(run_hook_dashboard "$DIR_VQ89B" verify-task-quality.sh "$VQ89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: a smoke test failure still exits 2"
+LINE=$(cat "$VQ89B_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-vq: smoke test failure logs verdict=block"
+assert_contains "$LINE" '"finding": "smoke-test-failed"' \
+  "f089-vq: smoke test failure logs its finding class"
+
+DIR_VQ89C="$WORK/f089-verify-quality-fullfail"
+make_fixture "$DIR_VQ89C"
+install_hooks "$DIR_VQ89C"
+cat > "$DIR_VQ89C/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+case "$1" in
+  smoke_test) exit 0 ;;
+  full_test) exit 1 ;;
+esac
+INITEOF
+chmod +x "$DIR_VQ89C/.harness/init.sh"
+VQ89C_LOG="$DIR_VQ89C/.harness/dashboard/vq89sess.jsonl"
+OUT=$(run_hook_dashboard "$DIR_VQ89C" verify-task-quality.sh "$VQ89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: a full test failure still exits 2"
+LINE=$(cat "$VQ89C_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-vq: full test failure logs verdict=block"
+assert_contains "$LINE" '"finding": "tests-failing"' \
+  "f089-vq: full test failure logs its finding class"
+
+DIR_VQ89D="$WORK/f089-verify-quality-coverage"
+make_fixture "$DIR_VQ89D"
+install_hooks "$DIR_VQ89D"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_VQ89D/.harness/init.sh"
+set_f003_fields "$DIR_VQ89D" 'feature["coverage"] = 50'
+VQ89D_LOG="$DIR_VQ89D/.harness/dashboard/vq89sess.jsonl"
+VQ89D_JSON=$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'vq89sess', 'task': {'metadata': {'feature_id': 'F003'}}}))")
+OUT=$(run_hook_dashboard "$DIR_VQ89D" verify-task-quality.sh "$VQ89D_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: coverage below target still exits 2"
+LINE=$(cat "$VQ89D_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-vq: coverage below target logs verdict=block"
+assert_contains "$LINE" '"finding": "coverage-below-target"' \
+  "f089-vq: coverage below target logs its finding class"
+
+DIR_VQ89E="$WORK/f089-verify-quality-allow"
+make_fixture "$DIR_VQ89E"
+install_hooks "$DIR_VQ89E"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_VQ89E/.harness/init.sh"
+python3 - "$DIR_VQ89E/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    feature["status"] = "passing"
+    feature["proof"] = {"claim": "x", "evidence_type": "unit", "artifact": "y"}
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+VQ89E_LOG="$DIR_VQ89E/.harness/dashboard/vq89sess.jsonl"
+VQ89E_JSON=$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'vq89sess', 'task': {'metadata': {'feature_id': 'F003'}}}))")
+OUT=$(run_hook_dashboard "$DIR_VQ89E" verify-task-quality.sh "$VQ89E_JSON" 2>/dev/null)
+RC=$?
+assert_rc0 "$RC" "f089-vq: a fully clean accept still exits 0"
+LINE=$(cat "$VQ89E_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' "f089-vq: a fully clean accept logs verdict=allow"
+
+DIR_VQ89_OFF="$WORK/f089-verify-quality-disabled"
+make_fixture "$DIR_VQ89_OFF"
+install_hooks "$DIR_VQ89_OFF"
+OUT=$(run_hook "$DIR_VQ89_OFF" verify-task-quality.sh \
+  "$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'offsess', 'task': {'metadata': {'feature_id': 'F002'}}}))")" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: disabled logging does not change the gate's own verdict"
+if [ ! -e "$DIR_VQ89_OFF/.harness/dashboard" ]; then
+  pass "f089-vq: disabled logging creates no dashboard directory"
+else
+  fail "f089-vq: disabled logging creates no dashboard directory -- it exists"
+fi
 
 echo ""
 echo "== agent frontmatter =="

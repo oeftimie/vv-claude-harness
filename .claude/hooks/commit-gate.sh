@@ -169,18 +169,108 @@ INPUT=$(cat)
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 
-deny_json() {
-    python3 - "$1" <<'PYEOF'
+# F089: opt-in dashboard event log for this gate's block/allow verdicts.
+# Duplicates hooks/dashboard-log.sh's (F088) JSON-line schema and
+# redaction/atomicity conventions inline -- a project-level hook installed
+# into .claude/hooks/ cannot reach a plugin-root file. Never aborts the
+# gate: every risky step below is guarded, and every call site is itself
+# suffixed with `|| true`.
+_dashboard_log() {
+    [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || return 0
+    [ -d ".harness" ] || return 0
+    local verdict="$1" finding="${2:-}" session_id
+    session_id=$(printf '%s' "$INPUT" | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("session_id") or "")
+except Exception:
+    pass
+' 2>/dev/null || true)
+    session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
+    [ -n "$session_id" ] || return 0
+    mkdir -p ".harness/dashboard" 2>/dev/null || return 0
+    python3 - ".harness/dashboard/$session_id.jsonl" "$session_id" "$INPUT" "$verdict" "$finding" \
+        >/dev/null 2>/dev/null <<'PYEOF' || true
 import json
 import sys
+import time
+
+log_path, session_id, stdin_json, verdict, finding = sys.argv[1:6]
+try:
+    try:
+        data = json.loads(stdin_json)
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    line = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "hook_event_name": data.get("hook_event_name", ""),
+        "session_id": session_id,
+        "gate": "commit-gate",
+        "verdict": verdict,
+    }
+    if finding:
+        line["finding"] = finding
+    with open(log_path, "a") as fh:
+        fh.write(json.dumps(line) + "\n")
+except Exception:
+    pass
+PYEOF
+}
+
+deny_json() {
+    python3 - "$1" "$INPUT" <<'PYEOF'
+import json
+import os
+import re
+import sys
+import time
+
+reason = sys.argv[1]
+stdin_json = sys.argv[2] if len(sys.argv) > 2 else ""
 
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
-        "permissionDecisionReason": sys.argv[1],
+        "permissionDecisionReason": reason,
     }
 }))
+
+# F089: dashboard event logging, folded into this SAME python3 process (no
+# new subprocess) since deny_json() is the single chokepoint both of this
+# file's own block paths route through. Best-effort and never affects the
+# deny decision above, which has already been printed. The finding class is
+# the fixed prefix this file's own reasons already carry ("secret-
+# assignment: ...", "compound-stage-and-commit: ...", etc.) -- never the
+# rest of the message, which can name a file/line but not matched content.
+try:
+    if os.environ.get("VV_HARNESS_DASHBOARD") == "1" and os.path.isdir(".harness"):
+        try:
+            data = json.loads(stdin_json)
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
+        if session_id:
+            os.makedirs(".harness/dashboard", exist_ok=True)
+            finding = reason.split(":", 1)[0].strip()
+            if not finding or " " in finding or len(finding) > 40:
+                finding = "unparseable-command"
+            line = {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "hook_event_name": data.get("hook_event_name", ""),
+                "session_id": session_id,
+                "gate": "commit-gate",
+                "verdict": "block",
+                "finding": finding,
+            }
+            with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
+                fh.write(json.dumps(line) + "\n")
+except Exception:
+    pass
 PYEOF
     exit 0
 }
@@ -1180,4 +1270,5 @@ if [ -n "$DENY_REASON" ]; then
     deny_json "$DENY_REASON"
 fi
 
+_dashboard_log "allow" || true
 exit 0

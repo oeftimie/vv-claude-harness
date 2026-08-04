@@ -73,6 +73,56 @@ INPUT=$(cat)
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 
+# F089: opt-in dashboard event log for this gate's block/allow/skipped
+# verdicts. Duplicates hooks/dashboard-log.sh's (F088) JSON-line schema and
+# redaction/atomicity conventions inline -- a project-level hook installed
+# into .claude/hooks/ cannot reach a plugin-root file. Never aborts the
+# gate: every risky step below is guarded, and every call site is itself
+# suffixed with `|| true`.
+_dashboard_log() {
+    [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || return 0
+    [ -d ".harness" ] || return 0
+    local verdict="$1" finding="${2:-}" session_id
+    session_id=$(printf '%s' "$INPUT" | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("session_id") or "")
+except Exception:
+    pass
+' 2>/dev/null || true)
+    session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
+    [ -n "$session_id" ] || return 0
+    mkdir -p ".harness/dashboard" 2>/dev/null || return 0
+    python3 - ".harness/dashboard/$session_id.jsonl" "$session_id" "$INPUT" "$verdict" "$finding" \
+        >/dev/null 2>/dev/null <<'PYEOF' || true
+import json
+import sys
+import time
+
+log_path, session_id, stdin_json, verdict, finding = sys.argv[1:6]
+try:
+    try:
+        data = json.loads(stdin_json)
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    line = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "hook_event_name": data.get("hook_event_name", ""),
+        "session_id": session_id,
+        "gate": "enforce-scope",
+        "verdict": verdict,
+    }
+    if finding:
+        line["finding"] = finding
+    with open(log_path, "a") as fh:
+        fh.write(json.dumps(line) + "\n")
+except Exception:
+    pass
+PYEOF
+}
+
 # Only enforce if a scope file exists. In practice this is teammates only (the
 # lead's own session has no scope file of its own to spawn WITH) -- but this
 # check has no actual session-awareness: it's a single shared file's existence,
@@ -82,23 +132,59 @@ cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 # of this very file are denied while a team is active) -- see F061.
 SCOPE_FILE=".claude/teammate-scope.txt"
 if [ ! -f "$SCOPE_FILE" ]; then
+    _dashboard_log "skipped" || true
     exit 0
 fi
 
 ANNOTATION="(verified live 2026-07-24 on Claude Code 2.1.218)"
 
 deny_json() {
-    python3 - "$1" <<'PYEOF'
+    python3 - "$1" "$INPUT" <<'PYEOF'
 import json
+import os
+import re
 import sys
+import time
+
+reason = sys.argv[1]
+stdin_json = sys.argv[2] if len(sys.argv) > 2 else ""
 
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
-        "permissionDecisionReason": sys.argv[1],
+        "permissionDecisionReason": reason,
     }
 }))
+
+# F089: dashboard event logging, folded into this SAME python3 process (no
+# new subprocess) since deny_json() is the single chokepoint every scope
+# denial in this file routes through -- one instrumented site covers all
+# five call sites. Best-effort and never affects the deny decision above,
+# which has already been printed.
+try:
+    if os.environ.get("VV_HARNESS_DASHBOARD") == "1" and os.path.isdir(".harness"):
+        try:
+            data = json.loads(stdin_json)
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
+        if session_id:
+            os.makedirs(".harness/dashboard", exist_ok=True)
+            line = {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "hook_event_name": data.get("hook_event_name", ""),
+                "session_id": session_id,
+                "gate": "enforce-scope",
+                "verdict": "block",
+                "finding": "scope-violation",
+            }
+            with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
+                fh.write(json.dumps(line) + "\n")
+except Exception:
+    pass
 PYEOF
     exit 0
 }
@@ -176,6 +262,7 @@ if [ "$FILE_PATH_RC" -eq 1 ]; then
     # every real PreToolUse block (F053, the identical defect F046 fixed in
     # check-remaining-tasks.sh.template).
     echo "Edit blocked: file_path could not be safely extracted from tool input (treating as outside your assigned scope). $ANNOTATION" >&2
+    _dashboard_log "block" "scope-violation:unsafe-extraction" || true
     exit 2
 fi
 
@@ -270,6 +357,7 @@ if [ -n "$FILE_PATH" ]; then
         [[ -z "$pattern" || "$pattern" =~ ^# ]] && continue
         # Use bash pattern matching
         if [[ "$FILE_PATH" == $pattern* ]]; then
+            _dashboard_log "allow" || true
             exit 0
         fi
     done < "$SCOPE_FILE"
@@ -282,6 +370,7 @@ if [ -n "$FILE_PATH" ]; then
     cat "$SCOPE_FILE" | grep -v '^#' | grep -v '^$' >&2
     echo "" >&2
     echo "Repair: request a scope expansion from the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Requesting scope expansion to $FILE_PATH because [reason].\" })" >&2
+    _dashboard_log "block" "scope-violation:out-of-scope-edit" || true
     exit 2
 fi
 

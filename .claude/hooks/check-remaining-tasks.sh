@@ -42,6 +42,57 @@ cd "$PROJECT_ROOT"
 # Read hook input from stdin
 INPUT=$(cat)
 
+# F089: opt-in dashboard event log for this gate's block/allow verdicts.
+# Duplicates hooks/dashboard-log.sh's (F088) JSON-line schema and
+# redaction/atomicity conventions inline -- a project-level hook installed
+# into .claude/hooks/ cannot reach a plugin-root file. Never aborts the
+# gate: every risky step below is guarded, and every call site is itself
+# suffixed with `|| true` -- critical under this script's own
+# `set -euo pipefail`.
+_dashboard_log() {
+    [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || return 0
+    [ -d ".harness" ] || return 0
+    local verdict="$1" finding="${2:-}" session_id
+    session_id=$(printf '%s' "$INPUT" | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("session_id") or "")
+except Exception:
+    pass
+' 2>/dev/null || true)
+    session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
+    [ -n "$session_id" ] || return 0
+    mkdir -p ".harness/dashboard" 2>/dev/null || return 0
+    python3 - ".harness/dashboard/$session_id.jsonl" "$session_id" "$INPUT" "$verdict" "$finding" \
+        >/dev/null 2>/dev/null <<'PYEOF' || true
+import json
+import sys
+import time
+
+log_path, session_id, stdin_json, verdict, finding = sys.argv[1:6]
+try:
+    try:
+        data = json.loads(stdin_json)
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    line = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "hook_event_name": data.get("hook_event_name", ""),
+        "session_id": session_id,
+        "gate": "check-remaining-tasks",
+        "verdict": verdict,
+    }
+    if finding:
+        line["finding"] = finding
+    with open(log_path, "a") as fh:
+        fh.write(json.dumps(line) + "\n")
+except Exception:
+    pass
+PYEOF
+}
+
 if [ ! -f ".harness/features.json" ]; then
     exit 0
 fi
@@ -53,6 +104,7 @@ STATE_MODULE=".claude/hooks/harness_state.py"
 RESULT=$(python3 "$STATE_MODULE" next-claimable .harness/features.json || true)
 
 if [ -z "$RESULT" ] || [ "$RESULT" = "no claimable feature" ]; then
+    _dashboard_log "allow" || true
     exit 0
 fi
 
@@ -72,4 +124,5 @@ print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
 echo "$NEXT" >&2
 echo "Read .harness/features.json for full details, then claim it via TaskUpdate." >&2
 echo "If your role has no Edit/Write tools (e.g. a review-only teammate), or your assignment was an explicit, already-delivered scoped task (a single review, a single read-only investigation, one eval run) rather than open-ended implementation work, this does not apply to you -- decline once, then stay idle; do not keep responding to repeated nudges. See your own agent definition, or ask the lead to shut you down." >&2
+_dashboard_log "block" "claimable-feature-pending" || true
 exit 2
