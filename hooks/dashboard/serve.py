@@ -22,6 +22,7 @@ import argparse
 import json
 import mimetypes
 import os
+import re
 import socketserver
 import subprocess
 import sys
@@ -32,6 +33,17 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 DEFAULT_PORT = 8765
 POLL_INTERVAL = 0.2
 STATIC_ROOT = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+SESSION_ID_DISALLOWED = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def sanitize_session_id(session_id):
+    """Same rule as hooks/session-start.sh and hooks/dashboard-log.sh's
+    `tr -cd 'A-Za-z0-9._-' | cut -c1-64`: strip everything outside that
+    character set (in particular '/', ruling out path traversal), then cap
+    the length at 64. None stays None (the CLI arg is optional)."""
+    if session_id is None:
+        return None
+    return SESSION_ID_DISALLOWED.sub("", session_id)[:64]
 
 
 def find_project_root():
@@ -227,7 +239,7 @@ def main(argv=None):
         )
         sys.exit(1)
     server.dashboard_dir = os.path.join(find_project_root(), ".harness", "dashboard")
-    server.session_id = args.session_id
+    server.session_id = sanitize_session_id(args.session_id)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

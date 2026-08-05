@@ -53,7 +53,7 @@ Setting the variable after the session has already started has no effect.
 3. **Start the server, detached at the OS level.** From the project root:
 
    ```bash
-   nohup python3 hooks/dashboard/serve.py > /tmp/harness-dashboard.log 2>&1 & disown
+   nohup python3 "${CLAUDE_PLUGIN_ROOT}/hooks/dashboard/serve.py" > /tmp/harness-dashboard.log 2>&1 & disown
    ```
 
    No `session_id` argument is passed -- F090's server defaults to the

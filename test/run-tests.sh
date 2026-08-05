@@ -11535,6 +11535,44 @@ assert_contains "$POST_DISCONNECT_STATIC" "200" \
 kill "$READER_B" 2>/dev/null; wait "$READER_B" 2>/dev/null
 kill "$SERVER_PID_7" 2>/dev/null; wait "$SERVER_PID_7" 2>/dev/null
 
+echo "--- group 8: CLI-supplied session_id is sanitized, no path traversal (Finding 12) ---"
+
+DIR8="$WORK/dash-8"
+make_fixture "$DIR8"
+mkdir -p "$DIR8/.harness/dashboard"
+# Planted three levels above .harness/dashboard/ -- an unsanitized session_id
+# of "../../../secret-outside" would resolve straight to this file (the OS
+# resolves ".." components in open()/os.path.isfile() regardless of any
+# in-process string handling), leaking content from outside the intended
+# .harness/dashboard/ directory.
+printf '{"marker":"F090-MARK-OUTSIDE-SECRET"}\n' > "$WORK/secret-outside.jsonl"
+
+PORT8=$(free_port)
+start_dashboard_server "$DIR8" "../../../secret-outside" "$PORT8" "$WORK/server-8.out"
+wait_for_port 127.0.0.1 "$PORT8"
+assert_rc0 "$?" "dash: group8 server accepts connections on its bound port"
+
+CAPTURE8="$WORK/capture-8.txt"
+: > "$CAPTURE8"
+start_sse_reader "$PORT8" "/events" "$CAPTURE8"
+sleep 0.5
+
+assert_not_contains "$(cat "$CAPTURE8")" "F090-MARK-OUTSIDE-SECRET" \
+  "dash: a traversal-shaped CLI session_id never leaks a file outside .harness/dashboard/"
+
+# Confirm the sanitized name is what's actually being awaited (not merely
+# never satisfied for some unrelated reason): dropping a file at the
+# sanitized path -- slashes stripped, dots kept literally -- inside
+# .harness/dashboard/ itself is what the server is actually watching for.
+printf '{"marker":"F090-MARK-SANITIZED-8"}\n' \
+  > "$DIR8/.harness/dashboard/......secret-outside.jsonl"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE8")" "F090-MARK-SANITIZED-8" \
+  "dash: the CLI session_id is sanitized to the same literal-dots-no-slashes filename inside .harness/dashboard/"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
 echo ""
 echo "== F091: dashboard frontend =="
 
@@ -11671,8 +11709,10 @@ assert_contains "$DASH_SKILL_SRC" "skip straight to" \
   "f092: SKILL.md skips straight to opening the browser when a server is already up"
 assert_contains "$DASH_SKILL_SRC" "Accepted limitation" \
   "f092: SKILL.md documents the stale-session-reuse limitation"
-assert_contains "$DASH_SKILL_SRC" "nohup python3 hooks/dashboard/serve.py" \
-  "f092: SKILL.md starts serve.py via nohup"
+assert_contains "$DASH_SKILL_SRC" 'nohup python3 "${CLAUDE_PLUGIN_ROOT}/hooks/dashboard/serve.py"' \
+  "f092: SKILL.md starts serve.py via nohup, referenced through \${CLAUDE_PLUGIN_ROOT} (Finding 4)"
+assert_not_contains "$DASH_SKILL_SRC" "nohup python3 hooks/dashboard/serve.py" \
+  "f092: SKILL.md's launch line is not a bare repo-relative path (Finding 4)"
 assert_contains "$DASH_SKILL_SRC" "disown" \
   "f092: SKILL.md detaches the server with disown"
 assert_contains "$DASH_SKILL_SRC" "not Claude Code's own" \
