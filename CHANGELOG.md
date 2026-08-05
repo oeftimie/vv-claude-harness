@@ -32,11 +32,12 @@ reconstructed); teammate nodes are labeled by `agent_type` only, never a custom
 and one session at a time, with no cross-session history or aggregation; and the
 server has no authentication, relying solely on its loopback-only bind.
 
-**Tests**: `test/run-tests.sh` grew from 1785 to 1795 assertions — covering the
-event-log contract and per-tool-type redaction (F088), gate-script instrumentation at
-every decision point (F089), the SSE server's backlog/tail/traversal/port-in-use
-behavior (F090), and structural checks on the frontend, skill, and this release's own
-docs and version bump (F091-F093; F091/F092 are `qa_binding: manual`, proven primarily
+**Tests**: `test/run-tests.sh` grew from 1587 (main's pre-branch baseline) to 1832
+assertions — covering the event-log contract and per-tool-type redaction (F088),
+gate-script instrumentation at every decision point (F089), the SSE server's
+backlog/tail/traversal/port-in-use behavior (F090), and structural checks on the
+frontend, skill, and this release's own docs and version bump (F091-F093; F091/F092
+are `qa_binding: manual`, proven primarily
 by direct end-to-end verification outside the harness, documented in each feature's
 own `features.json` coverage field).
 

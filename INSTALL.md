@@ -249,11 +249,14 @@ already running on `127.0.0.1:8765`, and opens the page in a browser. See
 server.
 
 **Event log**: one JSON-line file per session, at
-`.harness/dashboard/<session_id>.jsonl`. It is gitignored — never committed — and
-holds only short, redacted summaries (a file path, a Bash command's `description`)
-rather than raw command text, file content, or prompts. Nothing rotates or deletes
-these files automatically; clean up `.harness/dashboard/` by hand when old session
-logs are no longer needed.
+`.harness/dashboard/<session_id>.jsonl`. This feature adds `.harness/dashboard/` to
+`.gitignore`, and `/harness-doctor --fix` adds the same line for existing projects
+that upgrade the plugin — so the directory is gitignored once one of those has run.
+A project that upgraded without re-running doctor since may not have that ignore rule
+yet; run `/harness-doctor` to pick it up. The log holds only short, redacted
+summaries (a file path, a Bash command's `description`) rather than raw command text,
+file content, or prompts. Nothing rotates or deletes these files automatically; clean
+up `.harness/dashboard/` by hand when old session logs are no longer needed.
 
 **Known limitations**:
 
