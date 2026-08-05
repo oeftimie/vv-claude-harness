@@ -34,6 +34,39 @@ That's it. Claude Code auto-discovers the plugin's skills (`/harness-init`,
 the SessionStart orientation points to by absolute path — no plugin "rules" mechanism
 exists.
 
+### Installing a specific version (alpha/pre-release/pinned), in one project only
+
+The commands above always install whatever's on this repo's default branch, and
+`/plugin update` tracks it going forward. To pin one project to a specific tagged
+version instead — for example to try a pre-release before it's the default, without
+affecting any other project's installed version — add an `extraKnownMarketplaces`
+entry to that project's `.claude/settings.json` (or `.claude/settings.local.json` to
+keep it out of version control), naming the tag as the `ref`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "vv-harness-alpha": {
+      "source": {
+        "source": "github",
+        "repo": "oeftimie/vv-claude-harness",
+        "ref": "v5.3.0-alpha"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "vv-harness@vv-harness-alpha": true
+  }
+}
+```
+
+Restart the Claude Code session in that project (or run `/plugin marketplace update`)
+for the pinned marketplace to take effect. This installs and pins to exactly the
+commit tagged `v5.3.0-alpha`; `/plugin update` from that point only moves within that
+same pinned marketplace, so the project stays on the alpha until you change the `ref`
+yourself. A marketplace `ref` accepts any branch or tag name, not just a release tag —
+useful for pointing a single test project at an in-progress feature branch too.
+
 ## Update
 
 ```

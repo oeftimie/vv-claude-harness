@@ -2,6 +2,19 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.3.0-alpha (2026-08-05)
+
+**Alpha designation for the v5.2.0 dashboard chain (F088-F093), no functional change.**
+Marks the dashboard feature (an opt-in, live, animated view of Agent Teams session
+activity — see v5.2.0's entry below for what it does) as alpha quality while it gets
+broader real-world use before being folded into a stable release. Pin a single project
+to this exact tag for isolated testing without affecting any other project's installed
+version — see INSTALL.md, "Installing a specific version (alpha/pre-release/pinned),
+in one project only", for the `extraKnownMarketplaces` setup. Also fixes a real bug
+this alpha's own release process caught: `test/run-tests.sh`'s semver check only
+matched a bare `MAJOR.MINOR.PATCH` and rejected any pre-release suffix, which this
+version needed.
+
 ### v5.2.0 (2026-08-05)
 
 **An opt-in, live, animated dashboard for watching an Agent Teams session as it runs**
