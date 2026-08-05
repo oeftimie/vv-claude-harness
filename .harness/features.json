@@ -2634,7 +2634,7 @@
       "id": "F093",
       "description": "Dashboard docs and plugin version bump. Update INSTALL.md with the operational how-to: the VV_HARNESS_DASHBOARD=1 env var (must be set before the session to watch is launched -- hooks snapshot at Claude Code startup, so mid-session enablement has no effect), the /harness-dashboard command, the event log's location and content (.harness/dashboard/<session_id>.jsonl, gitignored, redacted short summaries only, not automatically rotated), and the stated known limitations (flat hub-and-spoke graph, agent_type-only teammate labels, live-only/no history, one session at a time). Update README.md with a one-line feature overview of the dashboard, and separately ensure both f065-required insertions exist for skills/harness-dashboard/ (the 'What's in the box' component-table row and the ASCII plugin-tree line) -- F092 already owns adding these two insertions as part of its own scope, so this feature's README.md work is additive to what F092 already lands, not a duplicate attempt at the same two insertions. Add a matching CHANGELOG.md entry (### v5.2.0 heading plus prose body, in the same format and same commit as the version bump, following this repo's own established convention -- confirmed via git history that v5.0.1/v5.1.0/v5.1.1 all paired a CHANGELOG.md entry with their plugin.json bump in one commit; test/run-tests.sh's own existing assertion requires this pairing to stay green). Bump .claude-plugin/plugin.json's version to 5.2.0 (minor bump, matching this repo's precedent of minor-version bumps for new-capability releases). QA binding: unit -- test/run-tests.sh asserts (a) README.md and INSTALL.md contain the literal strings VV_HARNESS_DASHBOARD and /harness-dashboard, (b) CHANGELOG.md contains the literal heading ### v5.2.0, (c) plugin.json's version field equals exactly 5.2.0 and matches a semver-shaped pattern.",
       "priority": 93,
-      "status": "pending",
+      "status": "in-progress",
       "scope": [
         "README.md",
         "INSTALL.md",
@@ -2647,7 +2647,7 @@
         "F091",
         "F092"
       ],
-      "assigned_to": null,
+      "assigned_to": "lead",
       "test_file": "test/run-tests.sh",
       "coverage": null,
       "notes": "CHANGELOG.md entry is a proposal only, per AGENTS.md's Human-Owned documentation rule -- draft it and present it, do not commit it as part of this feature unless Ovidiu approves the exact wording. | Corrected a self-mis-citation during prep: original spec said 'propose, don't edit CHANGELOG.md, per AGENTS.md' -- AGENTS.md has no such rule (verified: its only CHANGELOG.md mention is a one-line file-listing entry); the 'propose only' instinct came from Ovidiu's own global personal CLAUDE.md, a cross-project habit, not this repo's convention, and was mis-attributed when drafting. This repo's actual, tested convention (v5.0.1/v5.1.0/v5.1.1 git history) edits CHANGELOG.md directly alongside every version bump, in the same commit -- test/run-tests.sh enforces this pairing. F093 now follows that real convention instead.",
