@@ -11593,6 +11593,50 @@ assert_contains "$DASHBOARD_HTML_SRC" "(unknown agent)" \
 assert_not_contains "$DASHBOARD_HTML_SRC" ".teammate_name" \
   "dash-fe: page source never reads teammate_name to label a node"
 
+# Regression guards for an adversarial review's structural findings on this
+# page (findings 3, 6, 7, 14 -- no browser/DOM harness here, so these check
+# the exact source patterns that caused each bug, not the rendered result).
+
+# Finding 6: positionRing() packed two translate(...) calls into one
+# transform string. anime.js v3 parses transform into a Map keyed by
+# function name, so the second "translate" entry silently overwrote the
+# first, dropping the -50%/-50% centering offset the instant a node
+# animated. Fix: centering moved off `transform` onto the standalone CSS
+# `translate` property, and the ring offset now uses distinct-axis
+# translateX/translateY keys.
+assert_not_contains "$DASHBOARD_HTML_SRC" 'translate(-50%, -50%) translate(' \
+  "dash-fe: positionRing() no longer packs two translate(...) calls into one transform string (anime.js Map key collision)"
+assert_contains "$DASHBOARD_HTML_SRC" 'translate: -50% -50%;' \
+  "dash-fe: .node centers via the standalone CSS translate property (a property anime.js never reads or writes)"
+assert_contains "$DASHBOARD_HTML_SRC" 'translateX(" + x + "px) translateY(' \
+  "dash-fe: positionRing() uses distinct-axis translateX/translateY keys instead of a second bare translate(...)"
+
+# Finding 7: .node.lead had no centering rule of its own (top:50%/left:50%
+# alone puts the node's top-left corner, not its center, at the ring
+# center). The fix above lives in the shared .node rule, which .node.lead
+# also carries, so both findings 6 and 7 are covered by the same assertion.
+
+# Finding 3: every gate verdict badge shared one hardcoded "gate" kind, so
+# addBadge()'s reuse-by-DOM-lookup let an "allow" verdict silently
+# overwrite a still-meaningful "block" verdict badge almost immediately.
+# Fix: each verdict gets its own badge kind via gateBadgeKind(), so a
+# block verdict's badge is never displaced by an unrelated allow verdict.
+assert_not_contains "$DASHBOARD_HTML_SRC" 'addBadge(node.badgesEl, "gate", text)' \
+  "dash-fe: gate badges are no longer added under one shared \"gate\" kind (a block verdict badge could be silently overwritten by the next allow)"
+assert_contains "$DASHBOARD_HTML_SRC" "function gateBadgeKind(verdict)" \
+  "dash-fe: a gateBadgeKind() function derives a verdict-specific badge kind"
+assert_contains "$DASHBOARD_HTML_SRC" "badge-gate-block" \
+  "dash-fe: page source defines a distinct badge-gate-block kind so a block verdict cannot be silently overwritten by an allow"
+assert_not_contains "$DASHBOARD_HTML_SRC" ".badge-gate {" \
+  "dash-fe: no single shared .badge-gate CSS rule remains (verdict-specific rules replace it)"
+
+# Finding 14: getOrCreateAgentNode() already calls animateIn() when it
+# creates a brand-new node; the SubagentStart handler called animateIn()
+# again on the node it was just handed, double-firing the entrance
+# animation for a genuinely new node.
+assert_not_contains "$DASHBOARD_HTML_SRC" "animateIn(node)" \
+  "dash-fe: SubagentStart handler no longer re-calls animateIn() on a node getOrCreateAgentNode already animated in"
+
 echo ""
 echo "== F092: /harness-dashboard skill =="
 

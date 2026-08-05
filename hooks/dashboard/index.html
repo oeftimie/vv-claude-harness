@@ -68,6 +68,17 @@
     position: absolute;
     top: 50%;
     left: 50%;
+    /* Centering offset lives on the standalone CSS `translate` property,
+       never on `transform` -- anime.js v3 parses an element's existing
+       `transform` string into a Map keyed by function name (see
+       vendor/anime.min.js's W()) and rewrites the whole thing from that
+       Map on every animated frame. `translate` is a distinct CSS property
+       it never reads or writes, so this offset survives animateIn()/
+       pulse() untouched. Percentage-based like the old transform trick,
+       so it stays correct regardless of the node's actual rendered size.
+       Applies to every node with class "node", so .node.lead (no other
+       centering rule of its own) is centered by this same rule too. */
+    translate: -50% -50%;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -118,7 +129,17 @@
     color: #12141a;
     font-weight: 600;
   }
-  .badge-gate { background: var(--gate); }
+  /* Gate verdict badges: keyed by the verdict itself (gateBadgeKind()
+     below), not one shared "gate" kind -- addBadge() reuses an existing
+     element by DOM lookup on its kind string, so a single shared kind let
+     a block verdict's badge be silently overwritten by the very next
+     allow verdict. The attribute selector is the default look for any
+     verdict (matches the old shared amber styling); the block/skipped
+     rules override it for the verdicts that must stay visually distinct,
+     using equal specificity so source order (below) decides. */
+  .badge[class*="badge-gate-"] { background: var(--gate); }
+  .badge.badge-gate-block { background: var(--permission); color: #fff; }
+  .badge.badge-gate-skipped { background: var(--border); color: var(--text); }
   .badge-judge { background: var(--judge); color: #fff; }
   .badge-permission { background: var(--permission); color: #fff; }
 </style>
@@ -164,8 +185,13 @@
       var y = radius * Math.sin(angle);
       var rec = agents[ids[i]];
       if (!rec) continue;
+      // Two distinct-axis functions (translateX/translateY), not a second
+      // bare translate(...) -- anime.js's transform Map is keyed by
+      // function name, so a second "translate" entry would collide with
+      // and silently replace the centering offset (now handled off
+      // `transform` entirely; see .node's `translate` CSS property).
       rec.el.style.transform =
-        "translate(-50%, -50%) translate(" + x + "px, " + y + "px)";
+        "translateX(" + x + "px) translateY(" + y + "px)";
     }
   }
 
@@ -303,10 +329,23 @@
 
   var leadNode = { el: leadNodeEl, badgesEl: leadBadgesEl };
 
+  function gateBadgeKind(verdict) {
+    // Each verdict gets its own badge kind ("gate-block", "gate-allow",
+    // "gate-skipped", ...) so addBadge()'s reuse-by-lookup never lets one
+    // verdict's badge silently overwrite a different verdict's -- a block
+    // verdict must stay visible instead of being erased by the next allow.
+    // Sanitized to a safe class-name fragment since verdict is data from a
+    // hook payload, not a fixed enum this page controls.
+    var normalized = String(verdict || "unknown")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "-");
+    return "gate-" + (normalized || "unknown");
+  }
+
   function handleGateEvent(payload, node) {
     // Quality-gate hooks (F089): a gate/verdict/finding-bearing log line.
     var text = "GATE:" + (payload.verdict || "?");
-    var badgeEl = addBadge(node.badgesEl, "gate", text);
+    var badgeEl = addBadge(node.badgesEl, gateBadgeKind(payload.verdict), text);
     badgeEl.title = payload.gate + (payload.finding ? ": " + payload.finding : "");
   }
 
@@ -325,7 +364,13 @@
 
     switch (hookEventName) {
       case "SubagentStart":
-        if (agentId) animateIn(node);
+        // getOrCreateAgentNode() above already called animateIn() when it
+        // created this node for the first time -- whether that happened
+        // via this very SubagentStart event, or earlier via some other
+        // event carrying the same agent_id (out-of-order/replayed
+        // backlog; see animateIn()'s own comment). Every node passes
+        // through that single creation path exactly once, so calling
+        // animateIn() again here would double the entrance animation.
         break;
       case "SubagentStop":
         if (agentId) animateOutAndRemove(agentId);
