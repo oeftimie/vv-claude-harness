@@ -11420,6 +11420,63 @@ assert_not_contains "$README_SRC" "-- harness-dashboard/" \
   "f092: README.md's plugin tree entry uses U+2500, not ASCII hyphens"
 
 echo ""
+echo "== F093: dashboard docs and plugin version bump =="
+
+# CHANGELOG.md's "### v<version>" heading is already asserted generically,
+# against whatever version plugin.json currently carries, by the
+# release-consistency functional check above (RC_FUNC_ERRORS) -- adding a
+# second, hardcoded "### v5.2.0" check here would just duplicate that
+# existing check for one specific version. These assertions cover what
+# isn't already covered: the README/INSTALL content and the exact version
+# value itself.
+
+INSTALL_SRC=$(cat "$REPO_ROOT/INSTALL.md" 2>/dev/null)
+
+assert_contains "$README_SRC" "VV_HARNESS_DASHBOARD" \
+  "f093: README.md mentions VV_HARNESS_DASHBOARD"
+assert_contains "$README_SRC" "/harness-dashboard" \
+  "f093: README.md mentions the /harness-dashboard command"
+assert_contains "$INSTALL_SRC" "VV_HARNESS_DASHBOARD" \
+  "f093: INSTALL.md mentions VV_HARNESS_DASHBOARD"
+assert_contains "$INSTALL_SRC" "/harness-dashboard" \
+  "f093: INSTALL.md mentions the /harness-dashboard command"
+assert_contains "$INSTALL_SRC" ".harness/dashboard/" \
+  "f093: INSTALL.md documents the event log's location"
+assert_contains "$INSTALL_SRC" "gitignored" \
+  "f093: INSTALL.md states the event log is gitignored"
+assert_contains "$INSTALL_SRC" "hub-and-spoke" \
+  "f093: INSTALL.md documents the flat hub-and-spoke graph limitation"
+assert_contains "$INSTALL_SRC" "agent_type" \
+  "f093: INSTALL.md documents the agent_type-only teammate labeling limitation"
+
+PLUGIN_VERSION_INFO=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import json
+import re
+import sys
+
+root = sys.argv[1]
+manifest = json.load(open(f"{root}/.claude-plugin/plugin.json"))
+version = manifest.get("version", "")
+print(version)
+print("SEMVER_OK" if re.match(r"^\d+\.\d+\.\d+$", version) else "SEMVER_BAD")
+PYEOF
+)
+PLUGIN_VERSION=$(echo "$PLUGIN_VERSION_INFO" | sed -n '1p')
+PLUGIN_VERSION_SEMVER=$(echo "$PLUGIN_VERSION_INFO" | sed -n '2p')
+
+if [ "$PLUGIN_VERSION" = "5.2.0" ]; then
+  pass "f093: plugin.json version equals exactly 5.2.0"
+else
+  fail "f093: plugin.json version equals exactly 5.2.0 (got '$PLUGIN_VERSION')"
+fi
+
+if [ "$PLUGIN_VERSION_SEMVER" = "SEMVER_OK" ]; then
+  pass "f093: plugin.json version matches a semver-shaped pattern"
+else
+  fail "f093: plugin.json version matches a semver-shaped pattern (got '$PLUGIN_VERSION')"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do

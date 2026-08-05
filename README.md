@@ -299,6 +299,13 @@ the write path needs it; a shell wrapper buried `harness_state.py`'s diagnostics
 stdout, which Claude Code discards on the TaskCompleted hook's rejection path; and a
 permanent flock error was treated identically to ordinary lock contention.
 
+v5.2.0 adds an opt-in live dashboard: set `VV_HARNESS_DASHBOARD=1` before starting the
+session you want to watch, then run `/harness-dashboard` to open an animated
+hub-and-spoke node graph of that session's Agent Teams activity — the lead, each
+spoke, quality-gate verdicts, and judge subagents — served locally with no external
+dependencies. See [INSTALL.md](./INSTALL.md), "Optional: Live Session Dashboard", for
+setup and its known limitations.
+
 ## Architecture
 
 ### Global (travels with you)
