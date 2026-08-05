@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>vv-harness dashboard</title>
+<!--
+  Dashboard frontend (F091): a single HTML page, served by F090's
+  hooks/dashboard/serve.py, rendering a live node-graph / org-chart view of
+  one harness session. Connects to GET /events on load (F090's real SSE
+  endpoint: `data: <raw JSON line>` blocks, backlog replayed first, then
+  live events -- no custom `event:` type, so event kind is read from each
+  payload's own hook_event_name field).
+
+  Classification rule (F091, grounded in F088's notes -- see that feature's
+  quoted platform doc excerpt): any event WITHOUT agent_id belongs to the
+  lead (the center node); any event WITH agent_id belongs to that agent_id's
+  own spoke. Flat by design -- there is no parent-agent field in the hook
+  payload set, so spawn ancestry cannot be reconstructed. A gate or
+  permission event with no agent_id attaches to the lead's own badge, using
+  the same rule.
+
+  Node labels: agent_type only, NEVER teammate_name (no documented
+  correlation between tool-activity identity and Agent-Teams identity -- see
+  F088's notes). A node whose agent_type is missing is labeled
+  "(unknown agent)".
+
+  QA binding: manual (see this repo's .harness/features.json F091 entry).
+  This repo's dependency-free bash/python3 test runner has no browser/DOM
+  harness; test/run-tests.sh adds only supplementary structural assertions
+  (vendored animejs file present/non-empty/labeled, and this page's source
+  containing the required event-type handler strings).
+-->
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #12141a;
+    --panel: #1b1e27;
+    --border: #333748;
+    --text: #e8e9ee;
+    --lead: #4f7cff;
+    --agent: #35c19f;
+    --judge: #b163ff;
+    --gate: #ffb454;
+    --permission: #ff5c7a;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    height: 100%;
+  }
+  #graph {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #spokes {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+  }
+  .node {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 84px;
+    min-height: 84px;
+    padding: 8px;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 2px solid var(--border);
+    text-align: center;
+    box-sizing: border-box;
+  }
+  .node.lead {
+    width: 120px;
+    height: 120px;
+    min-width: 120px;
+    min-height: 120px;
+    border-color: var(--lead);
+    box-shadow: 0 0 18px rgba(79, 124, 255, 0.35);
+    z-index: 2;
+  }
+  .node.agent {
+    border-color: var(--agent);
+    opacity: 0;
+    z-index: 1;
+  }
+  .node.judge {
+    border-color: var(--judge);
+    box-shadow: 0 0 12px rgba(177, 99, 255, 0.35);
+  }
+  .node .label {
+    font-size: 11px;
+    line-height: 1.3;
+    word-break: break-word;
+  }
+  .badges {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .badge {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    color: #12141a;
+    font-weight: 600;
+  }
+  .badge-gate { background: var(--gate); }
+  .badge-judge { background: var(--judge); color: #fff; }
+  .badge-permission { background: var(--permission); color: #fff; }
+</style>
+</head>
+<body>
+<div id="graph">
+  <div id="spokes"></div>
+  <div id="lead-node" class="node lead">
+    <div class="label" id="lead-label">lead</div>
+    <div class="badges" id="lead-badges"></div>
+  </div>
+</div>
+
+<script src="vendor/anime.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // Layout: up to RING1_MAX spokes share a single ring around the lead;
+  // beyond that, overflow spokes degrade to a second, wider ring rather
+  // than becoming illegible.
+  var RING1_MAX = 12;
+  var RING1_RADIUS = 220;
+  var RING2_RADIUS = 340;
+
+  var spokesEl = document.getElementById("spokes");
+  var leadNodeEl = document.getElementById("lead-node");
+  var leadBadgesEl = document.getElementById("lead-badges");
+
+  // agent_id -> { agentType, el, labelEl, badgesEl, isJudge }
+  var agents = {};
+
+  function agentOrder() {
+    return Object.keys(agents);
+  }
+
+  function positionRing(ids, radius) {
+    var n = ids.length;
+    if (n === 0) return;
+    for (var i = 0; i < n; i++) {
+      var angle = (2 * Math.PI * i) / n - Math.PI / 2;
+      var x = radius * Math.cos(angle);
+      var y = radius * Math.sin(angle);
+      var rec = agents[ids[i]];
+      if (!rec) continue;
+      rec.el.style.transform =
+        "translate(-50%, -50%) translate(" + x + "px, " + y + "px)";
+    }
+  }
+
+  function layoutSpokes() {
+    var ids = agentOrder();
+    var ring1 = ids.slice(0, RING1_MAX);
+    var ring2 = ids.slice(RING1_MAX);
+    positionRing(ring1, RING1_RADIUS);
+    positionRing(ring2, RING2_RADIUS);
+  }
+
+  function labelFor(agentType) {
+    // Node labels are agent_type only, NEVER teammate_name -- there is no
+    // documented correlation between tool-activity identity (agent_id/
+    // agent_type) and Agent-Teams identity (teammate_name/team_name).
+    return agentType || "(unknown agent)";
+  }
+
+  function isJudgeType(agentType) {
+    return typeof agentType === "string" && agentType.endsWith("-judge");
+  }
+
+  function markAsJudge(rec) {
+    if (rec.isJudge) return;
+    rec.isJudge = true;
+    rec.el.classList.add("judge");
+    addBadge(rec.badgesEl, "judge", "JUDGE");
+  }
+
+  function addBadge(badgesEl, kind, text) {
+    var selector = ".badge-" + kind;
+    var el = badgesEl.querySelector(selector);
+    if (!el) {
+      el = document.createElement("span");
+      el.className = "badge badge-" + kind;
+      badgesEl.appendChild(el);
+    }
+    el.textContent = text;
+    if (window.anime) {
+      window.anime({
+        targets: el,
+        scale: [0.4, 1],
+        opacity: [0, 1],
+        duration: 260,
+        easing: "easeOutBack"
+      });
+    }
+    return el;
+  }
+
+  function getOrCreateAgentNode(agentId, agentType) {
+    var rec = agents[agentId];
+    if (rec) {
+      if (agentType && !rec.agentType) {
+        rec.agentType = agentType;
+        rec.labelEl.textContent = labelFor(agentType);
+        if (isJudgeType(agentType)) markAsJudge(rec);
+      }
+      return rec;
+    }
+
+    var el = document.createElement("div");
+    el.className = "node agent";
+
+    var labelEl = document.createElement("div");
+    labelEl.className = "label";
+    labelEl.textContent = labelFor(agentType);
+    el.appendChild(labelEl);
+
+    var badgesEl = document.createElement("div");
+    badgesEl.className = "badges";
+    el.appendChild(badgesEl);
+
+    spokesEl.appendChild(el);
+
+    rec = { agentType: agentType || null, el: el, labelEl: labelEl, badgesEl: badgesEl, isJudge: false };
+    agents[agentId] = rec;
+
+    if (isJudgeType(agentType)) markAsJudge(rec);
+
+    layoutSpokes();
+    animateIn(rec);
+    return rec;
+  }
+
+  function animateIn(rec) {
+    // Nodes animate in on SubagentStart. A node created defensively by
+    // some other event carrying agent_id (out-of-order/replayed backlog)
+    // still gets this same entrance animation so it never sits invisible.
+    if (window.anime) {
+      window.anime({
+        targets: rec.el,
+        opacity: [0, 1],
+        scale: [0.3, 1],
+        duration: 420,
+        easing: "easeOutElastic(1, .6)"
+      });
+    } else {
+      rec.el.style.opacity = "1";
+    }
+  }
+
+  function animateOutAndRemove(agentId) {
+    var rec = agents[agentId];
+    if (!rec) return;
+    delete agents[agentId];
+    var el = rec.el;
+    var onDone = function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+      layoutSpokes();
+    };
+    if (window.anime) {
+      window.anime({
+        targets: el,
+        opacity: [1, 0],
+        scale: [1, 0.3],
+        duration: 320,
+        easing: "easeInQuad",
+        complete: onDone
+      });
+    } else {
+      onDone();
+    }
+  }
+
+  function pulse(el) {
+    if (!window.anime) return;
+    window.anime({
+      targets: el,
+      scale: [1, 1.18, 1],
+      duration: 280,
+      easing: "easeInOutQuad"
+    });
+  }
+
+  var leadNode = { el: leadNodeEl, badgesEl: leadBadgesEl };
+
+  function handleGateEvent(payload, node) {
+    // Quality-gate hooks (F089): a gate/verdict/finding-bearing log line.
+    var text = "GATE:" + (payload.verdict || "?");
+    var badgeEl = addBadge(node.badgesEl, "gate", text);
+    badgeEl.title = payload.gate + (payload.finding ? ": " + payload.finding : "");
+  }
+
+  function handlePermissionEvent(node, hookEventName) {
+    var text = hookEventName === "PermissionDenied" ? "DENIED" : "REQUEST";
+    addBadge(node.badgesEl, "permission", text);
+  }
+
+  function handleEvent(payload) {
+    if (!payload || typeof payload !== "object") return;
+    var hookEventName = payload.hook_event_name;
+    var agentId = payload.agent_id || null;
+    var agentType = payload.agent_type || null;
+
+    var node = agentId ? getOrCreateAgentNode(agentId, agentType) : leadNode;
+
+    switch (hookEventName) {
+      case "SubagentStart":
+        if (agentId) animateIn(node);
+        break;
+      case "SubagentStop":
+        if (agentId) animateOutAndRemove(agentId);
+        break;
+      case "PreToolUse":
+      case "PostToolUse":
+        pulse(node.el);
+        break;
+      case "PermissionRequest":
+      case "PermissionDenied":
+        handlePermissionEvent(node, hookEventName);
+        break;
+      default:
+        break;
+    }
+
+    // A gate/verdict/finding-bearing line (F089) is identified by payload
+    // shape, not hook_event_name, since gate scripts log it alongside
+    // whatever hook_event_name triggered them (commonly PreToolUse).
+    if (payload.gate) {
+      handleGateEvent(payload, node);
+    }
+  }
+
+  function connect() {
+    var source = new EventSource("/events");
+    source.onmessage = function (evt) {
+      var payload;
+      try {
+        payload = JSON.parse(evt.data);
+      } catch (err) {
+        return;
+      }
+      handleEvent(payload);
+    };
+    // EventSource retries the connection itself on a drop; this is native
+    // reconnection behavior, not app-level polling -- F090's backlog
+    // replay on (re)connect is the sole catch-up path either way.
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>

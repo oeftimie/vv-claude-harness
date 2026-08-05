@@ -11303,6 +11303,64 @@ kill "$READER_B" 2>/dev/null; wait "$READER_B" 2>/dev/null
 kill "$SERVER_PID_7" 2>/dev/null; wait "$SERVER_PID_7" 2>/dev/null
 
 echo ""
+echo "== F091: dashboard frontend =="
+
+# QA binding for F091 is manual (per its own features.json entry): the
+# rendering/animation behavior needs a real browser to visually confirm,
+# and this repo's dependency-free bash/python3 runner has no browser/DOM
+# harness. These are supplementary structural assertions only -- they
+# prove the vendored library and the required event-type handling exist in
+# the page's source, not that the graph actually renders or animates.
+
+ANIME_JS="$HOOKS_DIR/dashboard/vendor/anime.min.js"
+DASHBOARD_HTML="$HOOKS_DIR/dashboard/index.html"
+
+if [ -s "$ANIME_JS" ]; then
+  pass "dash-fe: vendored animejs file exists and is non-empty"
+else
+  fail "dash-fe: vendored animejs file exists and is non-empty"
+fi
+
+ANIME_HEADER=$(head -20 "$ANIME_JS" 2>/dev/null)
+assert_contains "$ANIME_HEADER" "3.2.2" \
+  "dash-fe: vendored animejs header states the pinned version"
+assert_contains "$ANIME_HEADER" "https://registry.npmjs.org/animejs" \
+  "dash-fe: vendored animejs header states the source URL"
+
+DASHBOARD_HTML_SRC=$(cat "$DASHBOARD_HTML" 2>/dev/null)
+
+assert_contains "$DASHBOARD_HTML_SRC" 'vendor/anime.min.js' \
+  "dash-fe: page loads the vendored local animejs copy (no CDN)"
+assert_not_contains "$DASHBOARD_HTML_SRC" "cdn." \
+  "dash-fe: page does not reference a CDN"
+assert_contains "$DASHBOARD_HTML_SRC" '"/events"' \
+  "dash-fe: page connects to F090's /events SSE endpoint"
+
+# Required event-type handler strings (F088/F089/F091's own classification
+# rules): every hook_event_name this feature must react to, plus the
+# gate/judge field checks that distinguish the three badge categories.
+for TOKEN in "SubagentStart" "SubagentStop" "PreToolUse" "PostToolUse" \
+             "PermissionRequest" "PermissionDenied"; do
+  assert_contains "$DASHBOARD_HTML_SRC" "\"$TOKEN\"" \
+    "dash-fe: page source handles hook_event_name $TOKEN"
+done
+
+assert_contains "$DASHBOARD_HTML_SRC" "payload.gate" \
+  "dash-fe: page source checks the gate/verdict/finding fields (F089)"
+assert_contains "$DASHBOARD_HTML_SRC" "payload.verdict" \
+  "dash-fe: page source reads the verdict field (F089)"
+assert_contains "$DASHBOARD_HTML_SRC" "payload.finding" \
+  "dash-fe: page source reads the finding field (F089) (used via addBadge/handleGateEvent)"
+assert_contains "$DASHBOARD_HTML_SRC" "-judge" \
+  "dash-fe: page source classifies agent_type values ending in -judge"
+assert_contains "$DASHBOARD_HTML_SRC" "agent_id" \
+  "dash-fe: page source reads agent_id to classify lead vs. spoke"
+assert_contains "$DASHBOARD_HTML_SRC" "(unknown agent)" \
+  "dash-fe: page source labels a missing agent_type as (unknown agent)"
+assert_not_contains "$DASHBOARD_HTML_SRC" ".teammate_name" \
+  "dash-fe: page source never reads teammate_name to label a node"
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
