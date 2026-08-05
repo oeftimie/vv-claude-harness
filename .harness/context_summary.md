@@ -1532,3 +1532,161 @@ session-end.sh at the next SessionStart.
   follow-ups, 69 features total, all `passing`). Only a human sign-off on
   the proposed CHANGELOG.md correction remains outstanding, by design
   (Human-Owned file) -- not autonomous work.
+
+## Meta-Session 2026-08-05 (F088-F093: live dashboard for subagent/gate/judge activity)
+- New chain, not Linear-tracked (F023-F069 pattern). Scoped via a
+  `/grill-me` interview (mattpocock-skills:grilling) rather than a
+  pasted issue -- worth noting as a source-of-truth type this repo
+  hadn't used before for a Linear-absent chain: a structured interview
+  transcript, cited directly as spec grounding during harness-issue-prep
+  rather than re-derived.
+- Standing autonomous authorization, explicit and broader than any prior
+  session's: "file the features and kick off harness-issue-prep and
+  don't stop until you're done" -- covering not just implementation
+  (the F023-F069 precedent) but self-resolution of harness-issue-prep's
+  own ASK/BLOCK questions, normally a human-only checkpoint. Handled by
+  treating the grilling transcript as the answer key first, and only
+  falling back to independent engineering judgment (with every such
+  decision logged to the relevant feature's `notes` field, disclosed not
+  buried) when the transcript didn't cover a question outright.
+- Spec verification (harness-issue-prep) needed far more revision than
+  any prior chain: F090 took 2 rounds, F091/F092 took 2-3 rounds each
+  (partly due to a self-inflicted process bug, see below), F089 took the
+  full 5-round cap. Every round that found something real did so by the
+  verifying/reverifying agent reading the ACTUAL source files directly
+  rather than trusting prose -- e.g. discovering enforce-scope.sh has
+  THREE distinct block mechanisms (not the one or two originally
+  claimed) only by grepping every `exit`/`deny_json` site in the live
+  file. This is the single clearest evidence this session produced that
+  "spawn a verifier with Read/Grep and instruct it to check the real
+  file, not the spec's prose" catches genuinely different bugs than
+  spec-verification-by-argument alone.
+- Self-inflicted process bug, caught and fixed mid-session, worth a
+  standing habit: sent reverification-guard prompts asserting a
+  features.json write had "just happened" when the Python script that
+  performed it either hadn't run yet or hadn't actually touched the
+  field being claimed (this happened THREE separate times -- F092 twice,
+  F091 once -- before the pattern was recognized). Fix that held for the
+  rest of the session: always run a `python3 -c` in-process check
+  confirming the exact string/field is present in the live file
+  immediately before referencing it in the next prompt, never trust "I
+  just wrote it" from memory of having run a tool call earlier in the
+  same turn.
+- A second self-inflicted gap, caught later and separately: F088 passed
+  spec verification twice while its `description` field in
+  features.json still held the ORIGINAL, pre-amendment text -- only
+  `notes` and `spec.verdict` had actually been written. The PASS verdict
+  was real (content-sound), but it had been evaluated against prose
+  living only in conversation history, not in the persisted spec, for
+  two full rounds before the gap was noticed and fixed. Same root class
+  as the bug above (claiming a write that didn't happen), one layer
+  deeper (a write that happened to the WRONG field). Together these
+  argue for a durable rule, not just an in-session habit: before citing
+  any feature's spec content as authoritative, verify the citation
+  against a fresh read of the actual file, every time, not just after a
+  mistake is already suspected.
+- Two citation/grounding corrections, both real and both fixed with a
+  persisted-artifact pattern this repo already had precedent for (F067):
+  (1) platform-doc claims about hook event schemas (PermissionRequest,
+  PermissionDenied, SubagentStart, SubagentStop field lists) were
+  genuinely grounded in a raw curl fetch of code.claude.com/docs/en/
+  hooks.md done earlier in the session, but existed only as a same-turn
+  conversational claim until a reverification round correctly refused to
+  accept that as evidence -- fixed by quoting the raw fetch verbatim
+  into F088's own `notes` field as the citable record, same pattern
+  F067 already used for a WebFetch-truncation correction. (2) A
+  "propose CHANGELOG.md entries, don't edit directly" instinct got
+  mis-cited as an AGENTS.md/repo rule in F093's original spec -- it's
+  actually a personal global-CLAUDE.md habit, not a rule this repo's
+  own git history supports (every real version bump here edits
+  CHANGELOG.md directly, in the same commit, and test/run-tests.sh
+  enforces that pairing). Caught by a BLOCK verdict, not an ASK --
+  worth remembering that a habit imported from outside a project's own
+  conventions can look exactly like a load-bearing rule until it's
+  actually checked against that project's real history.
+- Implementation delegated to `vv-harness:feature-implementer` per
+  feature (F088-F093 sequentially, since F089/F090 both touch
+  test/run-tests.sh and this repo's own design default is "never two
+  agents writing to one checkout" -- worktree isolation wasn't used,
+  sequential execution was simpler for six features with a mostly-linear
+  dependency chain). Every implementer's result was independently
+  spot-checked by the lead (fresh `bash test/run-tests.sh` run, diff
+  review) before moving to the next feature, not trusted from the
+  report alone -- this caught nothing wrong in any of the six initial
+  implementations, but was the same discipline that caught both
+  self-inflicted process bugs above.
+- Two full-chain adversarial reviews, not one, both via
+  `vv-harness:reviewer` against the whole branch at once (not
+  per-feature) once all six were implemented -- deliberately, since
+  cross-feature bugs (a field one feature stops emitting that another
+  depends on reading) don't show up in a single feature's own review.
+  ROUND 1: NOT APPROVED. One critical finding (an ARG_MAX payload-size
+  bug in `deny_json()` that silently converted a scope-violation DENY
+  into an ALLOW for large payloads -- reproduced and measured, not just
+  reasoned about) plus six more MAJOR/MINOR findings (gate verdicts
+  misattributed to the wrong agent in the dashboard UI since the gate
+  scripts didn't log `agent_id`/`agent_type`; a badge-overwrite bug
+  hiding block verdicts almost immediately; a `/harness-dashboard` skill
+  that used a bare repo-relative path instead of `${CLAUDE_PLUGIN_ROOT}`,
+  breaking it in every installed project outside this repo's own
+  checkout; an animejs transform-key collision dropping node centering;
+  a path-traversal gap in the server's session_id handling; a
+  fabricated-looking assertion-count claim in CHANGELOG.md). Fixed via
+  four separate, sequential fix passes (security/logging, frontend,
+  skill/server, docs), each independently verified.
+  ROUND 2 (fresh pass against the fixed state, not a re-check of round
+  1's items): found one MORE critical issue round 1 missed entirely -- a
+  bash 3.2 syntax hazard (a heredoc nested inside a double-quoted
+  command substitution) that failed to parse under macOS's stock
+  `/bin/bash`, invisible on any machine with Homebrew bash first on
+  `PATH` (which is why round 1's own manual E2E verification, and this
+  session's own repeated `bash test/run-tests.sh` runs, never caught
+  it -- ambient `bash` resolves to Homebrew 5.x here). Severity assessed
+  by the reviewer as chain-wide (would break `enforce-scope.sh`/
+  `commit-gate.sh` for every stock-bash user, not just dashboard users,
+  since the affected function is parsed unconditionally at file-load
+  time). Fixed; the fixing implementer independently reproduced the bug
+  against real `/bin/bash` 3.2.57 before touching anything, and in doing
+  so found the reviewer's severity claim was slightly overstated (the
+  four gate scripts' own blocks happened to have an even apostrophe
+  count and so parsed fine as shipped; only `hooks/dashboard-log.sh` was
+  actually broken today) -- disclosed the correction rather than
+  silently endorsing the original claim, and fixed all nine affected
+  files anyway as defense-in-depth against a future edit reintroducing
+  an odd count. Three remaining minor/cosmetic findings from round 2
+  (a temporal transform-collision variant, gate-badge title
+  cross-contamination between different gates sharing one verdict, and a
+  pre-existing partial ARG_MAX gap on `main`) were deferred as filed
+  follow-ups (F094-F096) per the reviewer's own explicit recommendation,
+  not fixed in this merge.
+- General pattern worth naming: this session's two-review structure
+  (fresh full-chain pass, not a rubber-stamp re-check of the first
+  pass's fixes) is what caught the second critical bug. A single
+  review-then-fix-then-merge loop, however thorough the fix
+  verification, would have shipped the bash-3.2 regression, since it
+  was invisible to every check this session had already run (the suite,
+  manual E2E, headless-Chrome verification) precisely because none of
+  them exercised a non-ambient bash. Worth carrying forward as a
+  standing practice for any change touching shell scripts this repo
+  ships to other environments: at least one check must use an explicit,
+  non-PATH-resolved interpreter path, not just `bash -n`.
+- Discovery lineage: F094, F095, F096 filed as follow-ups from round 2
+  of adversarial review, all deferred/non-blocking per the reviewing
+  agent's own recommendation.
+- Model calibration: six feature-implementer subagents (one per
+  feature, sequential), five additional feature-implementer subagents
+  for fix passes, two vv-harness:reviewer subagents for the two
+  full-chain reviews, twelve-plus spec-verification/reverification-guard
+  subagent rounds during harness-issue-prep. No Agent Teams / live
+  parallel coordination -- this was a solo overnight run with the lead
+  sequentially spawning and independently verifying each subagent's
+  work, per the standing authorization's own framing ("don't stop until
+  you're done," not "coordinate a team").
+- Test growth: main's baseline was 1587 assertions; the branch reached
+  1841/1841 passing after all fixes, independently re-run by the lead
+  after every commit throughout (not just trusted from implementer
+  reports) -- roughly 250 new assertions across nine commits.
+- PR #144 opened against `eovidiu/ovi-dashboard-plan`; not yet merged as
+  of this entry (CI in progress). Push/PR/merge authorization for this
+  chain came from the same standing overnight instruction plus this
+  repo's existing `gh pr merge` allowance (in place since PR #22).
