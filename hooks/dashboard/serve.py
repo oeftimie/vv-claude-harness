@@ -48,7 +48,14 @@ def sanitize_session_id(session_id):
 
 def find_project_root():
     """The directory containing .harness/, resolved the same way as
-    hooks/dashboard-log.sh (git toplevel, falling back to cwd)."""
+    hooks/dashboard-log.sh and every gate script's own PROJECT_ROOT:
+    CLAUDE_PROJECT_DIR when set, else git toplevel, falling back to cwd.
+    A nohup-launched server (this one always is -- see skills/harness-init's
+    own launch command) inherits its parent's environment, so
+    CLAUDE_PROJECT_DIR is reachable here the same way it is in a hook."""
+    env_root = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env_root:
+        return env_root
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],

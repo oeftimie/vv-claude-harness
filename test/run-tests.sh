@@ -11804,6 +11804,47 @@ for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/s
   fi
 done
 
+# Regression guard for a bash-3.2-specific parse hazard (F094): a heredoc
+# nested inside a DOUBLE-QUOTED command substitution (`python3 -c "$(cat
+# <<'PYEOF' ... PYEOF)"`) parses fine under bash 5.x -- and so passes the
+# plain `bash -n` loop directly above whenever Homebrew bash is first on
+# PATH -- but fails `bash -n` outright under REAL bash 3.2.57 (this repo's
+# own declared minimum) whenever the heredoc body's own single-quote count
+# is odd. That PATH-dependence is exactly why the plain loop above, which
+# resolves `bash` from PATH like everything else in this file, could not
+# have caught it: a machine with Homebrew bash first on PATH sees no
+# failure at all, even though the same file fails to parse under the stock
+# macOS /bin/bash every one of these ships to. This check deliberately
+# invokes the literal path /bin/bash -- never the ambient `bash` used
+# everywhere else in this file -- specifically to catch a reintroduction of
+# that nested-heredoc pattern regardless of what's on PATH. Degrades to a
+# skip (not a failure) when /bin/bash doesn't exist, e.g. a non-macOS CI
+# runner: the goal is catching this on the platforms where the hazard is
+# real, not asserting /bin/bash's presence everywhere.
+STOCK_BASH_3_2_FILES="
+$HOOKS_DIR/dashboard-log.sh
+$REPO_ROOT/.claude/hooks/enforce-scope.sh
+$REPO_ROOT/.claude/hooks/commit-gate.sh
+$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh
+$REPO_ROOT/.claude/hooks/verify-task-quality.sh
+$TEMPLATES_DIR/enforce-scope.sh.template
+$TEMPLATES_DIR/commit-gate.sh.template
+$TEMPLATES_DIR/check-remaining-tasks.sh.template
+$TEMPLATES_DIR/verify-task-quality.sh.template
+"
+if [ -x /bin/bash ]; then
+  for SCRIPT in $STOCK_BASH_3_2_FILES; do
+    [ -n "$SCRIPT" ] || continue
+    if /bin/bash -n "$SCRIPT"; then
+      pass "n: /bin/bash -n $(basename "$SCRIPT") (stock bash 3.2 parse check, F094)"
+    else
+      fail "n: /bin/bash -n $(basename "$SCRIPT") (stock bash 3.2 parse check, F094)"
+    fi
+  done
+else
+  echo "SKIP: /bin/bash not present on this machine -- skipping F094's stock-bash-3.2 parse regression check"
+fi
+
 # The *.sh.template loop below already guards against a stray NUL byte
 # (F039); these hooks/*.sh files ship directly with the plugin to every
 # user (not copied per-project like the templates) and were a gap in that

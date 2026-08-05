@@ -196,7 +196,23 @@ except Exception:
     # `|| true`) and drops the event with no error surfaced anywhere. Only
     # small, bounded values (the log path, session id, verdict, finding)
     # stay on argv.
-    printf '%s' "$INPUT" | python3 -c "$(cat <<'PYEOF'
+    #
+    # The python source is read into a variable via a TOP-LEVEL heredoc
+    # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- a heredoc
+    # nested inside a DOUBLE-QUOTED command substitution parses fine under
+    # bash 5.x but fails `bash -n` outright under real bash 3.2.57 (this
+    # repo's own declared minimum) whenever the heredoc body's own single-
+    # quote count is odd: bash 3.2's lexer still scans the heredoc BODY for
+    # quote balance while looking for the closing double-quote of the
+    # substitution, even though heredoc content isn't supposed to be
+    # subject to quote-parity rules at all. Invisible under Homebrew bash
+    # (5.x) on PATH, which is exactly why it shipped uncaught -- and because
+    # this function is defined at file-load time, unconditionally, a parse
+    # failure here breaks the ENTIRE gate script for every stock-bash user,
+    # not just one gated behind VV_HARNESS_DASHBOARD (bash must successfully
+    # PARSE the whole file before any runtime check, including that env-var
+    # gate, ever executes).
+    IFS= read -r -d '' _DASHBOARD_LOG_PY <<'PYEOF' || true
 import json
 import sys
 import time
@@ -228,7 +244,8 @@ try:
 except Exception:
     pass
 PYEOF
-)" ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
+    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" \
+        ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
         >/dev/null 2>/dev/null || true
 }
 
@@ -243,7 +260,12 @@ deny_json() {
     # silently converting a compound-stage-and-commit/secret-assignment
     # DENIAL into an ALLOW. Only the small, bounded reason string stays on
     # argv.
-    printf '%s' "$INPUT" | python3 -c "$(cat <<'PYEOF'
+    #
+    # The python source is read into a variable via a TOP-LEVEL heredoc
+    # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- see
+    # _dashboard_log()'s own comment above (same file, same fix, same
+    # bash-3.2-specific parse hazard) for the full explanation.
+    IFS= read -r -d '' _DENY_JSON_PY <<'PYEOF' || true
 import json
 import os
 import re
@@ -299,7 +321,7 @@ try:
 except Exception:
     pass
 PYEOF
-)" "$reason"
+    printf '%s' "$INPUT" | python3 -c "$_DENY_JSON_PY" "$reason"
     exit 0
 }
 

@@ -62,7 +62,17 @@ set -uo pipefail
 
 [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || exit 0
 
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || ROOT=$(pwd)
+# Prefers CLAUDE_PROJECT_DIR, matching every gate script's own
+# PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel ...)}"
+# resolution (.claude/hooks/enforce-scope.sh, commit-gate.sh,
+# check-remaining-tasks.sh, verify-task-quality.sh) and hooks/session-start.sh.
+# Before this fix, this hook ignored CLAUDE_PROJECT_DIR entirely and always
+# fell back to git-toplevel-or-pwd -- in a harness project nested inside a
+# larger git repo, that resolves to the OUTER repo's root while the gate
+# scripts resolve to the inner project, so this hook silently wrote to (or
+# looked for) .harness/dashboard/ in the wrong directory: the dashboard ends
+# up completely empty with no diagnostic anywhere.
+ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 H="$ROOT/.harness"
 [ -d "$H" ] || exit 0
 
@@ -88,82 +98,14 @@ mkdir -p "$DASHBOARD_DIR" 2>/dev/null || exit 0
 # event with no error surfaced anywhere -- silent event loss, not a security
 # bypass (this hook only ever logs, it never gates a tool call). Only small,
 # bounded values (the log path, session id) stay on argv.
-printf '%s' "$STDIN_JSON" | python3 -c "$(cat <<'PYEOF'
-import json
-import re
-import sys
-import time
-
-log_path, session_id = sys.argv[1], sys.argv[2]
-stdin_json = sys.stdin.read()
-SUMMARY_LIMIT = 200
-
-# Reused verbatim from commit-gate.sh's own SECRET_PATTERN (~line 446-449):
-# a redacted summary is still built from raw tool_input (url, description,
-# etc.), unlike the field-allowlist redaction this hook otherwise relies on,
-# so a real secret riding along in one of those fields -- e.g. a WebFetch url
-# with an embedded `?api_key=...` query param -- reached the log verbatim.
-# This closes the concrete key=value-shaped case the pattern already
-# recognizes, applied to this new surface; it is not a general secret
-# scanner (a bare token or unlabeled bearer string in free text still isn't
-# caught, the same documented residual as commit-gate.sh's own copy).
-SECRET_KEYWORDS = "key|secret|password|passwd|pwd|token"
-SECRET_PATTERN = re.compile(
-    r"(?i)(?:" + SECRET_KEYWORDS + r")[A-Za-z0-9_.\-]*['\"]?\s*[:=]\s*"
-    r"['\"]?([A-Za-z0-9+/_.\-]{16,})"
-)
-
-
-def redact(tool_name, tool_input):
-    if not isinstance(tool_input, dict):
-        tool_input = {}
-    if tool_name == "Bash":
-        return tool_input.get("description") or "(no description)"
-    if tool_name in ("Edit", "Write"):
-        return tool_input.get("file_path", "")
-    if tool_name in ("Read", "Glob", "Grep"):
-        return (tool_input.get("file_path") or tool_input.get("pattern")
-                 or tool_input.get("path") or "")
-    if tool_name in ("WebFetch", "WebSearch"):
-        return tool_input.get("url") or tool_input.get("query") or ""
-    if tool_name == "Agent":
-        return tool_input.get("subagent_type") or tool_input.get("description") or ""
-    return None
-
-
-try:
-    try:
-        data = json.loads(stdin_json)
-    except Exception:
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-
-    line = {
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "hook_event_name": data.get("hook_event_name", ""),
-        "session_id": session_id,
-    }
-    for key in ("agent_id", "agent_type", "tool_name", "teammate_name", "team_name"):
-        value = data.get(key)
-        if value:
-            line[key] = value
-
-    tool_name = data.get("tool_name")
-    if tool_name:
-        summary = redact(tool_name, data.get("tool_input"))
-        if summary is not None:
-            summary = SECRET_PATTERN.sub("[redacted]", summary)
-            if len(summary) > SUMMARY_LIMIT:
-                summary = summary[:SUMMARY_LIMIT] + f"... ({len(summary)} chars total)"
-            line["summary"] = summary
-
-    with open(log_path, "a") as fh:
-        fh.write(json.dumps(line) + "\n")
-except Exception:
-    pass
-PYEOF
-)" "$DASHBOARD_DIR/$SESSION_ID.jsonl" "$SESSION_ID" \
+#
+# The payload-building logic itself lives in the sibling dashboard-log.py
+# (F094 round 2), not inlined here via `python3 -c "$(cat <<'PYEOF' ...)"` --
+# see that file's own header for why a heredoc nested inside a double-quoted
+# command substitution is a bash-3.2-specific parse hazard this hook must not
+# reintroduce.
+printf '%s' "$STDIN_JSON" | python3 "$(dirname "$0")/dashboard-log.py" \
+  "$DASHBOARD_DIR/$SESSION_ID.jsonl" "$SESSION_ID" \
   >/dev/null 2>/dev/null || true
 
 exit 0
