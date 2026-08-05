@@ -63,13 +63,19 @@ except Exception:
     session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
     [ -n "$session_id" ] || return 0
     mkdir -p ".harness/dashboard" 2>/dev/null || return 0
-    python3 - ".harness/dashboard/$session_id.jsonl" "$session_id" "$INPUT" "$verdict" "$finding" \
-        >/dev/null 2>/dev/null <<'PYEOF' || true
+    # F089 round 2 (adversarial review): the JSON payload is fed via STDIN,
+    # never argv -- a large payload on argv can exceed the OS's exec()
+    # argument-list size limit (~1MB on macOS, as low as 128KB per-argument
+    # on Linux), which fails this whole call silently (it's `|| true`) and
+    # drops the event with no error surfaced anywhere. Only small, bounded
+    # values (the log path, session id, verdict, finding) stay on argv.
+    printf '%s' "$INPUT" | python3 -c "$(cat <<'PYEOF'
 import json
 import sys
 import time
 
-log_path, session_id, stdin_json, verdict, finding = sys.argv[1:6]
+log_path, session_id, verdict, finding = sys.argv[1:5]
+stdin_json = sys.stdin.read()
 try:
     try:
         data = json.loads(stdin_json)
@@ -86,11 +92,17 @@ try:
     }
     if finding:
         line["finding"] = finding
+    for key in ("agent_id", "agent_type"):
+        value = data.get(key)
+        if value:
+            line[key] = value
     with open(log_path, "a") as fh:
         fh.write(json.dumps(line) + "\n")
 except Exception:
     pass
 PYEOF
+)" ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
+        >/dev/null 2>/dev/null || true
 }
 
 if [ ! -f ".harness/features.json" ]; then

@@ -189,13 +189,20 @@ except Exception:
     session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
     [ -n "$session_id" ] || return 0
     mkdir -p ".harness/dashboard" 2>/dev/null || return 0
-    python3 - ".harness/dashboard/$session_id.jsonl" "$session_id" "$INPUT" "$verdict" "$finding" \
-        >/dev/null 2>/dev/null <<'PYEOF' || true
+    # F089 round 2 (adversarial review): the JSON payload is fed via STDIN,
+    # never argv -- a large Write/Edit payload on argv can exceed the OS's
+    # exec() argument-list size limit (~1MB on macOS, as low as 128KB
+    # per-argument on Linux), which fails this whole call silently (it's
+    # `|| true`) and drops the event with no error surfaced anywhere. Only
+    # small, bounded values (the log path, session id, verdict, finding)
+    # stay on argv.
+    printf '%s' "$INPUT" | python3 -c "$(cat <<'PYEOF'
 import json
 import sys
 import time
 
-log_path, session_id, stdin_json, verdict, finding = sys.argv[1:6]
+log_path, session_id, verdict, finding = sys.argv[1:5]
+stdin_json = sys.stdin.read()
 try:
     try:
         data = json.loads(stdin_json)
@@ -212,15 +219,31 @@ try:
     }
     if finding:
         line["finding"] = finding
+    for key in ("agent_id", "agent_type"):
+        value = data.get(key)
+        if value:
+            line[key] = value
     with open(log_path, "a") as fh:
         fh.write(json.dumps(line) + "\n")
 except Exception:
     pass
 PYEOF
+)" ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
+        >/dev/null 2>/dev/null || true
 }
 
 deny_json() {
-    python3 - "$1" "$INPUT" <<'PYEOF'
+    local reason="$1"
+    # F089 round 2: the JSON payload is fed via STDIN, never argv -- a large
+    # Write/Edit payload on argv can exceed the OS's exec() argument-list
+    # size limit (~1MB on macOS, as low as 128KB per-argument on Linux),
+    # which fails the python3 exec silently. This function's own
+    # unconditional `exit 0` below then still runs with NOTHING printed to
+    # stdout, and Claude Code reads "exit 0, empty stdout" as ALLOW --
+    # silently converting a compound-stage-and-commit/secret-assignment
+    # DENIAL into an ALLOW. Only the small, bounded reason string stays on
+    # argv.
+    printf '%s' "$INPUT" | python3 -c "$(cat <<'PYEOF'
 import json
 import os
 import re
@@ -228,7 +251,7 @@ import sys
 import time
 
 reason = sys.argv[1]
-stdin_json = sys.argv[2] if len(sys.argv) > 2 else ""
+stdin_json = sys.stdin.read()
 
 print(json.dumps({
     "hookSpecificOutput": {
@@ -267,11 +290,16 @@ try:
                 "verdict": "block",
                 "finding": finding,
             }
+            for key in ("agent_id", "agent_type"):
+                value = data.get(key)
+                if value:
+                    line[key] = value
             with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
                 fh.write(json.dumps(line) + "\n")
 except Exception:
     pass
 PYEOF
+)" "$reason"
     exit 0
 }
 

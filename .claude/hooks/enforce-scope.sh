@@ -93,13 +93,20 @@ except Exception:
     session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
     [ -n "$session_id" ] || return 0
     mkdir -p ".harness/dashboard" 2>/dev/null || return 0
-    python3 - ".harness/dashboard/$session_id.jsonl" "$session_id" "$INPUT" "$verdict" "$finding" \
-        >/dev/null 2>/dev/null <<'PYEOF' || true
+    # F089 round 2 (adversarial review): the JSON payload is fed via STDIN,
+    # never argv -- a large Write/Edit payload on argv can exceed the OS's
+    # exec() argument-list size limit (~1MB on macOS, as low as 128KB
+    # per-argument on Linux), which fails this whole call silently (it's
+    # `|| true`) and drops the event with no error surfaced anywhere. Only
+    # small, bounded values (the log path, session id, verdict, finding)
+    # stay on argv.
+    printf '%s' "$INPUT" | python3 -c "$(cat <<'PYEOF'
 import json
 import sys
 import time
 
-log_path, session_id, stdin_json, verdict, finding = sys.argv[1:6]
+log_path, session_id, verdict, finding = sys.argv[1:5]
+stdin_json = sys.stdin.read()
 try:
     try:
         data = json.loads(stdin_json)
@@ -116,11 +123,17 @@ try:
     }
     if finding:
         line["finding"] = finding
+    for key in ("agent_id", "agent_type"):
+        value = data.get(key)
+        if value:
+            line[key] = value
     with open(log_path, "a") as fh:
         fh.write(json.dumps(line) + "\n")
 except Exception:
     pass
 PYEOF
+)" ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
+        >/dev/null 2>/dev/null || true
 }
 
 # Only enforce if a scope file exists. In practice this is teammates only (the
@@ -139,7 +152,30 @@ fi
 ANNOTATION="(verified live 2026-07-24 on Claude Code 2.1.218)"
 
 deny_json() {
-    python3 - "$1" "$INPUT" <<'PYEOF'
+    local reason="$1"
+    # F089 round 2 (adversarial review): finding class is now an explicit,
+    # per-call-site argument (default "scope-violation:deny-json" for any
+    # caller that doesn't pass one) rather than a single hardcoded
+    # "scope-violation" string -- that hardcoded value made every one of
+    # this function's five distinct call sites indistinguishable from each
+    # other in the dashboard log, unlike this file's two legacy exit-2 sites
+    # (which already carry their own "scope-violation:out-of-scope-edit" /
+    # "scope-violation:unsafe-extraction" suffixes). Every call site below
+    # now names its own, following the same "scope-violation:<site>"
+    # convention.
+    local finding="${2:-scope-violation:deny-json}"
+    # F089 round 2: the JSON payload is fed via STDIN, never argv -- a large
+    # Write/Edit payload on argv can exceed the OS's exec() argument-list
+    # size limit (~1MB on macOS, as low as 128KB per-argument on Linux),
+    # which fails the python3 exec silently. This function's own
+    # unconditional `exit 0` below then still runs with NOTHING printed to
+    # stdout, and Claude Code reads "exit 0, empty stdout" as ALLOW --
+    # silently converting a scope-violation DENIAL into an ALLOW (confirmed
+    # live: a 1.2MB Write to a lead-owned file that correctly denies under
+    # ARG_MAX returns rc=0 with an empty stdout once the payload is large
+    # enough). Only small, bounded values (the reason and finding strings)
+    # stay on argv.
+    printf '%s' "$INPUT" | python3 -c "$(cat <<'PYEOF'
 import json
 import os
 import re
@@ -147,7 +183,8 @@ import sys
 import time
 
 reason = sys.argv[1]
-stdin_json = sys.argv[2] if len(sys.argv) > 2 else ""
+finding = sys.argv[2]
+stdin_json = sys.stdin.read()
 
 print(json.dumps({
     "hookSpecificOutput": {
@@ -179,13 +216,18 @@ try:
                 "session_id": session_id,
                 "gate": "enforce-scope",
                 "verdict": "block",
-                "finding": "scope-violation",
+                "finding": finding,
             }
+            for key in ("agent_id", "agent_type"):
+                value = data.get(key)
+                if value:
+                    line[key] = value
             with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
                 fh.write(json.dumps(line) + "\n")
 except Exception:
     pass
 PYEOF
+)" "$reason" "$finding"
     exit 0
 }
 
@@ -284,7 +326,8 @@ except Exception:
 " 2>/dev/null)
 COMMAND_RC=$?
 if [ "$COMMAND_RC" -eq 1 ]; then
-    deny_json "command could not be safely extracted from tool input (best-effort, pattern-based check; treating as outside your assigned scope). $ANNOTATION"
+    deny_json "command could not be safely extracted from tool input (best-effort, pattern-based check; treating as outside your assigned scope). $ANNOTATION" \
+        "scope-violation:unsafe-command-extraction"
 fi
 
 if [ -n "$FILE_PATH" ]; then
@@ -299,7 +342,8 @@ if [ -n "$FILE_PATH" ]; then
         # relevant configuration a scoped teammate shouldn't be able to edit
         # unilaterally the way it edits its own assigned source files (F058).
         .harness/features.json|.harness/context_summary.md|.harness/claude-progress.txt|.harness/harness.json)
-            deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION"
+            deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION" \
+                "scope-violation:lead-owned-state-file"
             ;;
         # .claude/teammate-scope.txt added by F060: confirmed live (review-pr91-f058)
         # that a teammate scoped to .claude/ could edit its OWN scope definition
@@ -320,7 +364,8 @@ if [ -n "$FILE_PATH" ]; then
         # residuals are accepted for the same reason (a teammate can be
         # legitimately assigned that scope), not fixed here (F060).
         .claude/teammate-scope.txt)
-            deny_json "teammate-scope.txt is lead-owned; report via SendMessage instead. $ANNOTATION"
+            deny_json "teammate-scope.txt is lead-owned; report via SendMessage instead. $ANNOTATION" \
+                "scope-violation:lead-owned-scope-file"
             ;;
         # .harness/mld/ added by F062: skills/harness-continue/SKILL.md documents this
         # directory as lead-only ("the lead -- never a teammate -- writes
@@ -347,7 +392,8 @@ if [ -n "$FILE_PATH" ]; then
         # destruction is a broader, pre-existing hole this narrower feature doesn't
         # attempt to close.
         .harness/mld/*)
-            deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION"
+            deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION" \
+                "scope-violation:lead-owned-mld"
             ;;
     esac
 
@@ -1963,8 +2009,14 @@ PYEOF
 )
 
     if [ -n "$DENY_REASON" ]; then
-        deny_json "$DENY_REASON"
+        deny_json "$DENY_REASON" "scope-violation:out-of-scope-command"
     fi
 fi
 
+# F089 round 2: an ordinary in-scope (or write-free) Bash command reaches
+# this final exit 0 with no prior _dashboard_log() call anywhere on this
+# path -- unlike the Edit/Write scope-match branch above (line ~407) and
+# every deny_json()/legacy-exit-2 site, this was the one decision point in
+# this file that logged nothing at all.
+_dashboard_log "allow" || true
 exit 0

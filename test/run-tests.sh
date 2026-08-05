@@ -1112,6 +1112,54 @@ run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1
 LINE=$(cat "$DL_LOG" 2>/dev/null)
 assert_contains "$LINE" '"summary": "vv harness dashboard"' "dl: WebSearch summary is query"
 
+# A WebFetch url with an embedded key=value-shaped credential (the concrete
+# shape commit-gate.sh's own SECRET_PATTERN already recognizes) must not
+# reach the log verbatim -- redact() builds the summary from raw tool_input,
+# unlike the field-allowlist redaction the rest of this hook otherwise relies
+# on (found by adversarial review: a real secret value can ride through the
+# "url" field's own allowlisted-but-unscrubbed content).
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"WebFetch","tool_input":{"url":"https://api.example.com/v1/data?api_key=sk-live-1234567890abcdef"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_not_contains "$LINE" "sk-live-1234567890abcdef" \
+  "dl: a key=value-shaped secret in a WebFetch url summary is redacted"
+assert_contains "$LINE" "[redacted]" \
+  "dl: a redacted summary field carries the [redacted] marker"
+assert_contains "$LINE" "https://api.example.com/v1/data?" \
+  "dl: redaction preserves the non-secret part of the url"
+
+# ARG_MAX regression (F089 round 2): this hook's python3 invocation used to
+# put the ENTIRE stdin JSON payload on argv (`python3 - ... "$STDIN_JSON"
+# <<PYEOF`). A Write/Edit tool_input carrying a large file content field
+# blows past the OS's exec() argument-list size limit (~1MB on macOS, as low
+# as 128KB per-argument on Linux) -- exec then fails ("Argument list too
+# long"), and because this whole call is `|| true`, the failure is fully
+# swallowed: the hook still exits 0 by design, but the event is silently
+# NEVER logged, with no error surfaced anywhere. The payload below is sized
+# well past the ~1,000,000-1,050,000 byte boundary measured directly against
+# this environment's python3/bash (a bare `python3 -c "pass" "$BIG"` starts
+# failing with "argument list too long" once BIG exceeds roughly 1,000,000
+# bytes here), for margin against JSON/env overhead.
+> "$DL_LOG"
+DL_BIG_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({
+    'hook_event_name': 'PostToolUse',
+    'session_id': 'argmaxsess',
+    'tool_name': 'Write',
+    'tool_input': {'file_path': 'out.txt', 'content': 'x' * 2500000},
+}))
+")
+OUT=$(run_dashboard_log "$DIR_DL" "$DL_BIG_PAYLOAD" '1')
+RC=$?
+assert_rc0 "$RC" "dl: an oversized (ARG_MAX-exceeding) payload still exits 0"
+DL_BIG_LOG="$DIR_DL/.harness/dashboard/argmaxsess.jsonl"
+LINE=$(cat "$DL_BIG_LOG" 2>/dev/null)
+assert_contains "$LINE" '"session_id": "argmaxsess"' \
+  "dl: an oversized payload still produces a logged event (not silently dropped)"
+assert_contains "$LINE" '"tool_name": "Write"' \
+  "dl: an oversized payload's logged event still carries tool_name"
+
 # Agent: subagent_type/description, never the full prompt.
 > "$DL_LOG"
 run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Agent","tool_input":{"subagent_type":"Explore","prompt":"leaked-full-prompt-text"}}' '1' >/dev/null
@@ -9674,8 +9722,15 @@ assert_contains "$LINE" '"verdict": "block"' "f089-es: the unsafe-extraction sit
 assert_contains "$LINE" '"finding": "scope-violation:unsafe-extraction"' \
   "f089-es: the unsafe-extraction site logs its finding class"
 
-# Block (deny_json(), covering all five of its own call sites with one
-# instrumented site -- exercised here via a lead-owned state file denial).
+# Block (deny_json(), covering all five of its own call sites -- exercised
+# here via a lead-owned state file denial). F089 round 2 (adversarial
+# review): deny_json() used to log a single bare "scope-violation" finding
+# for every one of its five call sites, indistinguishable from each other
+# and from the two OTHER finding classes this file emits from its legacy
+# exit-2 paths ("scope-violation:out-of-scope-edit",
+# "scope-violation:unsafe-extraction") -- deny_json() now takes its own
+# finding-class argument, following the same "scope-violation:<site>"
+# convention.
 > "$ES89_LOG"
 OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
   "$(f089_edit_json "$DIR_ES89/.harness/features.json" "es89sess")")
@@ -9684,9 +9739,24 @@ assert_rc0 "$RC" "f089-es: a lead-owned-file deny_json() denial still exits 0 (J
 assert_deny_json "$OUT" "f089-es: a lead-owned-file denial still emits the deny JSON"
 LINE=$(cat "$ES89_LOG" 2>/dev/null)
 assert_contains "$LINE" '"verdict": "block"' "f089-es: the deny_json() site logs verdict=block"
-assert_contains "$LINE" '"finding": "scope-violation"' "f089-es: the deny_json() site logs its finding class"
+assert_contains "$LINE" '"finding": "scope-violation:lead-owned-state-file"' \
+  "f089-es: the deny_json() site logs a distinguishing (not bare) finding class"
 assert_contains "$LINE" '"hook_event_name": "PreToolUse"' \
   "f089-es: the deny_json() log entry carries hook_event_name from the payload"
+
+# A DIFFERENT deny_json() call site (an out-of-scope Bash write, routed
+# through the DENY_REASON python scan near the end of this file) must log a
+# DIFFERENT finding class than the lead-owned-state-file site above -- proof
+# the five call sites are no longer merged into one ambiguous bucket.
+> "$ES89_LOG"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_bash_json "rm -f $DIR_ES89/src/other/y.py" "es89sess")")
+RC=$?
+assert_rc0 "$RC" "f089-es: an out-of-scope Bash write deny_json() denial still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f089-es: an out-of-scope Bash write denial still emits the deny JSON"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"finding": "scope-violation:out-of-scope-command"' \
+  "f089-es: the Bash-write deny_json() site logs its own distinct finding class"
 
 # Disabled by default: no VV_HARNESS_DASHBOARD set, same fixture/scope, must
 # not create a dashboard directory, and the gate's own verdict is unaffected.
@@ -9911,6 +9981,169 @@ if [ ! -e "$DIR_VQ89_OFF/.harness/dashboard" ]; then
 else
   fail "f089-vq: disabled logging creates no dashboard directory -- it exists"
 fi
+
+echo ""
+echo "== F089 round 2: adversarial-review bugfixes (ARG_MAX, agent_id, allow-log) =="
+
+# --- Finding 1 (CRITICAL): deny_json()'s python3 invocation used to put the
+# entire hook stdin payload on argv. A large Write/Edit payload can exceed
+# the OS's exec() argument-list size limit (~1MB on macOS, as low as 128KB
+# per-argument on Linux); when that happens exec fails ("Argument list too
+# long"), deny_json()'s own unconditional `exit 0` on the next line still
+# runs, and Claude Code sees "exit 0, empty stdout" -- ALLOW -- silently
+# converting a scope-violation DENIAL into an ALLOW. The payloads below are
+# sized well past the ~1,000,000-1,050,000 byte boundary measured directly
+# against this environment's python3/bash (a bare `python3 -c "pass" "$BIG"`
+# starts failing with "argument list too long" once BIG exceeds roughly
+# 1,000,000 bytes here), for margin against JSON/env overhead.
+
+DIR_AM_ES="$WORK/f089r2-argmax-enforce-scope"
+make_fixture "$DIR_AM_ES"
+install_hooks "$DIR_AM_ES"
+printf 'src/parser/\n' > "$DIR_AM_ES/.claude/teammate-scope.txt"
+AM_ES_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'session_id': 'argmaxsess',
+    'tool_input': {'file_path': '.harness/features.json', 'content': 'x' * 2500000},
+}))
+")
+OUT=$(run_hook_dashboard "$DIR_AM_ES" enforce-scope.sh "$AM_ES_PAYLOAD")
+RC=$?
+assert_rc0 "$RC" "f089r2-es: an oversized (ARG_MAX-exceeding) lead-owned-file payload still exits 0"
+assert_deny_json "$OUT" \
+  "f089r2-es: an oversized lead-owned-file payload still emits deny JSON (not a silent allow)"
+
+DIR_AM_CG="$WORK/f089r2-argmax-commit-gate"
+make_fixture "$DIR_AM_CG"
+install_hooks "$DIR_AM_CG"
+AM_CG_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'session_id': 'argmaxsess',
+    'tool_input': {
+        'command': 'git commit -a -m \"test\"',
+        'description': 'x' * 2500000,
+    },
+}))
+")
+OUT=$(run_hook_dashboard "$DIR_AM_CG" commit-gate.sh "$AM_CG_PAYLOAD")
+RC=$?
+assert_rc0 "$RC" "f089r2-cg: an oversized (ARG_MAX-exceeding) compound-stage-and-commit payload still exits 0"
+assert_deny_json "$OUT" \
+  "f089r2-cg: an oversized compound-stage-and-commit payload still emits deny JSON (not a silent allow)"
+
+# --- Finding 2 (MAJOR): agent_id/agent_type were not copied into the
+# dashboard event line by any of the four gate scripts (only
+# hooks/dashboard-log.sh itself did) -- without this, F091's frontend
+# attributes every teammate's gate verdict to the lead node instead of the
+# real teammate.
+
+DIR_AID_ES="$WORK/f089r2-agentid-enforce-scope"
+make_fixture "$DIR_AID_ES"
+install_hooks "$DIR_AID_ES"
+printf 'src/parser/\n' > "$DIR_AID_ES/.claude/teammate-scope.txt"
+AID_ES_LOG="$DIR_AID_ES/.harness/dashboard/aidsess.jsonl"
+
+# _dashboard_log() call site (legacy exit-2 out-of-scope-edit path).
+AID_ES_PAYLOAD1=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate',
+                   'tool_input': {'file_path': 'src/other/y.py'}}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_ES" enforce-scope.sh "$AID_ES_PAYLOAD1" 2>&1)
+LINE=$(cat "$AID_ES_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-es: _dashboard_log() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-es: _dashboard_log() propagates agent_type from the payload"
+
+# deny_json() call site (lead-owned state file).
+> "$AID_ES_LOG"
+AID_ES_PAYLOAD2=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate',
+                   'tool_input': {'file_path': '.harness/features.json'}}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_ES" enforce-scope.sh "$AID_ES_PAYLOAD2")
+LINE=$(cat "$AID_ES_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-es: deny_json() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-es: deny_json() propagates agent_type from the payload"
+
+DIR_AID_CG="$WORK/f089r2-agentid-commit-gate"
+make_fixture "$DIR_AID_CG"
+install_hooks "$DIR_AID_CG"
+AID_CG_LOG="$DIR_AID_CG/.harness/dashboard/aidsess.jsonl"
+AID_CG_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate',
+                   'tool_input': {'command': 'git commit -a -m \"test\"'}}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_CG" commit-gate.sh "$AID_CG_PAYLOAD")
+LINE=$(cat "$AID_CG_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-cg: deny_json() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-cg: deny_json() propagates agent_type from the payload"
+
+DIR_AID_CT="$WORK/f089r2-agentid-check-remaining"
+make_fixture "$DIR_AID_CT"
+install_hooks "$DIR_AID_CT"
+AID_CT_LOG="$DIR_AID_CT/.harness/dashboard/aidsess.jsonl"
+AID_CT_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'TeammateIdle', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate'}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_CT" check-remaining-tasks.sh "$AID_CT_PAYLOAD" 2>&1)
+LINE=$(cat "$AID_CT_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-ct: _dashboard_log() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-ct: _dashboard_log() propagates agent_type from the payload"
+
+DIR_AID_VQ="$WORK/f089r2-agentid-verify-quality"
+make_fixture "$DIR_AID_VQ"
+install_hooks "$DIR_AID_VQ"
+AID_VQ_LOG="$DIR_AID_VQ/.harness/dashboard/aidsess.jsonl"
+AID_VQ_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate',
+                   'task': {'metadata': {'feature_id': 'F002'}}}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_VQ" verify-task-quality.sh "$AID_VQ_PAYLOAD" 2>&1)
+LINE=$(cat "$AID_VQ_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-vq: _dashboard_log() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-vq: _dashboard_log() propagates agent_type from the payload"
+
+# --- Finding 8 (MINOR): enforce-scope.sh never logged an "allow" verdict for
+# the ordinary in-scope Bash-command path -- only the Edit/Write scope-match
+# branch, and the deny_json()/legacy-exit-2 paths, were instrumented; the
+# file's own final `exit 0` (reached by an in-scope or write-free Bash
+# command) was silent.
+
+DIR_ALLOW_BASH="$WORK/f089r2-allow-bash"
+make_fixture "$DIR_ALLOW_BASH"
+install_hooks "$DIR_ALLOW_BASH"
+printf 'src/parser/\n' > "$DIR_ALLOW_BASH/.claude/teammate-scope.txt"
+AB_LOG="$DIR_ALLOW_BASH/.harness/dashboard/absess.jsonl"
+OUT=$(run_hook_dashboard "$DIR_ALLOW_BASH" enforce-scope.sh \
+  "$(f089_bash_json 'echo hi' 'absess')")
+RC=$?
+assert_rc0 "$RC" "f089r2-es: an ordinary in-scope Bash command still exits 0"
+LINE=$(cat "$AB_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' \
+  "f089r2-es: an ordinary in-scope Bash command now logs verdict=allow before the final exit 0"
 
 echo ""
 echo "== agent frontmatter =="

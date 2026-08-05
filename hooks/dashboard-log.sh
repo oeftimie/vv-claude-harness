@@ -81,14 +81,37 @@ SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
 DASHBOARD_DIR="$H/dashboard"
 mkdir -p "$DASHBOARD_DIR" 2>/dev/null || exit 0
 
-python3 - "$DASHBOARD_DIR/$SESSION_ID.jsonl" "$SESSION_ID" "$STDIN_JSON" \
-  >/dev/null 2>/dev/null <<'PYEOF' || true
+# F089 round 2 (adversarial review): the JSON payload is fed via STDIN, never
+# argv -- a large Write/Edit payload on argv can exceed the OS's exec()
+# argument-list size limit (~1MB on macOS, as low as 128KB per-argument on
+# Linux), which fails this whole call silently (it's `|| true`) and drops the
+# event with no error surfaced anywhere -- silent event loss, not a security
+# bypass (this hook only ever logs, it never gates a tool call). Only small,
+# bounded values (the log path, session id) stay on argv.
+printf '%s' "$STDIN_JSON" | python3 -c "$(cat <<'PYEOF'
 import json
+import re
 import sys
 import time
 
-log_path, session_id, stdin_json = sys.argv[1], sys.argv[2], sys.argv[3]
+log_path, session_id = sys.argv[1], sys.argv[2]
+stdin_json = sys.stdin.read()
 SUMMARY_LIMIT = 200
+
+# Reused verbatim from commit-gate.sh's own SECRET_PATTERN (~line 446-449):
+# a redacted summary is still built from raw tool_input (url, description,
+# etc.), unlike the field-allowlist redaction this hook otherwise relies on,
+# so a real secret riding along in one of those fields -- e.g. a WebFetch url
+# with an embedded `?api_key=...` query param -- reached the log verbatim.
+# This closes the concrete key=value-shaped case the pattern already
+# recognizes, applied to this new surface; it is not a general secret
+# scanner (a bare token or unlabeled bearer string in free text still isn't
+# caught, the same documented residual as commit-gate.sh's own copy).
+SECRET_KEYWORDS = "key|secret|password|passwd|pwd|token"
+SECRET_PATTERN = re.compile(
+    r"(?i)(?:" + SECRET_KEYWORDS + r")[A-Za-z0-9_.\-]*['\"]?\s*[:=]\s*"
+    r"['\"]?([A-Za-z0-9+/_.\-]{16,})"
+)
 
 
 def redact(tool_name, tool_input):
@@ -130,6 +153,7 @@ try:
     if tool_name:
         summary = redact(tool_name, data.get("tool_input"))
         if summary is not None:
+            summary = SECRET_PATTERN.sub("[redacted]", summary)
             if len(summary) > SUMMARY_LIMIT:
                 summary = summary[:SUMMARY_LIMIT] + f"... ({len(summary)} chars total)"
             line["summary"] = summary
@@ -139,5 +163,7 @@ try:
 except Exception:
     pass
 PYEOF
+)" "$DASHBOARD_DIR/$SESSION_ID.jsonl" "$SESSION_ID" \
+  >/dev/null 2>/dev/null || true
 
 exit 0
