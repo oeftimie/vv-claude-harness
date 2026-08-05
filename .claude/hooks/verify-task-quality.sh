@@ -25,6 +25,86 @@ cd "$PROJECT_ROOT"
 # Read hook input from stdin
 INPUT=$(cat)
 
+# F089: opt-in dashboard event log for this gate's block/allow verdicts.
+# Duplicates hooks/dashboard-log.sh's (F088) JSON-line schema and
+# redaction/atomicity conventions inline -- a project-level hook installed
+# into .claude/hooks/ cannot reach a plugin-root file. Never aborts the
+# gate: every risky step below is guarded, and every call site is itself
+# suffixed with `|| true` -- critical under this script's own
+# `set -euo pipefail`.
+_dashboard_log() {
+    [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || return 0
+    [ -d ".harness" ] || return 0
+    local verdict="$1" finding="${2:-}" session_id
+    session_id=$(printf '%s' "$INPUT" | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("session_id") or "")
+except Exception:
+    pass
+' 2>/dev/null || true)
+    session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
+    [ -n "$session_id" ] || return 0
+    mkdir -p ".harness/dashboard" 2>/dev/null || return 0
+    # F089 round 2 (adversarial review): the JSON payload is fed via STDIN,
+    # never argv -- a large payload on argv can exceed the OS's exec()
+    # argument-list size limit (~1MB on macOS, as low as 128KB per-argument
+    # on Linux), which fails this whole call silently (it's `|| true`) and
+    # drops the event with no error surfaced anywhere. Only small, bounded
+    # values (the log path, session id, verdict, finding) stay on argv.
+    #
+    # The python source is read into a variable via a TOP-LEVEL heredoc
+    # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- a heredoc
+    # nested inside a DOUBLE-QUOTED command substitution parses fine under
+    # bash 5.x but fails `bash -n` outright under real bash 3.2.57 (this
+    # repo's own declared minimum) whenever the heredoc body's own single-
+    # quote count is odd: bash 3.2's lexer still scans the heredoc BODY for
+    # quote balance while looking for the closing double-quote of the
+    # substitution, even though heredoc content isn't supposed to be
+    # subject to quote-parity rules at all. Invisible under Homebrew bash
+    # (5.x) on PATH, which is exactly why it shipped uncaught -- and because
+    # this function is defined at file-load time, unconditionally, a parse
+    # failure here breaks the ENTIRE gate script for every stock-bash user,
+    # not just one gated behind VV_HARNESS_DASHBOARD (bash must successfully
+    # PARSE the whole file before any runtime check, including that env-var
+    # gate, ever executes).
+    IFS= read -r -d '' _DASHBOARD_LOG_PY <<'PYEOF' || true
+import json
+import sys
+import time
+
+log_path, session_id, verdict, finding = sys.argv[1:5]
+stdin_json = sys.stdin.read()
+try:
+    try:
+        data = json.loads(stdin_json)
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    line = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "hook_event_name": data.get("hook_event_name", ""),
+        "session_id": session_id,
+        "gate": "verify-task-quality",
+        "verdict": verdict,
+    }
+    if finding:
+        line["finding"] = finding
+    for key in ("agent_id", "agent_type"):
+        value = data.get(key)
+        if value:
+            line[key] = value
+    with open(log_path, "a") as fh:
+        fh.write(json.dumps(line) + "\n")
+except Exception:
+    pass
+PYEOF
+    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" \
+        ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
+        >/dev/null 2>/dev/null || true
+}
+
 # Try to extract feature ID from task metadata (if TaskCreate used
 # metadata.feature_id). The JSON parse is in its OWN try/except (exit 2 on
 # failure); extracting/printing the field is a SEPARATE try/except that
@@ -80,6 +160,7 @@ if [ ! -f ".harness/init.sh" ]; then
     # identical defect F046 fixed in check-remaining-tasks.sh.template).
     echo "Task rejected: .harness/init.sh not found. Cannot verify tests pass." >&2
     echo "Run /harness-init to create the test script, or create it manually." >&2
+    _dashboard_log "block" "missing-init-script" || true
     exit 2
 fi
 
@@ -122,6 +203,7 @@ SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
     echo "Smoke test output:" >&2
     echo "$SMOKE_OUTPUT" | tail -20 >&2
     increment_correction_cycles
+    _dashboard_log "block" "smoke-test-failed" || true
     exit 2
 }
 
@@ -133,6 +215,7 @@ FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
     echo "Test output (last 20 lines):" >&2
     echo "$FULL_OUTPUT" | tail -20 >&2
     increment_correction_cycles
+    _dashboard_log "block" "tests-failing" || true
     exit 2
 }
 
@@ -166,6 +249,7 @@ PYEOF
         TARGET="${COVERAGE_RESULT##*|}"
         echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%." >&2
         increment_correction_cycles
+        _dashboard_log "block" "coverage-below-target" || true
         exit 2
     fi
 fi
@@ -254,4 +338,5 @@ print(json.dumps({\"systemMessage\": sys.argv[1]}))
 " "$SYSTEM_MESSAGE"
 fi
 
+_dashboard_log "allow" || true
 exit 0

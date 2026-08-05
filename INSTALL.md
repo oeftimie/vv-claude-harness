@@ -227,6 +227,52 @@ plugins, and MCP servers as percentages (24h/7d views, from local history). No
 collector required. The session token/cost stats are universal; the plan-usage
 breakdown view is available on subscription plans (Pro/Max/Team/Enterprise).
 
+## Optional: Live Session Dashboard
+
+An opt-in, local-only, animated view of a session's Agent Teams activity: a node for
+the lead and one for each spoke, pulsing on tool use, badged for quality-gate
+verdicts, judge subagents, and permission prompts.
+
+**The env var must be set before the session you want to watch is launched.** The
+hooks that write the event log are wired at Claude Code startup, so enabling this
+mid-session has no effect:
+
+```bash
+export VV_HARNESS_DASHBOARD=1
+claude
+```
+
+From a second terminal (or after that session ends), run `/harness-dashboard`. It
+checks `.harness/dashboard/` for a log file, starts a local server or reuses one
+already running on `127.0.0.1:8765`, and opens the page in a browser. See
+`skills/harness-dashboard/SKILL.md` for the exact steps, including how to stop the
+server.
+
+**Event log**: one JSON-line file per session, at
+`.harness/dashboard/<session_id>.jsonl`. This feature adds `.harness/dashboard/` to
+`.gitignore`, and `/harness-doctor --fix` adds the same line for existing projects
+that upgrade the plugin — so the directory is gitignored once one of those has run.
+A project that upgraded without re-running doctor since may not have that ignore rule
+yet; run `/harness-doctor` to pick it up. The log holds only short, redacted
+summaries (a file path, a Bash command's `description`) rather than raw command text,
+file content, or prompts. Nothing rotates or deletes these files automatically; clean
+up `.harness/dashboard/` by hand when old session logs are no longer needed.
+
+**Known limitations**:
+
+- The graph is a flat hub-and-spoke layout — the hook payload set has no
+  parent-agent field, so spawn ancestry (which teammate spawned which) can't be
+  reconstructed.
+- Teammate nodes are labeled by `agent_type` only, never a custom `teammate_name` —
+  the two identities aren't correlated anywhere in the hook payloads.
+- The view is live-only: it replays one session's backlog on connect, then streams
+  new events. There's no cross-session history or aggregation.
+- One session, one server: the dashboard shows whichever session's log file was most
+  recently modified, not a combined multi-session view.
+- The server binds to `127.0.0.1:8765` only, with no authentication — loopback-only
+  bind is its sole access control, matching this environment's existing trust model
+  for local dev tooling.
+
 ## Optional: spec gate for an external runner
 
 Everything below is optional. Skip it entirely if you only use the spec gate locally:

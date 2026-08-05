@@ -2,6 +2,45 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.2.0 (2026-08-05)
+
+**An opt-in, live, animated dashboard for watching an Agent Teams session as it runs**
+(F088-F093, the 2026-08-05 grilling session's dashboard chain). New capability, not a
+bugfix.
+
+Set `VV_HARNESS_DASHBOARD=1` before launching the session you want to watch — the
+hooks that write the event log are wired at Claude Code startup, so enabling it
+mid-session has no effect — then run `/harness-dashboard` from a second terminal.
+`hooks/dashboard-log.sh` (F088) and matching inline instrumentation added to all four
+quality-gate scripts (F089, both the plugin templates and this repo's own installed
+copies) write a redacted, gitignored JSON-line event log per session to
+`.harness/dashboard/<session_id>.jsonl` — short summaries only (a file path, a Bash
+command's `description`), never raw commands, file content, or prompts.
+`hooks/dashboard/serve.py` (F090) is a dependency-free Python stdlib SSE server,
+loopback-only on `127.0.0.1:8765`, that replays a session's backlog on connect and
+tails new events with no polling. `hooks/dashboard/index.html` (F091), using a
+vendored local copy of animejs (no CDN), renders that stream as a live node graph: a
+hub for the lead, spokes for each subagent, pulsing on tool use, badged for
+quality-gate verdicts, judge subagents, and permission prompts. The `/harness-dashboard`
+skill (F092) launches the server detached at the OS level via `nohup`+`disown` (so it
+outlives the invoking session) or reuses one already running, then opens the page.
+
+Known, documented limitations: the graph is a flat hub-and-spoke layout (no
+parent-agent field exists anywhere in the hook payload set, so spawn ancestry can't be
+reconstructed); teammate nodes are labeled by `agent_type` only, never a custom
+`teammate_name` (the two identities have no correlation field); the view is live-only
+and one session at a time, with no cross-session history or aggregation; and the
+server has no authentication, relying solely on its loopback-only bind.
+
+**Tests**: `test/run-tests.sh` grew from 1587 (main's pre-branch baseline) to 1832
+assertions — covering the event-log contract and per-tool-type redaction (F088),
+gate-script instrumentation at every decision point (F089), the SSE server's
+backlog/tail/traversal/port-in-use behavior (F090), and structural checks on the
+frontend, skill, and this release's own docs and version bump (F091-F093; F091/F092
+are `qa_binding: manual`, proven primarily
+by direct end-to-end verification outside the harness, documented in each feature's
+own `features.json` coverage field).
+
 ### v5.1.1 (2026-08-03)
 
 **A round of adversarial review on v5.0.1/v5.1.0's own fixes, closing every deferred nit

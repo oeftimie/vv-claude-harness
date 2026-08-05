@@ -42,6 +42,86 @@ cd "$PROJECT_ROOT"
 # Read hook input from stdin
 INPUT=$(cat)
 
+# F089: opt-in dashboard event log for this gate's block/allow verdicts.
+# Duplicates hooks/dashboard-log.sh's (F088) JSON-line schema and
+# redaction/atomicity conventions inline -- a project-level hook installed
+# into .claude/hooks/ cannot reach a plugin-root file. Never aborts the
+# gate: every risky step below is guarded, and every call site is itself
+# suffixed with `|| true` -- critical under this script's own
+# `set -euo pipefail`.
+_dashboard_log() {
+    [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || return 0
+    [ -d ".harness" ] || return 0
+    local verdict="$1" finding="${2:-}" session_id
+    session_id=$(printf '%s' "$INPUT" | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("session_id") or "")
+except Exception:
+    pass
+' 2>/dev/null || true)
+    session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
+    [ -n "$session_id" ] || return 0
+    mkdir -p ".harness/dashboard" 2>/dev/null || return 0
+    # F089 round 2 (adversarial review): the JSON payload is fed via STDIN,
+    # never argv -- a large payload on argv can exceed the OS's exec()
+    # argument-list size limit (~1MB on macOS, as low as 128KB per-argument
+    # on Linux), which fails this whole call silently (it's `|| true`) and
+    # drops the event with no error surfaced anywhere. Only small, bounded
+    # values (the log path, session id, verdict, finding) stay on argv.
+    #
+    # The python source is read into a variable via a TOP-LEVEL heredoc
+    # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- a heredoc
+    # nested inside a DOUBLE-QUOTED command substitution parses fine under
+    # bash 5.x but fails `bash -n` outright under real bash 3.2.57 (this
+    # repo's own declared minimum) whenever the heredoc body's own single-
+    # quote count is odd: bash 3.2's lexer still scans the heredoc BODY for
+    # quote balance while looking for the closing double-quote of the
+    # substitution, even though heredoc content isn't supposed to be
+    # subject to quote-parity rules at all. Invisible under Homebrew bash
+    # (5.x) on PATH, which is exactly why it shipped uncaught -- and because
+    # this function is defined at file-load time, unconditionally, a parse
+    # failure here breaks the ENTIRE gate script for every stock-bash user,
+    # not just one gated behind VV_HARNESS_DASHBOARD (bash must successfully
+    # PARSE the whole file before any runtime check, including that env-var
+    # gate, ever executes).
+    IFS= read -r -d '' _DASHBOARD_LOG_PY <<'PYEOF' || true
+import json
+import sys
+import time
+
+log_path, session_id, verdict, finding = sys.argv[1:5]
+stdin_json = sys.stdin.read()
+try:
+    try:
+        data = json.loads(stdin_json)
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    line = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "hook_event_name": data.get("hook_event_name", ""),
+        "session_id": session_id,
+        "gate": "check-remaining-tasks",
+        "verdict": verdict,
+    }
+    if finding:
+        line["finding"] = finding
+    for key in ("agent_id", "agent_type"):
+        value = data.get(key)
+        if value:
+            line[key] = value
+    with open(log_path, "a") as fh:
+        fh.write(json.dumps(line) + "\n")
+except Exception:
+    pass
+PYEOF
+    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" \
+        ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
+        >/dev/null 2>/dev/null || true
+}
+
 if [ ! -f ".harness/features.json" ]; then
     exit 0
 fi
@@ -53,6 +133,7 @@ STATE_MODULE=".claude/hooks/harness_state.py"
 RESULT=$(python3 "$STATE_MODULE" next-claimable .harness/features.json || true)
 
 if [ -z "$RESULT" ] || [ "$RESULT" = "no claimable feature" ]; then
+    _dashboard_log "allow" || true
     exit 0
 fi
 
@@ -72,4 +153,5 @@ print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
 echo "$NEXT" >&2
 echo "Read .harness/features.json for full details, then claim it via TaskUpdate." >&2
 echo "If your role has no Edit/Write tools (e.g. a review-only teammate), or your assignment was an explicit, already-delivered scoped task (a single review, a single read-only investigation, one eval run) rather than open-ended implementation work, this does not apply to you -- decline once, then stay idle; do not keep responding to repeated nudges. See your own agent definition, or ask the lead to shut you down." >&2
+_dashboard_log "block" "claimable-feature-pending" || true
 exit 2

@@ -82,6 +82,31 @@ run_statusline() {
   printf '%s' "$1" | bash "$HOOKS_DIR/statusline.sh"
 }
 
+# dashboard-log.sh is a plugin-root hook (like session-start.sh/session-end.sh/
+# statusline.sh above), invoked directly from hooks/, not installed into a
+# project's .claude/hooks/ -- so it's exercised the same way as those, not via
+# the run_hook() helper below (that one is specifically for the project-level
+# templates install_hooks() copies into .claude/hooks/).
+#
+# CLAUDE_PROJECT_DIR is explicitly set to the fixture dir ($1), matching
+# run_hook()'s own pattern below -- dashboard-log.sh's root resolution now
+# prefers CLAUDE_PROJECT_DIR over git-toplevel (F089's critical-fix pass, for
+# consistency with the gate scripts), so if these helpers merely `cd`'d into
+# the fixture and relied on git-toplevel, any ambient CLAUDE_PROJECT_DIR
+# already set in the environment running this suite (exactly what happens
+# under a real Claude Code hook invocation, e.g. verify-task-quality.sh's own
+# TaskCompleted run) would leak through and point dashboard-log.sh at the
+# real repo instead of the isolated fixture -- discovered live when this
+# exact leak made every dashboard-log.sh/serve.py assertion fail under
+# CLAUDE_PROJECT_DIR, despite passing cleanly with it unset.
+run_dashboard_log() {
+  (cd "$1" && printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" VV_HARNESS_DASHBOARD="$3" bash "$HOOKS_DIR/dashboard-log.sh")
+}
+
+run_dashboard_log_unset() {
+  (cd "$1" && printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" env -u VV_HARNESS_DASHBOARD bash "$HOOKS_DIR/dashboard-log.sh")
+}
+
 TEMPLATES_DIR="$REPO_ROOT/skills/harness-init"
 
 # Installs the hook templates into $1/.claude/hooks/ as executable .sh files,
@@ -104,6 +129,12 @@ run_hook() {
 
 run_hook_from_subdir() {
   (cd "$1/sub" && printf '%s' "$3" | CLAUDE_PROJECT_DIR="$1" "$1/.claude/hooks/$2")
+}
+
+# Same as run_hook(), but with VV_HARNESS_DASHBOARD set (default "1") -- for F089's
+# gate-script dashboard-logging assertions.
+run_hook_dashboard() {
+  (cd "$1" && printf '%s' "$3" | CLAUDE_PROJECT_DIR="$1" VV_HARNESS_DASHBOARD="${4:-1}" "$1/.claude/hooks/$2")
 }
 
 echo "== session-start.sh =="
@@ -969,6 +1000,365 @@ OUT=$(run_statusline 'not json')
 RC=$?
 assert_rc0 "$RC" "k: garbage stdin exits 0"
 assert_empty "$OUT" "k: garbage stdin prints nothing"
+
+echo ""
+echo "== dashboard-log.sh (F088) =="
+
+DIR_DL="$WORK/dl"
+make_fixture "$DIR_DL"
+DL_LOG="$DIR_DL/.harness/dashboard/sess1.jsonl"
+
+# Disabled path: env unset, empty, or '0' -- must never write, always exit 0.
+OUT=$(run_dashboard_log_unset "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}')
+RC=$?
+assert_rc0 "$RC" "dl: disabled (env unset) exits 0"
+assert_empty "$OUT" "dl: disabled (env unset) prints nothing"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: disabled (env unset) creates no dashboard directory"
+else
+  fail "dl: disabled (env unset) creates no dashboard directory -- it exists"
+fi
+
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '')
+RC=$?
+assert_rc0 "$RC" "dl: disabled (env empty) exits 0"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: disabled (env empty) creates no dashboard directory"
+else
+  fail "dl: disabled (env empty) creates no dashboard directory -- it exists"
+fi
+
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '0')
+RC=$?
+assert_rc0 "$RC" "dl: disabled (env '0') exits 0"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: disabled (env '0') creates no dashboard directory"
+else
+  fail "dl: disabled (env '0') creates no dashboard directory -- it exists"
+fi
+
+# Regression test: an ambient CLAUDE_PROJECT_DIR set to a DIFFERENT directory
+# (simulating this suite itself running under a real Claude Code hook
+# invocation, which always sets it) must not leak into dashboard-log.sh's
+# root resolution and redirect its output away from this fixture --
+# run_dashboard_log()'s own CLAUDE_PROJECT_DIR="$1" override must win.
+# Reproduces a real bug found live: dashboard-log.sh's root resolution
+# prefers CLAUDE_PROJECT_DIR when set (matching the gate scripts), so
+# without this override every dashboard-log.sh/serve.py assertion in this
+# suite silently failed whenever CLAUDE_PROJECT_DIR happened to be set in
+# the ambient environment -- invisible from an interactive terminal (where
+# it's normally unset) but deterministic under this repo's own
+# verify-task-quality.sh TaskCompleted hook, which Claude Code always
+# invokes with CLAUDE_PROJECT_DIR set to the real project root.
+DIR_DL_AMBIENT="$WORK/dl-ambient"
+make_fixture "$DIR_DL_AMBIENT"
+BOGUS_OUTER="$WORK/dl-ambient-bogus-outer"
+mkdir -p "$BOGUS_OUTER"
+OUT=$(CLAUDE_PROJECT_DIR="$BOGUS_OUTER" run_dashboard_log "$DIR_DL_AMBIENT" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: ambient CLAUDE_PROJECT_DIR (different dir) still exits 0"
+if [ -e "$DIR_DL_AMBIENT/.harness/dashboard/sess1.jsonl" ]; then
+  pass "dl: ambient CLAUDE_PROJECT_DIR does not redirect output away from the fixture"
+else
+  fail "dl: ambient CLAUDE_PROJECT_DIR does not redirect output away from the fixture -- no log file in $DIR_DL_AMBIENT"
+fi
+if [ ! -e "$BOGUS_OUTER/.harness" ]; then
+  pass "dl: ambient CLAUDE_PROJECT_DIR's own directory receives no dashboard output"
+else
+  fail "dl: ambient CLAUDE_PROJECT_DIR's own directory receives no dashboard output -- .harness exists in $BOGUS_OUTER"
+fi
+
+# No .harness directory: enabled, but exits 0 and writes nothing.
+DIR_DL_PLAIN="$WORK/dl-plain"
+mkdir -p "$DIR_DL_PLAIN"
+OUT=$(run_dashboard_log "$DIR_DL_PLAIN" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: no .harness/ dir exits 0"
+if [ ! -e "$DIR_DL_PLAIN/.harness" ]; then
+  pass "dl: no .harness/ dir creates nothing"
+else
+  fail "dl: no .harness/ dir creates nothing -- .harness exists"
+fi
+
+# Empty/absent session_id: enabled, .harness/ present, but skip the write silently.
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: empty session_id exits 0"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: empty session_id writes no dashboard directory"
+else
+  fail "dl: empty session_id writes no dashboard directory -- it exists"
+fi
+
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: absent session_id exits 0"
+if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
+  pass "dl: absent session_id writes no dashboard directory"
+else
+  fail "dl: absent session_id writes no dashboard directory -- it exists"
+fi
+
+# PreToolUse / Bash: summary is tool_input.description, never the raw command.
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/should-not-appear-in-log","description":"Clean up temp directory"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: PreToolUse/Bash exits 0"
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "PreToolUse"' "dl: PreToolUse/Bash logs hook_event_name"
+assert_contains "$LINE" '"session_id": "sess1"' "dl: PreToolUse/Bash logs session_id"
+assert_contains "$LINE" '"tool_name": "Bash"' "dl: PreToolUse/Bash logs tool_name"
+assert_contains "$LINE" '"summary": "Clean up temp directory"' "dl: PreToolUse/Bash summary is tool_input.description"
+assert_not_contains "$LINE" "should-not-appear-in-log" "dl: PreToolUse/Bash never logs the raw command"
+
+# Bash with no description falls back to the documented placeholder.
+> "$DL_LOG"
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo unlogged-command-text"}}' '1')
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "(no description)"' "dl: Bash with no description falls back to the placeholder"
+assert_not_contains "$LINE" "unlogged-command-text" "dl: Bash fallback never logs the raw command"
+
+# PostToolUse / Edit: summary is file_path only, never old_string/new_string content.
+> "$DL_LOG"
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PostToolUse","session_id":"sess1","tool_name":"Edit","tool_input":{"file_path":"src/foo.py","old_string":"leaked-old-secret","new_string":"leaked-new-secret"}}' '1')
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "PostToolUse"' "dl: PostToolUse/Edit logs hook_event_name"
+assert_contains "$LINE" '"summary": "src/foo.py"' "dl: PostToolUse/Edit summary is file_path"
+assert_not_contains "$LINE" "leaked-old-secret" "dl: PostToolUse/Edit never logs old_string"
+assert_not_contains "$LINE" "leaked-new-secret" "dl: PostToolUse/Edit never logs new_string"
+
+# Write: same file_path-only rule.
+> "$DL_LOG"
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PostToolUse","session_id":"sess1","tool_name":"Write","tool_input":{"file_path":"out.txt","content":"leaked-write-content"}}' '1')
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "out.txt"' "dl: Write summary is file_path"
+assert_not_contains "$LINE" "leaked-write-content" "dl: Write never logs content"
+
+# Read/Glob/Grep: file_path, pattern, or path -- whichever is present.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Read","tool_input":{"file_path":"src/bar.py"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "src/bar.py"' "dl: Read summary is file_path"
+
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Grep","tool_input":{"pattern":"needle","path":"src/"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "needle"' "dl: Grep summary prefers pattern"
+
+# WebFetch/WebSearch: url or query.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"WebFetch","tool_input":{"url":"https://example.com/page"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "https://example.com/page"' "dl: WebFetch summary is url"
+
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"WebSearch","tool_input":{"query":"vv harness dashboard"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "vv harness dashboard"' "dl: WebSearch summary is query"
+
+# A WebFetch url with an embedded key=value-shaped credential (the concrete
+# shape commit-gate.sh's own SECRET_PATTERN already recognizes) must not
+# reach the log verbatim -- redact() builds the summary from raw tool_input,
+# unlike the field-allowlist redaction the rest of this hook otherwise relies
+# on (found by adversarial review: a real secret value can ride through the
+# "url" field's own allowlisted-but-unscrubbed content).
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"WebFetch","tool_input":{"url":"https://api.example.com/v1/data?api_key=sk-live-1234567890abcdef"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_not_contains "$LINE" "sk-live-1234567890abcdef" \
+  "dl: a key=value-shaped secret in a WebFetch url summary is redacted"
+assert_contains "$LINE" "[redacted]" \
+  "dl: a redacted summary field carries the [redacted] marker"
+assert_contains "$LINE" "https://api.example.com/v1/data?" \
+  "dl: redaction preserves the non-secret part of the url"
+
+# ARG_MAX regression (F089 round 2): this hook's python3 invocation used to
+# put the ENTIRE stdin JSON payload on argv (`python3 - ... "$STDIN_JSON"
+# <<PYEOF`). A Write/Edit tool_input carrying a large file content field
+# blows past the OS's exec() argument-list size limit (~1MB on macOS, as low
+# as 128KB per-argument on Linux) -- exec then fails ("Argument list too
+# long"), and because this whole call is `|| true`, the failure is fully
+# swallowed: the hook still exits 0 by design, but the event is silently
+# NEVER logged, with no error surfaced anywhere. The payload below is sized
+# well past the ~1,000,000-1,050,000 byte boundary measured directly against
+# this environment's python3/bash (a bare `python3 -c "pass" "$BIG"` starts
+# failing with "argument list too long" once BIG exceeds roughly 1,000,000
+# bytes here), for margin against JSON/env overhead.
+> "$DL_LOG"
+DL_BIG_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({
+    'hook_event_name': 'PostToolUse',
+    'session_id': 'argmaxsess',
+    'tool_name': 'Write',
+    'tool_input': {'file_path': 'out.txt', 'content': 'x' * 2500000},
+}))
+")
+OUT=$(run_dashboard_log "$DIR_DL" "$DL_BIG_PAYLOAD" '1')
+RC=$?
+assert_rc0 "$RC" "dl: an oversized (ARG_MAX-exceeding) payload still exits 0"
+DL_BIG_LOG="$DIR_DL/.harness/dashboard/argmaxsess.jsonl"
+LINE=$(cat "$DL_BIG_LOG" 2>/dev/null)
+assert_contains "$LINE" '"session_id": "argmaxsess"' \
+  "dl: an oversized payload still produces a logged event (not silently dropped)"
+assert_contains "$LINE" '"tool_name": "Write"' \
+  "dl: an oversized payload's logged event still carries tool_name"
+
+# Agent: subagent_type/description, never the full prompt.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Agent","tool_input":{"subagent_type":"Explore","prompt":"leaked-full-prompt-text"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"summary": "Explore"' "dl: Agent summary is subagent_type"
+assert_not_contains "$LINE" "leaked-full-prompt-text" "dl: Agent never logs the full prompt"
+
+# Summary is capped at 200 chars with a truncate-and-point marker (F071/F079 convention).
+> "$DL_LOG"
+LONG_PATH="src/$(python3 -c 'print("x" * 250)').py"
+run_dashboard_log "$DIR_DL" "$(python3 -c "import json; print(json.dumps({'hook_event_name':'PostToolUse','session_id':'sess1','tool_name':'Edit','tool_input':{'file_path':'$LONG_PATH'}}))")" '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" "chars total" "dl: an oversized summary is truncated with a chars-total marker"
+SUMMARY_LEN=$(python3 -c "import json; print(len(json.loads('''$LINE''')['summary']))" 2>/dev/null || echo 0)
+if [ "$SUMMARY_LEN" -le 260 ] && [ "$SUMMARY_LEN" -gt 0 ]; then
+  pass "dl: truncated summary stays close to the 200-char cap"
+else
+  fail "dl: truncated summary length out of bounds -- got $SUMMARY_LEN"
+fi
+
+# SubagentStart: agent_id/agent_type, no summary field.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"SubagentStart","session_id":"sess1","agent_id":"agent-42","agent_type":"Explore"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-42"' "dl: SubagentStart logs agent_id"
+assert_contains "$LINE" '"agent_type": "Explore"' "dl: SubagentStart logs agent_type"
+assert_not_contains "$LINE" '"summary"' "dl: SubagentStart has no summary field (no tool_name)"
+
+# SubagentStop: agent_id/agent_type, but never last_assistant_message content.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"SubagentStop","session_id":"sess1","agent_id":"agent-42","agent_type":"Explore","last_assistant_message":"leaked-subagent-transcript"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "SubagentStop"' "dl: SubagentStop logs hook_event_name"
+assert_contains "$LINE" '"agent_id": "agent-42"' "dl: SubagentStop logs agent_id"
+assert_not_contains "$LINE" "leaked-subagent-transcript" "dl: SubagentStop never logs last_assistant_message"
+
+# PermissionRequest: tool_name + redacted summary, per its own tool_input/tool_name shape.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PermissionRequest","session_id":"sess1","tool_name":"Write","tool_input":{"file_path":"out.txt","content":"leaked-permission-content"}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "PermissionRequest"' "dl: PermissionRequest logs hook_event_name"
+assert_contains "$LINE" '"summary": "out.txt"' "dl: PermissionRequest summary follows the Write rule"
+assert_not_contains "$LINE" "leaked-permission-content" "dl: PermissionRequest never logs file content"
+
+# PermissionDenied: tool_name + redacted summary, never the denial reason.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PermissionDenied","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/nope","description":"cleanup"},"reason":"leaked-denial-reason"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "PermissionDenied"' "dl: PermissionDenied logs hook_event_name"
+assert_contains "$LINE" '"summary": "cleanup"' "dl: PermissionDenied summary follows the Bash rule"
+assert_not_contains "$LINE" "leaked-denial-reason" "dl: PermissionDenied never logs the denial reason"
+assert_not_contains "$LINE" "/tmp/nope" "dl: PermissionDenied never logs the raw command"
+
+# TaskCreated / TaskCompleted: only the common fields -- no task subject/metadata.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "TaskCreated"' "dl: TaskCreated logs hook_event_name"
+assert_contains "$LINE" '"session_id": "sess1"' "dl: TaskCreated logs session_id"
+
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCompleted","session_id":"sess1","task":{"subject":"leaked-task-subject","metadata":{"feature_id":"F999"}}}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "TaskCompleted"' "dl: TaskCompleted logs hook_event_name"
+assert_not_contains "$LINE" "leaked-task-subject" "dl: TaskCompleted does not log the task subject (not in the field list)"
+
+# TeammateIdle: teammate_name and team_name, when present.
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TeammateIdle","session_id":"sess1","teammate_name":"reviewer-1","team_name":"legacy-team"}' '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"teammate_name": "reviewer-1"' "dl: TeammateIdle logs teammate_name"
+assert_contains "$LINE" '"team_name": "legacy-team"' "dl: TeammateIdle logs team_name"
+
+# Multiple events for the same session append, one JSON line each (single write() per line).
+> "$DL_LOG"
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1' >/dev/null
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCompleted","session_id":"sess1"}' '1' >/dev/null
+LINE_COUNT=$(wc -l < "$DL_LOG" | tr -d ' ')
+if [ "$LINE_COUNT" = "2" ]; then
+  pass "dl: repeated events append one JSON line each to the same session file"
+else
+  fail "dl: expected 2 appended lines, got $LINE_COUNT"
+fi
+for L in 1 2; do
+  LINE=$(sed -n "${L}p" "$DL_LOG")
+  if python3 -c "import json,sys; json.loads(sys.argv[1])" "$LINE" >/dev/null 2>&1; then
+    pass "dl: appended line $L is valid JSON"
+  else
+    fail "dl: appended line $L is not valid JSON: $LINE"
+  fi
+done
+
+# Unrecognized tool: no summary field, no crash, still exits 0 and logs common fields.
+> "$DL_LOG"
+OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"SomeFutureTool","tool_input":{"whatever":"leaked-unrecognized-tool-data"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: unrecognized tool_name still exits 0"
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"tool_name": "SomeFutureTool"' "dl: unrecognized tool still logs tool_name"
+assert_not_contains "$LINE" "leaked-unrecognized-tool-data" "dl: unrecognized tool never logs raw tool_input"
+assert_not_contains "$LINE" '"summary"' "dl: unrecognized tool has no summary field"
+
+# A write failure (unwritable dashboard dir) never blocks the tool call.
+DIR_DL_RO="$WORK/dl-readonly"
+make_fixture "$DIR_DL_RO"
+mkdir -p "$DIR_DL_RO/.harness/dashboard"
+chmod 555 "$DIR_DL_RO/.harness/dashboard"
+OUT=$(run_dashboard_log "$DIR_DL_RO" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: unwritable dashboard dir still exits 0"
+assert_empty "$OUT" "dl: unwritable dashboard dir prints nothing to stdout"
+chmod 755 "$DIR_DL_RO/.harness/dashboard"
+
+# mkdir -p itself failing (unwritable .harness/, dashboard/ doesn't exist yet)
+# never blocks the tool call either.
+DIR_DL_RO2="$WORK/dl-readonly2"
+make_fixture "$DIR_DL_RO2"
+chmod 555 "$DIR_DL_RO2/.harness"
+OUT=$(run_dashboard_log "$DIR_DL_RO2" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: unwritable .harness/ (mkdir -p fails) still exits 0"
+chmod 755 "$DIR_DL_RO2/.harness"
+if [ ! -e "$DIR_DL_RO2/.harness/dashboard" ]; then
+  pass "dl: unwritable .harness/ creates no dashboard directory"
+else
+  fail "dl: unwritable .harness/ creates no dashboard directory -- it exists"
+fi
+
+# Garbage stdin never crashes the hook.
+OUT=$(run_dashboard_log "$DIR_DL" 'not json' '1')
+RC=$?
+assert_rc0 "$RC" "dl: garbage stdin exits 0"
+
+# Regression guard: the disabled path (first-operation env check) stays well under
+# a generous 50ms bound -- not a benchmarked SLA, just a structural no-file-I/O check.
+DL_ELAPSED_MS=$(python3 -c "
+import subprocess, time, sys
+elapsed = []
+for _ in range(5):
+    start = time.time()
+    subprocess.run(
+        ['bash', '$HOOKS_DIR/dashboard-log.sh'],
+        input=b'{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"sess1\"}',
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        env={'PATH': '/usr/bin:/bin'},
+        cwd='$DIR_DL',
+    )
+    elapsed.append((time.time() - start) * 1000)
+print(max(elapsed))
+")
+DL_UNDER_BOUND=$(python3 -c "print(1 if $DL_ELAPSED_MS < 50 else 0)")
+if [ "$DL_UNDER_BOUND" = "1" ]; then
+  pass "dl: disabled path stays under the 50ms regression bound (max ${DL_ELAPSED_MS}ms)"
+else
+  fail "dl: disabled path exceeded the 50ms regression bound (max ${DL_ELAPSED_MS}ms)"
+fi
 
 echo ""
 echo "== manifests =="
@@ -6184,7 +6574,7 @@ make_healthy_doctor_fixture() {
   }
 }
 SETTINGSEOF
-  printf '.harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n' > "$1/.gitignore"
+  printf '.harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n.harness/dashboard/\n' > "$1/.gitignore"
   cat >> "$1/.harness/context_summary.md" <<'CTXEOF'
 
 ## Cross-Cutting Concerns
@@ -9297,6 +9687,508 @@ assert_rc0 "$RC" "cg: F076 round-1 heredoc followed by a real trailing pathspec 
 assert_deny_json "$OUT" "cg: F076 round-1 a real trailing pathspec after a standalone heredoc is not hidden by the mask"
 
 echo ""
+echo "== F089: gate-script dashboard event logging =="
+
+# Builds a {hook_event_name, session_id, tool_input: {file_path|command: ...}}
+# payload -- the same shape enforce-scope.sh/commit-gate.sh already parse via
+# tool_input, plus the session_id/hook_event_name fields F089's own inline
+# logging snippet needs (neither bash_command_json() nor edit_json() above
+# include those).
+f089_edit_json() {
+  python3 -c "
+import json, sys
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': sys.argv[2],
+                   'tool_input': {'file_path': sys.argv[1]}}))
+" "$1" "$2"
+}
+
+f089_bash_json() {
+  python3 -c "
+import json, sys
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': sys.argv[2],
+                   'tool_input': {'command': sys.argv[1]}}))
+" "$1" "$2"
+}
+
+# --- enforce-scope.sh: 5 decision points (deny_json, the line-179 legacy
+# exit 2, the line-280ish legacy exit 2, one allow, one skipped) ---
+
+DIR_ES89="$WORK/f089-enforce-scope"
+make_fixture "$DIR_ES89"
+install_hooks "$DIR_ES89"
+ES89_LOG="$DIR_ES89/.harness/dashboard/es89sess.jsonl"
+
+# Skipped: no scope file at all -- this hook isn't applicable to this teammate.
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89/src/parser/x.py" "es89sess")")
+RC=$?
+assert_rc0 "$RC" "f089-es: no scope file still exits 0"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"gate": "enforce-scope"' "f089-es: skipped entry names the gate"
+assert_contains "$LINE" '"verdict": "skipped"' "f089-es: no scope file logs verdict=skipped"
+assert_not_contains "$LINE" '"verdict": "allow"' "f089-es: a not-applicable early exit is never logged as allow"
+
+printf 'src/parser/\n' > "$DIR_ES89/.claude/teammate-scope.txt"
+
+# Allow: an in-scope edit reaches the legacy while-loop's own exit 0.
+> "$ES89_LOG"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89/src/parser/x.py" "es89sess")")
+RC=$?
+assert_rc0 "$RC" "f089-es: an in-scope edit still exits 0"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' "f089-es: an in-scope edit logs verdict=allow"
+
+# Block (legacy exit 2, out-of-scope Edit/Write/MultiEdit denial).
+> "$ES89_LOG"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89/src/other/y.py" "es89sess")" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-es: an out-of-scope edit still exits 2"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-es: out-of-scope edit logs verdict=block"
+assert_contains "$LINE" '"finding": "scope-violation:out-of-scope-edit"' \
+  "f089-es: out-of-scope edit logs its finding class"
+assert_not_contains "$LINE" "src/other/y.py" \
+  "f089-es: the block entry never logs the raw file path"
+
+# Block (legacy exit 2 at the FILE_PATH_RC -eq 1 site -- a raw surrogate
+# crashes the extraction script's own print(), same F043 shape used elsewhere
+# in this file's own existing tests).
+> "$ES89_LOG"
+ES89_JSON_SURROGATE="{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"es89sess\",\"tool_input\":{\"file_path\":\"$DIR_ES89/src/parser/f089\ud800.py\"}}"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh "$ES89_JSON_SURROGATE" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-es: a surrogate-bearing file_path still exits 2"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-es: the unsafe-extraction site logs verdict=block"
+assert_contains "$LINE" '"finding": "scope-violation:unsafe-extraction"' \
+  "f089-es: the unsafe-extraction site logs its finding class"
+
+# Block (deny_json(), covering all five of its own call sites -- exercised
+# here via a lead-owned state file denial). F089 round 2 (adversarial
+# review): deny_json() used to log a single bare "scope-violation" finding
+# for every one of its five call sites, indistinguishable from each other
+# and from the two OTHER finding classes this file emits from its legacy
+# exit-2 paths ("scope-violation:out-of-scope-edit",
+# "scope-violation:unsafe-extraction") -- deny_json() now takes its own
+# finding-class argument, following the same "scope-violation:<site>"
+# convention.
+> "$ES89_LOG"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89/.harness/features.json" "es89sess")")
+RC=$?
+assert_rc0 "$RC" "f089-es: a lead-owned-file deny_json() denial still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f089-es: a lead-owned-file denial still emits the deny JSON"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-es: the deny_json() site logs verdict=block"
+assert_contains "$LINE" '"finding": "scope-violation:lead-owned-state-file"' \
+  "f089-es: the deny_json() site logs a distinguishing (not bare) finding class"
+assert_contains "$LINE" '"hook_event_name": "PreToolUse"' \
+  "f089-es: the deny_json() log entry carries hook_event_name from the payload"
+
+# A DIFFERENT deny_json() call site (an out-of-scope Bash write, routed
+# through the DENY_REASON python scan near the end of this file) must log a
+# DIFFERENT finding class than the lead-owned-state-file site above -- proof
+# the five call sites are no longer merged into one ambiguous bucket.
+> "$ES89_LOG"
+OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
+  "$(f089_bash_json "rm -f $DIR_ES89/src/other/y.py" "es89sess")")
+RC=$?
+assert_rc0 "$RC" "f089-es: an out-of-scope Bash write deny_json() denial still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f089-es: an out-of-scope Bash write denial still emits the deny JSON"
+LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"finding": "scope-violation:out-of-scope-command"' \
+  "f089-es: the Bash-write deny_json() site logs its own distinct finding class"
+
+# Disabled by default: no VV_HARNESS_DASHBOARD set, same fixture/scope, must
+# not create a dashboard directory, and the gate's own verdict is unaffected.
+DIR_ES89_OFF="$WORK/f089-enforce-scope-disabled"
+make_fixture "$DIR_ES89_OFF"
+install_hooks "$DIR_ES89_OFF"
+printf 'src/parser/\n' > "$DIR_ES89_OFF/.claude/teammate-scope.txt"
+OUT=$(run_hook "$DIR_ES89_OFF" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89_OFF/src/other/y.py" "offsess")" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-es: disabled logging does not change the gate's own verdict"
+if [ ! -e "$DIR_ES89_OFF/.harness/dashboard" ]; then
+  pass "f089-es: disabled logging creates no dashboard directory"
+else
+  fail "f089-es: disabled logging creates no dashboard directory -- it exists"
+fi
+
+# --- commit-gate.sh: 3 decision points (both deny_json() call sites, one allow) ---
+
+DIR_CG89="$WORK/f089-commit-gate"
+make_fixture "$DIR_CG89"
+install_hooks "$DIR_CG89"
+CG89_LOG="$DIR_CG89/.harness/dashboard/cg89sess.jsonl"
+
+# Block (deny_json(), unparseable-command call site).
+CG89_JSON_SURROGATE="{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"cg89sess\",\"tool_input\":{\"command\":\"git commit -a -m wip\ud800\"}}"
+OUT=$(run_hook_dashboard "$DIR_CG89" commit-gate.sh "$CG89_JSON_SURROGATE")
+RC=$?
+assert_rc0 "$RC" "f089-cg: an unparseable command still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f089-cg: an unparseable command still emits the deny JSON"
+LINE=$(cat "$CG89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"gate": "commit-gate"' "f089-cg: block entry names the gate"
+assert_contains "$LINE" '"verdict": "block"' "f089-cg: the unparseable-command site logs verdict=block"
+assert_contains "$LINE" '"finding": "unparseable-command"' \
+  "f089-cg: the unparseable-command site logs its finding class"
+
+# Block (deny_json(), main()-computed-reason call site).
+> "$CG89_LOG"
+OUT=$(run_hook_dashboard "$DIR_CG89" commit-gate.sh \
+  "$(f089_bash_json 'git commit -a -m "test"' 'cg89sess')")
+RC=$?
+assert_rc0 "$RC" "f089-cg: compound-stage-and-commit still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f089-cg: compound-stage-and-commit still emits the deny JSON"
+LINE=$(cat "$CG89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-cg: the main()-computed site logs verdict=block"
+assert_contains "$LINE" '"finding": "compound-stage-and-commit"' \
+  "f089-cg: the main()-computed site derives its finding class from the existing reason prefix"
+
+# Allow: an ordinary non-commit command reaches the final exit 0.
+> "$CG89_LOG"
+OUT=$(run_hook_dashboard "$DIR_CG89" commit-gate.sh \
+  "$(f089_bash_json 'echo hello' 'cg89sess')")
+RC=$?
+assert_rc0 "$RC" "f089-cg: an ordinary non-commit command exits 0"
+LINE=$(cat "$CG89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' "f089-cg: an ordinary non-commit command logs verdict=allow"
+
+DIR_CG89_OFF="$WORK/f089-commit-gate-disabled"
+make_fixture "$DIR_CG89_OFF"
+install_hooks "$DIR_CG89_OFF"
+OUT=$(run_hook "$DIR_CG89_OFF" commit-gate.sh \
+  "$(f089_bash_json 'git commit -a -m "test"' 'offsess')")
+RC=$?
+assert_rc0 "$RC" "f089-cg: disabled logging does not change the gate's own verdict"
+if [ ! -e "$DIR_CG89_OFF/.harness/dashboard" ]; then
+  pass "f089-cg: disabled logging creates no dashboard directory"
+else
+  fail "f089-cg: disabled logging creates no dashboard directory -- it exists"
+fi
+
+# --- check-remaining-tasks.sh: 2 decision points (one block, one allow) ---
+
+DIR_CT89="$WORK/f089-check-remaining"
+make_fixture "$DIR_CT89"
+install_hooks "$DIR_CT89"
+CT89_LOG="$DIR_CT89/.harness/dashboard/ct89sess.jsonl"
+CT89_JSON=$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TeammateIdle', 'session_id': 'ct89sess'}))")
+
+OUT=$(run_hook_dashboard "$DIR_CT89" check-remaining-tasks.sh "$CT89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-ct: a claimable feature still exits 2"
+LINE=$(cat "$CT89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"gate": "check-remaining-tasks"' "f089-ct: block entry names the gate"
+assert_contains "$LINE" '"verdict": "block"' "f089-ct: a claimable feature logs verdict=block"
+assert_contains "$LINE" '"finding": "claimable-feature-pending"' \
+  "f089-ct: a claimable feature logs its finding class"
+assert_contains "$LINE" '"hook_event_name": "TeammateIdle"' \
+  "f089-ct: the log entry carries hook_event_name from the payload"
+
+python3 - "$DIR_CT89/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    feature["status"] = "passing"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+> "$CT89_LOG"
+OUT=$(run_hook_dashboard "$DIR_CT89" check-remaining-tasks.sh "$CT89_JSON")
+RC=$?
+assert_rc0 "$RC" "f089-ct: nothing claimable exits 0"
+LINE=$(cat "$CT89_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' "f089-ct: nothing claimable logs verdict=allow"
+
+DIR_CT89_OFF="$WORK/f089-check-remaining-disabled"
+make_fixture "$DIR_CT89_OFF"
+install_hooks "$DIR_CT89_OFF"
+OUT=$(run_hook "$DIR_CT89_OFF" check-remaining-tasks.sh "$CT89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-ct: disabled logging does not change the gate's own verdict"
+if [ ! -e "$DIR_CT89_OFF/.harness/dashboard" ]; then
+  pass "f089-ct: disabled logging creates no dashboard directory"
+else
+  fail "f089-ct: disabled logging creates no dashboard directory -- it exists"
+fi
+
+# --- verify-task-quality.sh: 5 decision points (four block sites, one allow) ---
+
+DIR_VQ89A="$WORK/f089-verify-quality-noinit"
+make_fixture "$DIR_VQ89A"
+install_hooks "$DIR_VQ89A"
+VQ89A_LOG="$DIR_VQ89A/.harness/dashboard/vq89sess.jsonl"
+VQ89_JSON=$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'vq89sess', 'task': {'metadata': {'feature_id': 'F002'}}}))")
+
+OUT=$(run_hook_dashboard "$DIR_VQ89A" verify-task-quality.sh "$VQ89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: missing init.sh still exits 2"
+LINE=$(cat "$VQ89A_LOG" 2>/dev/null)
+assert_contains "$LINE" '"gate": "verify-task-quality"' "f089-vq: block entry names the gate"
+assert_contains "$LINE" '"verdict": "block"' "f089-vq: missing init.sh logs verdict=block"
+assert_contains "$LINE" '"finding": "missing-init-script"' \
+  "f089-vq: missing init.sh logs its finding class"
+
+DIR_VQ89B="$WORK/f089-verify-quality-smokefail"
+make_fixture "$DIR_VQ89B"
+install_hooks "$DIR_VQ89B"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_VQ89B/.harness/init.sh"
+VQ89B_LOG="$DIR_VQ89B/.harness/dashboard/vq89sess.jsonl"
+OUT=$(run_hook_dashboard "$DIR_VQ89B" verify-task-quality.sh "$VQ89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: a smoke test failure still exits 2"
+LINE=$(cat "$VQ89B_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-vq: smoke test failure logs verdict=block"
+assert_contains "$LINE" '"finding": "smoke-test-failed"' \
+  "f089-vq: smoke test failure logs its finding class"
+
+DIR_VQ89C="$WORK/f089-verify-quality-fullfail"
+make_fixture "$DIR_VQ89C"
+install_hooks "$DIR_VQ89C"
+cat > "$DIR_VQ89C/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+case "$1" in
+  smoke_test) exit 0 ;;
+  full_test) exit 1 ;;
+esac
+INITEOF
+chmod +x "$DIR_VQ89C/.harness/init.sh"
+VQ89C_LOG="$DIR_VQ89C/.harness/dashboard/vq89sess.jsonl"
+OUT=$(run_hook_dashboard "$DIR_VQ89C" verify-task-quality.sh "$VQ89_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: a full test failure still exits 2"
+LINE=$(cat "$VQ89C_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-vq: full test failure logs verdict=block"
+assert_contains "$LINE" '"finding": "tests-failing"' \
+  "f089-vq: full test failure logs its finding class"
+
+DIR_VQ89D="$WORK/f089-verify-quality-coverage"
+make_fixture "$DIR_VQ89D"
+install_hooks "$DIR_VQ89D"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_VQ89D/.harness/init.sh"
+set_f003_fields "$DIR_VQ89D" 'feature["coverage"] = 50'
+VQ89D_LOG="$DIR_VQ89D/.harness/dashboard/vq89sess.jsonl"
+VQ89D_JSON=$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'vq89sess', 'task': {'metadata': {'feature_id': 'F003'}}}))")
+OUT=$(run_hook_dashboard "$DIR_VQ89D" verify-task-quality.sh "$VQ89D_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: coverage below target still exits 2"
+LINE=$(cat "$VQ89D_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "block"' "f089-vq: coverage below target logs verdict=block"
+assert_contains "$LINE" '"finding": "coverage-below-target"' \
+  "f089-vq: coverage below target logs its finding class"
+
+DIR_VQ89E="$WORK/f089-verify-quality-allow"
+make_fixture "$DIR_VQ89E"
+install_hooks "$DIR_VQ89E"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_VQ89E/.harness/init.sh"
+python3 - "$DIR_VQ89E/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    feature["status"] = "passing"
+    feature["proof"] = {"claim": "x", "evidence_type": "unit", "artifact": "y"}
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+VQ89E_LOG="$DIR_VQ89E/.harness/dashboard/vq89sess.jsonl"
+VQ89E_JSON=$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'vq89sess', 'task': {'metadata': {'feature_id': 'F003'}}}))")
+OUT=$(run_hook_dashboard "$DIR_VQ89E" verify-task-quality.sh "$VQ89E_JSON" 2>/dev/null)
+RC=$?
+assert_rc0 "$RC" "f089-vq: a fully clean accept still exits 0"
+LINE=$(cat "$VQ89E_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' "f089-vq: a fully clean accept logs verdict=allow"
+
+DIR_VQ89_OFF="$WORK/f089-verify-quality-disabled"
+make_fixture "$DIR_VQ89_OFF"
+install_hooks "$DIR_VQ89_OFF"
+OUT=$(run_hook "$DIR_VQ89_OFF" verify-task-quality.sh \
+  "$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'offsess', 'task': {'metadata': {'feature_id': 'F002'}}}))")" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f089-vq: disabled logging does not change the gate's own verdict"
+if [ ! -e "$DIR_VQ89_OFF/.harness/dashboard" ]; then
+  pass "f089-vq: disabled logging creates no dashboard directory"
+else
+  fail "f089-vq: disabled logging creates no dashboard directory -- it exists"
+fi
+
+echo ""
+echo "== F089 round 2: adversarial-review bugfixes (ARG_MAX, agent_id, allow-log) =="
+
+# --- Finding 1 (CRITICAL): deny_json()'s python3 invocation used to put the
+# entire hook stdin payload on argv. A large Write/Edit payload can exceed
+# the OS's exec() argument-list size limit (~1MB on macOS, as low as 128KB
+# per-argument on Linux); when that happens exec fails ("Argument list too
+# long"), deny_json()'s own unconditional `exit 0` on the next line still
+# runs, and Claude Code sees "exit 0, empty stdout" -- ALLOW -- silently
+# converting a scope-violation DENIAL into an ALLOW. The payloads below are
+# sized well past the ~1,000,000-1,050,000 byte boundary measured directly
+# against this environment's python3/bash (a bare `python3 -c "pass" "$BIG"`
+# starts failing with "argument list too long" once BIG exceeds roughly
+# 1,000,000 bytes here), for margin against JSON/env overhead.
+
+DIR_AM_ES="$WORK/f089r2-argmax-enforce-scope"
+make_fixture "$DIR_AM_ES"
+install_hooks "$DIR_AM_ES"
+printf 'src/parser/\n' > "$DIR_AM_ES/.claude/teammate-scope.txt"
+AM_ES_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'session_id': 'argmaxsess',
+    'tool_input': {'file_path': '.harness/features.json', 'content': 'x' * 2500000},
+}))
+")
+OUT=$(run_hook_dashboard "$DIR_AM_ES" enforce-scope.sh "$AM_ES_PAYLOAD")
+RC=$?
+assert_rc0 "$RC" "f089r2-es: an oversized (ARG_MAX-exceeding) lead-owned-file payload still exits 0"
+assert_deny_json "$OUT" \
+  "f089r2-es: an oversized lead-owned-file payload still emits deny JSON (not a silent allow)"
+
+DIR_AM_CG="$WORK/f089r2-argmax-commit-gate"
+make_fixture "$DIR_AM_CG"
+install_hooks "$DIR_AM_CG"
+AM_CG_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'session_id': 'argmaxsess',
+    'tool_input': {
+        'command': 'git commit -a -m \"test\"',
+        'description': 'x' * 2500000,
+    },
+}))
+")
+OUT=$(run_hook_dashboard "$DIR_AM_CG" commit-gate.sh "$AM_CG_PAYLOAD")
+RC=$?
+assert_rc0 "$RC" "f089r2-cg: an oversized (ARG_MAX-exceeding) compound-stage-and-commit payload still exits 0"
+assert_deny_json "$OUT" \
+  "f089r2-cg: an oversized compound-stage-and-commit payload still emits deny JSON (not a silent allow)"
+
+# --- Finding 2 (MAJOR): agent_id/agent_type were not copied into the
+# dashboard event line by any of the four gate scripts (only
+# hooks/dashboard-log.sh itself did) -- without this, F091's frontend
+# attributes every teammate's gate verdict to the lead node instead of the
+# real teammate.
+
+DIR_AID_ES="$WORK/f089r2-agentid-enforce-scope"
+make_fixture "$DIR_AID_ES"
+install_hooks "$DIR_AID_ES"
+printf 'src/parser/\n' > "$DIR_AID_ES/.claude/teammate-scope.txt"
+AID_ES_LOG="$DIR_AID_ES/.harness/dashboard/aidsess.jsonl"
+
+# _dashboard_log() call site (legacy exit-2 out-of-scope-edit path).
+AID_ES_PAYLOAD1=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate',
+                   'tool_input': {'file_path': 'src/other/y.py'}}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_ES" enforce-scope.sh "$AID_ES_PAYLOAD1" 2>&1)
+LINE=$(cat "$AID_ES_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-es: _dashboard_log() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-es: _dashboard_log() propagates agent_type from the payload"
+
+# deny_json() call site (lead-owned state file).
+> "$AID_ES_LOG"
+AID_ES_PAYLOAD2=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate',
+                   'tool_input': {'file_path': '.harness/features.json'}}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_ES" enforce-scope.sh "$AID_ES_PAYLOAD2")
+LINE=$(cat "$AID_ES_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-es: deny_json() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-es: deny_json() propagates agent_type from the payload"
+
+DIR_AID_CG="$WORK/f089r2-agentid-commit-gate"
+make_fixture "$DIR_AID_CG"
+install_hooks "$DIR_AID_CG"
+AID_CG_LOG="$DIR_AID_CG/.harness/dashboard/aidsess.jsonl"
+AID_CG_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate',
+                   'tool_input': {'command': 'git commit -a -m \"test\"'}}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_CG" commit-gate.sh "$AID_CG_PAYLOAD")
+LINE=$(cat "$AID_CG_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-cg: deny_json() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-cg: deny_json() propagates agent_type from the payload"
+
+DIR_AID_CT="$WORK/f089r2-agentid-check-remaining"
+make_fixture "$DIR_AID_CT"
+install_hooks "$DIR_AID_CT"
+AID_CT_LOG="$DIR_AID_CT/.harness/dashboard/aidsess.jsonl"
+AID_CT_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'TeammateIdle', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate'}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_CT" check-remaining-tasks.sh "$AID_CT_PAYLOAD" 2>&1)
+LINE=$(cat "$AID_CT_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-ct: _dashboard_log() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-ct: _dashboard_log() propagates agent_type from the payload"
+
+DIR_AID_VQ="$WORK/f089r2-agentid-verify-quality"
+make_fixture "$DIR_AID_VQ"
+install_hooks "$DIR_AID_VQ"
+AID_VQ_LOG="$DIR_AID_VQ/.harness/dashboard/aidsess.jsonl"
+AID_VQ_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({'hook_event_name': 'TaskCompleted', 'session_id': 'aidsess',
+                   'agent_id': 'agent-7', 'agent_type': 'teammate',
+                   'task': {'metadata': {'feature_id': 'F002'}}}))
+")
+OUT=$(run_hook_dashboard "$DIR_AID_VQ" verify-task-quality.sh "$AID_VQ_PAYLOAD" 2>&1)
+LINE=$(cat "$AID_VQ_LOG" 2>/dev/null)
+assert_contains "$LINE" '"agent_id": "agent-7"' \
+  "f089r2-vq: _dashboard_log() propagates agent_id from the payload"
+assert_contains "$LINE" '"agent_type": "teammate"' \
+  "f089r2-vq: _dashboard_log() propagates agent_type from the payload"
+
+# --- Finding 8 (MINOR): enforce-scope.sh never logged an "allow" verdict for
+# the ordinary in-scope Bash-command path -- only the Edit/Write scope-match
+# branch, and the deny_json()/legacy-exit-2 paths, were instrumented; the
+# file's own final `exit 0` (reached by an in-scope or write-free Bash
+# command) was silent.
+
+DIR_ALLOW_BASH="$WORK/f089r2-allow-bash"
+make_fixture "$DIR_ALLOW_BASH"
+install_hooks "$DIR_ALLOW_BASH"
+printf 'src/parser/\n' > "$DIR_ALLOW_BASH/.claude/teammate-scope.txt"
+AB_LOG="$DIR_ALLOW_BASH/.harness/dashboard/absess.jsonl"
+OUT=$(run_hook_dashboard "$DIR_ALLOW_BASH" enforce-scope.sh \
+  "$(f089_bash_json 'echo hi' 'absess')")
+RC=$?
+assert_rc0 "$RC" "f089r2-es: an ordinary in-scope Bash command still exits 0"
+LINE=$(cat "$AB_LOG" 2>/dev/null)
+assert_contains "$LINE" '"verdict": "allow"' \
+  "f089r2-es: an ordinary in-scope Bash command now logs verdict=allow before the final exit 0"
+
+echo ""
 echo "== agent frontmatter =="
 
 AGENT_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
@@ -10285,6 +11177,672 @@ else
 fi
 
 echo ""
+echo "== F090: dashboard SSE server =="
+
+# hooks/dashboard/serve.py is exercised as a real subprocess over real HTTP --
+# this repo's first HTTP-testing precedent, so the pattern below (raw sockets
+# via two small stdlib-only python3 helpers, not curl) stays inside the
+# header's declared dependency set: "bash 3.2+, git, python3". Raw sockets
+# also matter specifically for the traversal test: a client library like
+# urllib may normalize ".." out of a URL before it ever reaches the server,
+# which would test the client, not serve.py's own containment logic.
+
+DASHBOARD_PY="$HOOKS_DIR/dashboard/serve.py"
+DASH_HELPERS="$WORK/dashboard-helpers"
+mkdir -p "$DASH_HELPERS"
+
+cat > "$DASH_HELPERS/raw_get.py" <<'PYEOF'
+#!/usr/bin/env python3
+"""Test helper (F090): sends one raw HTTP/1.0 GET over a plain socket (no
+client-side path normalization, unlike urllib) so traversal-attempt tests
+exercise serve.py's own containment logic rather than a client library's.
+Prints the status line, a blank line, then the raw response body."""
+import socket
+import sys
+
+
+def main():
+    host, port, path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+    with socket.create_connection((host, port), timeout=5) as sock:
+        request = "GET {} HTTP/1.0\r\nHost: {}\r\n\r\n".format(path, host)
+        sock.sendall(request.encode("utf-8"))
+        chunks = []
+        while True:
+            data = sock.recv(65536)
+            if not data:
+                break
+            chunks.append(data)
+    raw = b"".join(chunks)
+    header, _, body = raw.partition(b"\r\n\r\n")
+    status_line = header.split(b"\r\n", 1)[0].decode("utf-8", "replace")
+    sys.stdout.write(status_line + "\n\n")
+    sys.stdout.buffer.write(body)
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+cat > "$DASH_HELPERS/sse_reader.py" <<'PYEOF'
+#!/usr/bin/env python3
+"""Test helper (F090): connects to one SSE endpoint over a raw socket and
+appends each event's payload to outfile, one line per event, flushed
+immediately -- lets run-tests.sh observe timing-sensitive SSE behavior
+(backlog burst, partial-write deferral, truncation/deletion reset) by
+polling outfile at different points in time."""
+import socket
+import sys
+
+
+def main():
+    host, port, path, outfile = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+    sock = socket.create_connection((host, port))
+    request = "GET {} HTTP/1.0\r\nHost: {}\r\n\r\n".format(path, host)
+    sock.sendall(request.encode("utf-8"))
+    fh = sock.makefile("rb")
+    while True:
+        line = fh.readline()
+        if line in (b"\r\n", b"\n", b""):
+            break
+    with open(outfile, "a", buffering=1) as out:
+        while True:
+            line = fh.readline()
+            if not line:
+                break
+            if line.startswith(b"data: "):
+                payload = line[len(b"data: "):].rstrip(b"\r\n")
+                out.write(payload.decode("utf-8", "replace") + "\n")
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+# Extends the top-of-file EXIT trap (still removing $WORK) to also reap any
+# server/reader subprocess left running by a failed assertion mid-group, so
+# a test failure never leaves an orphaned server bound to a port across runs.
+DASHBOARD_PIDS=""
+trap 'rm -rf "$WORK"; for P in $DASHBOARD_PIDS; do kill "$P" 2>/dev/null; done' EXIT
+
+track_pid() {
+  DASHBOARD_PIDS="$DASHBOARD_PIDS $1"
+}
+
+free_port() {
+  python3 -c "
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+"
+}
+
+wait_for_port() {
+  local HOST="$1" PORT="$2" ATTEMPTS="${3:-50}" I=0
+  while [ "$I" -lt "$ATTEMPTS" ]; do
+    if python3 -c "
+import socket, sys
+s = socket.socket()
+s.settimeout(0.2)
+try:
+    s.connect((sys.argv[1], int(sys.argv[2])))
+except OSError:
+    sys.exit(1)
+s.close()
+" "$HOST" "$PORT" 2>/dev/null; then
+      return 0
+    fi
+    I=$((I + 1))
+    sleep 0.1
+  done
+  return 1
+}
+
+# Starts serve.py with $1 as its cwd and CLAUDE_PROJECT_DIR explicitly set to
+# $1 too (so its project-root resolution matches the fixture regardless of
+# whatever CLAUDE_PROJECT_DIR the environment running this suite already has
+# set -- serve.py's find_project_root() now prefers CLAUDE_PROJECT_DIR over
+# git-toplevel, matching dashboard-log.sh's own fix above and for the same
+# reason: an ambient CLAUDE_PROJECT_DIR leaking through here pointed serve.py
+# at the real repo instead of the isolated fixture, and every assertion
+# depending on its output failed as a result), session id $2 (empty string
+# omits the positional arg, triggering auto-select), port $3, combined
+# stdout+stderr to $4. The background job is a direct child of this script
+# (not of a command-substitution subshell), so kill/wait on it behave
+# normally afterward. Sets the global SERVER_PID.
+start_dashboard_server() {
+  local DIR="$1" SESSION_ID="$2" PORT="$3" OUTFILE="$4"
+  if [ -n "$SESSION_ID" ]; then
+    (cd "$DIR" && CLAUDE_PROJECT_DIR="$DIR" exec python3 "$DASHBOARD_PY" "$SESSION_ID" --port "$PORT") >"$OUTFILE" 2>&1 &
+  else
+    (cd "$DIR" && CLAUDE_PROJECT_DIR="$DIR" exec python3 "$DASHBOARD_PY" --port "$PORT") >"$OUTFILE" 2>&1 &
+  fi
+  SERVER_PID=$!
+  track_pid "$SERVER_PID"
+}
+
+# Opens one SSE connection to 127.0.0.1:$1$2 and appends each event's
+# payload to $3 as it arrives, in the background. Sets the global READER_PID.
+start_sse_reader() {
+  local PORT="$1" URLPATH="$2" OUTFILE="$3"
+  python3 "$DASH_HELPERS/sse_reader.py" 127.0.0.1 "$PORT" "$URLPATH" "$OUTFILE" \
+    >"$WORK/reader-$PORT-$RANDOM.log" 2>&1 &
+  READER_PID=$!
+  track_pid "$READER_PID"
+}
+
+raw_get() {
+  python3 "$DASH_HELPERS/raw_get.py" 127.0.0.1 "$1" "$2"
+}
+
+echo "--- group 1: SSE backlog-then-stream, partial-write race, truncation reset, deletion re-wait ---"
+
+DIR1="$WORK/dash-1"
+make_fixture "$DIR1"
+mkdir -p "$DIR1/.harness/dashboard"
+SESSION1="dash-session-1"
+LOG1="$DIR1/.harness/dashboard/$SESSION1.jsonl"
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-BACKLOG-1"}\n' > "$LOG1"
+
+PORT1=$(free_port)
+start_dashboard_server "$DIR1" "$SESSION1" "$PORT1" "$WORK/server-1.out"
+wait_for_port 127.0.0.1 "$PORT1"
+assert_rc0 "$?" "dash: group1 server accepts connections on its bound port"
+
+CAPTURE1="$WORK/capture-1.txt"
+: > "$CAPTURE1"
+start_sse_reader "$PORT1" "/events" "$CAPTURE1"
+
+sleep 0.5
+assert_contains "$(cat "$CAPTURE1")" "F090-MARK-BACKLOG-1" \
+  "dash: pre-existing log content is replayed as a backlog burst on connect"
+
+# The critical partial-write race: append a JSON object WITHOUT its trailing
+# newline. A naive "read whatever's there" implementation would parse and
+# emit this immediately; the spec's byte-offset-to-last-newline design must
+# defer it until the newline actually arrives.
+printf '{"hook_event_name":"PostToolUse","marker":"F090-MARK-PARTIAL-2"}' >> "$LOG1"
+sleep 0.5
+assert_not_contains "$(cat "$CAPTURE1")" "F090-MARK-PARTIAL-2" \
+  "dash: a line without its trailing newline is not yet emitted (deferred, not discarded)"
+
+printf '\n' >> "$LOG1"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE1")" "F090-MARK-PARTIAL-2" \
+  "dash: completing the line's trailing newline lets it emit on the next poll"
+
+# Truncation: file shrinks below the last known offset -> tailing resets to
+# start over. A buggy implementation that kept the stale (now out-of-range)
+# offset would seek past the new EOF and never emit the next line.
+: > "$LOG1"
+sleep 0.3
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-TRUNC-3"}\n' >> "$LOG1"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE1")" "F090-MARK-TRUNC-3" \
+  "dash: a truncated log resets tailing and delivers subsequent content"
+
+# Deletion: the file disappears entirely -> tailing re-enters the
+# empty/re-awaited state rather than erroring; the server (and its other
+# threads) must stay up while nothing exists to tail.
+rm -f "$LOG1"
+sleep 0.3
+STATIC_DURING_WAIT=$(raw_get "$PORT1" "/serve.py")
+assert_contains "$STATIC_DURING_WAIT" "200" \
+  "dash: the server keeps serving static files while /events waits on a deleted log file"
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-RECREATE-4"}\n' > "$LOG1"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE1")" "F090-MARK-RECREATE-4" \
+  "dash: a log file re-created after deletion is replayed from scratch"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 2: malformed JSON line is skipped with a stderr warning, not fatal ---"
+
+DIR2="$WORK/dash-2"
+make_fixture "$DIR2"
+mkdir -p "$DIR2/.harness/dashboard"
+SESSION2="dash-session-2"
+LOG2="$DIR2/.harness/dashboard/$SESSION2.jsonl"
+printf 'this is not json at all\n' > "$LOG2"
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-VALID-5"}\n' >> "$LOG2"
+
+PORT2=$(free_port)
+start_dashboard_server "$DIR2" "$SESSION2" "$PORT2" "$WORK/server-2.out"
+wait_for_port 127.0.0.1 "$PORT2"
+assert_rc0 "$?" "dash: group2 server accepts connections on its bound port"
+
+CAPTURE2="$WORK/capture-2.txt"
+: > "$CAPTURE2"
+start_sse_reader "$PORT2" "/events" "$CAPTURE2"
+sleep 0.5
+
+assert_contains "$(cat "$CAPTURE2")" "F090-MARK-VALID-5" \
+  "dash: a valid line after a malformed one is still delivered"
+assert_not_contains "$(cat "$CAPTURE2")" "not json at all" \
+  "dash: the malformed line itself is never emitted as an SSE event"
+assert_contains "$(cat "$WORK/server-2.out")" "WARNING" \
+  "dash: a malformed JSON line logs a one-line stderr warning"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 3: static file serving, path-traversal containment ---"
+
+DIR3="$WORK/dash-3"
+make_fixture "$DIR3"
+SESSION3="dash-session-3-never-created"
+PORT3=$(free_port)
+start_dashboard_server "$DIR3" "$SESSION3" "$PORT3" "$WORK/server-3.out"
+wait_for_port 127.0.0.1 "$PORT3"
+assert_rc0 "$?" "dash: group3 server accepts connections on its bound port"
+
+STATIC_OUT=$(raw_get "$PORT3" "/serve.py")
+assert_contains "$STATIC_OUT" "HTTP/1.0 200" "dash: GET /serve.py returns 200"
+assert_contains "$STATIC_OUT" "Dashboard SSE server (F090)" \
+  "dash: the served file's own content is returned (matches serve.py's own header)"
+
+MISSING_OUT=$(raw_get "$PORT3" "/does-not-exist.txt")
+assert_contains "$MISSING_OUT" "404" "dash: a request for a nonexistent static file returns 404"
+
+TRAVERSAL_OUT=$(raw_get "$PORT3" "/../hooks.json")
+assert_not_contains "$TRAVERSAL_OUT" "HTTP/1.0 200" \
+  "dash: a traversal attempt to escape hooks/dashboard/ is not served with 200"
+assert_not_contains "$TRAVERSAL_OUT" "TeammateIdle" \
+  "dash: the traversal attempt never leaks hooks.json's actual content"
+
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 4: port-already-in-use fails fast, no silent fallback ---"
+
+DIR4="$WORK/dash-4"
+make_fixture "$DIR4"
+PORT4=$(free_port)
+start_dashboard_server "$DIR4" "dash-session-4a" "$PORT4" "$WORK/server-4a.out"
+wait_for_port 127.0.0.1 "$PORT4"
+assert_rc0 "$?" "dash: group4 first server accepts connections on its bound port"
+
+SECOND_OUT=$(cd "$DIR4" && python3 "$DASHBOARD_PY" "dash-session-4b" --port "$PORT4" 2>&1)
+SECOND_RC=$?
+assert_rc_nonzero "$SECOND_RC" "dash: a second server on the same port exits non-zero"
+assert_contains "$SECOND_OUT" "ERROR" "dash: the port-in-use failure prints a clear ERROR message"
+assert_contains "$SECOND_OUT" "already" "dash: the failure message explains the port is already bound"
+
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 5: session_id omitted -> most-recently-modified *.jsonl, tie-break on filename ---"
+
+DIR5="$WORK/dash-5"
+make_fixture "$DIR5"
+mkdir -p "$DIR5/.harness/dashboard"
+printf '{"marker":"F090-MARK-OLDEST"}\n' > "$DIR5/.harness/dashboard/a-session.jsonl"
+printf '{"marker":"F090-MARK-TIE-B"}\n' > "$DIR5/.harness/dashboard/b-session.jsonl"
+printf '{"marker":"F090-MARK-TIE-C"}\n' > "$DIR5/.harness/dashboard/c-session.jsonl"
+python3 -c "
+import os, time
+d = '$DIR5/.harness/dashboard'
+t = time.time()
+os.utime(os.path.join(d, 'a-session.jsonl'), (t - 10, t - 10))
+os.utime(os.path.join(d, 'b-session.jsonl'), (t, t))
+os.utime(os.path.join(d, 'c-session.jsonl'), (t, t))
+"
+
+PORT5=$(free_port)
+start_dashboard_server "$DIR5" "" "$PORT5" "$WORK/server-5.out"
+wait_for_port 127.0.0.1 "$PORT5"
+assert_rc0 "$?" "dash: group5 server accepts connections on its bound port"
+
+CAPTURE5="$WORK/capture-5.txt"
+: > "$CAPTURE5"
+start_sse_reader "$PORT5" "/events" "$CAPTURE5"
+sleep 0.5
+
+assert_contains "$(cat "$CAPTURE5")" "F090-MARK-TIE-C" \
+  "dash: with session_id omitted, the lexicographically-largest of two equal-mtime files wins"
+assert_not_contains "$(cat "$CAPTURE5")" "F090-MARK-TIE-B" \
+  "dash: the equal-mtime tie's loser is not the one tailed"
+assert_not_contains "$(cat "$CAPTURE5")" "F090-MARK-OLDEST" \
+  "dash: an older file is not selected over more-recently-modified ones"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 6: missing .harness/dashboard/ (and missing log file) waits instead of erroring ---"
+
+DIR6="$WORK/dash-6"
+make_fixture "$DIR6"
+SESSION6="dash-session-6"
+# .harness/dashboard/ does not exist at all yet -- make_fixture's baseline
+# fixture has no dashboard subdirectory.
+
+PORT6=$(free_port)
+start_dashboard_server "$DIR6" "$SESSION6" "$PORT6" "$WORK/server-6.out"
+wait_for_port 127.0.0.1 "$PORT6"
+assert_rc0 "$?" \
+  "dash: the server itself starts and binds even though .harness/dashboard/ doesn't exist yet"
+
+CAPTURE6="$WORK/capture-6.txt"
+: > "$CAPTURE6"
+start_sse_reader "$PORT6" "/events" "$CAPTURE6"
+sleep 0.4
+assert_empty "$(cat "$CAPTURE6")" \
+  "dash: /events emits nothing while the directory and log file don't exist yet"
+
+mkdir -p "$DIR6/.harness/dashboard"
+printf '{"hook_event_name":"PreToolUse","marker":"F090-MARK-WAIT-6"}\n' \
+  > "$DIR6/.harness/dashboard/$SESSION6.jsonl"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE6")" "F090-MARK-WAIT-6" \
+  "dash: once the directory and log file appear, the backlog is delivered"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo "--- group 7: one client's disconnect doesn't affect other clients or the server ---"
+
+DIR7="$WORK/dash-7"
+make_fixture "$DIR7"
+mkdir -p "$DIR7/.harness/dashboard"
+SESSION7="dash-session-7"
+LOG7="$DIR7/.harness/dashboard/$SESSION7.jsonl"
+printf '{"marker":"F090-MARK-DISCONNECT-INIT"}\n' > "$LOG7"
+
+PORT7=$(free_port)
+start_dashboard_server "$DIR7" "$SESSION7" "$PORT7" "$WORK/server-7.out"
+wait_for_port 127.0.0.1 "$PORT7"
+assert_rc0 "$?" "dash: group7 server accepts connections on its bound port"
+SERVER_PID_7="$SERVER_PID"
+
+CAPTURE_A="$WORK/capture-7a.txt"
+CAPTURE_B="$WORK/capture-7b.txt"
+: > "$CAPTURE_A"
+: > "$CAPTURE_B"
+start_sse_reader "$PORT7" "/events" "$CAPTURE_A"
+READER_A="$READER_PID"
+start_sse_reader "$PORT7" "/events" "$CAPTURE_B"
+READER_B="$READER_PID"
+sleep 0.5
+
+# Kill client A's connection (simulates a broken pipe) with no advance
+# notice to the server; it only discovers this on its next write attempt.
+kill -9 "$READER_A" 2>/dev/null
+wait "$READER_A" 2>/dev/null
+sleep 0.2
+
+printf '{"marker":"F090-MARK-DISCONNECT-7"}\n' >> "$LOG7"
+sleep 0.5
+
+assert_contains "$(cat "$CAPTURE_B")" "F090-MARK-DISCONNECT-7" \
+  "dash: a second client keeps receiving events after a different client disconnects"
+kill -0 "$SERVER_PID_7" 2>/dev/null
+assert_rc0 "$?" "dash: the server process itself stays alive after a client disconnect"
+POST_DISCONNECT_STATIC=$(raw_get "$PORT7" "/serve.py")
+assert_contains "$POST_DISCONNECT_STATIC" "200" \
+  "dash: the server still serves new requests after a client disconnect"
+
+kill "$READER_B" 2>/dev/null; wait "$READER_B" 2>/dev/null
+kill "$SERVER_PID_7" 2>/dev/null; wait "$SERVER_PID_7" 2>/dev/null
+
+echo "--- group 8: CLI-supplied session_id is sanitized, no path traversal (Finding 12) ---"
+
+DIR8="$WORK/dash-8"
+make_fixture "$DIR8"
+mkdir -p "$DIR8/.harness/dashboard"
+# Planted three levels above .harness/dashboard/ -- an unsanitized session_id
+# of "../../../secret-outside" would resolve straight to this file (the OS
+# resolves ".." components in open()/os.path.isfile() regardless of any
+# in-process string handling), leaking content from outside the intended
+# .harness/dashboard/ directory.
+printf '{"marker":"F090-MARK-OUTSIDE-SECRET"}\n' > "$WORK/secret-outside.jsonl"
+
+PORT8=$(free_port)
+start_dashboard_server "$DIR8" "../../../secret-outside" "$PORT8" "$WORK/server-8.out"
+wait_for_port 127.0.0.1 "$PORT8"
+assert_rc0 "$?" "dash: group8 server accepts connections on its bound port"
+
+CAPTURE8="$WORK/capture-8.txt"
+: > "$CAPTURE8"
+start_sse_reader "$PORT8" "/events" "$CAPTURE8"
+sleep 0.5
+
+assert_not_contains "$(cat "$CAPTURE8")" "F090-MARK-OUTSIDE-SECRET" \
+  "dash: a traversal-shaped CLI session_id never leaks a file outside .harness/dashboard/"
+
+# Confirm the sanitized name is what's actually being awaited (not merely
+# never satisfied for some unrelated reason): dropping a file at the
+# sanitized path -- slashes stripped, dots kept literally -- inside
+# .harness/dashboard/ itself is what the server is actually watching for.
+printf '{"marker":"F090-MARK-SANITIZED-8"}\n' \
+  > "$DIR8/.harness/dashboard/......secret-outside.jsonl"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE8")" "F090-MARK-SANITIZED-8" \
+  "dash: the CLI session_id is sanitized to the same literal-dots-no-slashes filename inside .harness/dashboard/"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+echo ""
+echo "== F091: dashboard frontend =="
+
+# QA binding for F091 is manual (per its own features.json entry): the
+# rendering/animation behavior needs a real browser to visually confirm,
+# and this repo's dependency-free bash/python3 runner has no browser/DOM
+# harness. These are supplementary structural assertions only -- they
+# prove the vendored library and the required event-type handling exist in
+# the page's source, not that the graph actually renders or animates.
+
+ANIME_JS="$HOOKS_DIR/dashboard/vendor/anime.min.js"
+DASHBOARD_HTML="$HOOKS_DIR/dashboard/index.html"
+
+if [ -s "$ANIME_JS" ]; then
+  pass "dash-fe: vendored animejs file exists and is non-empty"
+else
+  fail "dash-fe: vendored animejs file exists and is non-empty"
+fi
+
+ANIME_HEADER=$(head -20 "$ANIME_JS" 2>/dev/null)
+assert_contains "$ANIME_HEADER" "3.2.2" \
+  "dash-fe: vendored animejs header states the pinned version"
+assert_contains "$ANIME_HEADER" "https://registry.npmjs.org/animejs" \
+  "dash-fe: vendored animejs header states the source URL"
+
+DASHBOARD_HTML_SRC=$(cat "$DASHBOARD_HTML" 2>/dev/null)
+
+assert_contains "$DASHBOARD_HTML_SRC" 'vendor/anime.min.js' \
+  "dash-fe: page loads the vendored local animejs copy (no CDN)"
+assert_not_contains "$DASHBOARD_HTML_SRC" "cdn." \
+  "dash-fe: page does not reference a CDN"
+assert_contains "$DASHBOARD_HTML_SRC" '"/events"' \
+  "dash-fe: page connects to F090's /events SSE endpoint"
+
+# Required event-type handler strings (F088/F089/F091's own classification
+# rules): every hook_event_name this feature must react to, plus the
+# gate/judge field checks that distinguish the three badge categories.
+for TOKEN in "SubagentStart" "SubagentStop" "PreToolUse" "PostToolUse" \
+             "PermissionRequest" "PermissionDenied"; do
+  assert_contains "$DASHBOARD_HTML_SRC" "\"$TOKEN\"" \
+    "dash-fe: page source handles hook_event_name $TOKEN"
+done
+
+assert_contains "$DASHBOARD_HTML_SRC" "payload.gate" \
+  "dash-fe: page source checks the gate/verdict/finding fields (F089)"
+assert_contains "$DASHBOARD_HTML_SRC" "payload.verdict" \
+  "dash-fe: page source reads the verdict field (F089)"
+assert_contains "$DASHBOARD_HTML_SRC" "payload.finding" \
+  "dash-fe: page source reads the finding field (F089) (used via addBadge/handleGateEvent)"
+assert_contains "$DASHBOARD_HTML_SRC" "-judge" \
+  "dash-fe: page source classifies agent_type values ending in -judge"
+assert_contains "$DASHBOARD_HTML_SRC" "agent_id" \
+  "dash-fe: page source reads agent_id to classify lead vs. spoke"
+assert_contains "$DASHBOARD_HTML_SRC" "(unknown agent)" \
+  "dash-fe: page source labels a missing agent_type as (unknown agent)"
+assert_not_contains "$DASHBOARD_HTML_SRC" ".teammate_name" \
+  "dash-fe: page source never reads teammate_name to label a node"
+
+# Regression guards for an adversarial review's structural findings on this
+# page (findings 3, 6, 7, 14 -- no browser/DOM harness here, so these check
+# the exact source patterns that caused each bug, not the rendered result).
+
+# Finding 6: positionRing() packed two translate(...) calls into one
+# transform string. anime.js v3 parses transform into a Map keyed by
+# function name, so the second "translate" entry silently overwrote the
+# first, dropping the -50%/-50% centering offset the instant a node
+# animated. Fix: centering moved off `transform` onto the standalone CSS
+# `translate` property, and the ring offset now uses distinct-axis
+# translateX/translateY keys.
+assert_not_contains "$DASHBOARD_HTML_SRC" 'translate(-50%, -50%) translate(' \
+  "dash-fe: positionRing() no longer packs two translate(...) calls into one transform string (anime.js Map key collision)"
+assert_contains "$DASHBOARD_HTML_SRC" 'translate: -50% -50%;' \
+  "dash-fe: .node centers via the standalone CSS translate property (a property anime.js never reads or writes)"
+assert_contains "$DASHBOARD_HTML_SRC" 'translateX(" + x + "px) translateY(' \
+  "dash-fe: positionRing() uses distinct-axis translateX/translateY keys instead of a second bare translate(...)"
+
+# Finding 7: .node.lead had no centering rule of its own (top:50%/left:50%
+# alone puts the node's top-left corner, not its center, at the ring
+# center). The fix above lives in the shared .node rule, which .node.lead
+# also carries, so both findings 6 and 7 are covered by the same assertion.
+
+# Finding 3: every gate verdict badge shared one hardcoded "gate" kind, so
+# addBadge()'s reuse-by-DOM-lookup let an "allow" verdict silently
+# overwrite a still-meaningful "block" verdict badge almost immediately.
+# Fix: each verdict gets its own badge kind via gateBadgeKind(), so a
+# block verdict's badge is never displaced by an unrelated allow verdict.
+assert_not_contains "$DASHBOARD_HTML_SRC" 'addBadge(node.badgesEl, "gate", text)' \
+  "dash-fe: gate badges are no longer added under one shared \"gate\" kind (a block verdict badge could be silently overwritten by the next allow)"
+assert_contains "$DASHBOARD_HTML_SRC" "function gateBadgeKind(verdict)" \
+  "dash-fe: a gateBadgeKind() function derives a verdict-specific badge kind"
+assert_contains "$DASHBOARD_HTML_SRC" "badge-gate-block" \
+  "dash-fe: page source defines a distinct badge-gate-block kind so a block verdict cannot be silently overwritten by an allow"
+assert_not_contains "$DASHBOARD_HTML_SRC" ".badge-gate {" \
+  "dash-fe: no single shared .badge-gate CSS rule remains (verdict-specific rules replace it)"
+
+# Finding 14: getOrCreateAgentNode() already calls animateIn() when it
+# creates a brand-new node; the SubagentStart handler called animateIn()
+# again on the node it was just handed, double-firing the entrance
+# animation for a genuinely new node.
+assert_not_contains "$DASHBOARD_HTML_SRC" "animateIn(node)" \
+  "dash-fe: SubagentStart handler no longer re-calls animateIn() on a node getOrCreateAgentNode already animated in"
+
+echo ""
+echo "== F092: /harness-dashboard skill =="
+
+# QA binding for F092 is manual (per its own features.json entry): actually
+# launching a server and opening a real browser isn't something this
+# dependency-free bash/python3 runner can exercise. These are supplementary
+# structural assertions on SKILL.md's frontmatter/content and the README
+# insertions f065 requires.
+
+DASH_SKILL="$REPO_ROOT/skills/harness-dashboard/SKILL.md"
+
+if [ -f "$DASH_SKILL" ]; then
+  pass "f092: skills/harness-dashboard/SKILL.md exists"
+else
+  fail "f092: skills/harness-dashboard/SKILL.md exists"
+fi
+
+DASH_SKILL_SRC=$(cat "$DASH_SKILL" 2>/dev/null)
+
+assert_contains "$DASH_SKILL_SRC" "name: harness-dashboard" \
+  "f092: SKILL.md frontmatter name matches the skill directory"
+assert_contains "$DASH_SKILL_SRC" "description:" \
+  "f092: SKILL.md has a description: key"
+
+assert_contains "$DASH_SKILL_SRC" "VV_HARNESS_DASHBOARD=1" \
+  "f092: SKILL.md documents the VV_HARNESS_DASHBOARD=1 opt-in precondition"
+assert_contains "$DASH_SKILL_SRC" ".harness/dashboard/" \
+  "f092: SKILL.md checks .harness/dashboard/ for a session log"
+assert_contains "$DASH_SKILL_SRC" "127.0.0.1:8765" \
+  "f092: SKILL.md checks whether 127.0.0.1:8765 is already serving"
+assert_contains "$DASH_SKILL_SRC" "skip straight to" \
+  "f092: SKILL.md skips straight to opening the browser when a server is already up"
+assert_contains "$DASH_SKILL_SRC" "Accepted limitation" \
+  "f092: SKILL.md documents the stale-session-reuse limitation"
+assert_contains "$DASH_SKILL_SRC" 'nohup python3 "${CLAUDE_PLUGIN_ROOT}/hooks/dashboard/serve.py"' \
+  "f092: SKILL.md starts serve.py via nohup, referenced through \${CLAUDE_PLUGIN_ROOT} (Finding 4)"
+assert_not_contains "$DASH_SKILL_SRC" "nohup python3 hooks/dashboard/serve.py" \
+  "f092: SKILL.md's launch line is not a bare repo-relative path (Finding 4)"
+assert_contains "$DASH_SKILL_SRC" "disown" \
+  "f092: SKILL.md detaches the server with disown"
+assert_contains "$DASH_SKILL_SRC" "not Claude Code's own" \
+  "f092: SKILL.md explicitly disclaims Claude Code's run_in_background task semantics as the mechanism"
+assert_contains "$DASH_SKILL_SRC" "open http://127.0.0.1:8765/" \
+  "f092: SKILL.md opens the page via macOS's open command"
+assert_contains "$DASH_SKILL_SRC" "lsof -i :8765" \
+  "f092: SKILL.md documents finding the server process via lsof"
+assert_contains "$DASH_SKILL_SRC" "kill" \
+  "f092: SKILL.md documents killing the server as a plain OS-level operation"
+assert_contains "$DASH_SKILL_SRC" "already ended" \
+  "f092: SKILL.md documents an already-ended session's static final state as expected"
+assert_contains "$DASH_SKILL_SRC" "no \`SessionStart\` hook" \
+  "f092: SKILL.md states there is no SessionStart auto-start path"
+
+README_SRC=$(cat "$REPO_ROOT/README.md" 2>/dev/null)
+assert_contains "$README_SRC" "skills/harness-dashboard/" \
+  "f092: README.md's component table mentions skills/harness-dashboard/"
+assert_contains "$README_SRC" "── harness-dashboard/" \
+  "f092: README.md's plugin tree mentions harness-dashboard/ with the box-drawing character"
+assert_not_contains "$README_SRC" "-- harness-dashboard/" \
+  "f092: README.md's plugin tree entry uses U+2500, not ASCII hyphens"
+
+echo ""
+echo "== F093: dashboard docs and plugin version bump =="
+
+# CHANGELOG.md's "### v<version>" heading is already asserted generically,
+# against whatever version plugin.json currently carries, by the
+# release-consistency functional check above (RC_FUNC_ERRORS) -- adding a
+# second, hardcoded "### v5.2.0" check here would just duplicate that
+# existing check for one specific version. These assertions cover what
+# isn't already covered: the README/INSTALL content and the exact version
+# value itself.
+
+INSTALL_SRC=$(cat "$REPO_ROOT/INSTALL.md" 2>/dev/null)
+
+assert_contains "$README_SRC" "VV_HARNESS_DASHBOARD" \
+  "f093: README.md mentions VV_HARNESS_DASHBOARD"
+assert_contains "$README_SRC" "/harness-dashboard" \
+  "f093: README.md mentions the /harness-dashboard command"
+assert_contains "$INSTALL_SRC" "VV_HARNESS_DASHBOARD" \
+  "f093: INSTALL.md mentions VV_HARNESS_DASHBOARD"
+assert_contains "$INSTALL_SRC" "/harness-dashboard" \
+  "f093: INSTALL.md mentions the /harness-dashboard command"
+assert_contains "$INSTALL_SRC" ".harness/dashboard/" \
+  "f093: INSTALL.md documents the event log's location"
+assert_contains "$INSTALL_SRC" "gitignored" \
+  "f093: INSTALL.md states the event log is gitignored"
+assert_contains "$INSTALL_SRC" "hub-and-spoke" \
+  "f093: INSTALL.md documents the flat hub-and-spoke graph limitation"
+assert_contains "$INSTALL_SRC" "agent_type" \
+  "f093: INSTALL.md documents the agent_type-only teammate labeling limitation"
+
+PLUGIN_VERSION_INFO=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import json
+import re
+import sys
+
+root = sys.argv[1]
+manifest = json.load(open(f"{root}/.claude-plugin/plugin.json"))
+version = manifest.get("version", "")
+print(version)
+print("SEMVER_OK" if re.match(r"^\d+\.\d+\.\d+$", version) else "SEMVER_BAD")
+PYEOF
+)
+PLUGIN_VERSION=$(echo "$PLUGIN_VERSION_INFO" | sed -n '1p')
+PLUGIN_VERSION_SEMVER=$(echo "$PLUGIN_VERSION_INFO" | sed -n '2p')
+
+if [ "$PLUGIN_VERSION" = "5.2.0" ]; then
+  pass "f093: plugin.json version equals exactly 5.2.0"
+else
+  fail "f093: plugin.json version equals exactly 5.2.0 (got '$PLUGIN_VERSION')"
+fi
+
+if [ "$PLUGIN_VERSION_SEMVER" = "SEMVER_OK" ]; then
+  pass "f093: plugin.json version matches a semver-shaped pattern"
+else
+  fail "f093: plugin.json version matches a semver-shaped pattern (got '$PLUGIN_VERSION')"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
@@ -10294,6 +11852,47 @@ for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/s
     fail "n: bash -n $(basename "$SCRIPT")"
   fi
 done
+
+# Regression guard for a bash-3.2-specific parse hazard (F094): a heredoc
+# nested inside a DOUBLE-QUOTED command substitution (`python3 -c "$(cat
+# <<'PYEOF' ... PYEOF)"`) parses fine under bash 5.x -- and so passes the
+# plain `bash -n` loop directly above whenever Homebrew bash is first on
+# PATH -- but fails `bash -n` outright under REAL bash 3.2.57 (this repo's
+# own declared minimum) whenever the heredoc body's own single-quote count
+# is odd. That PATH-dependence is exactly why the plain loop above, which
+# resolves `bash` from PATH like everything else in this file, could not
+# have caught it: a machine with Homebrew bash first on PATH sees no
+# failure at all, even though the same file fails to parse under the stock
+# macOS /bin/bash every one of these ships to. This check deliberately
+# invokes the literal path /bin/bash -- never the ambient `bash` used
+# everywhere else in this file -- specifically to catch a reintroduction of
+# that nested-heredoc pattern regardless of what's on PATH. Degrades to a
+# skip (not a failure) when /bin/bash doesn't exist, e.g. a non-macOS CI
+# runner: the goal is catching this on the platforms where the hazard is
+# real, not asserting /bin/bash's presence everywhere.
+STOCK_BASH_3_2_FILES="
+$HOOKS_DIR/dashboard-log.sh
+$REPO_ROOT/.claude/hooks/enforce-scope.sh
+$REPO_ROOT/.claude/hooks/commit-gate.sh
+$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh
+$REPO_ROOT/.claude/hooks/verify-task-quality.sh
+$TEMPLATES_DIR/enforce-scope.sh.template
+$TEMPLATES_DIR/commit-gate.sh.template
+$TEMPLATES_DIR/check-remaining-tasks.sh.template
+$TEMPLATES_DIR/verify-task-quality.sh.template
+"
+if [ -x /bin/bash ]; then
+  for SCRIPT in $STOCK_BASH_3_2_FILES; do
+    [ -n "$SCRIPT" ] || continue
+    if /bin/bash -n "$SCRIPT"; then
+      pass "n: /bin/bash -n $(basename "$SCRIPT") (stock bash 3.2 parse check, F094)"
+    else
+      fail "n: /bin/bash -n $(basename "$SCRIPT") (stock bash 3.2 parse check, F094)"
+    fi
+  done
+else
+  echo "SKIP: /bin/bash not present on this machine -- skipping F094's stock-bash-3.2 parse regression check"
+fi
 
 # The *.sh.template loop below already guards against a stray NUL byte
 # (F039); these hooks/*.sh files ship directly with the plugin to every
