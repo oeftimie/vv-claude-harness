@@ -11361,6 +11361,65 @@ assert_not_contains "$DASHBOARD_HTML_SRC" ".teammate_name" \
   "dash-fe: page source never reads teammate_name to label a node"
 
 echo ""
+echo "== F092: /harness-dashboard skill =="
+
+# QA binding for F092 is manual (per its own features.json entry): actually
+# launching a server and opening a real browser isn't something this
+# dependency-free bash/python3 runner can exercise. These are supplementary
+# structural assertions on SKILL.md's frontmatter/content and the README
+# insertions f065 requires.
+
+DASH_SKILL="$REPO_ROOT/skills/harness-dashboard/SKILL.md"
+
+if [ -f "$DASH_SKILL" ]; then
+  pass "f092: skills/harness-dashboard/SKILL.md exists"
+else
+  fail "f092: skills/harness-dashboard/SKILL.md exists"
+fi
+
+DASH_SKILL_SRC=$(cat "$DASH_SKILL" 2>/dev/null)
+
+assert_contains "$DASH_SKILL_SRC" "name: harness-dashboard" \
+  "f092: SKILL.md frontmatter name matches the skill directory"
+assert_contains "$DASH_SKILL_SRC" "description:" \
+  "f092: SKILL.md has a description: key"
+
+assert_contains "$DASH_SKILL_SRC" "VV_HARNESS_DASHBOARD=1" \
+  "f092: SKILL.md documents the VV_HARNESS_DASHBOARD=1 opt-in precondition"
+assert_contains "$DASH_SKILL_SRC" ".harness/dashboard/" \
+  "f092: SKILL.md checks .harness/dashboard/ for a session log"
+assert_contains "$DASH_SKILL_SRC" "127.0.0.1:8765" \
+  "f092: SKILL.md checks whether 127.0.0.1:8765 is already serving"
+assert_contains "$DASH_SKILL_SRC" "skip straight to" \
+  "f092: SKILL.md skips straight to opening the browser when a server is already up"
+assert_contains "$DASH_SKILL_SRC" "Accepted limitation" \
+  "f092: SKILL.md documents the stale-session-reuse limitation"
+assert_contains "$DASH_SKILL_SRC" "nohup python3 hooks/dashboard/serve.py" \
+  "f092: SKILL.md starts serve.py via nohup"
+assert_contains "$DASH_SKILL_SRC" "disown" \
+  "f092: SKILL.md detaches the server with disown"
+assert_contains "$DASH_SKILL_SRC" "not Claude Code's own" \
+  "f092: SKILL.md explicitly disclaims Claude Code's run_in_background task semantics as the mechanism"
+assert_contains "$DASH_SKILL_SRC" "open http://127.0.0.1:8765/" \
+  "f092: SKILL.md opens the page via macOS's open command"
+assert_contains "$DASH_SKILL_SRC" "lsof -i :8765" \
+  "f092: SKILL.md documents finding the server process via lsof"
+assert_contains "$DASH_SKILL_SRC" "kill" \
+  "f092: SKILL.md documents killing the server as a plain OS-level operation"
+assert_contains "$DASH_SKILL_SRC" "already ended" \
+  "f092: SKILL.md documents an already-ended session's static final state as expected"
+assert_contains "$DASH_SKILL_SRC" "no \`SessionStart\` hook" \
+  "f092: SKILL.md states there is no SessionStart auto-start path"
+
+README_SRC=$(cat "$REPO_ROOT/README.md" 2>/dev/null)
+assert_contains "$README_SRC" "skills/harness-dashboard/" \
+  "f092: README.md's component table mentions skills/harness-dashboard/"
+assert_contains "$README_SRC" "── harness-dashboard/" \
+  "f092: README.md's plugin tree mentions harness-dashboard/ with the box-drawing character"
+assert_not_contains "$README_SRC" "-- harness-dashboard/" \
+  "f092: README.md's plugin tree entry uses U+2500, not ASCII hyphens"
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
