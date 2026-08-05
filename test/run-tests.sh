@@ -87,12 +87,24 @@ run_statusline() {
 # project's .claude/hooks/ -- so it's exercised the same way as those, not via
 # the run_hook() helper below (that one is specifically for the project-level
 # templates install_hooks() copies into .claude/hooks/).
+#
+# CLAUDE_PROJECT_DIR is explicitly set to the fixture dir ($1), matching
+# run_hook()'s own pattern below -- dashboard-log.sh's root resolution now
+# prefers CLAUDE_PROJECT_DIR over git-toplevel (F089's critical-fix pass, for
+# consistency with the gate scripts), so if these helpers merely `cd`'d into
+# the fixture and relied on git-toplevel, any ambient CLAUDE_PROJECT_DIR
+# already set in the environment running this suite (exactly what happens
+# under a real Claude Code hook invocation, e.g. verify-task-quality.sh's own
+# TaskCompleted run) would leak through and point dashboard-log.sh at the
+# real repo instead of the isolated fixture -- discovered live when this
+# exact leak made every dashboard-log.sh/serve.py assertion fail under
+# CLAUDE_PROJECT_DIR, despite passing cleanly with it unset.
 run_dashboard_log() {
-  (cd "$1" && printf '%s' "$2" | VV_HARNESS_DASHBOARD="$3" bash "$HOOKS_DIR/dashboard-log.sh")
+  (cd "$1" && printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" VV_HARNESS_DASHBOARD="$3" bash "$HOOKS_DIR/dashboard-log.sh")
 }
 
 run_dashboard_log_unset() {
-  (cd "$1" && printf '%s' "$2" | env -u VV_HARNESS_DASHBOARD bash "$HOOKS_DIR/dashboard-log.sh")
+  (cd "$1" && printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" env -u VV_HARNESS_DASHBOARD bash "$HOOKS_DIR/dashboard-log.sh")
 }
 
 TEMPLATES_DIR="$REPO_ROOT/skills/harness-init"
@@ -1023,6 +1035,37 @@ if [ ! -e "$DIR_DL/.harness/dashboard" ]; then
   pass "dl: disabled (env '0') creates no dashboard directory"
 else
   fail "dl: disabled (env '0') creates no dashboard directory -- it exists"
+fi
+
+# Regression test: an ambient CLAUDE_PROJECT_DIR set to a DIFFERENT directory
+# (simulating this suite itself running under a real Claude Code hook
+# invocation, which always sets it) must not leak into dashboard-log.sh's
+# root resolution and redirect its output away from this fixture --
+# run_dashboard_log()'s own CLAUDE_PROJECT_DIR="$1" override must win.
+# Reproduces a real bug found live: dashboard-log.sh's root resolution
+# prefers CLAUDE_PROJECT_DIR when set (matching the gate scripts), so
+# without this override every dashboard-log.sh/serve.py assertion in this
+# suite silently failed whenever CLAUDE_PROJECT_DIR happened to be set in
+# the ambient environment -- invisible from an interactive terminal (where
+# it's normally unset) but deterministic under this repo's own
+# verify-task-quality.sh TaskCompleted hook, which Claude Code always
+# invokes with CLAUDE_PROJECT_DIR set to the real project root.
+DIR_DL_AMBIENT="$WORK/dl-ambient"
+make_fixture "$DIR_DL_AMBIENT"
+BOGUS_OUTER="$WORK/dl-ambient-bogus-outer"
+mkdir -p "$BOGUS_OUTER"
+OUT=$(CLAUDE_PROJECT_DIR="$BOGUS_OUTER" run_dashboard_log "$DIR_DL_AMBIENT" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo hi"}}' '1')
+RC=$?
+assert_rc0 "$RC" "dl: ambient CLAUDE_PROJECT_DIR (different dir) still exits 0"
+if [ -e "$DIR_DL_AMBIENT/.harness/dashboard/sess1.jsonl" ]; then
+  pass "dl: ambient CLAUDE_PROJECT_DIR does not redirect output away from the fixture"
+else
+  fail "dl: ambient CLAUDE_PROJECT_DIR does not redirect output away from the fixture -- no log file in $DIR_DL_AMBIENT"
+fi
+if [ ! -e "$BOGUS_OUTER/.harness" ]; then
+  pass "dl: ambient CLAUDE_PROJECT_DIR's own directory receives no dashboard output"
+else
+  fail "dl: ambient CLAUDE_PROJECT_DIR's own directory receives no dashboard output -- .harness exists in $BOGUS_OUTER"
 fi
 
 # No .harness directory: enabled, but exits 0 and writes nothing.
@@ -11256,18 +11299,24 @@ s.close()
   return 1
 }
 
-# Starts serve.py with $1 as its cwd (so its git-toplevel resolution matches
-# the fixture project), session id $2 (empty string omits the positional
-# arg, triggering auto-select), port $3, combined stdout+stderr to $4. The
-# background job is a direct child of this script (not of a command-
-# substitution subshell), so kill/wait on it behave normally afterward. Sets
-# the global SERVER_PID.
+# Starts serve.py with $1 as its cwd and CLAUDE_PROJECT_DIR explicitly set to
+# $1 too (so its project-root resolution matches the fixture regardless of
+# whatever CLAUDE_PROJECT_DIR the environment running this suite already has
+# set -- serve.py's find_project_root() now prefers CLAUDE_PROJECT_DIR over
+# git-toplevel, matching dashboard-log.sh's own fix above and for the same
+# reason: an ambient CLAUDE_PROJECT_DIR leaking through here pointed serve.py
+# at the real repo instead of the isolated fixture, and every assertion
+# depending on its output failed as a result), session id $2 (empty string
+# omits the positional arg, triggering auto-select), port $3, combined
+# stdout+stderr to $4. The background job is a direct child of this script
+# (not of a command-substitution subshell), so kill/wait on it behave
+# normally afterward. Sets the global SERVER_PID.
 start_dashboard_server() {
   local DIR="$1" SESSION_ID="$2" PORT="$3" OUTFILE="$4"
   if [ -n "$SESSION_ID" ]; then
-    (cd "$DIR" && exec python3 "$DASHBOARD_PY" "$SESSION_ID" --port "$PORT") >"$OUTFILE" 2>&1 &
+    (cd "$DIR" && CLAUDE_PROJECT_DIR="$DIR" exec python3 "$DASHBOARD_PY" "$SESSION_ID" --port "$PORT") >"$OUTFILE" 2>&1 &
   else
-    (cd "$DIR" && exec python3 "$DASHBOARD_PY" --port "$PORT") >"$OUTFILE" 2>&1 &
+    (cd "$DIR" && CLAUDE_PROJECT_DIR="$DIR" exec python3 "$DASHBOARD_PY" --port "$PORT") >"$OUTFILE" 2>&1 &
   fi
   SERVER_PID=$!
   track_pid "$SERVER_PID"
