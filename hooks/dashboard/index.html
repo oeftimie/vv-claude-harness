@@ -339,7 +339,7 @@
     var normalized = String(verdict || "unknown")
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, "-");
-    return "gate-" + (normalized || "unknown");
+    return "gate-" + normalized;
   }
 
   function handleGateEvent(payload, node) {

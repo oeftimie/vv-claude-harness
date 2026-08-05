@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 93,
+  "total_features": 96,
   "passing": 91,
   "features": [
     {
@@ -2664,6 +2664,73 @@
         "source": "conversation"
       },
       "qa_binding": "unit"
+    },
+    {
+      "id": "F094",
+      "description": "Dashboard: positionRing() writes directly to style.transform while an animejs animation may be mid-flight on the same node (pulse() at 280ms, layoutSpokes() on every node create/remove), and anime.js v3 rebuilds the whole transform string from its own internal snapshot on every animation frame, silently clobbering any external write. Found by a second adversarial review of the F088-F093 dashboard chain (2026-08-05): confirmed in headless Chrome that a node mid-pulse when another agent spawns (triggering layoutSpokes()) ends up stuck at its pre-layout ring position until the next full layout pass. Cosmetic only (nodes self-correct on the next layout event), not a data-correctness or security issue -- deferred rather than blocking the F088-F093 merge on the reviewer's own explicit recommendation. Fix: take positioning off `transform` entirely (the same way centering was already moved off it during the first review's fix round) -- store x/y on the node record and set style.left/style.top directly via calc(), leaving `transform` owned exclusively by anime.js for scale/opacity.",
+      "priority": 94,
+      "status": "pending",
+      "scope": [
+        "hooks/dashboard/index.html"
+      ],
+      "depends_on": [
+        "F091"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Deferred, not urgent -- confirmed via headless Chrome reproduction during the second adversarial review of F088-F093, but self-corrects on the next layout pass and has no security or correctness impact beyond a transient visual glitch.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "Second adversarial review of F088-F093 (2026-08-05), Finding 4",
+      "spec": null
+    },
+    {
+      "id": "F095",
+      "description": "Dashboard: gate badges are keyed on verdict only (gate-<verdict>), not on which specific gate produced it, so when multiple gate scripts (enforce-scope, commit-gate, check-remaining-tasks, verify-task-quality) log the same verdict in one session, they share one DOM badge element and each new event's `title` (payload.gate + ': ' + payload.finding, the only place the finding class is shown) silently overwrites the previous gate's. Found by a second adversarial review of the F088-F093 dashboard chain (2026-08-05): since enforce-scope now logs skipped/allow on every tool call and commit-gate logs allow on every non-commit Bash call, the overwrite is near-continuous in practice, so the badge tooltip mostly reflects whichever gate happened to fire last rather than a specific, meaningful finding. Deferred rather than blocking the F088-F093 merge on the reviewer's own explicit recommendation -- the block-is-visible-at-all fix from the first review round still holds, this is about attribution precision within that. Fix: key the badge on both gate and verdict (`gate-<sanitized-gate-name>-<verdict>`) instead of verdict alone, adjusting the corresponding CSS attribute selector.",
+      "priority": 95,
+      "status": "pending",
+      "scope": [
+        "hooks/dashboard/index.html"
+      ],
+      "depends_on": [
+        "F091"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Deferred, not urgent -- cosmetic attribution-precision issue, not a security or correctness bug; the more severe badge-overwrite bug (a block being erased by the next allow) was already fixed in F088-F093's own merge.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "Second adversarial review of F088-F093 (2026-08-05), Finding 6",
+      "spec": null
+    },
+    {
+      "id": "F096",
+      "description": "enforce-scope.sh's DENY_REASON and the Bash $COMMAND it embeds are still passed via argv to the analysis python3 process in one call site each (not the deny_json() logging call, which was fixed for the ARG_MAX bypass during F088-F093's own merge) -- so an extremely large Bash command (over the OS's ARG_MAX, ~1MB on macOS, as low as 128KB per-argument on Linux) can still fail the analysis step itself and fall through to an unintended allow, via the same root-cause class as the critical bug F088-F093 fixed, just one call site earlier in the chain. Found by a second adversarial review (2026-08-05): confirmed this specific residual case is PRE-EXISTING on main (not a regression introduced by F088-F093), but F089's new deny_json() header comment overclaims that 'only small, bounded values stay on argv' when the reason string it receives is not actually bounded. Deferred rather than blocking the F088-F093 merge on the reviewer's own explicit recommendation, since it predates this feature chain and is a pre-existing gap, not a new one. Fix: feed $COMMAND to the upstream analysis python via stdin as well (mirroring the fix already applied to deny_json() itself), and/or cap DENY_REASON's length before it reaches deny_json(); at minimum, correct the overclaiming comment to disclose the residual instead of asserting full boundedness.",
+      "priority": 96,
+      "status": "pending",
+      "scope": [
+        ".claude/hooks/enforce-scope.sh",
+        ".claude/hooks/commit-gate.sh",
+        "skills/harness-init/enforce-scope.sh.template",
+        "skills/harness-init/commit-gate.sh.template"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Pre-existing on main, not a regression from F088-F093 -- deferred per the reviewing agent's own explicit recommendation. The critical, reachable-in-practice instance of this bug class (in deny_json() itself) was fixed as part of F088-F093's merge; this is the residual, harder-to-reach upstream call site.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "Second adversarial review of F088-F093 (2026-08-05), Finding 3",
+      "spec": null
     }
   ]
 }
