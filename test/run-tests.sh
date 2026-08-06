@@ -11824,16 +11824,20 @@ root = sys.argv[1]
 manifest = json.load(open(f"{root}/.claude-plugin/plugin.json"))
 version = manifest.get("version", "")
 print(version)
-print("SEMVER_OK" if re.match(r"^\d+\.\d+\.\d+$", version) else "SEMVER_BAD")
+# Real semver: MAJOR.MINOR.PATCH with an optional dot-separated pre-release
+# suffix (e.g. "5.3.0-alpha", "5.3.0-alpha.1") -- the original pattern here
+# only matched a bare MAJOR.MINOR.PATCH and rejected any pre-release tag.
+SEMVER_RE = r"^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$"
+print("SEMVER_OK" if re.match(SEMVER_RE, version) else "SEMVER_BAD")
 PYEOF
 )
 PLUGIN_VERSION=$(echo "$PLUGIN_VERSION_INFO" | sed -n '1p')
 PLUGIN_VERSION_SEMVER=$(echo "$PLUGIN_VERSION_INFO" | sed -n '2p')
 
-if [ "$PLUGIN_VERSION" = "5.2.0" ]; then
-  pass "f093: plugin.json version equals exactly 5.2.0"
+if [ "$PLUGIN_VERSION" = "5.3.0-alpha" ]; then
+  pass "f093: plugin.json version equals exactly 5.3.0-alpha"
 else
-  fail "f093: plugin.json version equals exactly 5.2.0 (got '$PLUGIN_VERSION')"
+  fail "f093: plugin.json version equals exactly 5.3.0-alpha (got '$PLUGIN_VERSION')"
 fi
 
 if [ "$PLUGIN_VERSION_SEMVER" = "SEMVER_OK" ]; then

@@ -306,6 +306,11 @@ spoke, quality-gate verdicts, and judge subagents — served locally with no ext
 dependencies. See [INSTALL.md](./INSTALL.md), "Optional: Live Session Dashboard", for
 setup and its known limitations.
 
+v5.3.0-alpha marks the dashboard as alpha quality for broader testing before it's
+folded into a stable release — pin a single project to it via `extraKnownMarketplaces`
+without touching any other project's plugin version (see INSTALL.md, "Installing a
+specific version").
+
 ## Architecture
 
 ### Global (travels with you)
