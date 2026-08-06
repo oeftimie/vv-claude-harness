@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 96,
+  "total_features": 98,
   "passing": 91,
   "features": [
     {
@@ -2730,6 +2730,48 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "Second adversarial review of F088-F093 (2026-08-05), Finding 3",
+      "spec": null
+    },
+    {
+      "id": "F097",
+      "description": "hooks/session-start.sh has no mechanism that measures or enforces its actual total orientation output against the platform's 10,000-char cap -- only four independent, hand-tuned local budgets (three sections capped via print_budgeted_block at 2600 chars each, one description field capped separately at 200 chars) plus an unbounded rule-pointer block whose own comment admits it varies 1800-2900 chars depending on the installed CLAUDE_PLUGIN_ROOT path length and which optional WARNING blocks fire. Found by a 4-angle /simplify altitude review (2026-08-06): the git history shows this was chased reactively across three commits (2000 -> broke on real content -> recalibrated to 2600 with an arithmetic margin comment -> a later review found the margin isn't a fixed number at all, softened to a 'judgment call'). Repeated recalibration of a magic constant is the signal that the underlying problem (no measured total) was never actually solved. Fix: buffer the orientation output (or count characters as it's built) and truncate/report against the ACTUAL accumulated length at the end, as a final safety net IN ADDITION TO (not instead of) the existing per-section budgets kept for readability/prioritization -- converts 'we hope the sum of hand-tuned constants stays under 10,000 for every CLAUDE_PLUGIN_ROOT path length' into a mechanically guaranteed invariant, removing the need for a fourth recalibration commit next time install-path length or block count changes. Deliberately NOT attempted as part of the /simplify pass that discovered it -- flagged by two independent reviewers as a larger structural change than the mechanical dedup fixes done in that pass.",
+      "priority": 97,
+      "status": "pending",
+      "scope": [
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Deferred, not urgent -- this is an improvement to an already-working safety margin, not a live bug. The existing per-section budgets have held up in practice (no known real-world overflow incident). Additive, not a replacement, so it can land independently whenever picked up.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "4-angle /simplify altitude review of hooks/session-start.sh (2026-08-06)",
+      "spec": null
+    },
+    {
+      "id": "F098",
+      "description": "hooks/session-start.sh independently loads and json.load's .harness/features.json in five separate python3 subprocesses scattered through the file (passing/total count, next-claimable selection, spec-drift check, scope-enforcement check, test_file-existence check) -- each pays interpreter startup plus a fresh parse of a file whose own comments note can carry >13,000-char descriptions across many features. Found by a 4-angle /simplify review (2026-08-06, efficiency and simplification angles both flagged this independently); two of the five call sites (passing/total count, next-claimable) were already consolidated toward harness_state.py delegation in the same review pass (see F088/notes and the session-start.sh commit history around 2026-08-06), but the remaining three (spec-drift, scope-enforcement, test_file-existence) still each spawn their own process. Fix: one python3 script that loads features.json once and runs all remaining checks against the in-memory feature list, printing each block conditionally -- roughly halves the remaining python3 spawn count on this hot path (every session start, every /compact). Deliberately NOT attempted as part of the /simplify pass that discovered it -- both reviewers who found it explicitly called it 'a larger structural change... worth considering' rather than a concrete line-level fix, and the individual consolidations already applied capture most of the measured benefit (see the benchmark in this session's own conversation: ~45% reduction in per-call wall-clock time from a similar single-spawn consolidation elsewhere in this chain).",
+      "priority": 98,
+      "status": "pending",
+      "scope": [
+        "hooks/session-start.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Deferred, not urgent -- real but lower-value than F097; the individually-fixed spawns (this same review pass) already capture most of the win. A future session picking this up should re-measure the actual remaining spawn count first, since it may have already shrunk further from other work.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "4-angle /simplify efficiency+simplification review of hooks/session-start.sh (2026-08-06)",
       "spec": null
     }
   ]
