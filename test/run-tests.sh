@@ -6290,6 +6290,34 @@ else
   fail "f013: .gitignore is missing .harness/SESSION_INCOMPLETE"
 fi
 
+# /simplify cleanup: stamp.sh no longer hand-duplicates the required .gitignore
+# lines -- it reads doctor.py's own REQUIRED_GITIGNORE_LINES at run time. This
+# asserts the shared-source wiring itself (every line doctor.py currently
+# requires is actually present in a fresh stamp's .gitignore), not just that
+# stamp.sh happens to still emit the same 3 hardcoded strings -- a regression
+# where the two drift apart again (e.g. a line added to doctor.py but not
+# picked up here) would slip past a check that only re-hardcodes the same list.
+STAMP_REQUIRED_GITIGNORE_LINES=$(python3 -c "
+import sys
+sys.path.insert(0, '$REPO_ROOT/skills/harness-doctor')
+import doctor
+print('\n'.join(doctor.REQUIRED_GITIGNORE_LINES))
+")
+STAMP_GITIGNORE_MISSING=""
+while IFS= read -r LINE; do
+  [ -z "$LINE" ] && continue
+  if ! grep -qxF "$LINE" "$STAMP_PROJECT/.gitignore" 2>/dev/null; then
+    STAMP_GITIGNORE_MISSING="$STAMP_GITIGNORE_MISSING $LINE"
+  fi
+done <<EOF
+$STAMP_REQUIRED_GITIGNORE_LINES
+EOF
+if [ -z "$STAMP_GITIGNORE_MISSING" ]; then
+  pass "f013: .gitignore contains every line doctor.py's REQUIRED_GITIGNORE_LINES currently requires (shared source of truth)"
+else
+  fail "f013: .gitignore is missing lines from doctor.py's REQUIRED_GITIGNORE_LINES:$STAMP_GITIGNORE_MISSING"
+fi
+
 STAMP_SETTINGS_ERRORS=$(python3 - "$STAMP_PROJECT/.claude/settings.json" 2>&1 <<'PYEOF'
 import json
 import sys
@@ -10187,6 +10215,70 @@ assert_rc0 "$RC" "f089r2-es: an ordinary in-scope Bash command still exits 0"
 LINE=$(cat "$AB_LOG" 2>/dev/null)
 assert_contains "$LINE" '"verdict": "allow"' \
   "f089r2-es: an ordinary in-scope Bash command now logs verdict=allow before the final exit 0"
+
+echo ""
+echo "== simplify-dashboard-shell-python cleanup: DENY_REASON-scan ARG_MAX regression =="
+
+# SECURITY (most severe finding of this cleanup pass): commit-gate.sh's and
+# enforce-scope.sh's SECOND python3 invocation -- the DENY_REASON scan that
+# does the actual compound-stage-and-commit/secret-scan (commit-gate.sh) or
+# write-target/scope-pattern (enforce-scope.sh) analysis -- still put the raw,
+# unbounded $COMMAND string on argv (`python3 - "$COMMAND" ... <<'PYEOF'`).
+# This is the IDENTICAL bug class F089 round 2 (above) already fixed once in
+# these same two files, but only in deny_json()'s own payload; this second
+# call site was missed. Unlike the AM_ES_PAYLOAD/AM_CG_PAYLOAD tests above
+# (which inflate an UNRELATED JSON field to blow up deny_json()'s own
+# stdin-fed payload), these inflate the COMMAND STRING ITSELF, since at this
+# call site it's $COMMAND -- not the whole tool-input JSON -- that lands on
+# argv. Sized past the ~1,000,000-1,050,000 byte boundary measured directly
+# against this environment's python3/bash (see the F089 round 2 comment
+# above for the measurement). The padding is built INSIDE the python3 -c
+# script that constructs the JSON payload (via 'x' * 2500000), never passed
+# as a shell argument itself, so building the fixture payload doesn't hit the
+# same ARG_MAX limit this test exists to catch.
+
+DIR_AM3_CG="$WORK/f089r3-argmax-commit-gate-scan"
+make_fixture "$DIR_AM3_CG"
+install_hooks "$DIR_AM3_CG"
+AM3_CG_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'session_id': 'argmax3sess',
+    'tool_input': {
+        'command': 'git add x && git commit -a -m \"' + 'x' * 2500000 + '\"',
+    },
+}))
+")
+OUT=$(run_hook_dashboard "$DIR_AM3_CG" commit-gate.sh "$AM3_CG_PAYLOAD")
+RC=$?
+assert_rc0 "$RC" "f089r3-cg: an oversized (ARG_MAX-exceeding) COMMAND still exits 0"
+assert_deny_json "$OUT" \
+  "f089r3-cg: an oversized COMMAND still emits deny JSON at the DENY_REASON-scan site (not a silent allow)"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "f089r3-cg: an oversized COMMAND's compound-stage-and-commit denial still names its finding class"
+
+DIR_AM3_ES="$WORK/f089r3-argmax-enforce-scope-scan"
+make_fixture "$DIR_AM3_ES"
+install_hooks "$DIR_AM3_ES"
+printf 'src/parser/\n' > "$DIR_AM3_ES/.claude/teammate-scope.txt"
+AM3_ES_PAYLOAD=$(python3 -c "
+import json
+print(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'session_id': 'argmax3sess',
+    'tool_input': {
+        'command': 'echo ' + 'x' * 2500000 + ' > src/other/evil.txt',
+    },
+}))
+")
+OUT=$(run_hook_dashboard "$DIR_AM3_ES" enforce-scope.sh "$AM3_ES_PAYLOAD")
+RC=$?
+assert_rc0 "$RC" "f089r3-es: an oversized (ARG_MAX-exceeding) out-of-scope COMMAND still exits 0"
+assert_deny_json "$OUT" \
+  "f089r3-es: an oversized out-of-scope COMMAND still emits deny JSON at the DENY_REASON-scan site (not a silent allow)"
+assert_contains "$OUT" "outside your assigned scope" \
+  "f089r3-es: an oversized out-of-scope COMMAND's denial still names the real violation"
 
 echo ""
 echo "== agent frontmatter =="

@@ -17,15 +17,22 @@ the four gate scripts' own copies of this same schema), so it CAN reach a
 sibling file -- this sidesteps the whole heredoc-quoting hazard rather than
 working around it.
 
-Invoked as: dashboard-log.py <log_path> <session_id>, with the raw hook
-stdin JSON piped to this process's own stdin.
+Invoked as: dashboard-log.py <dashboard_dir>, with the raw hook stdin JSON
+piped to this process's own stdin. session_id extraction and sanitization
+(same `[^A-Za-z0-9._-]` strip + 64-char cap as every other _dashboard_log()
+in this repo) and the resulting log path now all happen HERE, in the same
+process that already parses the JSON to build the log line (/simplify
+cleanup) -- dashboard-log.sh used to spawn a SEPARATE python3 process first
+just to extract session_id from the same stdin payload this file re-reads
+and re-parses a moment later. One process, one JSON parse, per event.
 """
 import json
+import os
 import re
 import sys
 import time
 
-log_path, session_id = sys.argv[1], sys.argv[2]
+dashboard_dir = sys.argv[1]
 stdin_json = sys.stdin.read()
 SUMMARY_LIMIT = 200
 
@@ -62,13 +69,17 @@ def redact(tool_name, tool_input):
     return None
 
 
-try:
+def build_and_write():
     try:
         data = json.loads(stdin_json)
     except Exception:
         data = {}
     if not isinstance(data, dict):
         data = {}
+
+    session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
+    if not session_id:
+        return
 
     line = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -89,7 +100,12 @@ try:
                 summary = summary[:SUMMARY_LIMIT] + f"... ({len(summary)} chars total)"
             line["summary"] = summary
 
-    with open(log_path, "a") as fh:
+    os.makedirs(dashboard_dir, exist_ok=True)
+    with open(os.path.join(dashboard_dir, f"{session_id}.jsonl"), "a") as fh:
         fh.write(json.dumps(line) + "\n")
+
+
+try:
+    build_and_write()
 except Exception:
     pass

@@ -111,15 +111,22 @@ def read_increment(path, offset):
     (new_offset, [complete_line_bytes...]). A missing file (deleted, or not
     created yet) returns (None, []), signalling the caller to reset to the
     empty/re-awaited state. A file that shrank below offset (truncated) is
-    treated as starting over from 0 in the same call."""
-    if not os.path.isfile(path):
-        return None, []
+    treated as starting over from 0 in the same call.
+
+    Called every ~200ms for the lifetime of every connected SSE client
+    (stream_events()'s own poll loop), so the common no-new-data tick (size
+    == offset) is checked with a single os.stat() and returned before ever
+    opening the file -- the previous version always paid isfile() + getsize()
+    (two stat syscalls) and then unconditionally opened/seeked/read the file,
+    even when nothing had changed since the last poll (/simplify cleanup)."""
     try:
-        size = os.path.getsize(path)
+        size = os.stat(path).st_size
     except OSError:
         return None, []
     if size < offset:
         offset = 0
+    if size <= offset:
+        return offset, []
     with open(path, "rb") as fh:
         fh.seek(offset)
         chunk = fh.read()
