@@ -27,9 +27,13 @@
 #
 # The .gitignore SESSION_INCOMPLETE, features.json.lock, and dashboard/ lines
 # (F088) are appended idempotently in both modes, independent of collision
-# handling for the other files. Kept in sync with skills/harness-doctor/
-# doctor.py's REQUIRED_GITIGNORE_LINES by hand -- no shared constant exists
-# between the two files.
+# handling for the other files. The list itself lives in ONE place --
+# skills/harness-doctor/doctor.py's REQUIRED_GITIGNORE_LINES -- and is read
+# from there below via a `python3 -c` one-liner that imports doctor.py as a
+# module, the same shell-out-to-a-python-module convention the gate scripts
+# already use for harness_state.py (/simplify cleanup: this used to
+# re-type the same 3 lines here by hand, kept in sync with doctor.py only by
+# comment and reviewer diligence).
 set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -261,17 +265,27 @@ done <<EOF
 $MANIFEST
 EOF
 
+GITIGNORE_LINES=$(python3 -c "
+import sys
+sys.path.insert(0, '$PLUGIN_ROOT/skills/harness-doctor')
+import doctor
+print('\n'.join(doctor.REQUIRED_GITIGNORE_LINES))
+")
+if [ $? -ne 0 ] || [ -z "$GITIGNORE_LINES" ]; then
+  echo "stamp.sh: failed to read REQUIRED_GITIGNORE_LINES from skills/harness-doctor/doctor.py" >&2
+  exit 1
+fi
+
 GITIGNORE="$TARGET_DIR/.gitignore"
 touch "$GITIGNORE"
-if ! grep -qxF '.harness/SESSION_INCOMPLETE' "$GITIGNORE"; then
-  echo '.harness/SESSION_INCOMPLETE' >> "$GITIGNORE"
-fi
-if ! grep -qxF '.harness/features.json.lock' "$GITIGNORE"; then
-  echo '.harness/features.json.lock' >> "$GITIGNORE"
-fi
-if ! grep -qxF '.harness/dashboard/' "$GITIGNORE"; then
-  echo '.harness/dashboard/' >> "$GITIGNORE"
-fi
+while IFS= read -r LINE; do
+  [ -z "$LINE" ] && continue
+  if ! grep -qxF "$LINE" "$GITIGNORE"; then
+    echo "$LINE" >> "$GITIGNORE"
+  fi
+done <<EOF
+$GITIGNORE_LINES
+EOF
 
 echo "stamp.sh: mode=$MODE complete"
 if [ -n "$WRITTEN" ]; then

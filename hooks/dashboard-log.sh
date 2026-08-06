@@ -78,34 +78,30 @@ H="$ROOT/.harness"
 
 STDIN_JSON=$(cat 2>/dev/null || true)
 
-SESSION_ID=$(printf '%s' "$STDIN_JSON" | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("session_id") or "")
-except Exception:
-    pass
-' 2>/dev/null || true)
-SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
-[ -n "$SESSION_ID" ] || exit 0
-
-DASHBOARD_DIR="$H/dashboard"
-mkdir -p "$DASHBOARD_DIR" 2>/dev/null || exit 0
-
 # F089 round 2 (adversarial review): the JSON payload is fed via STDIN, never
 # argv -- a large Write/Edit payload on argv can exceed the OS's exec()
 # argument-list size limit (~1MB on macOS, as low as 128KB per-argument on
 # Linux), which fails this whole call silently (it's `|| true`) and drops the
 # event with no error surfaced anywhere -- silent event loss, not a security
-# bypass (this hook only ever logs, it never gates a tool call). Only small,
-# bounded values (the log path, session id) stay on argv.
+# bypass (this hook only ever logs, it never gates a tool call). Only the
+# small, bounded dashboard directory path stays on argv.
 #
 # The payload-building logic itself lives in the sibling dashboard-log.py
 # (F094 round 2), not inlined here via `python3 -c "$(cat <<'PYEOF' ...)"` --
 # see that file's own header for why a heredoc nested inside a double-quoted
 # command substitution is a bash-3.2-specific parse hazard this hook must not
 # reintroduce.
-printf '%s' "$STDIN_JSON" | python3 "$(dirname "$0")/dashboard-log.py" \
-  "$DASHBOARD_DIR/$SESSION_ID.jsonl" "$SESSION_ID" \
+#
+# /simplify cleanup: this used to spawn a SEPARATE python3 process here just
+# to extract and sanitize session_id from $STDIN_JSON, then pass it as an
+# argv value to a second python3 process (dashboard-log.py) that re-read and
+# re-parsed that same JSON to build the log line. dashboard-log.py now does
+# both -- session_id extraction/sanitization and log-line building -- in the
+# one process it already runs, parsing $STDIN_JSON exactly once. This shell
+# script no longer computes or checks SESSION_ID at all; an empty/absent
+# session_id is now detected and silently skipped inside dashboard-log.py,
+# matching the original "no directory, no write" behavior exactly.
+printf '%s' "$STDIN_JSON" | python3 "$(dirname "$0")/dashboard-log.py" "$H/dashboard" \
   >/dev/null 2>/dev/null || true
 
 exit 0

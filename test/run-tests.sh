@@ -6290,6 +6290,34 @@ else
   fail "f013: .gitignore is missing .harness/SESSION_INCOMPLETE"
 fi
 
+# /simplify cleanup: stamp.sh no longer hand-duplicates the required .gitignore
+# lines -- it reads doctor.py's own REQUIRED_GITIGNORE_LINES at run time. This
+# asserts the shared-source wiring itself (every line doctor.py currently
+# requires is actually present in a fresh stamp's .gitignore), not just that
+# stamp.sh happens to still emit the same 3 hardcoded strings -- a regression
+# where the two drift apart again (e.g. a line added to doctor.py but not
+# picked up here) would slip past a check that only re-hardcodes the same list.
+STAMP_REQUIRED_GITIGNORE_LINES=$(python3 -c "
+import sys
+sys.path.insert(0, '$REPO_ROOT/skills/harness-doctor')
+import doctor
+print('\n'.join(doctor.REQUIRED_GITIGNORE_LINES))
+")
+STAMP_GITIGNORE_MISSING=""
+while IFS= read -r LINE; do
+  [ -z "$LINE" ] && continue
+  if ! grep -qxF "$LINE" "$STAMP_PROJECT/.gitignore" 2>/dev/null; then
+    STAMP_GITIGNORE_MISSING="$STAMP_GITIGNORE_MISSING $LINE"
+  fi
+done <<EOF
+$STAMP_REQUIRED_GITIGNORE_LINES
+EOF
+if [ -z "$STAMP_GITIGNORE_MISSING" ]; then
+  pass "f013: .gitignore contains every line doctor.py's REQUIRED_GITIGNORE_LINES currently requires (shared source of truth)"
+else
+  fail "f013: .gitignore is missing lines from doctor.py's REQUIRED_GITIGNORE_LINES:$STAMP_GITIGNORE_MISSING"
+fi
+
 STAMP_SETTINGS_ERRORS=$(python3 - "$STAMP_PROJECT/.claude/settings.json" 2>&1 <<'PYEOF'
 import json
 import sys

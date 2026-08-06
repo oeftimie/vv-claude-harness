@@ -35,23 +35,13 @@ INPUT=$(cat)
 _dashboard_log() {
     [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || return 0
     [ -d ".harness" ] || return 0
-    local verdict="$1" finding="${2:-}" session_id
-    session_id=$(printf '%s' "$INPUT" | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("session_id") or "")
-except Exception:
-    pass
-' 2>/dev/null || true)
-    session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
-    [ -n "$session_id" ] || return 0
-    mkdir -p ".harness/dashboard" 2>/dev/null || return 0
+    local verdict="$1" finding="${2:-}"
     # F089 round 2 (adversarial review): the JSON payload is fed via STDIN,
     # never argv -- a large payload on argv can exceed the OS's exec()
     # argument-list size limit (~1MB on macOS, as low as 128KB per-argument
     # on Linux), which fails this whole call silently (it's `|| true`) and
     # drops the event with no error surfaced anywhere. Only small, bounded
-    # values (the log path, session id, verdict, finding) stay on argv.
+    # values (the verdict, finding) stay on argv.
     #
     # The python source is read into a variable via a TOP-LEVEL heredoc
     # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- a heredoc
@@ -68,20 +58,38 @@ except Exception:
     # not just one gated behind VV_HARNESS_DASHBOARD (bash must successfully
     # PARSE the whole file before any runtime check, including that env-var
     # gate, ever executes).
+    #
+    # /simplify cleanup: previously TWO separate python3 processes per call
+    # -- one to extract session_id from stdin JSON, a second to re-read and
+    # re-parse that SAME JSON to build the log line. Both are now one
+    # process: the JSON is parsed exactly once, session_id is extracted from
+    # that same parsed dict, and mkdir/write only happen once a non-empty
+    # sanitized session_id has actually been found -- matching the original
+    # bash-side "no directory, no write, for an empty session_id" behavior
+    # exactly, just decided inside python instead of bash. Same pattern
+    # applied to commit-gate.sh's and enforce-scope.sh's own _dashboard_log().
     IFS= read -r -d '' _DASHBOARD_LOG_PY <<'PYEOF' || true
 import json
+import os
+import re
 import sys
 import time
 
-log_path, session_id, verdict, finding = sys.argv[1:5]
+verdict, finding = sys.argv[1:3]
 stdin_json = sys.stdin.read()
-try:
+
+
+def write_log():
     try:
         data = json.loads(stdin_json)
     except Exception:
         data = {}
     if not isinstance(data, dict):
         data = {}
+    session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
+    if not session_id:
+        return
+    os.makedirs(".harness/dashboard", exist_ok=True)
     line = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "hook_event_name": data.get("hook_event_name", ""),
@@ -95,13 +103,16 @@ try:
         value = data.get(key)
         if value:
             line[key] = value
-    with open(log_path, "a") as fh:
+    with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
         fh.write(json.dumps(line) + "\n")
+
+
+try:
+    write_log()
 except Exception:
     pass
 PYEOF
-    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" \
-        ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
+    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" "$verdict" "$finding" \
         >/dev/null 2>/dev/null || true
 }
 
