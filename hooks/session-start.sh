@@ -13,21 +13,25 @@ H="$ROOT/.harness"
 [ -d "$H" ] || exit 0
 
 STDIN_JSON=$(cat 2>/dev/null || true)
-SOURCE=$(printf '%s' "$STDIN_JSON" | python3 -c '
+# One parse of STDIN_JSON for both fields, separated by an ASCII Record
+# Separator (0x1e) rather than a newline: session_id is untrusted and may
+# itself carry embedded newlines (see the sanitization comment below), so a
+# newline-delimited split would silently truncate it at its own first
+# embedded newline.
+FIELD_SEP=$'\x1e'
+PARSED=$(printf '%s' "$STDIN_JSON" | python3 -c '
 import json, sys
+source, session_id = "", ""
 try:
-    print(json.load(sys.stdin).get("source", ""))
+    data = json.load(sys.stdin)
+    source = data.get("source", "")
+    session_id = data.get("session_id") or ""
 except Exception:
     pass
+sys.stdout.write(f"{source}\x1e{session_id}")
 ' 2>/dev/null || true)
-
-SESSION_ID=$(printf '%s' "$STDIN_JSON" | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("session_id") or "")
-except Exception:
-    pass
-' 2>/dev/null || true)
+SOURCE=${PARSED%%$FIELD_SEP*}
+SESSION_ID=${PARSED#*$FIELD_SEP}
 # session_id is externally supplied and echoed into the orientation block below --
 # never trust it raw. Unfiltered, a newline lets it inject arbitrary lines into the
 # most authoritative position in this hook's output (directly under the orientation
@@ -93,7 +97,28 @@ if [ -f "$H/SESSION_INCOMPLETE" ]; then
 fi
 
 echo ""
-python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
+# STATE_MODULE is the delegate-when-available switch for both blocks below:
+# a per-project harness_state.py (v5+ projects) owns the counting/claimable
+# algorithms; older projects initialized before that module existed fall back
+# to the inline computation.
+STATE_MODULE="$ROOT/.claude/hooks/harness_state.py"
+
+# Features passing-count: delegate to harness_state.py's own `counts` verb
+# when available instead of reimplementing the same sum-of-passing here.
+if [ -f "$STATE_MODULE" ] && [ -f "$H/features.json" ]; then
+  COUNTS_RESULT=$(python3 "$STATE_MODULE" counts "$H/features.json" 2>/dev/null || true)
+  if [ -n "$COUNTS_RESULT" ]; then
+    python3 - "$COUNTS_RESULT" <<'PYEOF' 2>/dev/null || true
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+    print(f"Features: {data['passing']}/{data['total']} passing")
+except Exception:
+    pass
+PYEOF
+  fi
+else
+  python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
 import json, sys
 try:
     feats = json.load(open(sys.argv[1])).get("features", [])
@@ -102,11 +127,8 @@ try:
 except Exception:
     pass
 PYEOF
+fi
 
-# next-claimable: delegate the algorithm to harness_state.py when a per-project
-# copy exists (v5+ projects); fall back to the inline computation otherwise
-# (older projects initialized before this module existed).
-STATE_MODULE="$ROOT/.claude/hooks/harness_state.py"
 # OVI-105: a feature's description is free text with no length cap
 # (.harness/features.json has carried descriptions past 13,000 chars in real
 # use), and this whole script's stdout is what's capped at 10,000 chars
@@ -115,16 +137,17 @@ STATE_MODULE="$ROOT/.claude/hooks/harness_state.py"
 # warning and every rule pointer below -- from being silently pushed past
 # the cap by one long description. The full text is never lost; it's still
 # in features.json, just not echoed whole into every session's orientation.
-if [ -f "$STATE_MODULE" ] && [ -f "$H/features.json" ]; then
-  RESULT=$(python3 "$STATE_MODULE" next-claimable "$H/features.json" 2>/dev/null || true)
-  if [ "$RESULT" = "no claimable feature" ]; then
-    echo "Next claimable: none (no pending or failed features)"
-  elif [ -n "$RESULT" ]; then
-    python3 - "$RESULT" <<'PYEOF' 2>/dev/null || true
+#
+# print_next_claimable_line is the single formatter shared by both the
+# harness_state.py-delegated path and the inline fallback below -- each path
+# only has to produce a feature's JSON (or the literal "no claimable
+# feature") into RESULT; the truncation and "Next claimable: ..." line are
+# written once here, not copy-pasted per path.
+print_next_claimable_line() {
+  python3 - "$1" <<'PYEOF' 2>/dev/null || true
 import json, sys
 try:
-    data = json.loads(sys.argv[1])
-    f = data["next"]
+    f = json.loads(sys.argv[1])
     scope = ", ".join(f.get("scope") or [])
     desc = f.get("description", "")
     DESC_LIMIT = 200
@@ -135,9 +158,22 @@ try:
 except Exception:
     pass
 PYEOF
+}
+
+# next-claimable: delegate the algorithm to harness_state.py when a per-project
+# copy exists (v5+ projects); fall back to the inline computation otherwise
+# (older projects initialized before this module existed).
+if [ -f "$STATE_MODULE" ] && [ -f "$H/features.json" ]; then
+  RESULT=$(python3 "$STATE_MODULE" next-claimable "$H/features.json" 2>/dev/null || true)
+  if [ -n "$RESULT" ] && [ "$RESULT" != "no claimable feature" ]; then
+    # unwrap harness_state.py's {"next": {...}, "count": N} down to just the
+    # feature, so the fallback branch below and this one feed the same shape
+    # into the shared formatter.
+    RESULT=$(python3 -c 'import json, sys; print(json.dumps(json.loads(sys.argv[1])["next"]))' \
+      "$RESULT" 2>/dev/null || true)
   fi
 else
-  python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
+  RESULT=$(python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
 import json, sys
 try:
     feats = json.load(open(sys.argv[1])).get("features", [])
@@ -146,19 +182,19 @@ try:
                  and all(status.get(d) == "passing" for d in (f.get("depends_on") or []))]
     claimable.sort(key=lambda f: f.get("priority", 999))
     if claimable:
-        f = claimable[0]
-        scope = ", ".join(f.get("scope") or [])
-        desc = f.get("description", "")
-        DESC_LIMIT = 200
-        if len(desc) > DESC_LIMIT:
-            full_len = len(desc)
-            desc = desc[:DESC_LIMIT] + f"... ({full_len} chars total, see .harness/features.json for the full description)"
-        print(f"Next claimable: {f.get('id', '?')} - {desc} (scope: {scope})")
+        print(json.dumps(claimable[0]))
     else:
-        print("Next claimable: none (no pending or failed features)")
+        print("no claimable feature")
 except Exception:
     pass
 PYEOF
+)
+fi
+
+if [ "$RESULT" = "no claimable feature" ]; then
+  echo "Next claimable: none (no pending or failed features)"
+elif [ -n "$RESULT" ]; then
+  print_next_claimable_line "$RESULT"
 fi
 
 python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
@@ -247,20 +283,18 @@ if [ -f "$H/context_summary.md" ]; then
     | print_budgeted_block ".harness/context_summary.md" || true
 fi
 
-EXPECTED_NAME=$(python3 -c '
+# One parse of harness.json for both fields.
+GIT_IDENTITY=$(python3 -c '
 import json, sys
 try:
-    print(json.load(open(sys.argv[1])).get("git_identity", {}).get("user_name", ""))
+    identity = json.load(open(sys.argv[1])).get("git_identity", {})
+    print(identity.get("user_name", ""))
+    print(identity.get("user_email", ""))
 except Exception:
     pass
 ' "$H/harness.json" 2>/dev/null || true)
-EXPECTED_EMAIL=$(python3 -c '
-import json, sys
-try:
-    print(json.load(open(sys.argv[1])).get("git_identity", {}).get("user_email", ""))
-except Exception:
-    pass
-' "$H/harness.json" 2>/dev/null || true)
+EXPECTED_NAME=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '1p')
+EXPECTED_EMAIL=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '2p')
 ACTUAL_NAME=$(git config user.name 2>/dev/null || true)
 ACTUAL_EMAIL=$(git config user.email 2>/dev/null || true)
 MISMATCH=""

@@ -6060,6 +6060,20 @@ else
   fail "hs: next-claimable output differs -- plain: '$NEXT_PLAIN' module: '$NEXT_MODULE'"
 fi
 
+# session-start.sh's "Features: N/M passing" line delegates to harness_state.py's
+# own `counts` verb when a per-project copy exists, mirroring the next-claimable
+# delegation exercised just above -- confirm the line matches whether the module
+# is present or not, reusing the same two fixtures/outputs.
+FEATURES_PLAIN=$(printf '%s\n' "$OUT_PLAIN" | grep "^Features:")
+FEATURES_MODULE=$(printf '%s\n' "$OUT_MODULE" | grep "^Features:")
+if [ -n "$FEATURES_PLAIN" ] && [ "$FEATURES_PLAIN" = "$FEATURES_MODULE" ]; then
+  pass "hs: Features passing-count line is identical whether harness_state.py is present or not"
+else
+  fail "hs: Features line differs -- plain: '$FEATURES_PLAIN' module: '$FEATURES_MODULE'"
+fi
+assert_contains "$FEATURES_PLAIN" "1/3 passing" \
+  "hs: Features line reports 1/3 passing (fallback and delegated paths agree)"
+
 # F084/PR#120 round-1 review NIT-4: _with_file_lock's flock retry loop used to
 # catch bare OSError, treating a permanent error (e.g. ENOLCK -- errno 77,
 # "no locks available", distinct from EWOULDBLOCK/EAGAIN which flock(LOCK_NB)
