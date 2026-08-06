@@ -82,24 +82,13 @@ cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 _dashboard_log() {
     [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || return 0
     [ -d ".harness" ] || return 0
-    local verdict="$1" finding="${2:-}" session_id
-    session_id=$(printf '%s' "$INPUT" | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("session_id") or "")
-except Exception:
-    pass
-' 2>/dev/null || true)
-    session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
-    [ -n "$session_id" ] || return 0
-    mkdir -p ".harness/dashboard" 2>/dev/null || return 0
+    local verdict="$1" finding="${2:-}"
     # F089 round 2 (adversarial review): the JSON payload is fed via STDIN,
     # never argv -- a large Write/Edit payload on argv can exceed the OS's
     # exec() argument-list size limit (~1MB on macOS, as low as 128KB
     # per-argument on Linux), which fails this whole call silently (it's
     # `|| true`) and drops the event with no error surfaced anywhere. Only
-    # small, bounded values (the log path, session id, verdict, finding)
-    # stay on argv.
+    # small, bounded values (the verdict, finding) stay on argv.
     #
     # The python source is read into a variable via a TOP-LEVEL heredoc
     # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- a heredoc
@@ -116,20 +105,38 @@ except Exception:
     # not just one gated behind VV_HARNESS_DASHBOARD (bash must successfully
     # PARSE the whole file before any runtime check, including that env-var
     # gate, ever executes).
+    #
+    # /simplify cleanup: previously TWO separate python3 processes per call
+    # -- one to extract session_id from stdin JSON, a second to re-read and
+    # re-parse that SAME JSON to build the log line. Both are now one
+    # process: the JSON is parsed exactly once, session_id is extracted from
+    # that same parsed dict (mirroring how deny_json()'s own _log_denial()
+    # already avoids the double-parse), and mkdir/write only happen once a
+    # non-empty sanitized session_id has actually been found -- matching the
+    # original bash-side "no directory, no write, for an empty session_id"
+    # behavior exactly, just decided inside python instead of bash.
     IFS= read -r -d '' _DASHBOARD_LOG_PY <<'PYEOF' || true
 import json
+import os
+import re
 import sys
 import time
 
-log_path, session_id, verdict, finding = sys.argv[1:5]
+verdict, finding = sys.argv[1:3]
 stdin_json = sys.stdin.read()
-try:
+
+
+def write_log():
     try:
         data = json.loads(stdin_json)
     except Exception:
         data = {}
     if not isinstance(data, dict):
         data = {}
+    session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
+    if not session_id:
+        return
+    os.makedirs(".harness/dashboard", exist_ok=True)
     line = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "hook_event_name": data.get("hook_event_name", ""),
@@ -143,13 +150,16 @@ try:
         value = data.get(key)
         if value:
             line[key] = value
-    with open(log_path, "a") as fh:
+    with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
         fh.write(json.dumps(line) + "\n")
+
+
+try:
+    write_log()
 except Exception:
     pass
 PYEOF
-    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" \
-        ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
+    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" "$verdict" "$finding" \
         >/dev/null 2>/dev/null || true
 }
 
@@ -220,32 +230,44 @@ print(json.dumps({
 # new subprocess) since deny_json() is the single chokepoint every scope
 # denial in this file routes through -- one instrumented site covers all
 # five call sites. Best-effort and never affects the deny decision above,
-# which has already been printed.
+# which has already been printed. Broken out into its own guard-clause-style
+# helper (mirroring _dashboard_log()'s own flat, early-return shape above)
+# instead of nesting the disabled/no-.harness/no-session-id checks directly
+# inside one shared try/if/try/if/if block -- the try/except around the
+# single call below is still what makes this best-effort, exactly as before.
+def _log_denial():
+    if os.environ.get("VV_HARNESS_DASHBOARD") != "1":
+        return
+    if not os.path.isdir(".harness"):
+        return
+    try:
+        data = json.loads(stdin_json)
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
+    if not session_id:
+        return
+    os.makedirs(".harness/dashboard", exist_ok=True)
+    line = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "hook_event_name": data.get("hook_event_name", ""),
+        "session_id": session_id,
+        "gate": "enforce-scope",
+        "verdict": "block",
+        "finding": finding,
+    }
+    for key in ("agent_id", "agent_type"):
+        value = data.get(key)
+        if value:
+            line[key] = value
+    with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
+        fh.write(json.dumps(line) + "\n")
+
+
 try:
-    if os.environ.get("VV_HARNESS_DASHBOARD") == "1" and os.path.isdir(".harness"):
-        try:
-            data = json.loads(stdin_json)
-        except Exception:
-            data = {}
-        if not isinstance(data, dict):
-            data = {}
-        session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
-        if session_id:
-            os.makedirs(".harness/dashboard", exist_ok=True)
-            line = {
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "hook_event_name": data.get("hook_event_name", ""),
-                "session_id": session_id,
-                "gate": "enforce-scope",
-                "verdict": "block",
-                "finding": finding,
-            }
-            for key in ("agent_id", "agent_type"):
-                value = data.get(key)
-                if value:
-                    line[key] = value
-            with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
-                fh.write(json.dumps(line) + "\n")
+    _log_denial()
 except Exception:
     pass
 PYEOF
@@ -449,7 +471,23 @@ if [ -n "$COMMAND" ]; then
         SCOPE_PATTERNS+=("$pattern")
     done < "$SCOPE_FILE"
 
-    DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" "${SCOPE_PATTERNS[@]}" <<'PYEOF'
+    # The DENY_REASON scan itself (write-target/scope-pattern analysis) used
+    # to put the same raw, unbounded $COMMAND on argv this heredoc's own
+    # OPERATOR line fed via `python3 - "$COMMAND" ... <<'PYEOF'` (the script
+    # text came from stdin instead) -- the IDENTICAL bug class deny_json()
+    # itself was fixed for above (F089 round 2): a $COMMAND past the OS's
+    # exec() argument-list size limit (~1MB on macOS, as low as 128KB
+    # per-argument on Linux) fails this whole python3 exec silently,
+    # DENY_REASON comes back empty, the `if [ -n "$DENY_REASON" ]` guard
+    # below is skipped, and the script falls through to its final `exit 0`
+    # -- silently converting a scope-violation DENIAL into an ALLOW. This
+    # second call site was missed by the original fix, since it isn't
+    # deny_json()'s own payload. Fixed the same way: the python SOURCE
+    # (fixed, small) is read into a variable via a TOP-LEVEL heredoc, then
+    # run with `python3 -c "$VAR"`; $COMMAND (unbounded, attacker-
+    # influenced) is piped in via stdin instead of argv, and only the
+    # small, bounded PROJECT_ROOT/SCOPE_PATTERNS stay on argv.
+    IFS= read -r -d '' _COMMAND_SCAN_PY <<'PYEOF' || true
 import os
 import re
 import sys
@@ -1921,9 +1959,9 @@ def normalize(path, project_root):
 
 
 def main():
-    command = sys.argv[1]
-    project_root = sys.argv[2]
-    patterns = sys.argv[3:]
+    command = sys.stdin.read()
+    project_root = sys.argv[1]
+    patterns = sys.argv[2:]
     for segment in segments_of(command):
         try:
             if _check_segment(segment, project_root, patterns):
@@ -2028,7 +2066,7 @@ def _check_segment(segment, project_root, patterns):
 
 main()
 PYEOF
-)
+    DENY_REASON=$(printf '%s' "$COMMAND" | python3 -c "$_COMMAND_SCAN_PY" "$PROJECT_ROOT" "${SCOPE_PATTERNS[@]}")
 
     if [ -n "$DENY_REASON" ]; then
         deny_json "$DENY_REASON" "scope-violation:out-of-scope-command"

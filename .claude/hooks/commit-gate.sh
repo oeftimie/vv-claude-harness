@@ -178,24 +178,13 @@ cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 _dashboard_log() {
     [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || return 0
     [ -d ".harness" ] || return 0
-    local verdict="$1" finding="${2:-}" session_id
-    session_id=$(printf '%s' "$INPUT" | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("session_id") or "")
-except Exception:
-    pass
-' 2>/dev/null || true)
-    session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
-    [ -n "$session_id" ] || return 0
-    mkdir -p ".harness/dashboard" 2>/dev/null || return 0
+    local verdict="$1" finding="${2:-}"
     # F089 round 2 (adversarial review): the JSON payload is fed via STDIN,
     # never argv -- a large Write/Edit payload on argv can exceed the OS's
     # exec() argument-list size limit (~1MB on macOS, as low as 128KB
     # per-argument on Linux), which fails this whole call silently (it's
     # `|| true`) and drops the event with no error surfaced anywhere. Only
-    # small, bounded values (the log path, session id, verdict, finding)
-    # stay on argv.
+    # small, bounded values (the verdict, finding) stay on argv.
     #
     # The python source is read into a variable via a TOP-LEVEL heredoc
     # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- a heredoc
@@ -212,20 +201,38 @@ except Exception:
     # not just one gated behind VV_HARNESS_DASHBOARD (bash must successfully
     # PARSE the whole file before any runtime check, including that env-var
     # gate, ever executes).
+    #
+    # /simplify cleanup: previously TWO separate python3 processes per call
+    # -- one to extract session_id from stdin JSON, a second to re-read and
+    # re-parse that SAME JSON to build the log line. Both are now one
+    # process: the JSON is parsed exactly once, session_id is extracted from
+    # that same parsed dict (mirroring how deny_json()'s own _log_denial()
+    # already avoids the double-parse), and mkdir/write only happen once a
+    # non-empty sanitized session_id has actually been found -- matching the
+    # original bash-side "no directory, no write, for an empty session_id"
+    # behavior exactly, just decided inside python instead of bash.
     IFS= read -r -d '' _DASHBOARD_LOG_PY <<'PYEOF' || true
 import json
+import os
+import re
 import sys
 import time
 
-log_path, session_id, verdict, finding = sys.argv[1:5]
+verdict, finding = sys.argv[1:3]
 stdin_json = sys.stdin.read()
-try:
+
+
+def write_log():
     try:
         data = json.loads(stdin_json)
     except Exception:
         data = {}
     if not isinstance(data, dict):
         data = {}
+    session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
+    if not session_id:
+        return
+    os.makedirs(".harness/dashboard", exist_ok=True)
     line = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "hook_event_name": data.get("hook_event_name", ""),
@@ -239,18 +246,33 @@ try:
         value = data.get(key)
         if value:
             line[key] = value
-    with open(log_path, "a") as fh:
+    with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
         fh.write(json.dumps(line) + "\n")
+
+
+try:
+    write_log()
 except Exception:
     pass
 PYEOF
-    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" \
-        ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
+    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" "$verdict" "$finding" \
         >/dev/null 2>/dev/null || true
 }
 
 deny_json() {
     local reason="$1"
+    # F089 round 2 (/simplify cleanup): finding class is now an explicit,
+    # per-call-site argument (default "unparseable-command" for this
+    # function's own single call site that has no caller-supplied one)
+    # instead of being heuristically split out of `reason` here (a fragile
+    # length/space-guarded parse of the text before the first ": ", dropped
+    # entirely) -- the same explicit-parameter signature enforce-scope.sh's
+    # own deny_json() already uses. Every call site below now passes its own
+    # finding string; the main DENY_REASON-scan call site derives it with a
+    # plain `${DENY_REASON%%:*}` at the CALL SITE (every reason this file's
+    # own scan produces is unconditionally "<finding>: <message>" by
+    # construction, so no length/space guard is needed there either).
+    local finding="${2:-unparseable-command}"
     # F089 round 2: the JSON payload is fed via STDIN, never argv -- a large
     # Write/Edit payload on argv can exceed the OS's exec() argument-list
     # size limit (~1MB on macOS, as low as 128KB per-argument on Linux),
@@ -258,8 +280,8 @@ deny_json() {
     # unconditional `exit 0` below then still runs with NOTHING printed to
     # stdout, and Claude Code reads "exit 0, empty stdout" as ALLOW --
     # silently converting a compound-stage-and-commit/secret-assignment
-    # DENIAL into an ALLOW. Only the small, bounded reason string stays on
-    # argv.
+    # DENIAL into an ALLOW. Only the small, bounded reason/finding strings
+    # stay on argv.
     #
     # The python source is read into a variable via a TOP-LEVEL heredoc
     # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- see
@@ -273,6 +295,7 @@ import sys
 import time
 
 reason = sys.argv[1]
+finding = sys.argv[2]
 stdin_json = sys.stdin.read()
 
 print(json.dumps({
@@ -283,45 +306,53 @@ print(json.dumps({
     }
 }))
 
+
 # F089: dashboard event logging, folded into this SAME python3 process (no
 # new subprocess) since deny_json() is the single chokepoint both of this
 # file's own block paths route through. Best-effort and never affects the
-# deny decision above, which has already been printed. The finding class is
-# the fixed prefix this file's own reasons already carry ("secret-
-# assignment: ...", "compound-stage-and-commit: ...", etc.) -- never the
-# rest of the message, which can name a file/line but not matched content.
+# deny decision above, which has already been printed. Broken out into its
+# own guard-clause-style helper (mirroring _dashboard_log()'s own flat,
+# early-return shape above) instead of nesting the disabled/no-.harness/
+# no-session-id checks directly inside one shared try/if/try/if/if block --
+# the try/except around the single call below is still what makes this
+# best-effort, exactly as before.
+def _log_denial():
+    if os.environ.get("VV_HARNESS_DASHBOARD") != "1":
+        return
+    if not os.path.isdir(".harness"):
+        return
+    try:
+        data = json.loads(stdin_json)
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
+    if not session_id:
+        return
+    os.makedirs(".harness/dashboard", exist_ok=True)
+    line = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "hook_event_name": data.get("hook_event_name", ""),
+        "session_id": session_id,
+        "gate": "commit-gate",
+        "verdict": "block",
+        "finding": finding,
+    }
+    for key in ("agent_id", "agent_type"):
+        value = data.get(key)
+        if value:
+            line[key] = value
+    with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
+        fh.write(json.dumps(line) + "\n")
+
+
 try:
-    if os.environ.get("VV_HARNESS_DASHBOARD") == "1" and os.path.isdir(".harness"):
-        try:
-            data = json.loads(stdin_json)
-        except Exception:
-            data = {}
-        if not isinstance(data, dict):
-            data = {}
-        session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
-        if session_id:
-            os.makedirs(".harness/dashboard", exist_ok=True)
-            finding = reason.split(":", 1)[0].strip()
-            if not finding or " " in finding or len(finding) > 40:
-                finding = "unparseable-command"
-            line = {
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "hook_event_name": data.get("hook_event_name", ""),
-                "session_id": session_id,
-                "gate": "commit-gate",
-                "verdict": "block",
-                "finding": finding,
-            }
-            for key in ("agent_id", "agent_type"):
-                value = data.get(key)
-                if value:
-                    line[key] = value
-            with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
-                fh.write(json.dumps(line) + "\n")
+    _log_denial()
 except Exception:
     pass
 PYEOF
-    printf '%s' "$INPUT" | python3 -c "$_DENY_JSON_PY" "$reason"
+    printf '%s' "$INPUT" | python3 -c "$_DENY_JSON_PY" "$reason" "$finding"
     exit 0
 }
 
@@ -360,10 +391,27 @@ except Exception:
 " 2>/dev/null)
 COMMAND_RC=$?
 if [ "$COMMAND_RC" -eq 1 ]; then
-    deny_json "command could not be safely extracted from tool input (best-effort, pattern-based check; treating as a compound-stage-and-commit risk out of caution)."
+    deny_json "command could not be safely extracted from tool input (best-effort, pattern-based check; treating as a compound-stage-and-commit risk out of caution)." \
+        "unparseable-command"
 fi
 
-DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" <<'PYEOF'
+# The DENY_REASON scan itself (compound-stage-and-commit / secret-scan /
+# style-gate) used to put the same raw, unbounded $COMMAND on argv this
+# heredoc's own OPERATOR line fed via `python3 - "$COMMAND" ... <<'PYEOF'`
+# (the script text came from stdin instead) -- the IDENTICAL bug class
+# deny_json() itself was fixed for above (F089 round 2): a $COMMAND past the
+# OS's exec() argument-list size limit (~1MB on macOS, as low as 128KB
+# per-argument on Linux) fails this whole python3 exec silently, DENY_REASON
+# comes back empty, the `if [ -n "$DENY_REASON" ]` guard below is skipped,
+# and the script falls through to its final `exit 0` -- silently converting
+# a compound-stage-and-commit/secret-assignment DENY into an ALLOW. This
+# second call site was missed by the original fix, since it isn't
+# deny_json()'s own payload. Fixed the same way: the python SOURCE (fixed,
+# small) is read into a variable via a TOP-LEVEL heredoc, then run with
+# `python3 -c "$VAR"`; $COMMAND (unbounded, attacker-influenced) is piped in
+# via stdin instead of argv, and only the small, bounded PROJECT_ROOT stays
+# on argv.
+IFS= read -r -d '' _COMMAND_SCAN_PY <<'PYEOF' || true
 import fnmatch
 import json
 import os
@@ -1279,8 +1327,8 @@ def style_gate_enabled(project_root):
 
 
 def main():
-    command = sys.argv[1]
-    project_root = sys.argv[2]
+    command = sys.stdin.read()
+    project_root = sys.argv[1]
 
     parsed = parse_command(command)
     if not any(sc == "commit" for _, sc, _, _ in parsed):
@@ -1314,10 +1362,10 @@ def main():
 
 main()
 PYEOF
-)
+DENY_REASON=$(printf '%s' "$COMMAND" | python3 -c "$_COMMAND_SCAN_PY" "$PROJECT_ROOT")
 
 if [ -n "$DENY_REASON" ]; then
-    deny_json "$DENY_REASON"
+    deny_json "$DENY_REASON" "${DENY_REASON%%:*}"
 fi
 
 _dashboard_log "allow" || true
