@@ -435,7 +435,7 @@ if [ -n "$FILE_PATH" ]; then
     # scoped teammate blocked from an out-of-scope edit sees nothing at all.
     echo "Edit blocked: $FILE_PATH is outside your assigned scope." >&2
     echo "Your scope (from $SCOPE_FILE):" >&2
-    cat "$SCOPE_FILE" | grep -v '^#' | grep -v '^$' >&2
+    grep -v -e '^#' -e '^$' "$SCOPE_FILE" >&2
     echo "" >&2
     echo "Repair: request a scope expansion from the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Requesting scope expansion to $FILE_PATH because [reason].\" })" >&2
     _dashboard_log "block" "scope-violation:out-of-scope-edit" || true

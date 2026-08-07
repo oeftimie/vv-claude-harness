@@ -66,16 +66,25 @@ make_fixture() {
   git -C "$1" commit -q -m "fixture baseline"
 }
 
+# CLAUDE_PROJECT_DIR is explicitly set to the fixture dir ($1) in all three
+# helpers below, matching run_dashboard_log()'s own pattern (see its comment) --
+# session-start.sh/session-end.sh now prefer CLAUDE_PROJECT_DIR over git-toplevel
+# (the same F089 consistency fix applied to dashboard-log.sh earlier), so merely
+# `cd`ing into the fixture and relying on git-toplevel would let any ambient
+# CLAUDE_PROJECT_DIR already set in the environment running this suite (exactly
+# what happens under a real Claude Code hook invocation, e.g.
+# verify-task-quality.sh's own TaskCompleted run) leak through and point these
+# hooks at the real repo instead of the isolated fixture.
 run_session_start() {
-  (cd "$1" && printf '%s' "$2" | env -u CLAUDE_PLUGIN_ROOT bash "$HOOKS_DIR/session-start.sh")
+  (cd "$1" && printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" env -u CLAUDE_PLUGIN_ROOT bash "$HOOKS_DIR/session-start.sh")
 }
 
 run_session_start_with_root() {
-  (cd "$1" && printf '%s' "$2" | CLAUDE_PLUGIN_ROOT="$3" bash "$HOOKS_DIR/session-start.sh")
+  (cd "$1" && printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" CLAUDE_PLUGIN_ROOT="$3" bash "$HOOKS_DIR/session-start.sh")
 }
 
 run_session_end() {
-  (cd "$1" && bash "$HOOKS_DIR/session-end.sh" </dev/null)
+  (cd "$1" && CLAUDE_PROJECT_DIR="$1" bash "$HOOKS_DIR/session-end.sh" </dev/null)
 }
 
 run_statusline() {
@@ -694,7 +703,7 @@ print(json.dumps({
 }))
 ')
 OUT=$(cd "$DIR_SID" && printf '%s' "$INJECT_JSON" \
-  | env -u CLAUDE_PLUGIN_ROOT bash "$HOOKS_DIR/session-start.sh")
+  | CLAUDE_PROJECT_DIR="$DIR_SID" env -u CLAUDE_PLUGIN_ROOT bash "$HOOKS_DIR/session-start.sh")
 RC=$?
 assert_rc0 "$RC" "sid: a newline-bearing session_id exits 0"
 INJECT_LINES=$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')
@@ -888,6 +897,9 @@ RC=$?
 assert_rc0 "$RC" "pf: session-end exits 0 with a passing-no-proof feature"
 assert_contains "$OUT" "F002" "pf: proof discipline note names the feature"
 assert_contains "$OUT" "no proof" "pf: proof discipline note mentions no proof"
+assert_contains "$OUT" \
+  $'Discipline note (informational, not blocking):\nF001 is passing with no proof recorded.' \
+  "pf: proof note prefix sits on its own line above the message (add_note format)"
 if [ -f "$DIR_PROOF/.harness/SESSION_INCOMPLETE" ]; then
   fail "pf: a missing-proof note must not write SESSION_INCOMPLETE"
 else
@@ -930,6 +942,9 @@ assert_rc0 "$RC" "md1: session-end exits 0 with no .harness/mld/ entry"
 assert_contains "$OUT" "no .harness/mld/ entry found" \
   "md1: mld discipline note fires when today's entry is missing"
 assert_contains "$OUT" "$TODAY" "md1: mld discipline note names today's date"
+assert_contains "$OUT" \
+  $'Discipline note (informational, not blocking):\nno .harness/mld/ entry found' \
+  "md1: mld note prefix sits on its own line above the message (add_note format)"
 if [ -f "$DIR_MLD_MISSING/.harness/SESSION_INCOMPLETE" ]; then
   fail "md1: a missing-mld note must not write SESSION_INCOMPLETE"
 else
@@ -974,6 +989,43 @@ RC=$?
 assert_rc0 "$RC" "md3: session-end exits 0 with only a stale mld entry"
 assert_contains "$OUT" "no .harness/mld/ entry found" \
   "md3: a stale (non-today) mld entry does not satisfy the discipline check"
+
+# F4 (simplify pass): both notes firing in the same run must each carry the shared
+# add_note() prefix, in its own consistent format -- not just one of the two.
+DIR_NOTES_BOTH="$WORK/session-end-notes-both"
+make_fixture "$DIR_NOTES_BOTH"
+TODAY=$(date -u +%Y-%m-%d)
+printf '\n## Meta-Session %s\n- clean\n' "$TODAY" \
+  >> "$DIR_NOTES_BOTH/.harness/context_summary.md"
+python3 - "$DIR_NOTES_BOTH/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["status"] = "passing"
+        feature["coverage"] = 96
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+git -C "$DIR_NOTES_BOTH" add -A
+git -C "$DIR_NOTES_BOTH" commit -q -m "no mld entry, F002 passing with no proof"
+OUT=$(run_session_end "$DIR_NOTES_BOTH")
+RC=$?
+assert_rc0 "$RC" "mp: session-end exits 0 with both notes firing"
+PREFIX_COUNT=$(printf '%s\n' "$OUT" \
+  | grep -c '^Discipline note (informational, not blocking):$')
+if [ "$PREFIX_COUNT" -eq 2 ]; then
+  pass "mp: both the mld note and the proof note use the shared add_note() prefix"
+else
+  fail "mp: expected 2 standalone add_note() prefix lines, got $PREFIX_COUNT"
+fi
+assert_contains "$OUT" "no .harness/mld/ entry found" "mp: mld note still fires"
+assert_contains "$OUT" "F002 is passing with no proof recorded." "mp: proof note still fires"
 
 echo ""
 echo "== statusline.sh =="
@@ -6059,6 +6111,20 @@ if [ -n "$NEXT_PLAIN" ] && [ "$NEXT_PLAIN" = "$NEXT_MODULE" ]; then
 else
   fail "hs: next-claimable output differs -- plain: '$NEXT_PLAIN' module: '$NEXT_MODULE'"
 fi
+
+# session-start.sh's "Features: N/M passing" line delegates to harness_state.py's
+# own `counts` verb when a per-project copy exists, mirroring the next-claimable
+# delegation exercised just above -- confirm the line matches whether the module
+# is present or not, reusing the same two fixtures/outputs.
+FEATURES_PLAIN=$(printf '%s\n' "$OUT_PLAIN" | grep "^Features:")
+FEATURES_MODULE=$(printf '%s\n' "$OUT_MODULE" | grep "^Features:")
+if [ -n "$FEATURES_PLAIN" ] && [ "$FEATURES_PLAIN" = "$FEATURES_MODULE" ]; then
+  pass "hs: Features passing-count line is identical whether harness_state.py is present or not"
+else
+  fail "hs: Features line differs -- plain: '$FEATURES_PLAIN' module: '$FEATURES_MODULE'"
+fi
+assert_contains "$FEATURES_PLAIN" "1/3 passing" \
+  "hs: Features line reports 1/3 passing (fallback and delegated paths agree)"
 
 # F084/PR#120 round-1 review NIT-4: _with_file_lock's flock retry loop used to
 # catch bare OSError, treating a permanent error (e.g. ENOLCK -- errno 77,

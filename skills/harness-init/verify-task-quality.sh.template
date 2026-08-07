@@ -219,84 +219,86 @@ FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
     exit 2
 }
 
-# Coverage target gate: compare the targeted feature's own recorded `coverage`
-# number against its `coverage_target` (falls back to 95). Skipped entirely when
-# coverage isn't a number yet (e.g. this repo's own descriptive strings) --
-# proportional: don't punish projects without numeric coverage tooling.
-if [ -n "$FEATURE_ID" ] && [ -f ".harness/features.json" ]; then
-    COVERAGE_RESULT=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
+# Coverage target gate, claim-matched proof warning, and stale-in-progress
+# reminder all read .harness/features.json -- one load, one process, feeding
+# all three checks below, instead of three independent python3 subprocesses
+# each re-opening and re-parsing the same file.
+COVERAGE_RESULT=""
+PROOF_WARNING=""
+IN_PROGRESS=0
+if [ -f ".harness/features.json" ]; then
+    _CHECKS=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
 import json
 import sys
 
 path, feature_id = sys.argv[1], sys.argv[2]
 with open(path) as fh:
     data = json.load(fh)
-match = next((f for f in data.get("features", []) if f.get("id") == feature_id), None)
-if match is None:
-    sys.exit(0)
-coverage = match.get("coverage")
-if not isinstance(coverage, (int, float)) or isinstance(coverage, bool):
-    sys.exit(0)
-target = match.get("coverage_target")
-if not isinstance(target, int) or isinstance(target, bool):
-    target = 95
-if coverage < target:
-    print(f"{coverage}|{target}")
-PYEOF
-)
-    if [ -n "$COVERAGE_RESULT" ]; then
-        ACHIEVED="${COVERAGE_RESULT%%|*}"
-        TARGET="${COVERAGE_RESULT##*|}"
-        echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%." >&2
-        increment_correction_cycles
-        _dashboard_log "block" "coverage-below-target" || true
-        exit 2
-    fi
-fi
+features = data.get("features", [])
+match = next((f for f in features if f.get("id") == feature_id), None) if feature_id else None
+
+# Coverage target gate: compare the targeted feature's own recorded `coverage`
+# number against its `coverage_target` (falls back to 95). Skipped entirely when
+# coverage isn't a number yet (e.g. this repo's own descriptive strings) --
+# proportional: don't punish projects without numeric coverage tooling.
+coverage_result = ""
+if match is not None:
+    coverage = match.get("coverage")
+    if isinstance(coverage, (int, float)) and not isinstance(coverage, bool):
+        target = match.get("coverage_target")
+        if not isinstance(target, int) or isinstance(target, bool):
+            target = 95
+        if coverage < target:
+            coverage_result = f"{coverage}|{target}"
+print(coverage_result)
 
 # Claim-matched proof: warn (never block) when this feature accepts with no
 # proof recorded, or with proof whose evidence_type doesn't match its declared
 # qa_binding. Reads both fields directly off the feature object -- no external
 # lookup, no re-parsing of prose.
-PROOF_WARNING=""
-if [ -n "$FEATURE_ID" ] && [ -f ".harness/features.json" ]; then
-    PROOF_WARNING=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
-import json
-import sys
+proof_warning = ""
+if match is not None:
+    proof = match.get("proof")
+    qa_binding = match.get("qa_binding")
+    if not proof:
+        proof_warning = f"WARN: {feature_id} accepted with no proof recorded."
+    elif qa_binding and proof.get("evidence_type") != qa_binding:
+        proof_warning = (
+            f"WARN: {feature_id}'s proof.evidence_type "
+            f"'{proof.get('evidence_type')}' does not match its declared "
+            f"qa_binding '{qa_binding}'. Fix the proof or the binding."
+        )
+print(proof_warning)
 
-path, feature_id = sys.argv[1], sys.argv[2]
-with open(path) as fh:
-    data = json.load(fh)
-match = next((f for f in data.get("features", []) if f.get("id") == feature_id), None)
-if match is None:
-    sys.exit(0)
-proof = match.get("proof")
-qa_binding = match.get("qa_binding")
-if not proof:
-    print(f"WARN: {feature_id} accepted with no proof recorded.")
-elif qa_binding and proof.get("evidence_type") != qa_binding:
-    print(
-        f"WARN: {feature_id}'s proof.evidence_type "
-        f"'{proof.get('evidence_type')}' does not match its declared "
-        f"qa_binding '{qa_binding}'. Fix the proof or the binding."
-    )
+# Remind about stale in-progress features. Matches the original's exact
+# f['status'] indexing (not .get) and its own fallback: any exception here
+# (e.g. a feature missing "status" entirely) defaults the count to 0, same
+# as the previous "python3 ... 2>/dev/null || echo 0" bash-level fallback.
+try:
+    in_progress = len([f for f in features if f['status'] == 'in-progress'])
+except Exception:
+    in_progress = 0
+print(in_progress)
 PYEOF
 )
+    COVERAGE_RESULT=$(printf '%s\n' "$_CHECKS" | sed -n '1p')
+    PROOF_WARNING=$(printf '%s\n' "$_CHECKS" | sed -n '2p')
+    IN_PROGRESS=$(printf '%s\n' "$_CHECKS" | sed -n '3p')
+    [ -n "$IN_PROGRESS" ] || IN_PROGRESS=0
 fi
 
-# Remind about stale in-progress features
+if [ -n "$COVERAGE_RESULT" ]; then
+    ACHIEVED="${COVERAGE_RESULT%%|*}"
+    TARGET="${COVERAGE_RESULT##*|}"
+    echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%." >&2
+    increment_correction_cycles
+    _dashboard_log "block" "coverage-below-target" || true
+    exit 2
+fi
+
 IN_PROGRESS_NOTE=""
-if [ -f ".harness/features.json" ]; then
-    IN_PROGRESS=$(python3 -c "
-import json, sys
-with open('.harness/features.json') as f:
-    data = json.load(f)
-in_progress = [f for f in data.get('features', []) if f['status'] == 'in-progress']
-print(len(in_progress))
-" 2>/dev/null || echo "0")
-    if [ "$IN_PROGRESS" -gt 0 ]; then
-        IN_PROGRESS_NOTE="Note: $IN_PROGRESS feature(s) still marked in-progress. Update features.json if your feature is complete."
-    fi
+if [ "$IN_PROGRESS" -gt 0 ]; then
+    IN_PROGRESS_NOTE="Note: $IN_PROGRESS feature(s) still marked in-progress. Update features.json if your feature is complete."
 fi
 
 # All checks passed. Claude Code's own hooks docs (code.claude.com/docs/en/hooks)

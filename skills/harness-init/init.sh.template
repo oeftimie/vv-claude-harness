@@ -116,9 +116,8 @@ case "$STACK" in
         if [ "$TARGET" = "smoke_test" ]; then
             echo ""
             echo "--- Python Syntax Check ---"
-            find . -name "*.py" -not -path "./.git/*" -not -path "./venv/*" -not -path "./.venv/*" | head -50 | while read f; do
-                python3 -m py_compile "$f" 2>&1 && true
-            done
+            find . -name "*.py" -not -path "./.git/*" -not -path "./venv/*" -not -path "./.venv/*" | head -50 \
+                | python3 -m compileall -q -i - 2>&1 || true
             echo "Syntax check complete."
         else
             echo ""

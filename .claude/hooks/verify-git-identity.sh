@@ -27,20 +27,17 @@ if [ ! -f ".harness/harness.json" ]; then
     exit 0
 fi
 
-# Extract expected identity from harness.json
-EXPECTED_NAME=$(python3 -c "
+# Extract expected identity from harness.json (one parse of the file for both fields)
+GIT_IDENTITY=$(python3 -c "
 import json
 with open('.harness/harness.json') as f:
     data = json.load(f)
-print(data.get('git_identity', {}).get('user_name', ''))
+identity = data.get('git_identity', {})
+print(identity.get('user_name', ''))
+print(identity.get('user_email', ''))
 " 2>/dev/null)
-
-EXPECTED_EMAIL=$(python3 -c "
-import json
-with open('.harness/harness.json') as f:
-    data = json.load(f)
-print(data.get('git_identity', {}).get('user_email', ''))
-" 2>/dev/null)
+EXPECTED_NAME=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '1p')
+EXPECTED_EMAIL=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '2p')
 
 if [ -z "$EXPECTED_NAME" ] || [ -z "$EXPECTED_EMAIL" ]; then
     exit 0
@@ -97,9 +94,13 @@ if ! echo "$COMMAND" | grep -qE 'git\s+(push|pull|clone|fetch)'; then
     exit 0
 fi
 
-# Check current git identity
-CURRENT_NAME=$(git config user.name 2>/dev/null)
-CURRENT_EMAIL=$(git config user.email 2>/dev/null)
+# Check current git identity (one git-config call for both fields). --get-regexp lists
+# a match from every scope that defines it (system/global/local), lowest priority first,
+# so the last matching line per key is the effective value -- same as plain `git config
+# user.name` -- and must be picked with an END-block, not just filtered.
+CURRENT_IDENTITY=$(git config --get-regexp '^user\.(name|email)$' 2>/dev/null)
+CURRENT_NAME=$(printf '%s\n' "$CURRENT_IDENTITY" | awk '$1 == "user.name" {$1=""; sub(/^ /, ""); v=$0} END{print v}')
+CURRENT_EMAIL=$(printf '%s\n' "$CURRENT_IDENTITY" | awk '$1 == "user.email" {$1=""; sub(/^ /, ""); v=$0} END{print v}')
 
 if [ "$CURRENT_NAME" != "$EXPECTED_NAME" ] || [ "$CURRENT_EMAIL" != "$EXPECTED_EMAIL" ]; then
     echo "Git push blocked: identity mismatch." >&2

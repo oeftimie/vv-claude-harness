@@ -1199,7 +1199,19 @@ def added_lines(diff_text):
             current_line += 1
 
 
-def secret_scan_exempt_paths(project_root):
+def load_harness_config(project_root):
+    # One read of harness.json, shared by secret_scan_exempt_paths() and
+    # style_gate_enabled() below -- both previously opened and json.load'd
+    # this same file independently on every commit-gated Bash call.
+    path = os.path.join(project_root, ".harness", "harness.json")
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def secret_scan_exempt_paths(harness_config):
     # Opt-in, harness.json-configured list of paths (verbatim, relative to
     # project_root, matching the diff's own path form) additionally exempt
     # from the secret scan -- for a project whose own test suite must stage
@@ -1214,13 +1226,7 @@ def secret_scan_exempt_paths(project_root):
     # fixtures, not a defense against the LEAD itself adding an unwise
     # exemption -- LEAD_OWNED protects against teammates, not against the
     # lead's own mistakes.
-    path = os.path.join(project_root, ".harness", "harness.json")
-    try:
-        with open(path) as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        return []
-    paths = data.get("secret_scan_exempt_paths")
+    paths = harness_config.get("secret_scan_exempt_paths")
     if not isinstance(paths, list):
         return []
     return [p for p in paths if isinstance(p, str)]
@@ -1265,14 +1271,8 @@ def find_style_violation(lines, deadline):
     return None
 
 
-def style_gate_enabled(project_root):
-    path = os.path.join(project_root, ".harness", "harness.json")
-    try:
-        with open(path) as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        return False
-    style_gate = data.get("style_gate")
+def style_gate_enabled(harness_config):
+    style_gate = harness_config.get("style_gate")
     if not isinstance(style_gate, dict):
         return False
     return bool(style_gate.get("enabled", False))
@@ -1297,12 +1297,13 @@ def main():
             return
         lines = list(added_lines(diff_text))
         deadline = time.monotonic() + SCAN_TIME_BUDGET_SECONDS
-        exempt_paths = secret_scan_exempt_paths(project_root)
+        harness_config = load_harness_config(project_root)
+        exempt_paths = secret_scan_exempt_paths(harness_config)
         reason = find_secret(lines, deadline, exempt_paths)
         if reason:
             print(reason)
             return
-        if style_gate_enabled(project_root):
+        if style_gate_enabled(harness_config):
             reason = find_style_violation(lines, deadline)
             if reason:
                 print(reason)
