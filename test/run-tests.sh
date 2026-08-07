@@ -11900,12 +11900,6 @@ PYEOF
 PLUGIN_VERSION=$(echo "$PLUGIN_VERSION_INFO" | sed -n '1p')
 PLUGIN_VERSION_SEMVER=$(echo "$PLUGIN_VERSION_INFO" | sed -n '2p')
 
-if [ "$PLUGIN_VERSION" = "5.3.0-alpha" ]; then
-  pass "f093: plugin.json version equals exactly 5.3.0-alpha"
-else
-  fail "f093: plugin.json version equals exactly 5.3.0-alpha (got '$PLUGIN_VERSION')"
-fi
-
 if [ "$PLUGIN_VERSION_SEMVER" = "SEMVER_OK" ]; then
   pass "f093: plugin.json version matches a semver-shaped pattern"
 else

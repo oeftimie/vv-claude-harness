@@ -2,6 +2,21 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.3.0 (2026-08-07)
+
+**Promotes the dashboard chain (F088-F093, v5.2.0) out of alpha** — no functional
+change to the dashboard itself; the alpha designation from v5.3.0-alpha is lifted
+now that it's had broader real-world use.
+
+**Performance pass across the harness's own scripts**, no user-facing behavior
+change (all fixes verified as pure refactors, full suite passes identically
+before/after): merges duplicate JSON/harness.json parses that ran as separate
+python3 processes on the same input within a single hook invocation
+(verify-git-identity.sh, verify-task-quality.sh, commit-gate.sh, session-start.sh),
+fixes session-start.sh/session-end.sh to prefer CLAUDE_PROJECT_DIR over
+git-toplevel resolution matching every other hook, and replaces init.sh's
+per-file py_compile loop with one batched call.
+
 ### v5.3.0-alpha (2026-08-05)
 
 **Alpha designation for the v5.2.0 dashboard chain (F088-F093), no functional change.**
