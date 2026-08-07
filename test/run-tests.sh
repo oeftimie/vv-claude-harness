@@ -66,16 +66,25 @@ make_fixture() {
   git -C "$1" commit -q -m "fixture baseline"
 }
 
+# CLAUDE_PROJECT_DIR is explicitly set to the fixture dir ($1) in all three
+# helpers below, matching run_dashboard_log()'s own pattern (see its comment) --
+# session-start.sh/session-end.sh now prefer CLAUDE_PROJECT_DIR over git-toplevel
+# (the same F089 consistency fix applied to dashboard-log.sh earlier), so merely
+# `cd`ing into the fixture and relying on git-toplevel would let any ambient
+# CLAUDE_PROJECT_DIR already set in the environment running this suite (exactly
+# what happens under a real Claude Code hook invocation, e.g.
+# verify-task-quality.sh's own TaskCompleted run) leak through and point these
+# hooks at the real repo instead of the isolated fixture.
 run_session_start() {
-  (cd "$1" && printf '%s' "$2" | env -u CLAUDE_PLUGIN_ROOT bash "$HOOKS_DIR/session-start.sh")
+  (cd "$1" && printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" env -u CLAUDE_PLUGIN_ROOT bash "$HOOKS_DIR/session-start.sh")
 }
 
 run_session_start_with_root() {
-  (cd "$1" && printf '%s' "$2" | CLAUDE_PLUGIN_ROOT="$3" bash "$HOOKS_DIR/session-start.sh")
+  (cd "$1" && printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" CLAUDE_PLUGIN_ROOT="$3" bash "$HOOKS_DIR/session-start.sh")
 }
 
 run_session_end() {
-  (cd "$1" && bash "$HOOKS_DIR/session-end.sh" </dev/null)
+  (cd "$1" && CLAUDE_PROJECT_DIR="$1" bash "$HOOKS_DIR/session-end.sh" </dev/null)
 }
 
 run_statusline() {
@@ -694,7 +703,7 @@ print(json.dumps({
 }))
 ')
 OUT=$(cd "$DIR_SID" && printf '%s' "$INJECT_JSON" \
-  | env -u CLAUDE_PLUGIN_ROOT bash "$HOOKS_DIR/session-start.sh")
+  | CLAUDE_PROJECT_DIR="$DIR_SID" env -u CLAUDE_PLUGIN_ROOT bash "$HOOKS_DIR/session-start.sh")
 RC=$?
 assert_rc0 "$RC" "sid: a newline-bearing session_id exits 0"
 INJECT_LINES=$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')

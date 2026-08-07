@@ -8,7 +8,7 @@
 # linked review-cadence rule for what that directory is and why).
 set -uo pipefail
 
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || ROOT=$(pwd)
+ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 H="$ROOT/.harness"
 [ -d "$H" ] || exit 0
 
@@ -197,10 +197,18 @@ elif [ -n "$RESULT" ]; then
   print_next_claimable_line "$RESULT"
 fi
 
-python3 - "$H/features.json" <<'PYEOF' 2>/dev/null || true
-import hashlib, json, sys
+# F098: spec-drift, scope-armed, and test_file-existence each used to open and
+# json.load .harness/features.json in their own python3 process; one load here
+# feeds all three, each still in its OWN try/except (not one shared one) so a
+# crash in one check can't silently skip the other two the way a single shared
+# try/except would -- matching the original's per-block failure isolation.
+python3 - "$ROOT" "$H/features.json" <<'PYEOF' 2>/dev/null || true
+import hashlib, json, os, sys
+
+root, features_path = sys.argv[1], sys.argv[2]
+feats = json.load(open(features_path)).get("features", [])
+
 try:
-    feats = json.load(open(sys.argv[1])).get("features", [])
     drifted = []
     for f in feats:
         spec = f.get("spec") or {}
@@ -217,13 +225,8 @@ try:
         print("Re-run the spec gate (harness-issue-prep) before implementing these.")
 except Exception:
     pass
-PYEOF
 
-python3 - "$ROOT" "$H/features.json" <<'PYEOF' 2>/dev/null || true
-import json, os, sys
 try:
-    root, features_path = sys.argv[1], sys.argv[2]
-    feats = json.load(open(features_path)).get("features", [])
     armed_needed = any(
         f.get("status") == "in-progress" and f.get("assigned_to") is not None
         for f in feats
@@ -237,17 +240,12 @@ try:
             print("write it before spawning teammates or use worktree isolation.")
 except Exception:
     pass
-PYEOF
 
 # F066: a passing/in-progress feature's test_file is a claim, not a fact -- this
 # reproduces doctor.py's check_feature_test_files at session-start scope (cheap,
 # same os.path.isfile cost as the spec-drift hash check above) so faithful
 # orientation can't hand the session a fabricated picture.
-python3 - "$ROOT" "$H/features.json" <<'PYEOF' 2>/dev/null || true
-import json, os, sys
 try:
-    root, features_path = sys.argv[1], sys.argv[2]
-    feats = json.load(open(features_path)).get("features", [])
     missing = []
     for f in feats:
         if f.get("status") not in ("passing", "in-progress"):
@@ -295,8 +293,14 @@ except Exception:
 ' "$H/harness.json" 2>/dev/null || true)
 EXPECTED_NAME=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '1p')
 EXPECTED_EMAIL=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '2p')
-ACTUAL_NAME=$(git config user.name 2>/dev/null || true)
-ACTUAL_EMAIL=$(git config user.email 2>/dev/null || true)
+# One git-config call for both fields. --get-regexp lists a match from every
+# scope that defines it (system/global/local), lowest priority first, so the
+# LAST matching line per key is the effective value -- same as plain
+# `git config user.name` -- and must be picked with an END-block, not just
+# filtered.
+ACTUAL_IDENTITY=$(git config --get-regexp '^user\.(name|email)$' 2>/dev/null || true)
+ACTUAL_NAME=$(printf '%s\n' "$ACTUAL_IDENTITY" | awk '$1 == "user.name" {$1=""; sub(/^ /, ""); v=$0} END{print v}')
+ACTUAL_EMAIL=$(printf '%s\n' "$ACTUAL_IDENTITY" | awk '$1 == "user.email" {$1=""; sub(/^ /, ""); v=$0} END{print v}')
 MISMATCH=""
 if [ -n "$EXPECTED_NAME" ] && [ "$EXPECTED_NAME" != "$ACTUAL_NAME" ]; then MISMATCH=1; fi
 if [ -n "$EXPECTED_EMAIL" ] && [ "$EXPECTED_EMAIL" != "$ACTUAL_EMAIL" ]; then MISMATCH=1; fi

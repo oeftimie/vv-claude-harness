@@ -4,7 +4,7 @@
 # Hard budget: must complete well under the 1.5s SessionEnd timeout. Always exits 0.
 set -uo pipefail
 
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || ROOT=$(pwd)
+ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 H="$ROOT/.harness"
 [ -d "$H" ] || exit 0
 
