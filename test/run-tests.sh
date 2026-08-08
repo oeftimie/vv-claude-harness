@@ -12686,6 +12686,135 @@ else
 fi
 
 echo ""
+echo "== F105: not-run baseline keys are dropped from last_gate.json =="
+
+# A baseline entry exists only while its stage is genuinely being
+# exercised: focused:<id> / coverage:<id> used to keep their last recorded
+# value forever once the stage stopped running (init.sh loses the
+# focused_test target, test_file dropped, coverage no longer numeric), so
+# an arbitrarily old pass could arm a green-to-red increment against a
+# check that no longer exists (PR #154 review, follow-up 1). Deletion
+# applies ONLY when the hook reached the stage and found it unconfigured --
+# a stage skipped because an EARLIER stage failed keeps its baseline, or
+# the normal fail-fix loop would lose attribution mid-cycle.
+
+# 1. Support loss drops the focused baseline, and its return with a red
+# run does not increment off the stale pass.
+DIR_F105A="$WORK/f105-support-loss"
+make_fixture "$DIR_F105A"
+install_hooks "$DIR_F105A"
+write_recorder_init "$DIR_F105A" "with-focused" 0
+run_hook "$DIR_F105A" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105A")" '"focused:F002": "pass"' \
+  "f105: precondition -- a green focused run records its baseline"
+write_recorder_init "$DIR_F105A" "no-focused" 0
+run_hook "$DIR_F105A" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_not_contains "$(f103_baseline "$DIR_F105A")" '"focused:F002"' \
+  "f105: losing focused_test support drops the feature's focused baseline"
+write_recorder_init "$DIR_F105A" "with-focused" 1
+run_hook "$DIR_F105A" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F105A")" = "0" ]; then
+  pass "f105: support returning with a red focused run does not increment off the stale pass"
+else
+  fail "f105: expected 0 cycles after support-loss then red return, got $(f103_cycles "$DIR_F105A")"
+fi
+
+# 2. Dropping the feature's test_file drops its focused baseline.
+DIR_F105B="$WORK/f105-testfile-loss"
+make_fixture "$DIR_F105B"
+install_hooks "$DIR_F105B"
+write_recorder_init "$DIR_F105B" "with-focused" 0
+run_hook "$DIR_F105B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+python3 - "$DIR_F105B/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["test_file"] = None
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+run_hook "$DIR_F105B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_not_contains "$(f103_baseline "$DIR_F105B")" '"focused:F002"' \
+  "f105: removing the feature's test_file drops its focused baseline"
+
+# 3. Coverage leaving the numeric domain drops the coverage baseline; a
+# later numeric-below-target rejection then has no baseline to charge.
+DIR_F105C="$WORK/f105-coverage-loss"
+make_fixture "$DIR_F105C"
+install_hooks "$DIR_F105C"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_F105C/.harness/init.sh"
+set_f003_fields "$DIR_F105C" 'feature["coverage"] = 96
+        feature["correction_cycles"] = 0'
+F105C_JSON='{"task":{"metadata":{"feature_id":"F003"}}}'
+run_hook "$DIR_F105C" verify-task-quality.sh "$F105C_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105C")" '"coverage:F003": "pass"' \
+  "f105: precondition -- numeric coverage meeting target records its baseline"
+set_f003_fields "$DIR_F105C" 'feature["coverage"] = "descriptive prose, not a number"'
+run_hook "$DIR_F105C" verify-task-quality.sh "$F105C_JSON" >/dev/null 2>&1
+assert_not_contains "$(f103_baseline "$DIR_F105C")" '"coverage:F003"' \
+  "f105: non-numeric coverage drops the feature's coverage baseline"
+set_f003_fields "$DIR_F105C" 'feature["coverage"] = 50'
+run_hook "$DIR_F105C" verify-task-quality.sh "$F105C_JSON" >/dev/null 2>&1
+F105C_CYCLES=$(python3 -c "
+import json
+data = json.load(open('$DIR_F105C/.harness/features.json'))
+for f in data['features']:
+    if f['id'] == 'F003':
+        print(f.get('correction_cycles', 0))
+")
+if [ "$F105C_CYCLES" = "0" ]; then
+  pass "f105: a below-target rejection after the drop does not increment off the stale pass"
+else
+  fail "f105: expected 0 cycles after coverage-domain loss then rejection, got $F105C_CYCLES"
+fi
+
+# 4. An ordering skip is NOT a drop: a smoke failure must leave the focused
+# baseline intact for the fail-fix loop.
+DIR_F105D="$WORK/f105-ordering-skip"
+make_fixture "$DIR_F105D"
+install_hooks "$DIR_F105D"
+write_recorder_init "$DIR_F105D" "with-focused" 0
+run_hook "$DIR_F105D" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+printf '#!/bin/bash\nexit 1\n' > "$DIR_F105D/.harness/init.sh"
+run_hook "$DIR_F105D" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105D")" '"focused:F002": "pass"' \
+  "f105: a smoke failure preserves the focused baseline (ordering skip, not deconfiguration)"
+
+# 5. Same for coverage on a focused failure: the coverage stage was never
+# reached, so its baseline survives.
+DIR_F105E="$WORK/f105-focused-fail-keeps-coverage"
+make_fixture "$DIR_F105E"
+install_hooks "$DIR_F105E"
+write_recorder_init "$DIR_F105E" "with-focused" 0
+python3 - "$DIR_F105E/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["coverage"] = 96
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+run_hook "$DIR_F105E" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105E")" '"coverage:F002": "pass"' \
+  "f105: precondition -- coverage baseline recorded alongside a green focused run"
+write_recorder_init "$DIR_F105E" "with-focused" 1
+run_hook "$DIR_F105E" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105E")" '"coverage:F002": "pass"' \
+  "f105: a focused failure preserves the unreached coverage baseline"
+
+echo ""
 echo "== F104: full_test authoring guidance =="
 
 # The guidance is load-bearing (portage-curator jammed on a 99% aggregate

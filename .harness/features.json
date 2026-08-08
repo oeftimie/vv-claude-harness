@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 106,
-  "passing": 98,
+  "passing": 99,
   "features": [
     {
       "id": "F001",
@@ -2921,20 +2921,22 @@
       "id": "F105",
       "description": "Stale last_gate.json baseline keys can arm a false green-to-red increment: focused:<id> (and coverage:<id>) keep their last recorded value forever once the stage stops running for that feature (init.sh loses the focused_test target, the feature's test_file is dropped, or coverage stops being numeric), so an arbitrarily old 'pass' later pairs with a fresh failure and increments correction_cycles off a baseline that no longer describes the same check. Reproduced live by the PR #154 reviewer. Fix direction: on each hook run, for the targeted feature, DELETE the focused:<id> key when the focused stage did not run and the coverage:<id> key when coverage was not evaluated -- a baseline entry should exist only while its stage is genuinely being exercised.",
       "priority": 105,
-      "status": "in-progress",
+      "status": "passing",
       "scope": [
         "skills/harness-init/verify-task-quality.sh.template",
         ".claude/hooks/verify-task-quality.sh",
         "test/run-tests.sh"
       ],
       "depends_on": [],
-      "assigned_to": "single-session",
+      "assigned_to": null,
       "test_file": "test/run-tests.sh",
-      "coverage": null,
+      "coverage": "TDD: 5 drop-behavior assertions written first and confirmed red, plus 2 preservation assertions green throughout (the design's key distinction). Covers: focused_test support loss drops focused:<id> and a red return does not increment off the stale pass; test_file removal drops the key; coverage leaving the numeric domain drops coverage:<id> and a later below-target rejection has no baseline to charge; a smoke failure preserves the focused baseline and a focused failure preserves the coverage baseline (ordering skip is not deconfiguration). Full suite 1966/1966.",
       "notes": null,
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "_gate_baseline gains a third outcome 'drop' (deletes the key); FOCUSED/COVERAGE_BASELINE_ARG default to drop for a targeted feature and upgrade to pass when the stage runs green. Drops happen only at the point the hook reached the stage and found it unconfigured -- rejection exits earlier, so ordering skips can never erase a baseline mid fail-fix cycle."
+      ],
       "failure_reason": null,
       "discovered_via": "PR #154 adversarial review (review-pr154 reviewer agent), round-1 follow-up list, 2026-08-09.",
       "spec": null,
