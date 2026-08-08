@@ -83,8 +83,15 @@
 # line is silently missed (accepted: scanning overlapping windows to close
 # this adds real complexity for a line length no ordinary commit approaches).
 # No automated latency test exists for any hook in this repo; design target
-# (undocumented elsewhere) is under 1 second for a typical commit's staged diff,
-# since this hook blocks an interactive PreToolUse Bash call synchronously.
+# (undocumented elsewhere) is under 1 second for a typical commit's staged
+# diff, since this hook blocks an interactive PreToolUse Bash call
+# synchronously -- EXCEPT the passing-flip path (F102), which deliberately
+# runs the project's whole full_test inside the hook and takes as long as
+# that suite takes. The entire hook must finish inside Claude Code's
+# PreToolUse command-hook timeout (600s default): a full_test slower than
+# that kills the hook mid-run, and a killed PreToolUse hook ALLOWS the
+# command -- so a slow suite converts this gate to fail-open. The
+# harness-init SKILL.md authoring guidance names this ceiling.
 # Check 0's quote handling (mask_quotes/unquote_token) covers single/double/
 # ANSI-C quoting only; recursive or nested quoting is out of scope, consistent
 # with this repo's existing pattern-based-and-evadable-by-construction posture
@@ -140,7 +147,10 @@
 # command (`sudo git commit`, `env FOO=1 git commit`) -- accepted rather
 # than maintaining an open-ended wrapper/grouping-command allowlist (sudo,
 # doas, env, nice, timeout, brace groups, ...) in a way the closed
-# keyword/flag classification isn't. A `case ... in PATTERN) git commit
+# keyword/flag classification isn't. Since F102, an unrecognized commit
+# invocation bypasses the passing-flip full_test check too, not just the
+# secret scan -- same accepted residual, larger blast radius (PR #154
+# review, follow-up 6). A `case ... in PATTERN) git commit
 # ...` segment is also not recognized: the token immediately before "git"
 # is an arbitrary case pattern, not a fixed word to skip, so closing this
 # would need real shell parsing rather than one more set entry -- accepted,
@@ -1417,6 +1427,12 @@ def statuses(ref):
 
 
 try:
+    # staged None (features.json untracked, removed from the index, or
+    # staged under a rename so the index has no blob at this exact path)
+    # skips the whole flip check -- fail-open, consistent with this gate's
+    # posture, and pinned by its own test: a project that stops tracking
+    # features.json has opted out of harness state tracking entirely, and
+    # denying every commit there would be a worse failure mode.
     staged = statuses(":.harness/features.json")
     if staged is not None:
         head = statuses(f"{sys.argv[1]}:.harness/features.json") or {}

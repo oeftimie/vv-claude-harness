@@ -12202,6 +12202,30 @@ F101A_LOG_RECHECK=$(cat "$DIR_F101A/.harness/invocations.log" 2>/dev/null)
 assert_not_contains "$F101A_LOG_RECHECK" "focused_test" \
   "f101: no focused_test invocation when the feature records no test_file"
 
+# 6. Support detection must ignore comments: an init.sh that only MENTIONS
+# focused_test in its header (the shipped template's own header does) but
+# answers the target with its unknown-target error would otherwise have
+# that error read as a real test failure -- the exact confusion the
+# grep-not-probe detection exists to avoid (PR #154 review, follow-up 3).
+DIR_F101F="$WORK/f101-comment-only-support"
+make_fixture "$DIR_F101F"
+install_hooks "$DIR_F101F"
+cat > "$DIR_F101F/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+# focused_test is not implemented here yet; this comment is the only mention.
+case "$1" in
+  smoke_test) exit 0 ;;
+  *) echo "Unknown target: $1" >&2; exit 2 ;;
+esac
+INITEOF
+chmod +x "$DIR_F101F/.harness/init.sh"
+OUT=$(run_hook "$DIR_F101F" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "f101: a comment-only focused_test mention is not treated as support"
+assert_contains "$OUT" "does not support focused_test" \
+  "f101: the comment-only case takes the skip path with its stderr note"
+
 echo ""
 echo "== F102: passing-flip commit gate =="
 
@@ -12386,6 +12410,27 @@ assert_rc0 "$RC" "f102: a no-flip amend exits 0"
 assert_empty "$OUT" "f102: a no-flip amend allows with empty stdout"
 F102H_LOG=$(cat "$DIR_F102H/.harness/invocations.log" 2>/dev/null)
 assert_not_contains "$F102H_LOG" "full_test" "f102: no full_test run on a no-flip amend"
+
+# 6b. features.json absent from the index entirely (untracked or removed
+# with git rm --cached): the flip check cannot resolve :.harness/
+# features.json and skips -- fail-open by design, pinned here so the
+# behavior is a documented contract rather than an accident (PR #154
+# review, follow-up 5).
+DIR_F102I="$WORK/f102-untracked-features"
+make_fixture "$DIR_F102I"
+install_hooks "$DIR_F102I"
+write_f102_init "$DIR_F102I" 1
+git -C "$DIR_F102I" rm -q --cached .harness/features.json
+git -C "$DIR_F102I" commit -q -m "stop tracking features.json"
+echo "unrelated" > "$DIR_F102I/unrelated.txt"
+git -C "$DIR_F102I" add unrelated.txt
+OUT=$(run_commit_gate "$DIR_F102I" 'git commit -m "unrelated with untracked features.json"')
+RC=$?
+assert_rc0 "$RC" "f102: an untracked features.json commit exits 0 (fail-open)"
+assert_empty "$OUT" "f102: an untracked features.json commit allows with empty stdout"
+F102I_LOG=$(cat "$DIR_F102I/.harness/invocations.log" 2>/dev/null)
+assert_not_contains "$F102I_LOG" "full_test" \
+  "f102: no full_test run when features.json is not in the index"
 
 # 7. A staged flip with no .harness/init.sh at all fails open with a stderr
 # note (matching this gate's documented fail-open posture for infrastructure

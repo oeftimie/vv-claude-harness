@@ -99,7 +99,7 @@ On success this writes, byte-verbatim or rendered from a template in
   `git_identity` and `team_structure` are left `null` here (this step and Step 6,
   respectively, are the decisions that fill them).
 - `.gitignore` gains `.harness/SESSION_INCOMPLETE`, `.harness/features.json.lock`, `.harness/dashboard/`, and `.harness/last_gate.json`
-  (OVI-107), both appended idempotently.
+  (OVI-107), all four appended idempotently.
 
 **`.harness/features.json`'s feature schema.** Each feature's shape (the 16 fields, which
 are required vs. optional, the status enum) is defined once in
@@ -246,7 +246,10 @@ When configuring for the project's stack, ensure all three targets work correctl
 
 **Authoring rule — `full_test` must be satisfiable mid-project.** `full_test` gates
 every passing-flip commit, so a check that cannot go green until the whole project is
-done jams every feature before it. The concrete trap is workspace-aggregate metrics:
+done jams every feature before it. It must also finish comfortably inside Claude
+Code's PreToolUse command-hook timeout (600s default): the commit gate runs it
+synchronously on a passing-flip commit, and a hook killed by the timeout allows the
+command — a too-slow suite silently converts the gate to fail-open. The concrete trap is workspace-aggregate metrics:
 a hardcoded "aggregate coverage >= 99%" makes feature A's completion depend on
 feature B's unwritten tests, and an unreachable gate teaches agents to route around
 gates. Put aggregate metrics in as **ratchets** — compare against a stored baseline

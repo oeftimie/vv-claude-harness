@@ -381,12 +381,16 @@ SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
 }
 
 # Stage 2: the targeted feature's own focused test. Support is detected by
-# grepping init.sh for the target name rather than probing an invocation --
-# an older init.sh answers an unknown target with its own error exit, which
-# would be indistinguishable from a real test failure here.
+# grepping init.sh's NON-COMMENT lines for the target name rather than
+# probing an invocation -- an older init.sh answers an unknown target with
+# its own error exit, which would be indistinguishable from a real test
+# failure here. Comment lines are stripped first (PR #154 review, follow-up
+# 3): a script that only MENTIONS focused_test in a header comment would
+# otherwise be probed and have its unknown-target error read as a failure,
+# recreating exactly the confusion this detection exists to avoid.
 FOCUSED_PASS_ARG=""
 if [ -n "$TEST_FILE" ]; then
-    if grep -q "focused_test" .harness/init.sh 2>/dev/null; then
+    if grep -v '^[[:space:]]*#' .harness/init.sh 2>/dev/null | grep -q "focused_test"; then
         echo "Stage 2: Focused test ($TEST_FILE)..." >&2
         FOCUSED_OUTPUT=$(bash .harness/init.sh focused_test "$TEST_FILE" 2>&1) || {
             echo "Task rejected: focused test failed ($TEST_FILE). Fix the failures before marking complete." >&2
