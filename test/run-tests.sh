@@ -10024,25 +10024,29 @@ assert_contains "$LINE" '"verdict": "block"' "f089-vq: smoke test failure logs v
 assert_contains "$LINE" '"finding": "smoke-test-failed"' \
   "f089-vq: smoke test failure logs its finding class"
 
-DIR_VQ89C="$WORK/f089-verify-quality-fullfail"
+# F101 rewrote this decision point: the TaskCompleted hook no longer runs
+# full_test (that gate moved to the passing-flip commit gate, F102); the
+# second test stage is now the targeted feature's own focused_test, so the
+# dashboard finding class changed with it.
+DIR_VQ89C="$WORK/f089-verify-quality-focusedfail"
 make_fixture "$DIR_VQ89C"
 install_hooks "$DIR_VQ89C"
 cat > "$DIR_VQ89C/.harness/init.sh" <<'INITEOF'
 #!/bin/bash
 case "$1" in
   smoke_test) exit 0 ;;
-  full_test) exit 1 ;;
+  focused_test) exit 1 ;;
 esac
 INITEOF
 chmod +x "$DIR_VQ89C/.harness/init.sh"
 VQ89C_LOG="$DIR_VQ89C/.harness/dashboard/vq89sess.jsonl"
 OUT=$(run_hook_dashboard "$DIR_VQ89C" verify-task-quality.sh "$VQ89_JSON" 2>&1)
 RC=$?
-assert_rc2 "$RC" "f089-vq: a full test failure still exits 2"
+assert_rc2 "$RC" "f089-vq: a focused test failure still exits 2"
 LINE=$(cat "$VQ89C_LOG" 2>/dev/null)
-assert_contains "$LINE" '"verdict": "block"' "f089-vq: full test failure logs verdict=block"
-assert_contains "$LINE" '"finding": "tests-failing"' \
-  "f089-vq: full test failure logs its finding class"
+assert_contains "$LINE" '"verdict": "block"' "f089-vq: focused test failure logs verdict=block"
+assert_contains "$LINE" '"finding": "focused-test-failed"' \
+  "f089-vq: focused test failure logs its finding class"
 
 DIR_VQ89D="$WORK/f089-verify-quality-coverage"
 make_fixture "$DIR_VQ89D"
@@ -12046,6 +12050,138 @@ if [ "$PLUGIN_VERSION_SEMVER" = "SEMVER_OK" ]; then
 else
   fail "f093: plugin.json version matches a semver-shaped pattern (got '$PLUGIN_VERSION')"
 fi
+
+echo ""
+echo "== F101: tiered TaskCompleted gate =="
+
+# The TaskCompleted hook's old Stage 2 ran `.harness/init.sh full_test` on
+# every completion -- contradicting harness-init/SKILL.md's own contract
+# (smoke_test is the TaskCompleted gate; full_test belongs to the lead's
+# synthesis/session-end and, post-F102, the passing-flip commit gate) and
+# costing minutes per checkpoint. New contract pinned here: smoke_test always
+# runs; `focused_test <test_file>` runs ONLY when the targeted feature records
+# a test_file AND the project's init.sh mentions the focused_test target;
+# full_test is never invoked by this hook.
+
+# A recorder init.sh that logs every invocation. The no-support variant must
+# not contain the string "focused_test" anywhere (support detection greps the
+# file for it), so its case arms list only the two legacy targets.
+write_recorder_init() {
+  # $1: fixture dir, $2: "with-focused" | "no-focused", $3: focused exit code
+  if [ "$2" = "with-focused" ]; then
+    cat > "$1/.harness/init.sh" <<INITEOF
+#!/bin/bash
+echo "\$@" >> .harness/invocations.log
+case "\$1" in
+  focused_test) exit $3 ;;
+esac
+exit 0
+INITEOF
+  else
+    cat > "$1/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+echo "$@" >> .harness/invocations.log
+exit 0
+INITEOF
+  fi
+  chmod +x "$1/.harness/init.sh"
+}
+
+# 1. Accept path never invokes full_test; smoke_test still runs.
+DIR_F101A="$WORK/f101-no-fulltest"
+make_fixture "$DIR_F101A"
+install_hooks "$DIR_F101A"
+write_recorder_init "$DIR_F101A" "with-focused" 0
+OUT=$(run_hook "$DIR_F101A" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "f101: accept path exits 0 under the tiered gate"
+F101A_LOG=$(cat "$DIR_F101A/.harness/invocations.log" 2>/dev/null)
+assert_contains "$F101A_LOG" "smoke_test" "f101: smoke_test still runs on TaskCompleted"
+assert_not_contains "$F101A_LOG" "full_test" \
+  "f101: full_test is never invoked by the TaskCompleted hook"
+
+# 2. Targeted feature with a recorded test_file + focused_test support: the
+# hook runs focused_test with that exact file.
+DIR_F101B="$WORK/f101-focused-runs"
+make_fixture "$DIR_F101B"
+install_hooks "$DIR_F101B"
+write_recorder_init "$DIR_F101B" "with-focused" 0
+OUT=$(run_hook "$DIR_F101B" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "f101: focused test passing accepts"
+F101B_LOG=$(cat "$DIR_F101B/.harness/invocations.log" 2>/dev/null)
+assert_contains "$F101B_LOG" "focused_test tests/hooks/test_hooks.py" \
+  "f101: focused_test receives the feature's own test_file"
+
+# 3. A focused-test failure rejects, on stderr, and increments the targeted
+# feature's correction_cycles -- same conventions as the smoke stage (F053:
+# nothing on stdout for a rejection).
+DIR_F101C="$WORK/f101-focused-fails"
+make_fixture "$DIR_F101C"
+install_hooks "$DIR_F101C"
+write_recorder_init "$DIR_F101C" "with-focused" 1
+python3 - "$DIR_F101C/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["correction_cycles"] = 0
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+OUT=$(run_hook "$DIR_F101C" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' 2>&1 1>/dev/null)
+RC=$?
+assert_rc2 "$RC" "f101: focused test failure rejects with exit 2"
+assert_contains "$OUT" "focused test failed" \
+  "f101: focused-failure message names the violated invariant"
+assert_contains "$OUT" "tests/hooks/test_hooks.py" \
+  "f101: focused-failure message names the failing test file"
+STDOUT_ONLY_F101C=$(run_hook "$DIR_F101C" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' 2>/dev/null)
+assert_empty "$STDOUT_ONLY_F101C" "f101: focused-failure rejection writes nothing to stdout"
+F101C_CYCLES=$(python3 -c "
+import json
+data = json.load(open('$DIR_F101C/.harness/features.json'))
+for f in data['features']:
+    if f['id'] == 'F002':
+        print(f['correction_cycles'])
+")
+if [ "$F101C_CYCLES" = "2" ]; then
+  pass "f101: focused-test rejections increment the targeted feature's correction_cycles"
+else
+  fail "f101: expected correction_cycles 2 after two focused rejections, got $F101C_CYCLES"
+fi
+
+# 4. test_file recorded but init.sh has no focused_test target: the stage is
+# skipped with a stderr note, never a failure -- older projects keep working
+# with smoke-only until they adopt the target.
+DIR_F101D="$WORK/f101-no-support"
+make_fixture "$DIR_F101D"
+install_hooks "$DIR_F101D"
+write_recorder_init "$DIR_F101D" "no-focused" 0
+OUT=$(run_hook "$DIR_F101D" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "f101: missing focused_test support accepts (smoke-only)"
+F101D_LOG=$(cat "$DIR_F101D/.harness/invocations.log" 2>/dev/null)
+assert_not_contains "$F101D_LOG" "focused_test" \
+  "f101: focused_test is not invoked when init.sh does not support it"
+assert_contains "$OUT" "does not support focused_test" \
+  "f101: the skipped focused stage is noted on stderr"
+
+# 5. Support present but the targeted feature has no test_file (fixture F003):
+# no focused invocation, no note, clean accept.
+F101A_LOG_RECHECK=$(cat "$DIR_F101A/.harness/invocations.log" 2>/dev/null)
+assert_not_contains "$F101A_LOG_RECHECK" "focused_test" \
+  "f101: no focused_test invocation when the feature records no test_file"
 
 echo ""
 echo "== shell syntax =="

@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 104,
-  "passing": 93,
+  "passing": 94,
   "features": [
     {
       "id": "F001",
@@ -2825,7 +2825,7 @@
       "id": "F101",
       "description": "verify-task-quality.sh.template runs `.harness/init.sh full_test` on every TaskCompleted (Stage 2), contradicting harness-init SKILL.md's own documented contract (smoke_test is 'used by the TaskCompleted hook as a fast first-pass gate'; full_test is for 'the lead at session end and synthesis phase') and costing minutes per checkpoint (1m42s in this repo; 5-15min in a Rust workspace with llvm-cov). New tiered contract: TaskCompleted runs smoke_test always, plus `.harness/init.sh focused_test <test_file>` when the targeted feature records a test_file AND the project's init.sh supports the focused_test target (detected mechanically); the unconditional full_test stage is removed. full_test's enforcement moves to the passing-flip commit gate (F102). init.sh.template gains a focused_test target; SKILL.md's init.sh contract documents it; this repo's own installed .claude/hooks copy is synced.",
       "priority": 101,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/verify-task-quality.sh.template",
         "skills/harness-init/init.sh.template",
@@ -2836,8 +2836,8 @@
       "depends_on": [],
       "assigned_to": "lead",
       "test_file": "test/run-tests.sh",
-      "coverage": null,
-      "notes": null,
+      "coverage": "TDD: 11 new/updated assertions written first and confirmed red against the old template (f101 section + rewritten f089-vq focused-fail block), then green after implementation. Covers: accept path never invokes full_test while smoke_test still runs; focused_test receives the targeted feature's exact test_file; focused failure rejects on stderr with exit 2, names the file, writes nothing to stdout (F053 convention), increments only the targeted feature's correction_cycles, and logs dashboard finding focused-test-failed; init.sh without the focused_test string skips the stage with a stderr note and stays smoke-only; a feature with no recorded test_file triggers no focused invocation. Template drift check forced the .claude/hooks sync. Full suite 1892/1892.",
+      "notes": "Restructured the single features.json read (_CHECKS) to run before the test stages and emit test_file as a 4th output line -- one python process still feeds coverage gate, proof warning, in-progress reminder, and the focused lookup. Support detection greps init.sh for 'focused_test' rather than probing an invocation, since an older init.sh answers an unknown target with its own error exit, indistinguishable from a real failure. init.sh.template's focused runners deliberately avoid the '| tail' pipelines the other targets use: a pipeline's exit status is tail's, which would mask a test failure under set -e (pre-existing flaw in the other targets, left alone -- out of scope). SKILL.md's init.sh contract now documents all three targets and carries the full_test authoring rule (satisfiable mid-project, aggregates as ratchets) that F104 pins with a structural test.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],

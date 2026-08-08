@@ -237,11 +237,23 @@ decision-shaped file in this set, so the stamp does not touch it. Read the
 `init.sh.template` file in this skill's directory, copy it to `.harness/init.sh`,
 configure for the detected stack, and make it executable with `chmod +x`.
 
-The script accepts one optional argument: `smoke_test` or `full_test` (default: `full_test`).
+The script accepts an optional target argument: `smoke_test`, `focused_test <test_file>`, or `full_test` (default: `full_test`).
 - `smoke_test` — compile/syntax check only, completes in <15s. Used by the `TaskCompleted` hook as a fast first-pass gate.
-- `full_test` — complete test suite with coverage. Used by the lead at session end and synthesis phase.
+- `focused_test <test_file>` — run exactly one test file. The `TaskCompleted` hook passes the targeted feature's recorded `test_file` as the second stage of its gate; the hook detects support by grepping `init.sh` for `focused_test` and stays smoke-only when absent, so older projects keep working unchanged.
+- `full_test` — complete test suite with coverage. Enforced when a feature's status flips to `passing` (the commit gate runs it whenever a staged `features.json` contains such a flip) and used by the lead at session end and synthesis phase. It does NOT run on every task completion.
 
-When configuring for the project's stack, ensure both targets work correctly.
+When configuring for the project's stack, ensure all three targets work correctly.
+
+**Authoring rule — `full_test` must be satisfiable mid-project.** `full_test` gates
+every passing-flip commit, so a check that cannot go green until the whole project is
+done jams every feature before it. The concrete trap is workspace-aggregate metrics:
+a hardcoded "aggregate coverage >= 99%" makes feature A's completion depend on
+feature B's unwritten tests, and an unreachable gate teaches agents to route around
+gates. Put aggregate metrics in as **ratchets** — compare against a stored baseline
+(e.g. `.harness/coverage-baseline.json`) and fail only on regression, updating the
+baseline as it improves. Reserve fixed high thresholds (95%, 99%) for per-feature
+scope (the `coverage_target` gate already enforces that) or an explicit release
+feature's acceptance criteria.
 
 ## Step 3.6: Quality Gate Hooks (via the Stamp)
 

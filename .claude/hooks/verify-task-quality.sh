@@ -5,9 +5,16 @@
 # Exit code 2 = reject completion, send feedback to teammate
 #
 # Staged evaluation (inspired by HyperAgents):
-#   Stage 1: smoke_test — fast compile/syntax check
-#   Stage 2: full_test  — complete suite with coverage
-# Failing at Stage 1 avoids the cost of a full test run.
+#   Stage 1: smoke_test   — fast compile/syntax check, always runs
+#   Stage 2: focused_test — the targeted feature's own recorded test_file,
+#            run only when the feature records one AND the project's init.sh
+#            supports the focused_test target (detected by grepping init.sh
+#            for the string; older init.sh scripts stay smoke-only)
+# full_test does NOT run here (F101): per-task full suites cost minutes per
+# checkpoint and let unrelated red (e.g. an aggregate coverage bar owned by a
+# sibling feature) jam every completion. The full suite is enforced where it
+# decides something: the passing-flip commit gate (commit-gate.sh, F102) and
+# the lead's session-end/synthesis runs.
 # correction_cycles is incremented in features.json on any rejection.
 # Formatting: harness_state.py owns the write (indent=2, trailing newline,
 # atomic replace via a file lock + PID-suffixed tmp + os.replace, see its
@@ -195,37 +202,17 @@ increment_correction_cycles() {
         || true
 }
 
-# Stage 1: Smoke test (fast compile/syntax check)
-echo "Stage 1: Smoke test..." >&2
-SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
-    echo "Task rejected: smoke test failed. Fix compilation errors before marking complete." >&2
-    echo "" >&2
-    echo "Smoke test output:" >&2
-    echo "$SMOKE_OUTPUT" | tail -20 >&2
-    increment_correction_cycles
-    _dashboard_log "block" "smoke-test-failed" || true
-    exit 2
-}
-
-# Stage 2: Full test suite
-echo "Stage 2: Full test suite..." >&2
-FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
-    echo "Task rejected: tests are failing. Fix the failures before marking complete." >&2
-    echo "" >&2
-    echo "Test output (last 20 lines):" >&2
-    echo "$FULL_OUTPUT" | tail -20 >&2
-    increment_correction_cycles
-    _dashboard_log "block" "tests-failing" || true
-    exit 2
-}
-
-# Coverage target gate, claim-matched proof warning, and stale-in-progress
-# reminder all read .harness/features.json -- one load, one process, feeding
-# all three checks below, instead of three independent python3 subprocesses
-# each re-opening and re-parsing the same file.
+# Coverage target gate, claim-matched proof warning, stale-in-progress
+# reminder, and the focused-test lookup all read .harness/features.json --
+# one load, one process, feeding all four consumers, instead of independent
+# python3 subprocesses each re-opening and re-parsing the same file. Runs
+# BEFORE the test stages (F101) because Stage 2 needs the targeted feature's
+# test_file; nothing here mutates the file, so the early read changes no
+# behavior for the later checks.
 COVERAGE_RESULT=""
 PROOF_WARNING=""
 IN_PROGRESS=0
+TEST_FILE=""
 if [ -f ".harness/features.json" ]; then
     _CHECKS=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
 import json
@@ -279,12 +266,56 @@ try:
 except Exception:
     in_progress = 0
 print(in_progress)
+
+# Focused-test lookup (F101): the targeted feature's own recorded test_file,
+# consumed by Stage 2. Empty when the feature is unmatched or records none.
+test_file = ""
+if match is not None:
+    candidate = match.get("test_file")
+    if isinstance(candidate, str):
+        test_file = candidate
+print(test_file)
 PYEOF
 )
     COVERAGE_RESULT=$(printf '%s\n' "$_CHECKS" | sed -n '1p')
     PROOF_WARNING=$(printf '%s\n' "$_CHECKS" | sed -n '2p')
     IN_PROGRESS=$(printf '%s\n' "$_CHECKS" | sed -n '3p')
+    TEST_FILE=$(printf '%s\n' "$_CHECKS" | sed -n '4p')
     [ -n "$IN_PROGRESS" ] || IN_PROGRESS=0
+fi
+
+# Stage 1: Smoke test (fast compile/syntax check)
+echo "Stage 1: Smoke test..." >&2
+SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
+    echo "Task rejected: smoke test failed. Fix compilation errors before marking complete." >&2
+    echo "" >&2
+    echo "Smoke test output:" >&2
+    echo "$SMOKE_OUTPUT" | tail -20 >&2
+    increment_correction_cycles
+    _dashboard_log "block" "smoke-test-failed" || true
+    exit 2
+}
+
+# Stage 2: the targeted feature's own focused test. Support is detected by
+# grepping init.sh for the target name rather than probing an invocation --
+# an older init.sh answers an unknown target with its own error exit, which
+# would be indistinguishable from a real test failure here.
+if [ -n "$TEST_FILE" ]; then
+    if grep -q "focused_test" .harness/init.sh 2>/dev/null; then
+        echo "Stage 2: Focused test ($TEST_FILE)..." >&2
+        FOCUSED_OUTPUT=$(bash .harness/init.sh focused_test "$TEST_FILE" 2>&1) || {
+            echo "Task rejected: focused test failed ($TEST_FILE). Fix the failures before marking complete." >&2
+            echo "" >&2
+            echo "Focused test output (last 20 lines):" >&2
+            echo "$FOCUSED_OUTPUT" | tail -20 >&2
+            increment_correction_cycles
+            _dashboard_log "block" "focused-test-failed" || true
+            exit 2
+        }
+    else
+        echo "verify-task-quality: this project's .harness/init.sh does not support focused_test;" \
+             "skipping the focused stage ($TEST_FILE). Adopt the focused_test target to enable it." >&2
+    fi
 fi
 
 if [ -n "$COVERAGE_RESULT" ]; then
