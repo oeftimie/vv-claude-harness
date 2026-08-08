@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 106,
-  "passing": 99,
+  "passing": 100,
   "features": [
     {
       "id": "F001",
@@ -2946,7 +2946,7 @@
       "id": "F106",
       "description": "focused_test's treat-as-pass arms record a fake green baseline: init.sh.template's unknown-stack and pytest-absent arms exit 0 without running any test, and the TaskCompleted hook cannot distinguish 'ran and passed' from 'runner unavailable, skipped' -- so last_gate.json records focused:<id>=pass and a later real failure counts as green-to-red off a green that never happened (PR #154 review, follow-up 4). Fix direction: a skip protocol -- init.sh exits a distinct documented code (e.g. 3) for 'skipped, no runner', which the hook treats as not-run (no baseline write, stderr note), keeping exit 0 strictly for a test that executed and passed. Depends on F105's not-run key-deletion semantics.",
       "priority": 106,
-      "status": "in-progress",
+      "status": "passing",
       "scope": [
         "skills/harness-init/init.sh.template",
         "skills/harness-init/verify-task-quality.sh.template",
@@ -2957,13 +2957,15 @@
       "depends_on": [
         "F105"
       ],
-      "assigned_to": "single-session",
+      "assigned_to": null,
       "test_file": "test/run-tests.sh",
-      "coverage": null,
+      "coverage": "TDD: 8 assertions written first and confirmed red. Behavioral on the REAL template: unknown-stack and python-without-pytest focused_test runs exit exactly 3 with a canary test file proving no suite runner discovered anything -- this is the second, independent pin on the no-full-suite guarantee (the f104 structural grep is the first; PR #154's reviewer flagged that single assertion as a SPOF and the fix restructured exactly that block). Hook side: exit 3 accepts with a stderr note and records NO focused baseline (F105 drop semantics), a later real red run has nothing stale to charge (0 cycles); exit 0 still records a genuine pass; nonzero-but-not-3 still rejects. Contract documented in init.sh.template's header and SKILL.md's init.sh section, both pinned. Full suite 1979/1979.",
       "notes": null,
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Exit-code protocol (3 = skipped-no-runner) over alternatives like a sentinel string on stdout (fragile against runner output) or a hook-side runner probe (duplicates init.sh's own stack knowledge). The hook's 3-way branch keeps FOCUSED_BASELINE_ARG at its F105 drop default on skip, which is what makes the fake-green class structurally impossible rather than patched per-arm."
+      ],
       "failure_reason": null,
       "discovered_via": "PR #154 adversarial review (review-pr154 reviewer agent), round-1 follow-up list, 2026-08-09.",
       "spec": null,

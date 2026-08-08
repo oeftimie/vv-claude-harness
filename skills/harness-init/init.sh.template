@@ -7,7 +7,11 @@
 #                TaskCompleted hook as a first-pass rejection gate.
 # focused_test — run exactly one test file (the TaskCompleted hook passes the
 #                targeted feature's recorded test_file). Bounded per-task
-#                regression check; never the full suite.
+#                regression check; never the full suite. Exit 0 strictly
+#                means the test EXECUTED and passed; exit 3 means "skipped,
+#                no per-file runner for this stack" (F106) -- the hook
+#                treats 3 as not-run (no baseline recorded) instead of a
+#                fake green, and anything else as a real failure.
 # full_test    — complete test suite with coverage. Used by the lead's
 #                synthesis step, session-end validation, and the passing-flip
 #                commit gate. Must stay satisfiable mid-project (see the
@@ -83,10 +87,10 @@ if [ "$TARGET" = "focused_test" ]; then
                 pytest --tb=short "$FOCUS_FILE"
             else
                 # Never fall back to the full suite here (this file's own
-                # contract: focused means one file) -- treat as pass like the
-                # unknown-stack arm; smoke_test already ran, and full_test
-                # still gates the passing flip.
-                echo "focused_test: pytest not available; no per-file runner -- treating as pass (smoke_test already ran)."
+                # contract: focused means one file), and never fake a green:
+                # exit 3 tells the hook this stage was skipped, not passed.
+                echo "focused_test: pytest not available; no per-file runner -- skipped (exit 3)."
+                exit 3
             fi
             ;;
         go|golang)
@@ -98,7 +102,8 @@ if [ "$TARGET" = "focused_test" ]; then
             cargo test --test "$(basename "$FOCUS_FILE" .rs)"
             ;;
         *)
-            echo "focused_test: no focused runner for stack '$STACK'; treating as pass (smoke_test already ran)."
+            echo "focused_test: no focused runner for stack '$STACK' -- skipped (exit 3)."
+            exit 3
             ;;
     esac
     echo ""

@@ -239,7 +239,7 @@ configure for the detected stack, and make it executable with `chmod +x`.
 
 The script accepts an optional target argument: `smoke_test`, `focused_test <test_file>`, or `full_test` (default: `full_test`).
 - `smoke_test` — compile/syntax check only, completes in <15s. Used by the `TaskCompleted` hook as a fast first-pass gate.
-- `focused_test <test_file>` — run exactly one test file. The `TaskCompleted` hook passes the targeted feature's recorded `test_file` as the second stage of its gate; the hook detects support by grepping `init.sh` for `focused_test` and stays smoke-only when absent, so older projects keep working unchanged.
+- `focused_test <test_file>` — run exactly one test file. The `TaskCompleted` hook passes the targeted feature's recorded `test_file` as the second stage of its gate; the hook detects support by grepping `init.sh`'s non-comment lines for `focused_test` and stays smoke-only when absent, so older projects keep working unchanged. Exit-code contract: 0 strictly means the test executed and passed; a stack with no per-file runner exits 3 ("skipped, no runner"), which the hook treats as not-run — accepted on smoke alone, no baseline recorded — never as a pass; any other exit is a real failure that rejects the completion.
 - `full_test` — complete test suite with coverage. Enforced when a feature's status flips to `passing` (the commit gate runs it whenever a staged `features.json` contains such a flip) and used by the lead at session end and synthesis phase. It does NOT run on every task completion.
 
 When configuring for the project's stack, ensure all three targets work correctly.

@@ -12815,6 +12815,118 @@ assert_contains "$(f103_baseline "$DIR_F105E")" '"coverage:F002": "pass"' \
   "f105: a focused failure preserves the unreached coverage baseline"
 
 echo ""
+echo "== F106: skip-vs-pass exit-code protocol for focused_test =="
+
+# init.sh's treat-as-pass focused arms (unknown stack, pytest absent) used
+# to exit 0 without running anything, indistinguishable from a real green --
+# so last_gate.json recorded focused:<id>=pass off a test that never ran
+# (PR #154 review, follow-up 4). Contract now: exit 3 means "skipped, no
+# runner"; the hook treats it as not-run (F105 drop semantics, stderr
+# note, still accepts); exit 0 is strictly "executed and passed".
+
+# 1. Behavioral, on the REAL template: unknown stack exits exactly 3.
+# This is the second, independent pin on the no-full-suite guarantee (the
+# f104 structural grep is the first): a canary test file that would fail
+# loudly under any suite runner proves nothing was discovered or executed
+# -- a fallback reappearing would surface as a wrong exit code or canary
+# output, not depend on one grep.
+DIR_F106A="$WORK/f106-unknown-stack"
+mkdir -p "$DIR_F106A/.harness" "$DIR_F106A/tests"
+printf '{"stack": "custom"}\n' > "$DIR_F106A/.harness/harness.json"
+cat > "$DIR_F106A/tests/test_canary.py" <<'PYEOF'
+raise SystemExit("CANARY-EXECUTED: a suite runner discovered this file")
+PYEOF
+cp "$TEMPLATES_DIR/init.sh.template" "$DIR_F106A/.harness/init.sh"
+chmod +x "$DIR_F106A/.harness/init.sh"
+F106A_OUT=$( (cd "$DIR_F106A" && bash .harness/init.sh focused_test tests/test_canary.py) 2>&1 )
+F106A_RC=$?
+if [ "$F106A_RC" -eq 3 ]; then
+  pass "f106: unknown-stack focused_test exits exactly 3 (skipped, no runner)"
+else
+  fail "f106: unknown-stack focused_test exited $F106A_RC, expected 3"
+fi
+assert_contains "$F106A_OUT" "skipped" "f106: the skip arm says it skipped"
+assert_not_contains "$F106A_OUT" "CANARY-EXECUTED" \
+  "f106: no suite runner executed the canary on the unknown-stack skip arm"
+
+# 2. Behavioral, python stack with pytest unreachable: same exit 3, canary
+# untouched. PATH carries only python3 and the shell utilities the template
+# needs, no pytest.
+DIR_F106B="$WORK/f106-python-no-pytest"
+mkdir -p "$DIR_F106B/.harness" "$DIR_F106B/tests" "$DIR_F106B/minibin"
+printf '{"stack": "python"}\n' > "$DIR_F106B/.harness/harness.json"
+cat > "$DIR_F106B/tests/test_canary.py" <<'PYEOF'
+raise SystemExit("CANARY-EXECUTED: a suite runner discovered this file")
+PYEOF
+cp "$TEMPLATES_DIR/init.sh.template" "$DIR_F106B/.harness/init.sh"
+chmod +x "$DIR_F106B/.harness/init.sh"
+ln -sf "$(command -v python3)" "$DIR_F106B/minibin/python3"
+# bash itself is on the list: a `PATH=minibin bash ...` invocation resolves
+# the bash BINARY with the overridden PATH too, not just the child's tools.
+for MINIBIN_TOOL in bash date dirname basename; do
+  ln -sf "$(command -v $MINIBIN_TOOL)" "$DIR_F106B/minibin/$MINIBIN_TOOL"
+done
+F106B_OUT=$( (cd "$DIR_F106B" && PATH="$DIR_F106B/minibin" bash .harness/init.sh focused_test tests/test_canary.py) 2>&1 )
+F106B_RC=$?
+if [ "$F106B_RC" -eq 3 ]; then
+  pass "f106: python-without-pytest focused_test exits exactly 3"
+else
+  fail "f106: python-without-pytest focused_test exited $F106B_RC, expected 3"
+fi
+assert_not_contains "$F106B_OUT" "CANARY-EXECUTED" \
+  "f106: no suite runner executed the canary when pytest is absent"
+
+# 3. Hook side: exit 3 accepts with a stderr note, records NO focused
+# baseline (F105 drop semantics), and a later real red run has nothing to
+# charge against.
+DIR_F106C="$WORK/f106-hook-skip"
+make_fixture "$DIR_F106C"
+install_hooks "$DIR_F106C"
+write_recorder_init "$DIR_F106C" "with-focused" 3
+OUT=$(run_hook "$DIR_F106C" verify-task-quality.sh "$F103_JSON" 2>&1 1>/dev/null)
+RC=$?
+assert_rc0 "$RC" "f106: a skipped focused stage still accepts the completion"
+assert_contains "$OUT" "skipped" "f106: the hook notes the skip on stderr"
+assert_not_contains "$(f103_baseline "$DIR_F106C")" '"focused:F002"' \
+  "f106: a skipped focused stage records no baseline entry"
+write_recorder_init "$DIR_F106C" "with-focused" 1
+run_hook "$DIR_F106C" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F106C")" = "0" ]; then
+  pass "f106: a real failure after skips does not increment off a fake green"
+else
+  fail "f106: expected 0 cycles after skip-then-fail, got $(f103_cycles "$DIR_F106C")"
+fi
+
+# 4. Distinctness both ways: exit 0 still records pass; nonzero-but-not-3
+# still rejects.
+DIR_F106D="$WORK/f106-distinct"
+make_fixture "$DIR_F106D"
+install_hooks "$DIR_F106D"
+write_recorder_init "$DIR_F106D" "with-focused" 0
+run_hook "$DIR_F106D" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F106D")" '"focused:F002": "pass"' \
+  "f106: exit 0 still records a genuine pass baseline"
+write_recorder_init "$DIR_F106D" "with-focused" 1
+OUT=$(run_hook "$DIR_F106D" verify-task-quality.sh "$F103_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f106: a non-3 nonzero exit still rejects as a real failure"
+
+# 5. Contract documentation: SKILL.md and the template header both name
+# exit 3.
+if grep -q "exit.*3" "$TEMPLATES_DIR/init.sh.template" \
+    && sed -n '1,20p' "$TEMPLATES_DIR/init.sh.template" | grep -qi "skip"; then
+  pass "f106: init.sh.template's header documents the skip exit code"
+else
+  fail "f106: init.sh.template's header does not document the skip exit code"
+fi
+if grep -qi "exits 3" "$REPO_ROOT/skills/harness-init/SKILL.md" \
+    || grep -qi "exit code 3" "$REPO_ROOT/skills/harness-init/SKILL.md"; then
+  pass "f106: SKILL.md's init.sh contract documents the skip exit code"
+else
+  fail "f106: SKILL.md's init.sh contract does not document the skip exit code"
+fi
+
+echo ""
 echo "== F104: full_test authoring guidance =="
 
 # The guidance is load-bearing (portage-curator jammed on a 99% aggregate

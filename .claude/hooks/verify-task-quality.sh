@@ -408,7 +408,16 @@ fi
 if [ -n "$TEST_FILE" ]; then
     if grep -v '^[[:space:]]*#' .harness/init.sh 2>/dev/null | grep -q "focused_test"; then
         echo "Stage 2: Focused test ($TEST_FILE)..." >&2
-        FOCUSED_OUTPUT=$(bash .harness/init.sh focused_test "$TEST_FILE" 2>&1) || {
+        FOCUSED_RC=0
+        FOCUSED_OUTPUT=$(bash .harness/init.sh focused_test "$TEST_FILE" 2>&1) || FOCUSED_RC=$?
+        if [ "$FOCUSED_RC" -eq 3 ]; then
+            # F106 skip protocol: exit 3 means "skipped, no per-file runner"
+            # -- not-run, never a fake green. FOCUSED_BASELINE_ARG stays at
+            # its F105 drop default, so no baseline is recorded and a later
+            # real failure has nothing stale to charge against.
+            echo "verify-task-quality: focused test skipped by init.sh (exit 3: no per-file runner" \
+                 "for this stack); accepting on smoke alone, no focused baseline recorded." >&2
+        elif [ "$FOCUSED_RC" -ne 0 ]; then
             echo "Task rejected: focused test failed ($TEST_FILE). Fix the failures before marking complete." >&2
             echo "" >&2
             echo "Focused test output (last 20 lines):" >&2
@@ -416,8 +425,9 @@ if [ -n "$TEST_FILE" ]; then
             _reject_bookkeeping "$SMOKE_KEY=pass" "focused:$FEATURE_ID=fail"
             _dashboard_log "block" "focused-test-failed" || true
             exit 2
-        }
-        FOCUSED_BASELINE_ARG="focused:$FEATURE_ID=pass"
+        else
+            FOCUSED_BASELINE_ARG="focused:$FEATURE_ID=pass"
+        fi
     else
         echo "verify-task-quality: this project's .harness/init.sh does not support focused_test;" \
              "skipping the focused stage ($TEST_FILE). Adopt the focused_test target to enable it." >&2
