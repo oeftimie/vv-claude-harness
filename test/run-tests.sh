@@ -279,6 +279,69 @@ assert_contains "$OUT" "Next claimable: F003" \
 assert_contains "$OUT" "$LONG_DESC_LEN chars total, see .harness/features.json for the full description" \
   "o (OVI-105, delegated path): the truncation marker names the real length and points at the full text"
 
+# F085: the Next-claimable line's scope field sat uncapped directly beside
+# the 200-char-capped description (382 chars real on this repo, 921 in this
+# adversarial fixture) -- same unbounded-field-in-orientation class as
+# F071/F079. Both delivery paths are exercised even though the formatter is
+# shared, guarding a future de-consolidation.
+LONG_SCOPE_JSON=$(python3 -c "
+import json
+paths = [f'src/deeply/nested/module_{i:02d}/submodule/implementation/' for i in range(12)]
+print(json.dumps(paths))")
+LONG_SCOPE_LAST="module_11"
+
+f085_set_scope() {
+  python3 - "$1/.harness/features.json" "$LONG_SCOPE_JSON" <<'PYEOF'
+import json
+import sys
+path, scope_json = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["scope"] = json.loads(scope_json)
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+}
+
+DIR_LONGSCOPE_FALLBACK="$WORK/f085-long-scope-fallback"
+make_fixture "$DIR_LONGSCOPE_FALLBACK"
+f085_set_scope "$DIR_LONGSCOPE_FALLBACK"
+OUT=$(run_session_start_with_root "$DIR_LONGSCOPE_FALLBACK" '{"source":"startup"}' "$REPO_ROOT")
+assert_contains "$OUT" "Next claimable: F003" \
+  "f085 (fallback path): the feature id still appears with an oversized scope"
+assert_contains "$OUT" "12 paths total, see .harness/features.json" \
+  "f085 (fallback path): the scope truncation marker names the path count and points at the full list"
+assert_not_contains "$OUT" "$LONG_SCOPE_LAST" \
+  "f085 (fallback path): the tail of a 921-char scope no longer reaches the orientation"
+NEXT_LINE=$(printf '%s\n' "$OUT" | grep "Next claimable: F003")
+if [ "${#NEXT_LINE}" -lt 450 ]; then
+  pass "f085 (fallback path): the Next-claimable line stays bounded (${#NEXT_LINE} chars)"
+else
+  fail "f085 (fallback path): the Next-claimable line is ${#NEXT_LINE} chars, expected under 450"
+fi
+
+DIR_LONGSCOPE_DELEGATED="$WORK/f085-long-scope-delegated"
+make_fixture "$DIR_LONGSCOPE_DELEGATED"
+mkdir -p "$DIR_LONGSCOPE_DELEGATED/.claude/hooks"
+cp "$TEMPLATES_DIR/harness_state.py.template" "$DIR_LONGSCOPE_DELEGATED/.claude/hooks/harness_state.py"
+chmod +x "$DIR_LONGSCOPE_DELEGATED/.claude/hooks/harness_state.py"
+f085_set_scope "$DIR_LONGSCOPE_DELEGATED"
+OUT=$(run_session_start_with_root "$DIR_LONGSCOPE_DELEGATED" '{"source":"startup"}' "$REPO_ROOT")
+assert_contains "$OUT" "12 paths total, see .harness/features.json" \
+  "f085 (delegated path): the scope truncation marker survives the harness_state.py path"
+assert_not_contains "$OUT" "$LONG_SCOPE_LAST" \
+  "f085 (delegated path): the oversized scope tail is truncated on the delegated path too"
+
+# A short scope must remain untouched -- no spurious marker on the common case.
+DIR_SHORTSCOPE="$WORK/f085-short-scope"
+make_fixture "$DIR_SHORTSCOPE"
+OUT=$(run_session_start_with_root "$DIR_SHORTSCOPE" '{"source":"startup"}' "$REPO_ROOT")
+assert_contains "$OUT" "(scope: src/badges/, tests/badges/)" \
+  "f085: a short scope still prints whole, no truncation marker"
+
 # OVI-105 (total output budget, 3rd task): SESSION_INCOMPLETE, claude-progress.txt,
 # and context_summary.md's Active Context are each line-count capped (head -15,
 # tail -12, head -20), which bounds nothing if the lines themselves are long. A
