@@ -4,6 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
+- **v5.4.0 released 2026-08-08 (F100-F104): quality-gate redesign.** TaskCompleted now runs smoke + the feature's own focused test (never full_test); full_test is enforced by the commit gate when a staged features.json flips a status to passing; correction_cycles counts only green-to-red transitions against a .harness/last_gate.json baseline; harness-init SKILL.md carries the "full_test must be satisfiable mid-project, aggregates as ratchets" authoring rule. Motivated by a portage-curator field report (v3.5.0 hooks) -- that project still needs `/plugin` update + `/harness-doctor --fix` in its own session to pick this up. F085/F086 remain the queued pending features.
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
 - Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues) is now COMPLETE, all shipped through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up), F018/OVI-66 (PR #103), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md), F020/OVI-59 (skills/harness-improve/SKILL.md), F021/OVI-60 (evals/README.md + evals/orientation-recovery.md, this session, filed F066+F067 as follow-ups). See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
 - Ovidiu, before going to sleep, gave a standing instruction to keep working through everything from Linear until done, without waiting for check-ins between features. THE ENTIRE OVI-44 EPIC IS NOW COMPLETE: all 21 original Linear sub-issues plus all 48 locally-discovered follow-ups (F023-F069), 69 features total, every one `passing` and merged (F063-F069 via PRs #108-#115; F067, F068, and F069 each needed 2 review rounds -- see their own Meta-Session entries for what each round caught).
@@ -1690,3 +1691,40 @@ session-end.sh at the next SessionStart.
   of this entry (CI in progress). Push/PR/merge authorization for this
   chain came from the same standing overnight instruction plus this
   repo's existing `gh pr merge` allowance (in place since PR #22).
+
+## Meta-Session 2026-08-08 (F099 session + F100-F104 gate redesign)
+- Covers two same-day sessions: the F099 dashboard-session-picker session
+  (PR #153, merged) which ended without writing its own retrospective
+  (flagged by the next SessionStart orientation), and the F100-F104
+  quality-gate redesign session that wrote this entry.
+- Scope accuracy: the F100-F104 chain was scoped top-down from a field
+  report (a portage-curator session running v3.5.0 hooks hit a jammed
+  completion gate and false correction_cycles increments) rather than
+  bottom-up from local discovery. Verifying every claim in the report
+  against the actual installed hooks BEFORE filing features paid off:
+  half the reported defects (fan-out attribution) were already fixed in
+  the current plugin, so the features filed were only the genuinely
+  current gaps -- per-task full_test cost, missing full_test enforcement
+  point, missing green-to-red baseline, missing authoring guidance.
+- Approach patterns: (1) A field report from an old plugin version is a
+  version-drift signal first and a bug report second -- check
+  harness.json's version and diff the installed hooks against current
+  templates before treating any reported defect as current. (2) The
+  repo's own gates exercised the new design live mid-session: F101's
+  tiered TaskCompleted gate cut this session's own task-completion wait
+  from ~1m45 to seconds, and F102's passing-flip commit gate ran the
+  full suite on each feature-passing commit. (3) A blunt structural pin
+  (grep for a forbidden call pattern) caught my own comment TEXT
+  containing the pattern -- pins match prose too; word comments around
+  them.
+- Discovery lineage: F103's gitignore work surfaced a latent
+  harness-doctor bug (fixes.py's REQUIRED_GITIGNORE_LINES mirror never
+  gained .harness/dashboard/, so --fix could not repair what doctor
+  reported) -- fixed in the same commit rather than filed, since the fix
+  was one line inside the file already being edited.
+- Model calibration: solo lead session, no subagents -- five sequential
+  small features on one branch with the lead running the full suite
+  after every change. Correction cycles: zero across all five (the
+  suite-red states were the planned TDD red phases, not rejections).
+- Test growth: 1877/1878 (one pre-existing environment-dependent
+  failure, fixed as F100) to 1933/1933 across five commits.

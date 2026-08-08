@@ -5,10 +5,18 @@
 # Exit code 2 = reject completion, send feedback to teammate
 #
 # Staged evaluation (inspired by HyperAgents):
-#   Stage 1: smoke_test — fast compile/syntax check
-#   Stage 2: full_test  — complete suite with coverage
-# Failing at Stage 1 avoids the cost of a full test run.
-# correction_cycles is incremented in features.json on any rejection.
+#   Stage 1: smoke_test   — fast compile/syntax check, always runs
+#   Stage 2: focused_test — the targeted feature's own recorded test_file,
+#            run only when the feature records one AND the project's init.sh
+#            supports the focused_test target (detected by grepping init.sh
+#            for the string; older init.sh scripts stay smoke-only)
+# full_test does NOT run here (F101): per-task full suites cost minutes per
+# checkpoint and let unrelated red (e.g. an aggregate coverage bar owned by a
+# sibling feature) jam every completion. The full suite is enforced where it
+# decides something: the passing-flip commit gate (commit-gate.sh, F102) and
+# the lead's session-end/synthesis runs.
+# correction_cycles is incremented in features.json only when the failing
+# stage was green on the previous recorded run (F103 -- see _gate_baseline).
 # Formatting: harness_state.py owns the write (indent=2, trailing newline,
 # atomic replace via a file lock + PID-suffixed tmp + os.replace, see its
 # own _with_file_lock/_write_atomic); only the targeted feature is modified.
@@ -169,11 +177,6 @@ fi
 # completion — useful for retrospectives and dynamic model selection.
 STATE_MODULE=".claude/hooks/harness_state.py"
 increment_correction_cycles() {
-    if [ -z "$FEATURE_ID" ]; then
-        echo "verify-task-quality: no feature_id in task metadata or subject;" \
-             "skipping the correction_cycles update." >&2
-        return 0
-    fi
     if [ ! -f ".harness/features.json" ]; then
         return 0
     fi
@@ -195,37 +198,102 @@ increment_correction_cycles() {
         || true
 }
 
-# Stage 1: Smoke test (fast compile/syntax check)
-echo "Stage 1: Smoke test..." >&2
-SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
-    echo "Task rejected: smoke test failed. Fix compilation errors before marking complete." >&2
-    echo "" >&2
-    echo "Smoke test output:" >&2
-    echo "$SMOKE_OUTPUT" | tail -20 >&2
-    increment_correction_cycles
-    _dashboard_log "block" "smoke-test-failed" || true
-    exit 2
+# F103: correction_cycles counts only green-to-red transitions. Every stage
+# outcome is recorded in .harness/last_gate.json (advisory baseline state,
+# gitignored; deliberately PERSISTS across sessions and is never cleared by
+# any hook -- a red gate left at session end must not charge the next
+# session's first completer); a failure increments only when that same
+# stage's previously recorded outcome was "pass". An unknown baseline -- first run, missing or
+# corrupt file -- records the verdict but never increments: a red gate
+# inherited from earlier work is not a correction cycle, and manufactured
+# attribution is worse than missing attribution (four false increments
+# observed live in portage-curator before this rule). Every key is
+# per-feature -- "smoke:<feature>", "focused:<feature>",
+# "coverage:<feature>" -- because the smoke stage tests the whole project:
+# a green smoke recorded by feature A's run must not arm the counter for
+# feature B, whose later smoke failure may be inherited breakage rather
+# than its own (PR #154 review, finding 3; under Agent Teams the
+# multi-feature interleave is the common case). An untargeted run (no
+# feature_id) keys plain "smoke", which no feature-targeted run consults.
+# Best-effort like the rest of the bookkeeping: the write is a single
+# atomic os.replace with no cross-process lock (a lost update between two
+# concurrent TaskCompleted hooks costs at most one advisory count, never a
+# verdict), and any failure here is noted on stderr without changing the
+# accept/reject decision.
+GATE_BASELINE_FILE=".harness/last_gate.json"
+SMOKE_KEY="smoke${FEATURE_ID:+:$FEATURE_ID}"
+_gate_baseline() {
+    # Args: one or more "key=outcome" pairs (outcome: pass|fail). Records
+    # every pair; prints "increment" when any fail pair transitioned from a
+    # recorded "pass".
+    python3 - "$GATE_BASELINE_FILE" "$@" <<'PYEOF'
+import json
+import os
+import sys
+
+path = sys.argv[1]
+pairs = sys.argv[2:]
+try:
+    with open(path) as fh:
+        data = json.load(fh)
+except Exception:
+    data = {}
+if not isinstance(data, dict):
+    data = {}
+increment = False
+for pair in pairs:
+    key, _, outcome = pair.rpartition("=")
+    if not key or outcome not in ("pass", "fail"):
+        continue
+    if outcome == "fail" and data.get(key) == "pass":
+        increment = True
+    data[key] = outcome
+tmp = f"{path}.{os.getpid()}.tmp"
+try:
+    # Serializes to a string first, never json.dump-to-file: the hs suite
+    # pins that direct-to-file dumping appears only in
+    # harness_state.py.template (features.json's single write path); this
+    # writes last_gate.json, a different file, but stays legible to that pin.
+    with open(tmp, "w") as fh:
+        fh.write(json.dumps(data, indent=2) + "\n")
+    os.replace(tmp, path)
+except OSError as exc:
+    print(f"verify-task-quality: could not write {path}: {exc}", file=sys.stderr)
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+if increment:
+    print("increment")
+PYEOF
 }
 
-# Stage 2: Full test suite
-echo "Stage 2: Full test suite..." >&2
-FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
-    echo "Task rejected: tests are failing. Fix the failures before marking complete." >&2
-    echo "" >&2
-    echo "Test output (last 20 lines):" >&2
-    echo "$FULL_OUTPUT" | tail -20 >&2
-    increment_correction_cycles
-    _dashboard_log "block" "tests-failing" || true
-    exit 2
+# Shared rejection bookkeeping: records the failing stage's verdict, notes a
+# missing feature_id (diagnostics for the blocked teammate -- their task
+# metadata or subject should carry one), and increments correction_cycles
+# only on a green-to-red transition for a targeted feature.
+_reject_bookkeeping() {
+    if [ -z "$FEATURE_ID" ]; then
+        echo "verify-task-quality: no feature_id in task metadata or subject;" \
+             "skipping the correction_cycles update." >&2
+    fi
+    BASELINE=$(_gate_baseline "$@" || true)
+    if [ "$BASELINE" = "increment" ] && [ -n "$FEATURE_ID" ]; then
+        increment_correction_cycles
+    fi
 }
 
-# Coverage target gate, claim-matched proof warning, and stale-in-progress
-# reminder all read .harness/features.json -- one load, one process, feeding
-# all three checks below, instead of three independent python3 subprocesses
-# each re-opening and re-parsing the same file.
+# Coverage target gate, claim-matched proof warning, stale-in-progress
+# reminder, and the focused-test lookup all read .harness/features.json --
+# one load, one process, feeding all four consumers, instead of independent
+# python3 subprocesses each re-opening and re-parsing the same file. Runs
+# BEFORE the test stages (F101) because Stage 2 needs the targeted feature's
+# test_file; nothing here mutates the file, so the early read changes no
+# behavior for the later checks.
 COVERAGE_RESULT=""
 PROOF_WARNING=""
 IN_PROGRESS=0
+TEST_FILE=""
 if [ -f ".harness/features.json" ]; then
     _CHECKS=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
 import json
@@ -241,6 +309,10 @@ match = next((f for f in features if f.get("id") == feature_id), None) if featur
 # number against its `coverage_target` (falls back to 95). Skipped entirely when
 # coverage isn't a number yet (e.g. this repo's own descriptive strings) --
 # proportional: don't punish projects without numeric coverage tooling.
+# Prints "pass" when the gate was evaluated and met (F103 needs "evaluated
+# and green" as a distinct outcome from "not evaluated" to record the
+# coverage baseline), "achieved|target" when evaluated and missed, "" when
+# not evaluated at all.
 coverage_result = ""
 if match is not None:
     coverage = match.get("coverage")
@@ -248,8 +320,7 @@ if match is not None:
         target = match.get("coverage_target")
         if not isinstance(target, int) or isinstance(target, bool):
             target = 95
-        if coverage < target:
-            coverage_result = f"{coverage}|{target}"
+        coverage_result = "pass" if coverage >= target else f"{coverage}|{target}"
 print(coverage_result)
 
 # Claim-matched proof: warn (never block) when this feature accepts with no
@@ -279,22 +350,83 @@ try:
 except Exception:
     in_progress = 0
 print(in_progress)
+
+# Focused-test lookup (F101): the targeted feature's own recorded test_file,
+# consumed by Stage 2. Empty when the feature is unmatched or records none.
+test_file = ""
+if match is not None:
+    candidate = match.get("test_file")
+    if isinstance(candidate, str):
+        test_file = candidate
+print(test_file)
 PYEOF
 )
     COVERAGE_RESULT=$(printf '%s\n' "$_CHECKS" | sed -n '1p')
     PROOF_WARNING=$(printf '%s\n' "$_CHECKS" | sed -n '2p')
     IN_PROGRESS=$(printf '%s\n' "$_CHECKS" | sed -n '3p')
+    TEST_FILE=$(printf '%s\n' "$_CHECKS" | sed -n '4p')
     [ -n "$IN_PROGRESS" ] || IN_PROGRESS=0
 fi
 
-if [ -n "$COVERAGE_RESULT" ]; then
+# Stage 1: Smoke test (fast compile/syntax check)
+echo "Stage 1: Smoke test..." >&2
+SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
+    echo "Task rejected: smoke test failed. Fix compilation errors before marking complete." >&2
+    echo "" >&2
+    echo "Smoke test output:" >&2
+    echo "$SMOKE_OUTPUT" | tail -20 >&2
+    _reject_bookkeeping "$SMOKE_KEY=fail"
+    _dashboard_log "block" "smoke-test-failed" || true
+    exit 2
+}
+
+# Stage 2: the targeted feature's own focused test. Support is detected by
+# grepping init.sh's NON-COMMENT lines for the target name rather than
+# probing an invocation -- an older init.sh answers an unknown target with
+# its own error exit, which would be indistinguishable from a real test
+# failure here. Comment lines are stripped first (PR #154 review, follow-up
+# 3): a script that only MENTIONS focused_test in a header comment would
+# otherwise be probed and have its unknown-target error read as a failure,
+# recreating exactly the confusion this detection exists to avoid.
+FOCUSED_PASS_ARG=""
+if [ -n "$TEST_FILE" ]; then
+    if grep -v '^[[:space:]]*#' .harness/init.sh 2>/dev/null | grep -q "focused_test"; then
+        echo "Stage 2: Focused test ($TEST_FILE)..." >&2
+        FOCUSED_OUTPUT=$(bash .harness/init.sh focused_test "$TEST_FILE" 2>&1) || {
+            echo "Task rejected: focused test failed ($TEST_FILE). Fix the failures before marking complete." >&2
+            echo "" >&2
+            echo "Focused test output (last 20 lines):" >&2
+            echo "$FOCUSED_OUTPUT" | tail -20 >&2
+            _reject_bookkeeping "$SMOKE_KEY=pass" "focused:$FEATURE_ID=fail"
+            _dashboard_log "block" "focused-test-failed" || true
+            exit 2
+        }
+        FOCUSED_PASS_ARG="focused:$FEATURE_ID=pass"
+    else
+        echo "verify-task-quality: this project's .harness/init.sh does not support focused_test;" \
+             "skipping the focused stage ($TEST_FILE). Adopt the focused_test target to enable it." >&2
+    fi
+fi
+
+COVERAGE_PASS_ARG=""
+if [ "$COVERAGE_RESULT" = "pass" ]; then
+    COVERAGE_PASS_ARG="coverage:$FEATURE_ID=pass"
+elif [ -n "$COVERAGE_RESULT" ]; then
     ACHIEVED="${COVERAGE_RESULT%%|*}"
     TARGET="${COVERAGE_RESULT##*|}"
     echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%." >&2
-    increment_correction_cycles
+    _reject_bookkeeping "$SMOKE_KEY=pass" \
+        ${FOCUSED_PASS_ARG:+"$FOCUSED_PASS_ARG"} \
+        "coverage:$FEATURE_ID=fail"
     _dashboard_log "block" "coverage-below-target" || true
     exit 2
 fi
+
+# Accept path: record every stage that actually ran as green, re-arming the
+# green-to-red attribution for the next rejection.
+_gate_baseline "$SMOKE_KEY=pass" \
+    ${FOCUSED_PASS_ARG:+"$FOCUSED_PASS_ARG"} \
+    ${COVERAGE_PASS_ARG:+"$COVERAGE_PASS_ARG"} >/dev/null || true
 
 IN_PROGRESS_NOTE=""
 if [ "$IN_PROGRESS" -gt 0 ]; then

@@ -83,8 +83,15 @@
 # line is silently missed (accepted: scanning overlapping windows to close
 # this adds real complexity for a line length no ordinary commit approaches).
 # No automated latency test exists for any hook in this repo; design target
-# (undocumented elsewhere) is under 1 second for a typical commit's staged diff,
-# since this hook blocks an interactive PreToolUse Bash call synchronously.
+# (undocumented elsewhere) is under 1 second for a typical commit's staged
+# diff, since this hook blocks an interactive PreToolUse Bash call
+# synchronously -- EXCEPT the passing-flip path (F102), which deliberately
+# runs the project's whole full_test inside the hook and takes as long as
+# that suite takes. The entire hook must finish inside Claude Code's
+# PreToolUse command-hook timeout (600s default): a full_test slower than
+# that kills the hook mid-run, and a killed PreToolUse hook ALLOWS the
+# command -- so a slow suite converts this gate to fail-open. The
+# harness-init SKILL.md authoring guidance names this ceiling.
 # Check 0's quote handling (mask_quotes/unquote_token) covers single/double/
 # ANSI-C quoting only; recursive or nested quoting is out of scope, consistent
 # with this repo's existing pattern-based-and-evadable-by-construction posture
@@ -140,7 +147,10 @@
 # command (`sudo git commit`, `env FOO=1 git commit`) -- accepted rather
 # than maintaining an open-ended wrapper/grouping-command allowlist (sudo,
 # doas, env, nice, timeout, brace groups, ...) in a way the closed
-# keyword/flag classification isn't. A `case ... in PATTERN) git commit
+# keyword/flag classification isn't. Since F102, an unrecognized commit
+# invocation bypasses the passing-flip full_test check too, not just the
+# secret scan -- same accepted residual, larger blast radius (PR #154
+# review, follow-up 6). A `case ... in PATTERN) git commit
 # ...` segment is also not recognized: the token immediately before "git"
 # is an arbitrary case pattern, not a fixed word to skip, so closing this
 # would need real shell parsing rather than one more set entry -- accepted,
@@ -385,6 +395,19 @@ REPAIR_STAGED = (
     "untracked file (e.g. .env, already gitignored)"
 )
 REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
+
+# Printed instead of a deny reason when the command IS a commit and every
+# check passed -- the shell wrapper keys the passing-flip full_test check
+# (F102) on these exact values. Never derived from user content: everything
+# this python prints on stdout is either one of this file's own reason
+# strings or one of these constants, so the wrapper's equality test cannot
+# collide with a commit message or staged diff. The AMEND variant tells the
+# wrapper to compare against HEAD^ instead of HEAD: `git commit --amend`
+# REPLACES HEAD, so a flip already recorded in the commit being amended
+# would be invisible against HEAD and an amend could rewrite a
+# feature-passing commit with broken code unverified (PR #154 review).
+COMMIT_NO_DENY_SENTINEL = "__COMMIT_NO_DENY__"
+COMMIT_NO_DENY_AMEND_SENTINEL = "__COMMIT_NO_DENY_AMEND__"
 
 STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
 
@@ -1141,6 +1164,26 @@ def has_staging_flag(tokens, views):
     return False
 
 
+def commit_is_amend(parsed):
+    # True when any commit segment carries a token resolving to --amend,
+    # using the same unique-prefix resolution real git applies (so --amen
+    # counts). Tokens after a bare "--" are pathspecs, never flags. A
+    # value-taking flag whose VALUE happens to be the literal string
+    # "--amend" (e.g. `git commit --message --amend`) false-positives here;
+    # the consequence is only an over-cautious HEAD^ comparison base (at
+    # worst a spurious full_test run), never a bypass, so the walk stays
+    # simple instead of duplicating has_staging_flag()'s value-skipping.
+    for tokens, sc, idx, _ in parsed:
+        if sc != "commit":
+            continue
+        for tok in tokens[idx + 1:]:
+            if tok == "--":
+                break
+            if tok.startswith("--") and _resolve_long_flag(tok) == "--amend":
+                return True
+    return False
+
+
 def check_compound_stage_and_commit(parsed):
     subcommands = [sc for _, sc, _, _ in parsed]
     has_stage = any(sc in ("add", "stage") for sc in subcommands)
@@ -1291,9 +1334,25 @@ def main():
         print(reason)
         return
 
+    sentinel = (
+        COMMIT_NO_DENY_AMEND_SENTINEL
+        if commit_is_amend(parsed)
+        else COMMIT_NO_DENY_SENTINEL
+    )
+
+    # Every non-deny exit below prints the sentinel instead of nothing (F102):
+    # the shell wrapper needs "this IS a commit and no check denied it" as a
+    # distinct outcome from "not a commit at all" to know when to run the
+    # passing-flip full_test check, and duplicating parse_command()'s
+    # tokenization in shell to answer that would reintroduce the exact
+    # regex-vs-tokenizer divergence this file's header documents. The
+    # fail-open paths (scan timeout, unexpected exception) print it too --
+    # they fail open for the SCANS, not for the commit-ness of the command,
+    # which parse_command() already established.
     try:
         diff_text = staged_diff(project_root)
         if diff_text is None:
+            print(sentinel)
             return
         lines = list(added_lines(diff_text))
         deadline = time.monotonic() + SCAN_TIME_BUDGET_SECONDS
@@ -1307,15 +1366,98 @@ def main():
             reason = find_style_violation(lines, deadline)
             if reason:
                 print(reason)
+                return
     except subprocess.TimeoutExpired:
+        print(sentinel)
         return
     except Exception as exc:
         print(type(exc).__name__, file=sys.stderr)
+        print(sentinel)
+        return
+    print(sentinel)
 
 
 main()
 PYEOF
 )
+
+# Passing-flip full_test gate (F102). Runs only when the python above
+# established "commit, no deny" via the sentinel. The comparison is INDEX
+# features.json vs HEAD features.json: a plain `git commit` commits the whole
+# index, and the compound-stage-and-commit check above already forbids
+# commit-time staging flags and pathspecs, so the index is exactly what this
+# commit will record. Fail-open on every infrastructure gap (unparseable
+# JSON, git errors, missing init.sh) -- this gate's documented posture; the
+# TaskCompleted gate is the one that fails closed on a missing init.sh.
+if [ "$DENY_REASON" = "__COMMIT_NO_DENY__" ] || [ "$DENY_REASON" = "__COMMIT_NO_DENY_AMEND__" ]; then
+    # An amend replaces HEAD, so its flip comparison base is HEAD^ -- the
+    # parent the amended commit will actually have. On a root-commit amend
+    # HEAD^ doesn't resolve, statuses() returns None, and every staged
+    # passing feature counts as flipped: over-caution, never a bypass.
+    FLIP_BASE="HEAD"
+    if [ "$DENY_REASON" = "__COMMIT_NO_DENY_AMEND__" ]; then
+        FLIP_BASE="HEAD^"
+    fi
+    DENY_REASON=""
+    FLIPPED=$(python3 - "$FLIP_BASE" <<'PYEOF'
+import json
+import subprocess
+import sys
+
+
+def statuses(ref):
+    try:
+        proc = subprocess.run(
+            ["git", "show", ref], capture_output=True, text=True, timeout=10
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    features = data.get("features", []) if isinstance(data, dict) else []
+    return {
+        f.get("id"): f.get("status")
+        for f in features
+        if isinstance(f, dict) and f.get("id")
+    }
+
+
+try:
+    # staged None (features.json untracked, removed from the index, or
+    # staged under a rename so the index has no blob at this exact path)
+    # skips the whole flip check -- fail-open, consistent with this gate's
+    # posture, and pinned by its own test: a project that stops tracking
+    # features.json has opted out of harness state tracking entirely, and
+    # denying every commit there would be a worse failure mode.
+    staged = statuses(":.harness/features.json")
+    if staged is not None:
+        head = statuses(f"{sys.argv[1]}:.harness/features.json") or {}
+        flipped = sorted(
+            fid for fid, status in staged.items()
+            if status == "passing" and head.get(fid) != "passing"
+        )
+        print(" ".join(flipped))
+except Exception:
+    pass
+PYEOF
+) || FLIPPED=""
+    if [ -n "$FLIPPED" ]; then
+        if [ -f ".harness/init.sh" ]; then
+            echo "commit-gate: staged features.json flips $FLIPPED to passing; running full_test..." >&2
+            FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
+                FULL_TAIL=$(printf '%s\n' "$FULL_OUTPUT" | tail -15)
+                deny_json "passing-flip-full-test-failed: this commit flips $FLIPPED to 'passing' but the full test suite fails. Fix the failures or keep the feature in-progress. Full test output (last 15 lines): $FULL_TAIL"
+            }
+        else
+            echo "commit-gate: staged features.json flips $FLIPPED to passing, but .harness/init.sh is" \
+                 "missing -- cannot verify full_test; allowing (fail-open)." >&2
+        fi
+    fi
+fi
 
 if [ -n "$DENY_REASON" ]; then
     deny_json "$DENY_REASON"

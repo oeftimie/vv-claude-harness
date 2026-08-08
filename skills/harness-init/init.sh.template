@@ -1,16 +1,27 @@
 #!/bin/bash
 # Harness init.sh - Multi-language build/test runner
-# Usage: .harness/init.sh [smoke_test|full_test]
+# Usage: .harness/init.sh [smoke_test|full_test|focused_test <test_file>]
 # Default: full_test
 #
-# smoke_test — fast compile/syntax check only (<15s). Used by the
-#              TaskCompleted hook as a first-pass rejection gate.
-# full_test  — complete test suite with coverage. Used by the lead's
-#              synthesis step and session-end validation.
+# smoke_test   — fast compile/syntax check only (<15s). Used by the
+#                TaskCompleted hook as a first-pass rejection gate.
+# focused_test — run exactly one test file (the TaskCompleted hook passes the
+#                targeted feature's recorded test_file). Bounded per-task
+#                regression check; never the full suite.
+# full_test    — complete test suite with coverage. Used by the lead's
+#                synthesis step, session-end validation, and the passing-flip
+#                commit gate. Must stay satisfiable mid-project (see the
+#                harness-init SKILL.md's authoring guidance).
 
 set -e
 
 TARGET=${1:-full_test}
+FOCUS_FILE="${2:-}"
+
+if [ "$TARGET" = "focused_test" ] && [ -z "$FOCUS_FILE" ]; then
+    echo "focused_test requires a test file argument" >&2
+    exit 2
+fi
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
@@ -52,6 +63,48 @@ fi
 echo "Stack: $STACK"
 echo "Target: $TARGET"
 echo ""
+
+# Focused runners intentionally avoid the `| tail` truncation the other
+# targets use: a pipeline's exit status is tail's, which would mask a test
+# failure under set -e, and a single file's output is small anyway.
+if [ "$TARGET" = "focused_test" ]; then
+    case "$STACK" in
+        swift|ios|macos)
+            echo "--- Swift Focused Test ($FOCUS_FILE) ---"
+            swift test --filter "$(basename "$FOCUS_FILE" .swift)"
+            ;;
+        node|nodejs|javascript|typescript)
+            echo "--- Node Focused Test ($FOCUS_FILE) ---"
+            npm test -- "$FOCUS_FILE"
+            ;;
+        python)
+            echo "--- Python Focused Test ($FOCUS_FILE) ---"
+            if command -v pytest &>/dev/null; then
+                pytest --tb=short "$FOCUS_FILE"
+            else
+                # Never fall back to the full suite here (this file's own
+                # contract: focused means one file) -- treat as pass like the
+                # unknown-stack arm; smoke_test already ran, and full_test
+                # still gates the passing flip.
+                echo "focused_test: pytest not available; no per-file runner -- treating as pass (smoke_test already ran)."
+            fi
+            ;;
+        go|golang)
+            echo "--- Go Focused Test ($FOCUS_FILE) ---"
+            go test "./$(dirname "$FOCUS_FILE")"
+            ;;
+        rust)
+            echo "--- Rust Focused Test ($FOCUS_FILE) ---"
+            cargo test --test "$(basename "$FOCUS_FILE" .rs)"
+            ;;
+        *)
+            echo "focused_test: no focused runner for stack '$STACK'; treating as pass (smoke_test already ran)."
+            ;;
+    esac
+    echo ""
+    echo "=== ${TARGET} Complete ==="
+    exit 0
+fi
 
 case "$STACK" in
     swift|ios|macos)

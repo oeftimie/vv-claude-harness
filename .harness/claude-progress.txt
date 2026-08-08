@@ -1050,3 +1050,23 @@
   entire original 8-issue external-review scope (OVI-103/104/105/106/107/108,
   OVI-81/82) plus all locally-discovered follow-ups from this arc.
 - Blockers: none.
+
+Session 2026-08-08 (F100-F104, v5.4.0 release):
+- Analyzed a field report from a portage-curator session running v3.5.0
+  hooks: per-task full_test jammed completion (workspace-aggregate 99%
+  bar unreachable mid-project) and fan-out correction_cycles increments.
+  Verified every claim against source first: the fan-out was already
+  fixed in v5 (PR #25); the rest were current defects.
+- F100: f012 stamp-test keychain isolation (suite was 1877/1878 on clean
+  main on any machine with a real vv-harness-stamp Keychain item).
+- F101: tiered TaskCompleted gate (smoke + focused_test, never full_test).
+- F102: commit-gate runs full_test when staged features.json flips a
+  status to passing; sentinel protocol between python checker and shell.
+- F103: green-to-red correction_cycles attribution via
+  .harness/last_gate.json; fixed latent doctor fixes.py gitignore mirror.
+- F104: authoring guidance pinned (satisfiable mid-project, ratchets).
+- Suite: 1933/1933. Released v5.4.0: plugin.json bump + CHANGELOG entry
+  (explicitly authorized by Ovidiu), README gate-description update.
+- Next: F085/F086 still pending. portage-curator needs /plugin update +
+  /harness-doctor --fix in its own session.
+- Blockers: none.

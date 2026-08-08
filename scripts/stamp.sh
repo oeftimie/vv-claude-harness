@@ -272,6 +272,9 @@ fi
 if ! grep -qxF '.harness/dashboard/' "$GITIGNORE"; then
   echo '.harness/dashboard/' >> "$GITIGNORE"
 fi
+if ! grep -qxF '.harness/last_gate.json' "$GITIGNORE"; then
+  echo '.harness/last_gate.json' >> "$GITIGNORE"
+fi
 
 echo "stamp.sh: mode=$MODE complete"
 if [ -n "$WRITTEN" ]; then
