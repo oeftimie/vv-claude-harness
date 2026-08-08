@@ -5338,7 +5338,6 @@ assert_contains "$OUT" "Run /harness-init" \
 DIR_HQ2="$WORK/ht-quality-targeted"
 make_fixture "$DIR_HQ2"
 install_hooks "$DIR_HQ2"
-printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ2/.harness/init.sh"
 python3 - "$DIR_HQ2/.harness/features.json" <<'PYEOF'
 import json
 import sys
@@ -5353,6 +5352,14 @@ with open(path, "w") as fh:
     json.dump(data, fh, indent=2)
     fh.write("\n")
 PYEOF
+# F103: a green baseline run first -- correction_cycles now counts only
+# green-to-red transitions, so a failure with no recorded baseline would
+# (correctly) not increment, which is covered by the f103 section's own
+# first-failure test.
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ2/.harness/init.sh"
+run_hook "$DIR_HQ2" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' >/dev/null 2>&1
+printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ2/.harness/init.sh"
 OUT=$(run_hook "$DIR_HQ2" verify-task-quality.sh \
   '{"task":{"metadata":{"feature_id":"F002"}}}' 2>&1)
 RC=$?
@@ -5384,9 +5391,9 @@ fi
 
 # F053: same stdout-discard-on-exit-2 mechanism as enforce-scope.sh/
 # verify-git-identity.sh -- pin it for this hook's own TaskCompleted
-# rejection too. Run AFTER the correction_cycles metrics check above (these
-# two extra invocations bump F002's correction_cycles further, which would
-# otherwise throw off that assertion's exact expected count).
+# rejection too. Run AFTER the correction_cycles metrics check above (under
+# F103's green-to-red rule these red-to-red repeats no longer bump the
+# count, but keeping the order means that assertion never depends on it).
 STDOUT_ONLY=$(run_hook "$DIR_HQ2" verify-task-quality.sh \
   '{"task":{"metadata":{"feature_id":"F002"}}}' 2>/dev/null)
 assert_empty "$STDOUT_ONLY" "ht (F053): smoke-test rejection writes nothing to stdout"
@@ -5441,7 +5448,6 @@ assert_contains "$OUT" "could not be safely extracted" \
 DIR_HQ3V="$WORK/ht-quality-valid-featureid"
 make_fixture "$DIR_HQ3V"
 install_hooks "$DIR_HQ3V"
-printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ3V/.harness/init.sh"
 python3 - "$DIR_HQ3V/.harness/features.json" <<'PYEOF'
 import json
 import sys
@@ -5457,6 +5463,11 @@ with open(path, "w") as fh:
     json.dump(data, fh, indent=2)
     fh.write("\n")
 PYEOF
+# F103: establish a green smoke baseline first so the failure below is a
+# genuine green-to-red transition and still increments as this test pins.
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ3V/.harness/init.sh"
+run_hook "$DIR_HQ3V" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' >/dev/null 2>&1
+printf '#!/bin/bash\nexit 1\n' > "$DIR_HQ3V/.harness/init.sh"
 OUT=$(run_hook "$DIR_HQ3V" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
 RC=$?
 assert_rc2 "$RC" "ht (F050): a valid feature_id still rejects (smoke test failed), exits 2"
@@ -6647,7 +6658,7 @@ make_healthy_doctor_fixture() {
   }
 }
 SETTINGSEOF
-  printf '.harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n.harness/dashboard/\n' > "$1/.gitignore"
+  printf '.harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n.harness/dashboard/\n.harness/last_gate.json\n' > "$1/.gitignore"
   cat >> "$1/.harness/context_summary.md" <<'CTXEOF'
 
 ## Cross-Cutting Concerns
@@ -7278,9 +7289,12 @@ with tempfile.TemporaryDirectory() as d:
 
     gitignore_path = os.path.join(d, ".gitignore")
     with open(gitignore_path, "w") as fh:
-        fh.write(".harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n")
+        fh.write(
+            ".harness/SESSION_INCOMPLETE\n.harness/features.json.lock\n"
+            ".harness/dashboard/\n.harness/last_gate.json\n"
+        )
     if fixes._append_gitignore(d, None) is not False:
-        errors.append("_append_gitignore should no-op when both required lines are present")
+        errors.append("_append_gitignore should no-op when every required line is present")
 
     # F077/OVI-107 follow-up (round-1 review of PR #123): a project with ONLY the
     # older SESSION_INCOMPLETE line must still get the newer lock line appended --
@@ -12117,11 +12131,12 @@ assert_contains "$F101B_LOG" "focused_test tests/hooks/test_hooks.py" \
 
 # 3. A focused-test failure rejects, on stderr, and increments the targeted
 # feature's correction_cycles -- same conventions as the smoke stage (F053:
-# nothing on stdout for a rejection).
+# nothing on stdout for a rejection). A green baseline run comes first
+# (F103: only a green-to-red transition increments), and the second failing
+# invocation below is red-to-red, so the count lands at exactly 1.
 DIR_F101C="$WORK/f101-focused-fails"
 make_fixture "$DIR_F101C"
 install_hooks "$DIR_F101C"
-write_recorder_init "$DIR_F101C" "with-focused" 1
 python3 - "$DIR_F101C/.harness/features.json" <<'PYEOF'
 import json
 import sys
@@ -12136,6 +12151,10 @@ with open(path, "w") as fh:
     json.dump(data, fh, indent=2)
     fh.write("\n")
 PYEOF
+write_recorder_init "$DIR_F101C" "with-focused" 0
+run_hook "$DIR_F101C" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F002"}}}' >/dev/null 2>&1
+write_recorder_init "$DIR_F101C" "with-focused" 1
 OUT=$(run_hook "$DIR_F101C" verify-task-quality.sh \
   '{"task":{"metadata":{"feature_id":"F002"}}}' 2>&1 1>/dev/null)
 RC=$?
@@ -12154,10 +12173,10 @@ for f in data['features']:
     if f['id'] == 'F002':
         print(f['correction_cycles'])
 ")
-if [ "$F101C_CYCLES" = "2" ]; then
-  pass "f101: focused-test rejections increment the targeted feature's correction_cycles"
+if [ "$F101C_CYCLES" = "1" ]; then
+  pass "f101: a focused-test rejection increments the targeted feature's correction_cycles once"
 else
-  fail "f101: expected correction_cycles 2 after two focused rejections, got $F101C_CYCLES"
+  fail "f101: expected correction_cycles 1 after green-then-two-red focused runs, got $F101C_CYCLES"
 fi
 
 # 4. test_file recorded but init.sh has no focused_test target: the stage is
@@ -12327,6 +12346,149 @@ RC=$?
 assert_rc0 "$RC" "f102: a flip without init.sh still exits 0 (fail-open)"
 assert_contains "$STDERR_F102F" "init.sh" \
   "f102: the skipped flip verification is noted on stderr"
+
+echo ""
+echo "== F103: green-to-red correction_cycles attribution =="
+
+# correction_cycles used to increment on ANY gate rejection, including
+# failures that pre-existed the task -- a red gate inherited from earlier
+# work counted against whoever completed the next task (four false
+# increments observed live in portage-curator). The hook now records the
+# last per-stage verdict in .harness/last_gate.json and increments only on
+# a green-to-red transition; an unknown baseline (first run, missing or
+# corrupt file) records the verdict but never increments.
+
+F103_JSON='{"task":{"metadata":{"feature_id":"F002"}}}'
+
+f103_cycles() {
+  python3 -c "
+import json
+data = json.load(open('$1/.harness/features.json'))
+for f in data['features']:
+    if f['id'] == 'F002':
+        print(f.get('correction_cycles', 0))
+"
+}
+
+f103_baseline() {
+  python3 -c "
+import json
+try:
+    data = json.load(open('$1/.harness/last_gate.json'))
+except Exception:
+    data = None
+print(json.dumps(data))
+"
+}
+
+# A. First-ever failure: no baseline, no increment; the verdict is recorded.
+DIR_F103A="$WORK/f103-first-fail"
+make_fixture "$DIR_F103A"
+install_hooks "$DIR_F103A"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_F103A/.harness/init.sh"
+OUT=$(run_hook "$DIR_F103A" verify-task-quality.sh "$F103_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f103: a first-ever smoke failure still rejects"
+if [ "$(f103_cycles "$DIR_F103A")" = "0" ]; then
+  pass "f103: a failure with no recorded baseline does not increment correction_cycles"
+else
+  fail "f103: expected 0 cycles on a first-ever failure, got $(f103_cycles "$DIR_F103A")"
+fi
+assert_contains "$(f103_baseline "$DIR_F103A")" '"smoke": "fail"' \
+  "f103: the first failure's verdict is recorded in last_gate.json"
+
+# B. Green baseline, then failure: increments exactly once; a repeat failure
+# (red-to-red) does not increment again.
+DIR_F103B="$WORK/f103-green-red"
+make_fixture "$DIR_F103B"
+install_hooks "$DIR_F103B"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_F103B/.harness/init.sh"
+run_hook "$DIR_F103B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F103B")" '"smoke": "pass"' \
+  "f103: an accepted run records smoke=pass as the baseline"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_F103B/.harness/init.sh"
+run_hook "$DIR_F103B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F103B")" = "1" ]; then
+  pass "f103: a green-to-red transition increments correction_cycles"
+else
+  fail "f103: expected 1 cycle after green-to-red, got $(f103_cycles "$DIR_F103B")"
+fi
+run_hook "$DIR_F103B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F103B")" = "1" ]; then
+  pass "f103: a red-to-red repeat failure does not increment again"
+else
+  fail "f103: expected cycles to stay 1 on red-to-red, got $(f103_cycles "$DIR_F103B")"
+fi
+
+# C. Recovery re-arms the counter: pass after the failure, then fail again.
+printf '#!/bin/bash\nexit 0\n' > "$DIR_F103B/.harness/init.sh"
+run_hook "$DIR_F103B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+printf '#!/bin/bash\nexit 1\n' > "$DIR_F103B/.harness/init.sh"
+run_hook "$DIR_F103B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F103B")" = "2" ]; then
+  pass "f103: a pass re-arms the baseline; the next failure increments again"
+else
+  fail "f103: expected 2 cycles after fail-pass-fail, got $(f103_cycles "$DIR_F103B")"
+fi
+
+# D. The focused stage keys its baseline per feature (focused:F002), so one
+# feature's red focused test cannot mask or trigger another's attribution.
+DIR_F103D="$WORK/f103-focused-key"
+make_fixture "$DIR_F103D"
+install_hooks "$DIR_F103D"
+write_recorder_init "$DIR_F103D" "with-focused" 0
+run_hook "$DIR_F103D" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F103D")" '"focused:F002": "pass"' \
+  "f103: a passing focused stage records its per-feature key"
+write_recorder_init "$DIR_F103D" "with-focused" 1
+run_hook "$DIR_F103D" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F103D")" = "1" ]; then
+  pass "f103: a green-to-red focused transition increments"
+else
+  fail "f103: expected 1 cycle after focused green-to-red, got $(f103_cycles "$DIR_F103D")"
+fi
+run_hook "$DIR_F103D" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F103D")" = "1" ]; then
+  pass "f103: a repeated focused failure does not increment again"
+else
+  fail "f103: expected cycles to stay 1 on focused red-to-red, got $(f103_cycles "$DIR_F103D")"
+fi
+
+# E. A corrupt last_gate.json is an unknown baseline: no crash, no
+# increment, and the file is rewritten as valid JSON with the new verdict.
+DIR_F103E="$WORK/f103-corrupt-baseline"
+make_fixture "$DIR_F103E"
+install_hooks "$DIR_F103E"
+printf '#!/bin/bash\nexit 1\n' > "$DIR_F103E/.harness/init.sh"
+printf 'NOT JSON AT ALL' > "$DIR_F103E/.harness/last_gate.json"
+OUT=$(run_hook "$DIR_F103E" verify-task-quality.sh "$F103_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f103: a corrupt baseline file does not break the gate"
+if [ "$(f103_cycles "$DIR_F103E")" = "0" ]; then
+  pass "f103: a corrupt baseline is treated as unknown -- no increment"
+else
+  fail "f103: expected 0 cycles with a corrupt baseline, got $(f103_cycles "$DIR_F103E")"
+fi
+assert_contains "$(f103_baseline "$DIR_F103E")" '"smoke": "fail"' \
+  "f103: the corrupt baseline is rewritten as valid JSON with the new verdict"
+
+# F. last_gate.json is transient session state: gitignored here, appended by
+# stamp.sh for new/upgraded projects, and required by harness-doctor.
+if grep -qxF '.harness/last_gate.json' "$REPO_ROOT/.gitignore"; then
+  pass "f103: this repo's .gitignore excludes .harness/last_gate.json"
+else
+  fail "f103: this repo's .gitignore is missing .harness/last_gate.json"
+fi
+if grep -q "last_gate.json" "$REPO_ROOT/scripts/stamp.sh"; then
+  pass "f103: stamp.sh appends the last_gate.json gitignore line"
+else
+  fail "f103: stamp.sh does not handle .harness/last_gate.json"
+fi
+if grep -q "last_gate.json" "$REPO_ROOT/skills/harness-doctor/doctor.py"; then
+  pass "f103: harness-doctor requires the last_gate.json gitignore line"
+else
+  fail "f103: harness-doctor does not know about .harness/last_gate.json"
+fi
 
 echo ""
 echo "== shell syntax =="

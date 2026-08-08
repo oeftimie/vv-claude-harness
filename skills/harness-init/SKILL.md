@@ -98,7 +98,7 @@ On success this writes, byte-verbatim or rendered from a template in
   below, so the stamp writes it directly rather than deferring it to a follow-up step;
   `git_identity` and `team_structure` are left `null` here (this step and Step 6,
   respectively, are the decisions that fill them).
-- `.gitignore` gains `.harness/SESSION_INCOMPLETE` and `.harness/features.json.lock`
+- `.gitignore` gains `.harness/SESSION_INCOMPLETE`, `.harness/features.json.lock`, `.harness/dashboard/`, and `.harness/last_gate.json`
   (OVI-107), both appended idempotently.
 
 **`.harness/features.json`'s feature schema.** Each feature's shape (the 16 fields, which

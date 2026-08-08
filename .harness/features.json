@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 104,
-  "passing": 95,
+  "passing": 96,
   "features": [
     {
       "id": "F001",
@@ -2873,7 +2873,7 @@
       "id": "F103",
       "description": "verify-task-quality.sh.template increments the targeted feature's correction_cycles on ANY gate rejection, including failures that pre-existed the task (a red gate inherited from earlier work counts against whoever completes the next task -- four false increments observed live in portage-curator). New rule: persist the last per-stage gate verdict (.harness/last_gate.json, gitignored) after every hook run; increment correction_cycles only when the failing stage was green (pass) on the previous recorded run. An unknown baseline (first run, missing/corrupt file) records the verdict but does not increment -- manufactured attribution is worse than missing attribution.",
       "priority": 103,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/verify-task-quality.sh.template",
         ".claude/hooks/verify-task-quality.sh",
@@ -2883,8 +2883,8 @@
       "depends_on": [],
       "assigned_to": "lead",
       "test_file": "test/run-tests.sh",
-      "coverage": null,
-      "notes": null,
+      "coverage": "TDD: 13 new/updated assertions written first and confirmed red (f103 section + three updated pins whose semantics changed). Covers: first-ever failure records smoke=fail but does not increment; a green baseline then failure increments exactly once; red-to-red repeats never increment; a pass re-arms the counter (fail-pass-fail = 2); the focused stage keys per-feature (focused:F002) with the same transition rules; a corrupt last_gate.json is an unknown baseline (no crash, no increment, rewritten valid); gitignore coverage for the new transient file in this repo's .gitignore, stamp.sh, and harness-doctor (both doctor.py and fixes.py). Full suite 1927/1927.",
+      "notes": "Baseline lives in .harness/last_gate.json (transient, gitignored): smoke is a global key, focused:<feature> and coverage:<feature> are per-feature. The write is a single atomic os.replace with no cross-process lock -- a lost update between concurrent TaskCompleted hooks costs at most one advisory count, never a verdict (documented best-effort, matching the hook's bookkeeping posture). Coverage evaluation now reports pass/fail/not-evaluated distinctly so a met target re-arms its baseline. Rejection bookkeeping centralized in _reject_bookkeeping (note-on-missing-feature_id preserved on every rejection). Surfaced and fixed a latent harness-doctor bug: fixes.py's REQUIRED_GITIGNORE_LINES mirror had never gained .harness/dashboard/, so doctor reported the missing line but --fix could not append it; both lists now carry all four entries.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],

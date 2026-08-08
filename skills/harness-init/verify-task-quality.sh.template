@@ -15,7 +15,8 @@
 # sibling feature) jam every completion. The full suite is enforced where it
 # decides something: the passing-flip commit gate (commit-gate.sh, F102) and
 # the lead's session-end/synthesis runs.
-# correction_cycles is incremented in features.json on any rejection.
+# correction_cycles is incremented in features.json only when the failing
+# stage was green on the previous recorded run (F103 -- see _gate_baseline).
 # Formatting: harness_state.py owns the write (indent=2, trailing newline,
 # atomic replace via a file lock + PID-suffixed tmp + os.replace, see its
 # own _with_file_lock/_write_atomic); only the targeted feature is modified.
@@ -176,11 +177,6 @@ fi
 # completion — useful for retrospectives and dynamic model selection.
 STATE_MODULE=".claude/hooks/harness_state.py"
 increment_correction_cycles() {
-    if [ -z "$FEATURE_ID" ]; then
-        echo "verify-task-quality: no feature_id in task metadata or subject;" \
-             "skipping the correction_cycles update." >&2
-        return 0
-    fi
     if [ ! -f ".harness/features.json" ]; then
         return 0
     fi
@@ -200,6 +196,82 @@ increment_correction_cycles() {
     # every call site of this function is on the exit-2 rejection path.
     python3 "$STATE_MODULE" increment-correction-cycles .harness/features.json "$FEATURE_ID" \
         || true
+}
+
+# F103: correction_cycles counts only green-to-red transitions. Every stage
+# outcome is recorded in .harness/last_gate.json (transient session state,
+# gitignored); a failure increments only when that same stage's previously
+# recorded outcome was "pass". An unknown baseline -- first run, missing or
+# corrupt file -- records the verdict but never increments: a red gate
+# inherited from earlier work is not a correction cycle, and manufactured
+# attribution is worse than missing attribution (four false increments
+# observed live in portage-curator before this rule). Keys: "smoke" is
+# global; "focused:<feature>" and "coverage:<feature>" are per-feature.
+# Best-effort like the rest of the bookkeeping: the write is a single
+# atomic os.replace with no cross-process lock (a lost update between two
+# concurrent TaskCompleted hooks costs at most one advisory count, never a
+# verdict), and any failure here is noted on stderr without changing the
+# accept/reject decision.
+GATE_BASELINE_FILE=".harness/last_gate.json"
+_gate_baseline() {
+    # Args: one or more "key=outcome" pairs (outcome: pass|fail). Records
+    # every pair; prints "increment" when any fail pair transitioned from a
+    # recorded "pass".
+    python3 - "$GATE_BASELINE_FILE" "$@" <<'PYEOF'
+import json
+import os
+import sys
+
+path = sys.argv[1]
+pairs = sys.argv[2:]
+try:
+    with open(path) as fh:
+        data = json.load(fh)
+except Exception:
+    data = {}
+if not isinstance(data, dict):
+    data = {}
+increment = False
+for pair in pairs:
+    key, _, outcome = pair.rpartition("=")
+    if not key or outcome not in ("pass", "fail"):
+        continue
+    if outcome == "fail" and data.get(key) == "pass":
+        increment = True
+    data[key] = outcome
+tmp = f"{path}.{os.getpid()}.tmp"
+try:
+    # Serializes to a string first, never json.dump-to-file: the hs suite
+    # pins that direct-to-file dumping appears only in
+    # harness_state.py.template (features.json's single write path); this
+    # writes last_gate.json, a different file, but stays legible to that pin.
+    with open(tmp, "w") as fh:
+        fh.write(json.dumps(data, indent=2) + "\n")
+    os.replace(tmp, path)
+except OSError as exc:
+    print(f"verify-task-quality: could not write {path}: {exc}", file=sys.stderr)
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+if increment:
+    print("increment")
+PYEOF
+}
+
+# Shared rejection bookkeeping: records the failing stage's verdict, notes a
+# missing feature_id (diagnostics for the blocked teammate -- their task
+# metadata or subject should carry one), and increments correction_cycles
+# only on a green-to-red transition for a targeted feature.
+_reject_bookkeeping() {
+    if [ -z "$FEATURE_ID" ]; then
+        echo "verify-task-quality: no feature_id in task metadata or subject;" \
+             "skipping the correction_cycles update." >&2
+    fi
+    BASELINE=$(_gate_baseline "$@" || true)
+    if [ "$BASELINE" = "increment" ] && [ -n "$FEATURE_ID" ]; then
+        increment_correction_cycles
+    fi
 }
 
 # Coverage target gate, claim-matched proof warning, stale-in-progress
@@ -228,6 +300,10 @@ match = next((f for f in features if f.get("id") == feature_id), None) if featur
 # number against its `coverage_target` (falls back to 95). Skipped entirely when
 # coverage isn't a number yet (e.g. this repo's own descriptive strings) --
 # proportional: don't punish projects without numeric coverage tooling.
+# Prints "pass" when the gate was evaluated and met (F103 needs "evaluated
+# and green" as a distinct outcome from "not evaluated" to record the
+# coverage baseline), "achieved|target" when evaluated and missed, "" when
+# not evaluated at all.
 coverage_result = ""
 if match is not None:
     coverage = match.get("coverage")
@@ -235,8 +311,7 @@ if match is not None:
         target = match.get("coverage_target")
         if not isinstance(target, int) or isinstance(target, bool):
             target = 95
-        if coverage < target:
-            coverage_result = f"{coverage}|{target}"
+        coverage_result = "pass" if coverage >= target else f"{coverage}|{target}"
 print(coverage_result)
 
 # Claim-matched proof: warn (never block) when this feature accepts with no
@@ -291,7 +366,7 @@ SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
     echo "" >&2
     echo "Smoke test output:" >&2
     echo "$SMOKE_OUTPUT" | tail -20 >&2
-    increment_correction_cycles
+    _reject_bookkeeping "smoke=fail"
     _dashboard_log "block" "smoke-test-failed" || true
     exit 2
 }
@@ -300,6 +375,7 @@ SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
 # grepping init.sh for the target name rather than probing an invocation --
 # an older init.sh answers an unknown target with its own error exit, which
 # would be indistinguishable from a real test failure here.
+FOCUSED_PASS_ARG=""
 if [ -n "$TEST_FILE" ]; then
     if grep -q "focused_test" .harness/init.sh 2>/dev/null; then
         echo "Stage 2: Focused test ($TEST_FILE)..." >&2
@@ -308,24 +384,36 @@ if [ -n "$TEST_FILE" ]; then
             echo "" >&2
             echo "Focused test output (last 20 lines):" >&2
             echo "$FOCUSED_OUTPUT" | tail -20 >&2
-            increment_correction_cycles
+            _reject_bookkeeping "smoke=pass" "focused:$FEATURE_ID=fail"
             _dashboard_log "block" "focused-test-failed" || true
             exit 2
         }
+        FOCUSED_PASS_ARG="focused:$FEATURE_ID=pass"
     else
         echo "verify-task-quality: this project's .harness/init.sh does not support focused_test;" \
              "skipping the focused stage ($TEST_FILE). Adopt the focused_test target to enable it." >&2
     fi
 fi
 
-if [ -n "$COVERAGE_RESULT" ]; then
+COVERAGE_PASS_ARG=""
+if [ "$COVERAGE_RESULT" = "pass" ]; then
+    COVERAGE_PASS_ARG="coverage:$FEATURE_ID=pass"
+elif [ -n "$COVERAGE_RESULT" ]; then
     ACHIEVED="${COVERAGE_RESULT%%|*}"
     TARGET="${COVERAGE_RESULT##*|}"
     echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%." >&2
-    increment_correction_cycles
+    _reject_bookkeeping "smoke=pass" \
+        ${FOCUSED_PASS_ARG:+"$FOCUSED_PASS_ARG"} \
+        "coverage:$FEATURE_ID=fail"
     _dashboard_log "block" "coverage-below-target" || true
     exit 2
 fi
+
+# Accept path: record every stage that actually ran as green, re-arming the
+# green-to-red attribution for the next rejection.
+_gate_baseline "smoke=pass" \
+    ${FOCUSED_PASS_ARG:+"$FOCUSED_PASS_ARG"} \
+    ${COVERAGE_PASS_ARG:+"$COVERAGE_PASS_ARG"} >/dev/null || true
 
 IN_PROGRESS_NOTE=""
 if [ "$IN_PROGRESS" -gt 0 ]; then
