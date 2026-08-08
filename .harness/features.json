@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 99,
-  "passing": 92,
+  "total_features": 104,
+  "passing": 93,
   "features": [
     {
       "id": "F001",
@@ -2799,6 +2799,121 @@
       "discovered_via": "Ovidiu, live session 2026-08-08: dashboard showed 'lead: DENIED' with no agent visualization while two real subagents were running in a different project (portage-curator); root-caused interactively, both failure modes reproduced and confirmed against real running servers/logs before filing.",
       "spec": null,
       "qa_binding": "manual"
+    },
+    {
+      "id": "F100",
+      "description": "test/run-tests.sh's f012 stamp mint+verify HMAC cross-check runs the extracted Step-7 snippet with PATH=/usr/bin:/bin, so the snippet's Keychain-first key resolution finds a real vv-harness-stamp Keychain item (present on any machine that has actually stamped an issue) and mints with that key instead of the fixture key file -- the suite is green on CI but red on the maintainer's own machine (1877/1878 on clean main, documented as pre-existing in F099's coverage record). The sibling resolution-chain scenarios already neutralize the Keychain via env -i PATH=$NOBIN_DIR; the cross-check must do the same.",
+      "priority": 100,
+      "status": "passing",
+      "scope": [
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": "lead",
+      "test_file": "test/run-tests.sh",
+      "coverage": "The failing assertion itself is the test (pre-existing red on clean main, 1877/1878, reproduced twice before the fix). Fix verified: full suite 1878/1878 after; the fixture now uses the identical nobin-PATH neutralization the sibling f012 resolution-chain scenarios already use, so the cross-check is deterministic on machines with and without a real vv-harness-stamp Keychain item.",
+      "notes": "Diagnosis verified mechanically before the fix: the same extracted snippet with the same 0600 fixture key file printed two different HMACs depending only on whether /usr/bin/security was reachable on PATH. Fix mirrors the existing nobin-dir neutralization and invokes python3 via sys.executable (a nobin PATH cannot resolve a bare command name). Suite 1878/1878 after.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "This session's own full_test run on clean main exited 1; root-caused to Keychain shadowing. Also recorded as a known pre-existing failure in F099's coverage notes.",
+      "spec": null,
+      "qa_binding": "integration"
+    },
+    {
+      "id": "F101",
+      "description": "verify-task-quality.sh.template runs `.harness/init.sh full_test` on every TaskCompleted (Stage 2), contradicting harness-init SKILL.md's own documented contract (smoke_test is 'used by the TaskCompleted hook as a fast first-pass gate'; full_test is for 'the lead at session end and synthesis phase') and costing minutes per checkpoint (1m42s in this repo; 5-15min in a Rust workspace with llvm-cov). New tiered contract: TaskCompleted runs smoke_test always, plus `.harness/init.sh focused_test <test_file>` when the targeted feature records a test_file AND the project's init.sh supports the focused_test target (detected mechanically); the unconditional full_test stage is removed. full_test's enforcement moves to the passing-flip commit gate (F102). init.sh.template gains a focused_test target; SKILL.md's init.sh contract documents it; this repo's own installed .claude/hooks copy is synced.",
+      "priority": 101,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/verify-task-quality.sh.template",
+        "skills/harness-init/init.sh.template",
+        "skills/harness-init/SKILL.md",
+        ".claude/hooks/verify-task-quality.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": "lead",
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": null,
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "Report from a portage-curator harness session (2026-08-08): its TaskCompleted gate ran the workspace-aggregate full_test per task (jamming completion mid-project) and fan-out-incremented correction_cycles for all in-progress features on bookkeeping tasks. Analysis in this repo confirmed the fan-out was fixed in PR #25 but the per-task full_test and missing attribution baseline are current-plugin defects.",
+      "spec": null,
+      "qa_binding": "integration"
+    },
+    {
+      "id": "F102",
+      "description": "With F101 removing full_test from TaskCompleted, full_test needs a mechanical enforcement point at the moment it actually decides something: a feature's status flipping to 'passing'. commit-gate.sh.template: when the staged .harness/features.json differs from HEAD by any feature whose status transitions to 'passing', run `bash .harness/init.sh full_test` and deny the commit on failure, naming the flipped feature(s) in the denial. No flip staged = no full_test run. This repo's own installed hook copy is synced.",
+      "priority": 102,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/commit-gate.sh.template",
+        ".claude/hooks/commit-gate.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": "lead",
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": null,
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "Report from a portage-curator harness session (2026-08-08): its TaskCompleted gate ran the workspace-aggregate full_test per task (jamming completion mid-project) and fan-out-incremented correction_cycles for all in-progress features on bookkeeping tasks. Analysis in this repo confirmed the fan-out was fixed in PR #25 but the per-task full_test and missing attribution baseline are current-plugin defects.",
+      "spec": null,
+      "qa_binding": "integration"
+    },
+    {
+      "id": "F103",
+      "description": "verify-task-quality.sh.template increments the targeted feature's correction_cycles on ANY gate rejection, including failures that pre-existed the task (a red gate inherited from earlier work counts against whoever completes the next task -- four false increments observed live in portage-curator). New rule: persist the last per-stage gate verdict (.harness/last_gate.json, gitignored) after every hook run; increment correction_cycles only when the failing stage was green (pass) on the previous recorded run. An unknown baseline (first run, missing/corrupt file) records the verdict but does not increment -- manufactured attribution is worse than missing attribution.",
+      "priority": 103,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/verify-task-quality.sh.template",
+        ".claude/hooks/verify-task-quality.sh",
+        "skills/harness-init/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": "lead",
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": null,
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "Report from a portage-curator harness session (2026-08-08): its TaskCompleted gate ran the workspace-aggregate full_test per task (jamming completion mid-project) and fan-out-incremented correction_cycles for all in-progress features on bookkeeping tasks. Analysis in this repo confirmed the fan-out was fixed in PR #25 but the per-task full_test and missing attribution baseline are current-plugin defects.",
+      "spec": null,
+      "qa_binding": "integration"
+    },
+    {
+      "id": "F104",
+      "description": "harness-init SKILL.md gives no guidance on what full_test may contain, so projects embed release-grade workspace-aggregate bars (portage-curator: hardcoded 99% aggregate Rust coverage) into the per-checkpoint gate, making completion unreachable mid-project whenever one feature's scope is below bar (an unreachable gate teaches agents to route around gates). Add authoring guidance to the init.sh contract section: full_test must be satisfiable mid-project; workspace-aggregate metrics belong in as never-decrease ratchets against a stored baseline; fixed high thresholds (e.g. 99%) are feature-scope or release gates, not per-checkpoint gates.",
+      "priority": 104,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": "lead",
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": null,
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "Report from a portage-curator harness session (2026-08-08): its TaskCompleted gate ran the workspace-aggregate full_test per task (jamming completion mid-project) and fan-out-incremented correction_cycles for all in-progress features on bookkeeping tasks. Analysis in this repo confirmed the fan-out was fixed in PR #25 but the per-task full_test and missing attribution baseline are current-plugin defects.",
+      "spec": null,
+      "qa_binding": "integration"
     }
   ]
 }

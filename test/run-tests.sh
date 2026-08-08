@@ -1954,9 +1954,16 @@ if ok_c or "rule5" not in reason_c:
 # Cross-check: the HMAC this python re-implementation computes must match the
 # HMAC the ACTUAL extracted Step 7 snippet computes for the identical inputs --
 # proves the verification logic above tests the real recipe, not a divergent one.
+# PATH points at the nobin dir (same neutralization as the resolution-chain
+# scenarios above): the snippet resolves the Keychain FIRST, so a PATH that can
+# reach /usr/bin/security lets a real vv-harness-stamp Keychain item shadow the
+# fixture key file and mint a different HMAC -- green on CI, red on any machine
+# that has actually stamped an issue. python3 goes by sys.executable since the
+# nobin PATH cannot resolve a bare command name.
 real_hmac = subprocess.run(
-    ["python3", os.path.join(work, "resolve_and_hmac.py"), spec_hash, base_sha, lane, repo],
-    env={"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", ""),
+    [sys.executable, os.path.join(work, "resolve_and_hmac.py"),
+     spec_hash, base_sha, lane, repo],
+    env={"PATH": os.path.join(work, "nobin"), "HOME": os.environ.get("HOME", ""),
          "VV_HARNESS_STAMP_KEY_FILE": key_path},
     capture_output=True, text=True,
 ).stdout.strip()
