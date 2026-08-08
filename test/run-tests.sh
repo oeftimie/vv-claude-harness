@@ -11893,6 +11893,25 @@ assert_not_contains "$DASHBOARD_HTML_SRC" ".badge-gate {" \
 assert_not_contains "$DASHBOARD_HTML_SRC" "animateIn(node)" \
   "dash-fe: SubagentStart handler no longer re-calls animateIn() on a node getOrCreateAgentNode already animated in"
 
+# F099: session picker -- the page fetches GET /sessions and lets the user
+# pick which session to watch instead of ever auto-connecting on load.
+assert_contains "$DASHBOARD_HTML_SRC" 'fetch("/sessions")' \
+  "dash-fe: page fetches F090's GET /sessions endpoint"
+assert_contains "$DASHBOARD_HTML_SRC" '"/events?session=" + encodeURIComponent(sessionId)' \
+  "dash-fe: page connects using F090's per-connection ?session= override, not a bare auto-selected /events"
+assert_contains "$DASHBOARD_HTML_SRC" 'pickerWatchEl.addEventListener("click"' \
+  "dash-fe: connecting is gated behind an explicit user click (Watch), never automatic"
+assert_not_contains "$DASHBOARD_HTML_SRC" "connect();" \
+  "dash-fe: the page no longer auto-connects with a bare zero-argument connect() call on load"
+assert_contains "$DASHBOARD_HTML_SRC" "function resetGraph()" \
+  "dash-fe: switching sessions resets the graph instead of blending two sessions' spokes together"
+assert_contains "$DASHBOARD_HTML_SRC" "if (currentSource) currentSource.close();" \
+  "dash-fe: switching sessions closes the previous EventSource connection"
+assert_contains "$DASHBOARD_HTML_SRC" "picker-project" \
+  "dash-fe: page shows the server's bound project so a cross-project server reuse is visible, not silent"
+assert_contains "$DASHBOARD_HTML_SRC" "No sessions yet" \
+  "dash-fe: page shows an explicit empty state when GET /sessions returns no logs"
+
 echo ""
 echo "== F092: /harness-dashboard skill =="
 

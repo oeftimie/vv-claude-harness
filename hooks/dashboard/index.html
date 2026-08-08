@@ -29,6 +29,15 @@
   harness; test/run-tests.sh adds only supplementary structural assertions
   (vendored animejs file present/non-empty/labeled, and this page's source
   containing the required event-type handler strings).
+
+  Session picker (F099): the page no longer guesses which session log to
+  tail. On load it fetches GET /sessions (F090) and shows every log under
+  the server's bound project, plus that project's own path -- a server
+  reused across projects (SKILL.md step 2's "Accepted limitation") is now
+  visible in this list instead of silently rendering someone else's
+  session. Connecting only happens when the user clicks Watch, against
+  /events?session=<id> (F090's per-connection override), never an
+  auto-selected default.
 -->
 <style>
   :root {
@@ -51,10 +60,51 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     height: 100%;
   }
+  #picker-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  #picker-project {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    opacity: 0.75;
+  }
+  #picker-select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 12px;
+    max-width: 320px;
+  }
+  #picker-bar button {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #picker-bar button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
   #graph {
     position: relative;
     width: 100%;
-    height: 100vh;
+    height: calc(100vh - 44px);
     overflow: hidden;
   }
   #spokes {
@@ -145,6 +195,13 @@
 </style>
 </head>
 <body>
+<div id="picker-bar">
+  <span id="picker-project">Project: (loading...)</span>
+  <select id="picker-select" hidden></select>
+  <span id="picker-empty" hidden>No sessions yet -- start a Claude Code session with VV_HARNESS_DASHBOARD=1 set.</span>
+  <button id="picker-watch" type="button" disabled>Watch</button>
+  <button id="picker-refresh" type="button">Refresh</button>
+</div>
 <div id="graph">
   <div id="spokes"></div>
   <div id="lead-node" class="node lead">
@@ -168,6 +225,12 @@
   var spokesEl = document.getElementById("spokes");
   var leadNodeEl = document.getElementById("lead-node");
   var leadBadgesEl = document.getElementById("lead-badges");
+
+  var pickerProjectEl = document.getElementById("picker-project");
+  var pickerSelectEl = document.getElementById("picker-select");
+  var pickerEmptyEl = document.getElementById("picker-empty");
+  var pickerWatchEl = document.getElementById("picker-watch");
+  var pickerRefreshEl = document.getElementById("picker-refresh");
 
   // agent_id -> { agentType, el, labelEl, badgesEl, isJudge }
   var agents = {};
@@ -395,9 +458,28 @@
     }
   }
 
-  function connect() {
-    var source = new EventSource("/events");
-    source.onmessage = function (evt) {
+  var currentSource = null;
+
+  function resetGraph() {
+    // Switching sessions must not blend the previous session's spokes into
+    // the new one -- drop every tracked agent and its DOM node, and clear
+    // whatever badges the lead picked up (e.g. a stale gate/permission
+    // badge from the session just left behind).
+    agents = {};
+    while (spokesEl.firstChild) spokesEl.removeChild(spokesEl.firstChild);
+    leadBadgesEl.innerHTML = "";
+  }
+
+  function connect(sessionId) {
+    // sessionId is always explicit here (F099) -- the picker below is the
+    // only caller, and it never invokes this before the user has chosen a
+    // session from GET /sessions. No bare "/events" auto-select fallback:
+    // guessing which log to tail is exactly what this feature removes.
+    if (currentSource) currentSource.close();
+    resetGraph();
+    var url = sessionId ? "/events?session=" + encodeURIComponent(sessionId) : "/events";
+    currentSource = new EventSource(url);
+    currentSource.onmessage = function (evt) {
       var payload;
       try {
         payload = JSON.parse(evt.data);
@@ -411,7 +493,48 @@
     // replay on (re)connect is the sole catch-up path either way.
   }
 
-  connect();
+  function populateSessions(data) {
+    pickerProjectEl.textContent = "Project: " + (data.project || "(unknown)");
+    var sessions = data.sessions || [];
+    var previousValue = pickerSelectEl.value;
+
+    pickerSelectEl.innerHTML = "";
+    sessions.forEach(function (s) {
+      var opt = document.createElement("option");
+      opt.value = s.session_id;
+      opt.textContent = s.session_id;
+      pickerSelectEl.appendChild(opt);
+    });
+
+    var hasSessions = sessions.length > 0;
+    pickerSelectEl.hidden = !hasSessions;
+    pickerEmptyEl.hidden = hasSessions;
+    pickerWatchEl.disabled = !hasSessions;
+
+    if (!hasSessions) return;
+    // Refreshing keeps the current selection if it's still listed (the
+    // user may be mid-review of a session that's no longer the newest);
+    // otherwise falls back to the most-recently-modified entry, which
+    // GET /sessions always returns first (F090's list_sessions()).
+    var stillListed = sessions.some(function (s) { return s.session_id === previousValue; });
+    pickerSelectEl.value = stillListed ? previousValue : sessions[0].session_id;
+  }
+
+  function loadSessions() {
+    fetch("/sessions")
+      .then(function (resp) { return resp.json(); })
+      .then(populateSessions)
+      .catch(function () {
+        pickerProjectEl.textContent = "Project: (failed to load session list)";
+      });
+  }
+
+  pickerWatchEl.addEventListener("click", function () {
+    if (pickerSelectEl.value) connect(pickerSelectEl.value);
+  });
+  pickerRefreshEl.addEventListener("click", loadSessions);
+
+  loadSessions();
 })();
 </script>
 </body>
