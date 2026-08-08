@@ -11,6 +11,10 @@ judge subagents, and permission prompts. This skill only launches the viewer --
 the actual event log is written by `hooks/dashboard-log.sh` (F088), and only when
 the session that produced it was started with `VV_HARNESS_DASHBOARD=1` set.
 
+The page itself picks which session to watch (F099): it lists every session log
+found under the server's project and lets you choose, rather than guessing one
+for you. See "Choosing which session to watch" below.
+
 ## Precondition: the session must have opted in
 
 The dashboard has nothing to show unless the session being watched set the env
@@ -44,11 +48,19 @@ Setting the variable after the session has already started has no effect.
    skip straight to step 4 (open the browser) -- do not start a second server.
 
    **Accepted limitation**: reusing an already-running server means it may still
-   be pointed at an older session if a newer one has started since that server
-   launched (F090's server resolves the most-recently-modified log once per
-   `/events` connection, not on a timer). This skill does not re-target a running
-   server at a newer session -- see "Stopping / restarting the server" below if
-   you need to point it at a different session.
+   be bound to a *different project* than the one you're watching from, if that
+   server was launched from elsewhere (nohup+disown -- F090's servers outlive
+   the session that started them, per step 3 below). This skill's own reuse
+   check only probes whether port 8765 is occupied, not which project the
+   listener is bound to. Unlike the older, narrower staleness this note used to
+   describe (a same-project server pointed at an older session), this is no
+   longer invisible: the page itself (F099) shows the bound project's path and
+   its full session list on load, so a mismatched project is immediately
+   obvious -- an empty or unfamiliar list means you're looking at someone
+   else's server. See "Choosing which session to watch" below for the normal,
+   same-project case (picking among several sessions needs no restart at all),
+   and "Stopping / restarting the server" if the reused server is genuinely the
+   wrong project's.
 
 3. **Start the server, detached at the OS level.** From the project root:
 
@@ -69,14 +81,35 @@ Setting the variable after the session has already started has no effect.
 
 4. **Open the page.** Run `open http://127.0.0.1:8765/` (macOS's `open` command --
    this repo's documented environment is macOS-specific). If `open` fails or isn't
-   available, print `http://127.0.0.1:8765/` for the user to open manually.
+   available, print `http://127.0.0.1:8765/` for the user to open manually. The
+   page loads with nothing connected yet -- see the next section for what happens
+   there.
 
-## If the most-recently-modified session already ended
+## Choosing which session to watch
 
-The dashboard will show that session's final state, frozen -- no more events will
-arrive. This is expected behavior under the most-recently-modified selection rule,
-not a failure: F090's server has no cross-session aggregation or historical replay
-beyond backlog-replay-on-connect for the one file it picked.
+The page never guesses (F099). On load it calls F090's `GET /sessions` and shows:
+
+- the project path the server is bound to (so a reused, wrong-project server --
+  see step 2's Accepted limitation above -- is obvious rather than silent), and
+- every `*.jsonl` session log found there, most-recently-modified first.
+
+Pick one from the dropdown and click **Watch** to connect. Nothing streams before
+that click -- there is no auto-selected default the way the underlying server's
+CLI/`/events`-with-no-query behavior still has (kept for non-browser callers, e.g.
+`curl`, but the page itself never relies on it).
+
+If the session you want isn't listed yet (it started after the page loaded), click
+**Refresh** to re-fetch the list -- this does not restart the server or lose your
+current connection. To watch a different session than the one you're already
+watching, just pick it and click Watch again: this closes the old connection and
+starts a fresh one against the newly selected log, with **no server restart
+needed at all** -- unlike a same-project session switch, which used to require
+killing and relaunching the server.
+
+If the session you picked already ended, the dashboard shows its final state,
+frozen -- no more events will arrive. This is expected, not a failure: F090's
+server has no cross-session aggregation or historical replay beyond
+backlog-replay-on-connect for whichever one file a connection is tailing.
 
 ## Stopping / restarting the server
 
@@ -88,9 +121,10 @@ lsof -i :8765          # find the PID listening on the dashboard port
 kill <PID>              # stop it
 ```
 
-To point the dashboard at a newer session, kill the old server first, then run
-`/harness-dashboard` again so it starts a fresh one (which will auto-select the
-now-most-recent log file).
+Restarting is no longer how you switch to a different session in the *same*
+project -- use the picker's Refresh + Watch instead (see above). Killing and
+re-running `/harness-dashboard` is still how you free the port entirely, or how
+you get off a server that turned out to be bound to the *wrong project*.
 
 ## Not auto-started
 
