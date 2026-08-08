@@ -2,6 +2,54 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.4.0 (2026-08-08)
+
+**Quality-gate redesign: full_test moves from every task completion to the moment a
+feature is declared done.** Motivated by a live report from a project running v3.5.0
+hooks, where the per-task full suite (minutes per checkpoint in a Rust workspace)
+embedded a workspace-aggregate 99% coverage bar that could never go green mid-project
+-- jamming every completion -- and where four bookkeeping task completions falsely
+incremented `correction_cycles` on unrelated in-progress features.
+
+1. **Tiered TaskCompleted gate (F101)** — `verify-task-quality.sh` now runs
+   `smoke_test` plus, when the targeted feature records a `test_file` and the
+   project's `init.sh` supports the new `focused_test <file>` target, exactly that
+   feature's own test file. The unconditional `full_test` stage is gone (it also
+   contradicted harness-init SKILL.md's own documented contract). Older `init.sh`
+   scripts without `focused_test` stay smoke-only with a stderr note — no breakage.
+   `init.sh.template` gains per-stack focused runners.
+2. **Passing-flip commit gate (F102)** — `commit-gate.sh` compares the staged
+   `.harness/features.json` against HEAD's and runs `full_test` whenever a feature's
+   status flips to `passing`, denying the commit (with the flipped IDs and the output
+   tail) on failure. Demotions, no-flip commits, and non-commit commands never
+   trigger it. This is where the full suite decides something, so this is where it
+   is enforced.
+3. **Green-to-red correction_cycles attribution (F103)** — the hook records each
+   stage verdict in `.harness/last_gate.json` (transient, gitignored) and increments
+   `correction_cycles` only when the failing stage was green on the previous
+   recorded run. A pre-existing red gate is not a correction cycle; an unknown
+   baseline records the verdict without incrementing. A pass re-arms the counter, so
+   the normal fail-fix-pass loop still counts each real correction exactly once.
+4. **full_test authoring guidance, pinned (F104)** — harness-init SKILL.md now
+   states the rule the jammed project violated: `full_test` must stay satisfiable
+   mid-project; workspace-aggregate metrics enter as never-decrease ratchets against
+   a stored baseline; fixed high thresholds belong to per-feature scope (the
+   existing `coverage_target` gate) or a release feature's acceptance criteria.
+5. **Deterministic stamp-test fixture (F100)** — the f012 HMAC cross-check ran the
+   extracted Step-7 snippet with `/usr/bin` on PATH, so a real `vv-harness-stamp`
+   Keychain item shadowed the fixture key file: the suite was green on CI but red on
+   any machine that had actually stamped an issue. The fixture now neutralizes the
+   Keychain the same way the sibling resolution-chain scenarios always did.
+
+Also fixed en route: `harness-doctor --fix`'s gitignore fixer had never learned the
+`.harness/dashboard/` line (`fixes.py`'s mirror of `REQUIRED_GITIGNORE_LINES` was out
+of sync with `doctor.py`'s), so doctor reported the gap but could not repair it. Both
+lists now carry all four entries, including the new `.harness/last_gate.json`.
+
+Projects initialized under older versions get all of this via `/plugin` update
+followed by `/harness-doctor --fix` (which re-copies the gate hooks and appends the
+new gitignore line).
+
 ### v5.3.0 (2026-08-07)
 
 **Promotes the dashboard chain (F088-F093, v5.2.0) out of alpha** — no functional
