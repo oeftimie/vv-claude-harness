@@ -161,7 +161,7 @@ Inspired by [Facebook Research's HyperAgents framework](https://arxiv.org/abs/26
 
 The practical effect: after 3-4 Agent Teams sessions, the harness knows which scopes are tricky (upgrade to Opus), which features need plan approval (past interface misunderstandings), and where to probe for hidden features at init time. Dynamic model selection uses these signals — `correction_cycles >= 3` in the same scope upgrades the next implementer from Sonnet to Opus.
 
-v3.3 also split `init.sh` test runs into two stages: a fast `smoke_test` (compile/syntax only, <15s) and `full_test` (complete suite). The TaskCompleted hook runs smoke first, rejecting compile errors before spending time on the full suite.
+v3.3 also split `init.sh` test runs into two stages: a fast `smoke_test` (compile/syntax only, <15s) and `full_test` (complete suite). The TaskCompleted hook ran smoke first, then the full suite on every completion (superseded in v5.4.0: the per-task stages are now smoke plus the targeted feature's own focused test, with the full suite enforced at the commit that flips a feature to passing).
 
 ### v3.4: Hook reliability fixes (April 2026)
 

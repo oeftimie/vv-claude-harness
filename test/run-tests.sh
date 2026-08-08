@@ -12491,6 +12491,47 @@ else
 fi
 
 echo ""
+echo "== F104: full_test authoring guidance =="
+
+# The guidance is load-bearing (portage-curator jammed on a 99% aggregate
+# bar inside full_test), so pin its presence structurally: a future SKILL.md
+# rewrite that drops it would otherwise fail silently.
+HI_SKILL_F104="$REPO_ROOT/skills/harness-init/SKILL.md"
+if grep -q 'satisfiable mid-project' "$HI_SKILL_F104"; then
+  pass "f104: SKILL.md carries the 'satisfiable mid-project' authoring rule"
+else
+  fail "f104: SKILL.md lost the 'satisfiable mid-project' authoring rule"
+fi
+if grep -qi 'ratchet' "$HI_SKILL_F104"; then
+  pass "f104: SKILL.md prescribes ratchets for aggregate metrics"
+else
+  fail "f104: SKILL.md no longer prescribes ratchets for aggregate metrics"
+fi
+if grep -q 'focused_test <test_file>' "$HI_SKILL_F104"; then
+  pass "f104: SKILL.md documents the focused_test target in the init.sh contract"
+else
+  fail "f104: SKILL.md does not document the focused_test target"
+fi
+if grep -q 'focused_test' "$TEMPLATES_DIR/init.sh.template"; then
+  pass "f104: init.sh.template implements the focused_test target"
+else
+  fail "f104: init.sh.template lacks the focused_test target"
+fi
+if grep -q 'It does NOT run on every task completion' "$HI_SKILL_F104"; then
+  pass "f104: SKILL.md states full_test does not run per task completion"
+else
+  fail "f104: SKILL.md no longer states full_test's per-task exclusion"
+fi
+# README describes the gate to prospective users -- it must describe the
+# tiered gate, not the retired full-suite-per-task behavior.
+if grep -qi 'passing' "$REPO_ROOT/README.md" \
+    && grep -qi 'focused' "$REPO_ROOT/README.md"; then
+  pass "f104: README describes the tiered gate (focused stage + passing-flip full run)"
+else
+  fail "f104: README still describes the retired per-task full-suite gate"
+fi
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do

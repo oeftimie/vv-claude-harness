@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 104,
-  "passing": 96,
+  "passing": 97,
   "features": [
     {
       "id": "F001",
@@ -2897,7 +2897,7 @@
       "id": "F104",
       "description": "harness-init SKILL.md gives no guidance on what full_test may contain, so projects embed release-grade workspace-aggregate bars (portage-curator: hardcoded 99% aggregate Rust coverage) into the per-checkpoint gate, making completion unreachable mid-project whenever one feature's scope is below bar (an unreachable gate teaches agents to route around gates). Add authoring guidance to the init.sh contract section: full_test must be satisfiable mid-project; workspace-aggregate metrics belong in as never-decrease ratchets against a stored baseline; fixed high thresholds (e.g. 99%) are feature-scope or release gates, not per-checkpoint gates.",
       "priority": 104,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/SKILL.md",
         "test/run-tests.sh"
@@ -2905,8 +2905,8 @@
       "depends_on": [],
       "assigned_to": "lead",
       "test_file": "test/run-tests.sh",
-      "coverage": null,
-      "notes": null,
+      "coverage": "6 structural assertions (f104 section): SKILL.md carries the 'satisfiable mid-project' rule, prescribes ratchets for aggregates, documents the focused_test target, and states full_test's per-task exclusion; init.sh.template implements focused_test; README describes the tiered gate rather than the retired per-task full suite. The README pin was red first (its v3.3 history section still described the old behavior in present tense); fixed with a past-tense superseded-in-v5.4.0 note that keeps the version history intact. Full suite 1933/1933.",
+      "notes": "The guidance prose itself landed alongside F101's SKILL.md contract edit (same section, one coherent read); this feature pins it structurally so a future SKILL.md rewrite cannot drop it silently, and swept the other shipped docs for stale per-task-full-suite claims (only README.md had one; harness-continue/agent-teams-protocol/conformance-tester references are session-end or diagnostic runs, still correct).",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
