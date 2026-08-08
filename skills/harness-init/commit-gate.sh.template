@@ -388,11 +388,16 @@ REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
 
 # Printed instead of a deny reason when the command IS a commit and every
 # check passed -- the shell wrapper keys the passing-flip full_test check
-# (F102) on this exact value. Never derived from user content: everything
+# (F102) on these exact values. Never derived from user content: everything
 # this python prints on stdout is either one of this file's own reason
-# strings or this constant, so the wrapper's equality test cannot collide
-# with a commit message or staged diff.
+# strings or one of these constants, so the wrapper's equality test cannot
+# collide with a commit message or staged diff. The AMEND variant tells the
+# wrapper to compare against HEAD^ instead of HEAD: `git commit --amend`
+# REPLACES HEAD, so a flip already recorded in the commit being amended
+# would be invisible against HEAD and an amend could rewrite a
+# feature-passing commit with broken code unverified (PR #154 review).
 COMMIT_NO_DENY_SENTINEL = "__COMMIT_NO_DENY__"
+COMMIT_NO_DENY_AMEND_SENTINEL = "__COMMIT_NO_DENY_AMEND__"
 
 STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
 
@@ -1149,6 +1154,26 @@ def has_staging_flag(tokens, views):
     return False
 
 
+def commit_is_amend(parsed):
+    # True when any commit segment carries a token resolving to --amend,
+    # using the same unique-prefix resolution real git applies (so --amen
+    # counts). Tokens after a bare "--" are pathspecs, never flags. A
+    # value-taking flag whose VALUE happens to be the literal string
+    # "--amend" (e.g. `git commit --message --amend`) false-positives here;
+    # the consequence is only an over-cautious HEAD^ comparison base (at
+    # worst a spurious full_test run), never a bypass, so the walk stays
+    # simple instead of duplicating has_staging_flag()'s value-skipping.
+    for tokens, sc, idx, _ in parsed:
+        if sc != "commit":
+            continue
+        for tok in tokens[idx + 1:]:
+            if tok == "--":
+                break
+            if tok.startswith("--") and _resolve_long_flag(tok) == "--amend":
+                return True
+    return False
+
+
 def check_compound_stage_and_commit(parsed):
     subcommands = [sc for _, sc, _, _ in parsed]
     has_stage = any(sc in ("add", "stage") for sc in subcommands)
@@ -1299,6 +1324,12 @@ def main():
         print(reason)
         return
 
+    sentinel = (
+        COMMIT_NO_DENY_AMEND_SENTINEL
+        if commit_is_amend(parsed)
+        else COMMIT_NO_DENY_SENTINEL
+    )
+
     # Every non-deny exit below prints the sentinel instead of nothing (F102):
     # the shell wrapper needs "this IS a commit and no check denied it" as a
     # distinct outcome from "not a commit at all" to know when to run the
@@ -1311,7 +1342,7 @@ def main():
     try:
         diff_text = staged_diff(project_root)
         if diff_text is None:
-            print(COMMIT_NO_DENY_SENTINEL)
+            print(sentinel)
             return
         lines = list(added_lines(diff_text))
         deadline = time.monotonic() + SCAN_TIME_BUDGET_SECONDS
@@ -1327,13 +1358,13 @@ def main():
                 print(reason)
                 return
     except subprocess.TimeoutExpired:
-        print(COMMIT_NO_DENY_SENTINEL)
+        print(sentinel)
         return
     except Exception as exc:
         print(type(exc).__name__, file=sys.stderr)
-        print(COMMIT_NO_DENY_SENTINEL)
+        print(sentinel)
         return
-    print(COMMIT_NO_DENY_SENTINEL)
+    print(sentinel)
 
 
 main()
@@ -1348,11 +1379,20 @@ PYEOF
 # commit will record. Fail-open on every infrastructure gap (unparseable
 # JSON, git errors, missing init.sh) -- this gate's documented posture; the
 # TaskCompleted gate is the one that fails closed on a missing init.sh.
-if [ "$DENY_REASON" = "__COMMIT_NO_DENY__" ]; then
+if [ "$DENY_REASON" = "__COMMIT_NO_DENY__" ] || [ "$DENY_REASON" = "__COMMIT_NO_DENY_AMEND__" ]; then
+    # An amend replaces HEAD, so its flip comparison base is HEAD^ -- the
+    # parent the amended commit will actually have. On a root-commit amend
+    # HEAD^ doesn't resolve, statuses() returns None, and every staged
+    # passing feature counts as flipped: over-caution, never a bypass.
+    FLIP_BASE="HEAD"
+    if [ "$DENY_REASON" = "__COMMIT_NO_DENY_AMEND__" ]; then
+        FLIP_BASE="HEAD^"
+    fi
     DENY_REASON=""
-    FLIPPED=$(python3 - <<'PYEOF'
+    FLIPPED=$(python3 - "$FLIP_BASE" <<'PYEOF'
 import json
 import subprocess
+import sys
 
 
 def statuses(ref):
@@ -1379,7 +1419,7 @@ def statuses(ref):
 try:
     staged = statuses(":.harness/features.json")
     if staged is not None:
-        head = statuses("HEAD:.harness/features.json") or {}
+        head = statuses(f"{sys.argv[1]}:.harness/features.json") or {}
         flipped = sorted(
             fid for fid, status in staged.items()
             if status == "passing" and head.get(fid) != "passing"

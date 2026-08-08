@@ -82,8 +82,11 @@ if [ "$TARGET" = "focused_test" ]; then
             if command -v pytest &>/dev/null; then
                 pytest --tb=short "$FOCUS_FILE"
             else
-                echo "pytest not available; running full unittest discovery instead."
-                python3 -m unittest discover
+                # Never fall back to the full suite here (this file's own
+                # contract: focused means one file) -- treat as pass like the
+                # unknown-stack arm; smoke_test already ran, and full_test
+                # still gates the passing flip.
+                echo "focused_test: pytest not available; no per-file runner -- treating as pass (smoke_test already ran)."
             fi
             ;;
         go|golang)

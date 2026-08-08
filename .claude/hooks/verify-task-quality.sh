@@ -199,20 +199,29 @@ increment_correction_cycles() {
 }
 
 # F103: correction_cycles counts only green-to-red transitions. Every stage
-# outcome is recorded in .harness/last_gate.json (transient session state,
-# gitignored); a failure increments only when that same stage's previously
-# recorded outcome was "pass". An unknown baseline -- first run, missing or
+# outcome is recorded in .harness/last_gate.json (advisory baseline state,
+# gitignored; deliberately PERSISTS across sessions and is never cleared by
+# any hook -- a red gate left at session end must not charge the next
+# session's first completer); a failure increments only when that same
+# stage's previously recorded outcome was "pass". An unknown baseline -- first run, missing or
 # corrupt file -- records the verdict but never increments: a red gate
 # inherited from earlier work is not a correction cycle, and manufactured
 # attribution is worse than missing attribution (four false increments
-# observed live in portage-curator before this rule). Keys: "smoke" is
-# global; "focused:<feature>" and "coverage:<feature>" are per-feature.
+# observed live in portage-curator before this rule). Every key is
+# per-feature -- "smoke:<feature>", "focused:<feature>",
+# "coverage:<feature>" -- because the smoke stage tests the whole project:
+# a green smoke recorded by feature A's run must not arm the counter for
+# feature B, whose later smoke failure may be inherited breakage rather
+# than its own (PR #154 review, finding 3; under Agent Teams the
+# multi-feature interleave is the common case). An untargeted run (no
+# feature_id) keys plain "smoke", which no feature-targeted run consults.
 # Best-effort like the rest of the bookkeeping: the write is a single
 # atomic os.replace with no cross-process lock (a lost update between two
 # concurrent TaskCompleted hooks costs at most one advisory count, never a
 # verdict), and any failure here is noted on stderr without changing the
 # accept/reject decision.
 GATE_BASELINE_FILE=".harness/last_gate.json"
+SMOKE_KEY="smoke${FEATURE_ID:+:$FEATURE_ID}"
 _gate_baseline() {
     # Args: one or more "key=outcome" pairs (outcome: pass|fail). Records
     # every pair; prints "increment" when any fail pair transitioned from a
@@ -366,7 +375,7 @@ SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
     echo "" >&2
     echo "Smoke test output:" >&2
     echo "$SMOKE_OUTPUT" | tail -20 >&2
-    _reject_bookkeeping "smoke=fail"
+    _reject_bookkeeping "$SMOKE_KEY=fail"
     _dashboard_log "block" "smoke-test-failed" || true
     exit 2
 }
@@ -384,7 +393,7 @@ if [ -n "$TEST_FILE" ]; then
             echo "" >&2
             echo "Focused test output (last 20 lines):" >&2
             echo "$FOCUSED_OUTPUT" | tail -20 >&2
-            _reject_bookkeeping "smoke=pass" "focused:$FEATURE_ID=fail"
+            _reject_bookkeeping "$SMOKE_KEY=pass" "focused:$FEATURE_ID=fail"
             _dashboard_log "block" "focused-test-failed" || true
             exit 2
         }
@@ -402,7 +411,7 @@ elif [ -n "$COVERAGE_RESULT" ]; then
     ACHIEVED="${COVERAGE_RESULT%%|*}"
     TARGET="${COVERAGE_RESULT##*|}"
     echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%." >&2
-    _reject_bookkeeping "smoke=pass" \
+    _reject_bookkeeping "$SMOKE_KEY=pass" \
         ${FOCUSED_PASS_ARG:+"$FOCUSED_PASS_ARG"} \
         "coverage:$FEATURE_ID=fail"
     _dashboard_log "block" "coverage-below-target" || true
@@ -411,7 +420,7 @@ fi
 
 # Accept path: record every stage that actually ran as green, re-arming the
 # green-to-red attribution for the next rejection.
-_gate_baseline "smoke=pass" \
+_gate_baseline "$SMOKE_KEY=pass" \
     ${FOCUSED_PASS_ARG:+"$FOCUSED_PASS_ARG"} \
     ${COVERAGE_PASS_ARG:+"$COVERAGE_PASS_ARG"} >/dev/null || true
 

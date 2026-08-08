@@ -12333,7 +12333,61 @@ assert_empty "$OUT" "f102: a non-commit command allows with empty stdout"
 F102E_LOG=$(cat "$DIR_F102E/.harness/invocations.log" 2>/dev/null)
 assert_not_contains "$F102E_LOG" "full_test" "f102: no full_test run for a non-commit command"
 
-# 6. A staged flip with no .harness/init.sh at all fails open with a stderr
+# 6. `git commit --amend` replaces HEAD, so the flip comparison must use
+# HEAD^ as its base: an amend that rewrites the very commit that flipped a
+# feature to passing must re-run full_test, or broken code can be amended
+# into a feature-passing commit unverified (PR #154 review, finding 1).
+DIR_F102G="$WORK/f102-amend"
+make_fixture "$DIR_F102G"
+install_hooks "$DIR_F102G"
+write_f102_init "$DIR_F102G" 1
+python3 - "$DIR_F102G/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["status"] = "passing"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+git -C "$DIR_F102G" add .harness/features.json
+git -C "$DIR_F102G" commit -q -m "mark F003 passing"
+OUT=$(run_commit_gate "$DIR_F102G" 'git commit --amend --no-edit')
+RC=$?
+assert_rc0 "$RC" "f102: an amend of a flip commit exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f102: an amend of a flip commit with red full_test denies"
+assert_contains "$OUT" "F003" "f102: the amend denial names the flipped feature"
+F102G_LOG=$(cat "$DIR_F102G/.harness/invocations.log" 2>/dev/null)
+assert_contains "$F102G_LOG" "full_test" "f102: full_test ran on the amend"
+
+# The same resolution rule real git uses: an unambiguous abbreviation of
+# --amend must be treated as an amend too.
+rm -f "$DIR_F102G/.harness/invocations.log"
+OUT=$(run_commit_gate "$DIR_F102G" 'git commit --amen --no-edit')
+assert_deny_json "$OUT" "f102: an abbreviated --amen amend is still caught"
+
+# Control: an amend whose HEAD^..HEAD delta contains no flip must not run
+# full_test -- the base moved, not the sensitivity.
+DIR_F102H="$WORK/f102-amend-noflip"
+make_fixture "$DIR_F102H"
+install_hooks "$DIR_F102H"
+write_f102_init "$DIR_F102H" 1
+echo "unrelated" > "$DIR_F102H/unrelated.txt"
+git -C "$DIR_F102H" add unrelated.txt
+git -C "$DIR_F102H" commit -q -m "unrelated change"
+OUT=$(run_commit_gate "$DIR_F102H" 'git commit --amend --no-edit')
+RC=$?
+assert_rc0 "$RC" "f102: a no-flip amend exits 0"
+assert_empty "$OUT" "f102: a no-flip amend allows with empty stdout"
+F102H_LOG=$(cat "$DIR_F102H/.harness/invocations.log" 2>/dev/null)
+assert_not_contains "$F102H_LOG" "full_test" "f102: no full_test run on a no-flip amend"
+
+# 7. A staged flip with no .harness/init.sh at all fails open with a stderr
 # note (matching this gate's documented fail-open posture for infrastructure
 # gaps; the TaskCompleted gate already fails closed on a missing init.sh).
 DIR_F102F="$WORK/f102-no-init"
@@ -12394,8 +12448,8 @@ if [ "$(f103_cycles "$DIR_F103A")" = "0" ]; then
 else
   fail "f103: expected 0 cycles on a first-ever failure, got $(f103_cycles "$DIR_F103A")"
 fi
-assert_contains "$(f103_baseline "$DIR_F103A")" '"smoke": "fail"' \
-  "f103: the first failure's verdict is recorded in last_gate.json"
+assert_contains "$(f103_baseline "$DIR_F103A")" '"smoke:F002": "fail"' \
+  "f103: the first failure's verdict is recorded under its per-feature smoke key"
 
 # B. Green baseline, then failure: increments exactly once; a repeat failure
 # (red-to-red) does not increment again.
@@ -12404,8 +12458,8 @@ make_fixture "$DIR_F103B"
 install_hooks "$DIR_F103B"
 printf '#!/bin/bash\nexit 0\n' > "$DIR_F103B/.harness/init.sh"
 run_hook "$DIR_F103B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
-assert_contains "$(f103_baseline "$DIR_F103B")" '"smoke": "pass"' \
-  "f103: an accepted run records smoke=pass as the baseline"
+assert_contains "$(f103_baseline "$DIR_F103B")" '"smoke:F002": "pass"' \
+  "f103: an accepted run records its per-feature smoke baseline"
 printf '#!/bin/bash\nexit 1\n' > "$DIR_F103B/.harness/init.sh"
 run_hook "$DIR_F103B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
 if [ "$(f103_cycles "$DIR_F103B")" = "1" ]; then
@@ -12469,8 +12523,41 @@ if [ "$(f103_cycles "$DIR_F103E")" = "0" ]; then
 else
   fail "f103: expected 0 cycles with a corrupt baseline, got $(f103_cycles "$DIR_F103E")"
 fi
-assert_contains "$(f103_baseline "$DIR_F103E")" '"smoke": "fail"' \
+assert_contains "$(f103_baseline "$DIR_F103E")" '"smoke:F002": "fail"' \
   "f103: the corrupt baseline is rewritten as valid JSON with the new verdict"
+
+# G. The smoke baseline is keyed per feature: another feature's green run
+# must not arm the counter for F002 -- a smoke failure inherited from
+# elsewhere charged to whoever completes next is the exact misattribution
+# this feature exists to close (PR #154 review, finding 3; under Agent
+# Teams the multi-feature interleave is the common case).
+DIR_F103G="$WORK/f103-smoke-per-feature"
+make_fixture "$DIR_F103G"
+install_hooks "$DIR_F103G"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_F103G/.harness/init.sh"
+run_hook "$DIR_F103G" verify-task-quality.sh \
+  '{"task":{"metadata":{"feature_id":"F003"}}}' >/dev/null 2>&1
+printf '#!/bin/bash\nexit 1\n' > "$DIR_F103G/.harness/init.sh"
+run_hook "$DIR_F103G" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F103G")" = "0" ]; then
+  pass "f103: another feature's green run does not arm F002's smoke baseline"
+else
+  fail "f103: F002 was charged for a failure it never had a green baseline for -- got $(f103_cycles "$DIR_F103G") cycles"
+fi
+# An untargeted run (no feature_id) keys plain "smoke" and arms nothing
+# feature-specific either.
+DIR_F103H="$WORK/f103-smoke-untargeted"
+make_fixture "$DIR_F103H"
+install_hooks "$DIR_F103H"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_F103H/.harness/init.sh"
+run_hook "$DIR_F103H" verify-task-quality.sh '{}' >/dev/null 2>&1
+printf '#!/bin/bash\nexit 1\n' > "$DIR_F103H/.harness/init.sh"
+run_hook "$DIR_F103H" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F103H")" = "0" ]; then
+  pass "f103: an anonymous green run does not arm any feature's smoke baseline"
+else
+  fail "f103: F002 was charged off an anonymous baseline -- got $(f103_cycles "$DIR_F103H") cycles"
+fi
 
 # F. last_gate.json is transient session state: gitignored here, appended by
 # stamp.sh for new/upgraded projects, and required by harness-doctor.
@@ -12516,6 +12603,16 @@ if grep -q 'focused_test' "$TEMPLATES_DIR/init.sh.template"; then
   pass "f104: init.sh.template implements the focused_test target"
 else
   fail "f104: init.sh.template lacks the focused_test target"
+fi
+# The focused block must never fall back to a full-suite run -- its own
+# header promises "never the full suite", and a whole-suite fallback would
+# silently reverse F101's cost rationale (PR #154 review, finding 2).
+FOCUSED_BLOCK=$(sed -n '/^if \[ "\$TARGET" = "focused_test" \]/,/^fi$/p' \
+  "$TEMPLATES_DIR/init.sh.template")
+if printf '%s' "$FOCUSED_BLOCK" | grep -q "discover"; then
+  fail "f104: init.sh.template's focused_test block falls back to full unittest discovery"
+else
+  pass "f104: init.sh.template's focused_test block never runs the full suite"
 fi
 if grep -q 'It does NOT run on every task completion' "$HI_SKILL_F104"; then
   pass "f104: SKILL.md states full_test does not run per task completion"

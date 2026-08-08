@@ -19,17 +19,21 @@ incremented `correction_cycles` on unrelated in-progress features.
    scripts without `focused_test` stay smoke-only with a stderr note — no breakage.
    `init.sh.template` gains per-stack focused runners.
 2. **Passing-flip commit gate (F102)** — `commit-gate.sh` compares the staged
-   `.harness/features.json` against HEAD's and runs `full_test` whenever a feature's
-   status flips to `passing`, denying the commit (with the flipped IDs and the output
-   tail) on failure. Demotions, no-flip commits, and non-commit commands never
-   trigger it. This is where the full suite decides something, so this is where it
-   is enforced.
+   `.harness/features.json` against the commit's actual parent (HEAD, or HEAD^ for
+   `git commit --amend`, which replaces HEAD — abbreviations like `--amen` resolve
+   the way real git resolves them) and runs `full_test` whenever a feature's status
+   flips to `passing`, denying the commit (with the flipped IDs and the output tail)
+   on failure. Demotions, no-flip commits, and non-commit commands never trigger it.
+   This is where the full suite decides something, so this is where it is enforced.
 3. **Green-to-red correction_cycles attribution (F103)** — the hook records each
-   stage verdict in `.harness/last_gate.json` (transient, gitignored) and increments
-   `correction_cycles` only when the failing stage was green on the previous
-   recorded run. A pre-existing red gate is not a correction cycle; an unknown
-   baseline records the verdict without incrementing. A pass re-arms the counter, so
-   the normal fail-fix-pass loop still counts each real correction exactly once.
+   stage verdict in `.harness/last_gate.json` (advisory baseline, gitignored,
+   deliberately persistent across sessions) and increments `correction_cycles` only
+   when the failing stage was green on the previous recorded run. Every key is
+   per-feature (`smoke:F00X`, `focused:F00X`, `coverage:F00X`), so one feature's
+   green run never arms the counter for another's inherited breakage. A
+   pre-existing red gate is not a correction cycle; an unknown baseline records the
+   verdict without incrementing; a pass re-arms the counter, and repeated failures
+   of an already-red stage are never double-counted.
 4. **full_test authoring guidance, pinned (F104)** — harness-init SKILL.md now
    states the rule the jammed project violated: `full_test` must stay satisfiable
    mid-project; workspace-aggregate metrics enter as never-decrease ratchets against
