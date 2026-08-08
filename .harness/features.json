@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 98,
+  "total_features": 99,
   "passing": 91,
   "features": [
     {
@@ -2772,6 +2772,31 @@
       "approaches_tried": [],
       "failure_reason": null,
       "discovered_via": "4-angle /simplify efficiency+simplification review of hooks/session-start.sh (2026-08-06)",
+      "spec": null
+    },
+    {
+      "id": "F099",
+      "description": "The live dashboard (F090's serve.py + F092's /harness-dashboard skill) picks which session to watch by guessing, with no verification, in two distinct ways -- both reproduced live in a real session on 2026-08-08. (1) Cross-project reuse: /harness-dashboard step 2 (skills/harness-dashboard/SKILL.md) reuses an already-listening 127.0.0.1:8765 server whenever the port is occupied, without checking that the running server's bound project matches the current one. hooks/dashboard/serve.py's find_project_root()/dashboard_dir is resolved once at server startup (main()) and never re-evaluated, so a server left running (nohup+disown, per SKILL.md step 3) from an earlier session in project A gets silently reused when /harness-dashboard is run from unrelated project B, serving project A's .harness/dashboard/ logs -- confirmed live: a server bound to this repo (vv-claude-harness) with only stale gitignored test-fixture logs (sess1.jsonl, argmaxsess.jsonl, from test/run-tests.sh) was reused by a session in a different project (portage-curator) actively running two forked subagents, rendering the dashboard's center node as 'lead: DENIED' (the fixture's last, agent_id-less PermissionDenied event) with zero visualization of the real, live activity. (2) Same-project multi-log race: even with the server correctly bound to the right project, serve.py's auto-select (session_id omitted -- SKILL.md step 3 never passes one) picks the most-recently-modified *.jsonl once per /events connection (F090's own notes: 'resolve the target log path once per /events connection, not once per server process'). When more than one *.jsonl exists under .harness/dashboard/ with mtimes close enough to race (e.g. an older or concurrent session's log still being touched), the connection can lock onto the wrong file for its entire lifetime -- confirmed live: portage-curator/.harness/dashboard/ held two real session logs (a 23.8KB, actively-growing log with SubagentStart/agent_id events for two real forked gap-analysis agents, and a 2.4KB near-idle log with no SubagentStart at all); the dashboard connected during the race window and rendered a bare 'lead' node with no spokes for the entire duration, indistinguishable from 'nothing is happening' even though real subagent activity was ongoing. Neither failure mode surfaces any warning -- both look identical to 'the dashboard is working correctly and nothing interesting is happening,' which is the actual harm: a user has no signal to know they're watching the wrong thing. SKILL.md's existing 'Accepted limitation' note (step 2) only documents a narrower same-project staleness case ('may still be pointed at an older session if a newer one has started since that server launched'); it does not cover either failure mode found here.",
+      "priority": 99,
+      "status": "pending",
+      "scope": [
+        "hooks/dashboard/serve.py",
+        "skills/harness-dashboard/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F090",
+        "F092"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "notes": "Not yet triaged into a release batch. Likely fix direction for both: have /harness-dashboard resolve and pass the *current* session's own session_id explicitly to serve.py (SKILL.md step 3 currently passes none, relying entirely on serve.py's implicit auto-select) rather than guessing via mtime, which removes gap (2) outright; for gap (1), the reuse-check (step 2) should additionally verify the already-listening server is bound to the current project (e.g. probe a lightweight endpoint reporting the server's resolved dashboard_dir/project root, or check the listening PID's cwd/CLAUDE_PROJECT_DIR) before deciding to reuse it, warning or restarting instead of silently opening the browser against a foreign project's data. Diagnosed and manually worked around live (killed the wrong-project server; restarted a fresh one pinned via an explicit session_id argument to serve.py) -- confirms the fix direction works, not yet made the skill's default behavior.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "Ovidiu, live session 2026-08-08: dashboard showed 'lead: DENIED' with no agent visualization while two real subagents were running in a different project (portage-curator); root-caused interactively, both failure modes reproduced and confirmed against real running servers/logs before filing.",
       "spec": null
     }
   ]
