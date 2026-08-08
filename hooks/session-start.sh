@@ -148,7 +148,16 @@ print_next_claimable_line() {
 import json, sys
 try:
     f = json.loads(sys.argv[1])
-    scope = ", ".join(f.get("scope") or [])
+    scope_list = f.get("scope") or []
+    scope = ", ".join(scope_list)
+    # F085: scope is the same unbounded-field class as description (382 chars
+    # real on this repo, 711 in the suite's 12-path adversarial fixture) --
+    # cap it with the same truncate-and-point treatment, marker naming the
+    # path count since the full value is a list, not prose.
+    SCOPE_LIMIT = 150
+    if len(scope) > SCOPE_LIMIT:
+        noun = "path" if len(scope_list) == 1 else "paths"
+        scope = scope[:SCOPE_LIMIT] + f"... ({len(scope_list)} {noun} total, see .harness/features.json)"
     desc = f.get("description", "")
     DESC_LIMIT = 200
     if len(desc) > DESC_LIMIT:

@@ -7,7 +7,11 @@
 #                TaskCompleted hook as a first-pass rejection gate.
 # focused_test — run exactly one test file (the TaskCompleted hook passes the
 #                targeted feature's recorded test_file). Bounded per-task
-#                regression check; never the full suite.
+#                regression check; never the full suite. Exit 0 strictly
+#                means the test EXECUTED and passed; exit 3 means "skipped,
+#                no per-file runner for this stack" (F106) -- the hook
+#                treats 3 as not-run (no baseline recorded) instead of a
+#                fake green, and anything else as a real failure.
 # full_test    — complete test suite with coverage. Used by the lead's
 #                synthesis step, session-end validation, and the passing-flip
 #                commit gate. Must stay satisfiable mid-project (see the
@@ -68,37 +72,59 @@ echo ""
 # targets use: a pipeline's exit status is tail's, which would mask a test
 # failure under set -e, and a single file's output is small anyway.
 if [ "$TARGET" = "focused_test" ]; then
+    # A recorded test_file that doesn't exist is an honest skip: no runner
+    # can execute it, and reaching a runner anyway can fake a green (go
+    # test on a package with no test files exits 0).
+    if [ ! -f "$FOCUS_FILE" ]; then
+        echo "focused_test: test file '$FOCUS_FILE' does not exist -- skipped (exit 3)."
+        exit 3
+    fi
+    # Exit 3 is RESERVED for this script's own explicit skip sites, so a
+    # runner's OWN exit 3 is remapped to 1: pytest exits 3 on
+    # INTERNALERROR, mocha exits the failing-test count -- passing a
+    # runner's 3 through verbatim would launder a real failure into an
+    # accepted skip at the TaskCompleted hook. Every other nonzero code
+    # passes through untouched.
+    run_focused() {
+        local rc=0
+        "$@" || rc=$?
+        if [ "$rc" -eq 3 ]; then
+            rc=1
+        fi
+        return $rc
+    }
     case "$STACK" in
         swift|ios|macos)
             echo "--- Swift Focused Test ($FOCUS_FILE) ---"
-            swift test --filter "$(basename "$FOCUS_FILE" .swift)"
+            run_focused swift test --filter "$(basename "$FOCUS_FILE" .swift)"
             ;;
         node|nodejs|javascript|typescript)
             echo "--- Node Focused Test ($FOCUS_FILE) ---"
-            npm test -- "$FOCUS_FILE"
+            run_focused npm test -- "$FOCUS_FILE"
             ;;
         python)
             echo "--- Python Focused Test ($FOCUS_FILE) ---"
             if command -v pytest &>/dev/null; then
-                pytest --tb=short "$FOCUS_FILE"
+                run_focused pytest --tb=short "$FOCUS_FILE"
             else
                 # Never fall back to the full suite here (this file's own
-                # contract: focused means one file) -- treat as pass like the
-                # unknown-stack arm; smoke_test already ran, and full_test
-                # still gates the passing flip.
-                echo "focused_test: pytest not available; no per-file runner -- treating as pass (smoke_test already ran)."
+                # contract: focused means one file), and never fake a green:
+                # exit 3 tells the hook this stage was skipped, not passed.
+                echo "focused_test: pytest not available; no per-file runner -- skipped (exit 3)."
+                exit 3
             fi
             ;;
         go|golang)
             echo "--- Go Focused Test ($FOCUS_FILE) ---"
-            go test "./$(dirname "$FOCUS_FILE")"
+            run_focused go test "./$(dirname "$FOCUS_FILE")"
             ;;
         rust)
             echo "--- Rust Focused Test ($FOCUS_FILE) ---"
-            cargo test --test "$(basename "$FOCUS_FILE" .rs)"
+            run_focused cargo test --test "$(basename "$FOCUS_FILE" .rs)"
             ;;
         *)
-            echo "focused_test: no focused runner for stack '$STACK'; treating as pass (smoke_test already ran)."
+            echo "focused_test: no focused runner for stack '$STACK' -- skipped (exit 3)."
+            exit 3
             ;;
     esac
     echo ""

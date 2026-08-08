@@ -279,6 +279,69 @@ assert_contains "$OUT" "Next claimable: F003" \
 assert_contains "$OUT" "$LONG_DESC_LEN chars total, see .harness/features.json for the full description" \
   "o (OVI-105, delegated path): the truncation marker names the real length and points at the full text"
 
+# F085: the Next-claimable line's scope field sat uncapped directly beside
+# the 200-char-capped description (382 chars real on this repo, 921 in this
+# adversarial fixture) -- same unbounded-field-in-orientation class as
+# F071/F079. Both delivery paths are exercised even though the formatter is
+# shared, guarding a future de-consolidation.
+LONG_SCOPE_JSON=$(python3 -c "
+import json
+paths = [f'src/deeply/nested/module_{i:02d}/submodule/implementation/' for i in range(12)]
+print(json.dumps(paths))")
+LONG_SCOPE_LAST="module_11"
+
+f085_set_scope() {
+  python3 - "$1/.harness/features.json" "$LONG_SCOPE_JSON" <<'PYEOF'
+import json
+import sys
+path, scope_json = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["scope"] = json.loads(scope_json)
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+}
+
+DIR_LONGSCOPE_FALLBACK="$WORK/f085-long-scope-fallback"
+make_fixture "$DIR_LONGSCOPE_FALLBACK"
+f085_set_scope "$DIR_LONGSCOPE_FALLBACK"
+OUT=$(run_session_start_with_root "$DIR_LONGSCOPE_FALLBACK" '{"source":"startup"}' "$REPO_ROOT")
+assert_contains "$OUT" "Next claimable: F003" \
+  "f085 (fallback path): the feature id still appears with an oversized scope"
+assert_contains "$OUT" "12 paths total, see .harness/features.json" \
+  "f085 (fallback path): the scope truncation marker names the path count and points at the full list"
+assert_not_contains "$OUT" "$LONG_SCOPE_LAST" \
+  "f085 (fallback path): the tail of a 921-char scope no longer reaches the orientation"
+NEXT_LINE=$(printf '%s\n' "$OUT" | grep "Next claimable: F003")
+if [ "${#NEXT_LINE}" -lt 450 ]; then
+  pass "f085 (fallback path): the Next-claimable line stays bounded (${#NEXT_LINE} chars)"
+else
+  fail "f085 (fallback path): the Next-claimable line is ${#NEXT_LINE} chars, expected under 450"
+fi
+
+DIR_LONGSCOPE_DELEGATED="$WORK/f085-long-scope-delegated"
+make_fixture "$DIR_LONGSCOPE_DELEGATED"
+mkdir -p "$DIR_LONGSCOPE_DELEGATED/.claude/hooks"
+cp "$TEMPLATES_DIR/harness_state.py.template" "$DIR_LONGSCOPE_DELEGATED/.claude/hooks/harness_state.py"
+chmod +x "$DIR_LONGSCOPE_DELEGATED/.claude/hooks/harness_state.py"
+f085_set_scope "$DIR_LONGSCOPE_DELEGATED"
+OUT=$(run_session_start_with_root "$DIR_LONGSCOPE_DELEGATED" '{"source":"startup"}' "$REPO_ROOT")
+assert_contains "$OUT" "12 paths total, see .harness/features.json" \
+  "f085 (delegated path): the scope truncation marker survives the harness_state.py path"
+assert_not_contains "$OUT" "$LONG_SCOPE_LAST" \
+  "f085 (delegated path): the oversized scope tail is truncated on the delegated path too"
+
+# A short scope must remain untouched -- no spurious marker on the common case.
+DIR_SHORTSCOPE="$WORK/f085-short-scope"
+make_fixture "$DIR_SHORTSCOPE"
+OUT=$(run_session_start_with_root "$DIR_SHORTSCOPE" '{"source":"startup"}' "$REPO_ROOT")
+assert_contains "$OUT" "(scope: src/badges/, tests/badges/)" \
+  "f085: a short scope still prints whole, no truncation marker"
+
 # OVI-105 (total output budget, 3rd task): SESSION_INCOMPLETE, claude-progress.txt,
 # and context_summary.md's Active Context are each line-count capped (head -15,
 # tail -12, head -20), which bounds nothing if the lines themselves are long. A
@@ -12620,6 +12683,316 @@ if grep -q "last_gate.json" "$REPO_ROOT/skills/harness-doctor/doctor.py"; then
   pass "f103: harness-doctor requires the last_gate.json gitignore line"
 else
   fail "f103: harness-doctor does not know about .harness/last_gate.json"
+fi
+
+echo ""
+echo "== F105: not-run baseline keys are dropped from last_gate.json =="
+
+# A baseline entry exists only while its stage is genuinely being
+# exercised: focused:<id> / coverage:<id> used to keep their last recorded
+# value forever once the stage stopped running (init.sh loses the
+# focused_test target, test_file dropped, coverage no longer numeric), so
+# an arbitrarily old pass could arm a green-to-red increment against a
+# check that no longer exists (PR #154 review, follow-up 1). Deletion
+# applies ONLY when the hook reached the stage and found it unconfigured --
+# a stage skipped because an EARLIER stage failed keeps its baseline, or
+# the normal fail-fix loop would lose attribution mid-cycle.
+
+# 1. Support loss drops the focused baseline, and its return with a red
+# run does not increment off the stale pass.
+DIR_F105A="$WORK/f105-support-loss"
+make_fixture "$DIR_F105A"
+install_hooks "$DIR_F105A"
+write_recorder_init "$DIR_F105A" "with-focused" 0
+run_hook "$DIR_F105A" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105A")" '"focused:F002": "pass"' \
+  "f105: precondition -- a green focused run records its baseline"
+write_recorder_init "$DIR_F105A" "no-focused" 0
+run_hook "$DIR_F105A" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_not_contains "$(f103_baseline "$DIR_F105A")" '"focused:F002"' \
+  "f105: losing focused_test support drops the feature's focused baseline"
+write_recorder_init "$DIR_F105A" "with-focused" 1
+run_hook "$DIR_F105A" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F105A")" = "0" ]; then
+  pass "f105: support returning with a red focused run does not increment off the stale pass"
+else
+  fail "f105: expected 0 cycles after support-loss then red return, got $(f103_cycles "$DIR_F105A")"
+fi
+
+# 2. Dropping the feature's test_file drops its focused baseline.
+DIR_F105B="$WORK/f105-testfile-loss"
+make_fixture "$DIR_F105B"
+install_hooks "$DIR_F105B"
+write_recorder_init "$DIR_F105B" "with-focused" 0
+run_hook "$DIR_F105B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+python3 - "$DIR_F105B/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["test_file"] = None
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+run_hook "$DIR_F105B" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_not_contains "$(f103_baseline "$DIR_F105B")" '"focused:F002"' \
+  "f105: removing the feature's test_file drops its focused baseline"
+
+# 3. Coverage leaving the numeric domain drops the coverage baseline; a
+# later numeric-below-target rejection then has no baseline to charge.
+DIR_F105C="$WORK/f105-coverage-loss"
+make_fixture "$DIR_F105C"
+install_hooks "$DIR_F105C"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_F105C/.harness/init.sh"
+set_f003_fields "$DIR_F105C" 'feature["coverage"] = 96
+        feature["correction_cycles"] = 0'
+F105C_JSON='{"task":{"metadata":{"feature_id":"F003"}}}'
+run_hook "$DIR_F105C" verify-task-quality.sh "$F105C_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105C")" '"coverage:F003": "pass"' \
+  "f105: precondition -- numeric coverage meeting target records its baseline"
+set_f003_fields "$DIR_F105C" 'feature["coverage"] = "descriptive prose, not a number"'
+run_hook "$DIR_F105C" verify-task-quality.sh "$F105C_JSON" >/dev/null 2>&1
+assert_not_contains "$(f103_baseline "$DIR_F105C")" '"coverage:F003"' \
+  "f105: non-numeric coverage drops the feature's coverage baseline"
+set_f003_fields "$DIR_F105C" 'feature["coverage"] = 50'
+run_hook "$DIR_F105C" verify-task-quality.sh "$F105C_JSON" >/dev/null 2>&1
+F105C_CYCLES=$(python3 -c "
+import json
+data = json.load(open('$DIR_F105C/.harness/features.json'))
+for f in data['features']:
+    if f['id'] == 'F003':
+        print(f.get('correction_cycles', 0))
+")
+if [ "$F105C_CYCLES" = "0" ]; then
+  pass "f105: a below-target rejection after the drop does not increment off the stale pass"
+else
+  fail "f105: expected 0 cycles after coverage-domain loss then rejection, got $F105C_CYCLES"
+fi
+
+# 4. An ordering skip is NOT a drop: a smoke failure must leave the focused
+# baseline intact for the fail-fix loop.
+DIR_F105D="$WORK/f105-ordering-skip"
+make_fixture "$DIR_F105D"
+install_hooks "$DIR_F105D"
+write_recorder_init "$DIR_F105D" "with-focused" 0
+run_hook "$DIR_F105D" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+printf '#!/bin/bash\nexit 1\n' > "$DIR_F105D/.harness/init.sh"
+run_hook "$DIR_F105D" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105D")" '"focused:F002": "pass"' \
+  "f105: a smoke failure preserves the focused baseline (ordering skip, not deconfiguration)"
+
+# 5. Same for coverage on a focused failure: the coverage stage was never
+# reached, so its baseline survives.
+DIR_F105E="$WORK/f105-focused-fail-keeps-coverage"
+make_fixture "$DIR_F105E"
+install_hooks "$DIR_F105E"
+write_recorder_init "$DIR_F105E" "with-focused" 0
+python3 - "$DIR_F105E/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["coverage"] = 96
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+run_hook "$DIR_F105E" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105E")" '"coverage:F002": "pass"' \
+  "f105: precondition -- coverage baseline recorded alongside a green focused run"
+write_recorder_init "$DIR_F105E" "with-focused" 1
+run_hook "$DIR_F105E" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F105E")" '"coverage:F002": "pass"' \
+  "f105: a focused failure preserves the unreached coverage baseline"
+
+echo ""
+echo "== F106: skip-vs-pass exit-code protocol for focused_test =="
+
+# init.sh's treat-as-pass focused arms (unknown stack, pytest absent) used
+# to exit 0 without running anything, indistinguishable from a real green --
+# so last_gate.json recorded focused:<id>=pass off a test that never ran
+# (PR #154 review, follow-up 4). Contract now: exit 3 means "skipped, no
+# runner"; the hook treats it as not-run (F105 drop semantics, stderr
+# note, still accepts); exit 0 is strictly "executed and passed".
+
+# 1. Behavioral, on the REAL template: unknown stack exits exactly 3.
+# This is the second, independent pin on the no-full-suite guarantee (the
+# f104 structural grep is the first): a canary test file that would fail
+# loudly under any suite runner proves nothing was discovered or executed
+# -- a fallback reappearing would surface as a wrong exit code or canary
+# output, not depend on one grep.
+DIR_F106A="$WORK/f106-unknown-stack"
+mkdir -p "$DIR_F106A/.harness" "$DIR_F106A/tests"
+printf '{"stack": "custom"}\n' > "$DIR_F106A/.harness/harness.json"
+cat > "$DIR_F106A/tests/test_canary.py" <<'PYEOF'
+raise SystemExit("CANARY-EXECUTED: a suite runner discovered this file")
+PYEOF
+cp "$TEMPLATES_DIR/init.sh.template" "$DIR_F106A/.harness/init.sh"
+chmod +x "$DIR_F106A/.harness/init.sh"
+F106A_OUT=$( (cd "$DIR_F106A" && bash .harness/init.sh focused_test tests/test_canary.py) 2>&1 )
+F106A_RC=$?
+if [ "$F106A_RC" -eq 3 ]; then
+  pass "f106: unknown-stack focused_test exits exactly 3 (skipped, no runner)"
+else
+  fail "f106: unknown-stack focused_test exited $F106A_RC, expected 3"
+fi
+assert_contains "$F106A_OUT" "skipped" "f106: the skip arm says it skipped"
+assert_not_contains "$F106A_OUT" "CANARY-EXECUTED" \
+  "f106: no suite runner executed the canary on the unknown-stack skip arm"
+
+# 2. Behavioral, python stack with pytest unreachable: same exit 3, canary
+# untouched. PATH carries only python3 and the shell utilities the template
+# needs, no pytest.
+DIR_F106B="$WORK/f106-python-no-pytest"
+mkdir -p "$DIR_F106B/.harness" "$DIR_F106B/tests" "$DIR_F106B/minibin"
+printf '{"stack": "python"}\n' > "$DIR_F106B/.harness/harness.json"
+cat > "$DIR_F106B/tests/test_canary.py" <<'PYEOF'
+raise SystemExit("CANARY-EXECUTED: a suite runner discovered this file")
+PYEOF
+cp "$TEMPLATES_DIR/init.sh.template" "$DIR_F106B/.harness/init.sh"
+chmod +x "$DIR_F106B/.harness/init.sh"
+ln -sf "$(command -v python3)" "$DIR_F106B/minibin/python3"
+# bash itself is on the list: a `PATH=minibin bash ...` invocation resolves
+# the bash BINARY with the overridden PATH too, not just the child's tools.
+for MINIBIN_TOOL in bash date dirname basename; do
+  ln -sf "$(command -v $MINIBIN_TOOL)" "$DIR_F106B/minibin/$MINIBIN_TOOL"
+done
+F106B_OUT=$( (cd "$DIR_F106B" && PATH="$DIR_F106B/minibin" bash .harness/init.sh focused_test tests/test_canary.py) 2>&1 )
+F106B_RC=$?
+if [ "$F106B_RC" -eq 3 ]; then
+  pass "f106: python-without-pytest focused_test exits exactly 3"
+else
+  fail "f106: python-without-pytest focused_test exited $F106B_RC, expected 3"
+fi
+assert_not_contains "$F106B_OUT" "CANARY-EXECUTED" \
+  "f106: no suite runner executed the canary when pytest is absent"
+
+# 3. Hook side: exit 3 accepts with a stderr note, records NO focused
+# baseline (F105 drop semantics), and a later real red run has nothing to
+# charge against.
+DIR_F106C="$WORK/f106-hook-skip"
+make_fixture "$DIR_F106C"
+install_hooks "$DIR_F106C"
+write_recorder_init "$DIR_F106C" "with-focused" 3
+OUT=$(run_hook "$DIR_F106C" verify-task-quality.sh "$F103_JSON" 2>&1 1>/dev/null)
+RC=$?
+assert_rc0 "$RC" "f106: a skipped focused stage still accepts the completion"
+assert_contains "$OUT" "skipped" "f106: the hook notes the skip on stderr"
+assert_not_contains "$(f103_baseline "$DIR_F106C")" '"focused:F002"' \
+  "f106: a skipped focused stage records no baseline entry"
+write_recorder_init "$DIR_F106C" "with-focused" 1
+run_hook "$DIR_F106C" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+if [ "$(f103_cycles "$DIR_F106C")" = "0" ]; then
+  pass "f106: a real failure after skips does not increment off a fake green"
+else
+  fail "f106: expected 0 cycles after skip-then-fail, got $(f103_cycles "$DIR_F106C")"
+fi
+
+# 4. Distinctness both ways: exit 0 still records pass; nonzero-but-not-3
+# still rejects.
+DIR_F106D="$WORK/f106-distinct"
+make_fixture "$DIR_F106D"
+install_hooks "$DIR_F106D"
+write_recorder_init "$DIR_F106D" "with-focused" 0
+run_hook "$DIR_F106D" verify-task-quality.sh "$F103_JSON" >/dev/null 2>&1
+assert_contains "$(f103_baseline "$DIR_F106D")" '"focused:F002": "pass"' \
+  "f106: exit 0 still records a genuine pass baseline"
+write_recorder_init "$DIR_F106D" "with-focused" 1
+OUT=$(run_hook "$DIR_F106D" verify-task-quality.sh "$F103_JSON" 2>&1)
+RC=$?
+assert_rc2 "$RC" "f106: a non-3 nonzero exit still rejects as a real failure"
+
+# 5. Contract documentation: SKILL.md and the template header both name
+# exit 3.
+if grep -q "skipped (exit 3)" "$TEMPLATES_DIR/init.sh.template" \
+    && sed -n '1,25p' "$TEMPLATES_DIR/init.sh.template" | grep -qi "skip"; then
+  pass "f106: init.sh.template's header documents the skip exit code"
+else
+  fail "f106: init.sh.template's header does not document the skip exit code"
+fi
+
+# 6. Exit 3 is RESERVED (PR #156 review, HIGH-1): a REAL runner exiting 3
+# (pytest INTERNALERROR is exactly 3; mocha exits the failing-test count)
+# must be remapped to a failure, never read as this script's own skip
+# sentinel -- without the remap, the hook accepts the failure as a skip
+# and deletes the feature's baseline. Fake pytest on PATH exits 3.
+DIR_F106E="$WORK/f106-runner-exit-3"
+mkdir -p "$DIR_F106E/.harness" "$DIR_F106E/tests" "$DIR_F106E/minibin"
+printf '{"stack": "python"}\n' > "$DIR_F106E/.harness/harness.json"
+printf 'assert True\n' > "$DIR_F106E/tests/test_real.py"
+cp "$TEMPLATES_DIR/init.sh.template" "$DIR_F106E/.harness/init.sh"
+chmod +x "$DIR_F106E/.harness/init.sh"
+for MINIBIN_TOOL in bash date dirname basename; do
+  ln -sf "$(command -v $MINIBIN_TOOL)" "$DIR_F106E/minibin/$MINIBIN_TOOL"
+done
+ln -sf "$(command -v python3)" "$DIR_F106E/minibin/python3"
+printf '#!/bin/bash\nexit 3\n' > "$DIR_F106E/minibin/pytest"
+chmod +x "$DIR_F106E/minibin/pytest"
+( cd "$DIR_F106E" && PATH="$DIR_F106E/minibin" bash .harness/init.sh focused_test tests/test_real.py ) >/dev/null 2>&1
+F106E_RC=$?
+if [ "$F106E_RC" -eq 1 ]; then
+  pass "f106: a real runner's own exit 3 is remapped to 1 -- never laundered into a skip"
+else
+  fail "f106: runner exit 3 passed through as $F106E_RC, expected remap to 1"
+fi
+# Other runner failure codes pass through untouched.
+printf '#!/bin/bash\nexit 5\n' > "$DIR_F106E/minibin/pytest"
+( cd "$DIR_F106E" && PATH="$DIR_F106E/minibin" bash .harness/init.sh focused_test tests/test_real.py ) >/dev/null 2>&1
+F106E_RC5=$?
+if [ "$F106E_RC5" -eq 5 ]; then
+  pass "f106: a runner's non-3 failure code passes through untouched"
+else
+  fail "f106: runner exit 5 became $F106E_RC5, expected passthrough"
+fi
+
+# 7. A recorded test_file that does not exist is an honest skip (PR #156
+# review, HIGH-2): no runner can execute it, and exiting 0 would record a
+# fake green baseline (go test on a no-test package exits 0 today).
+printf '#!/bin/bash\nexit 0\n' > "$DIR_F106E/minibin/pytest"
+chmod +x "$DIR_F106E/minibin/pytest"
+F106_MISSING_OUT=$( (cd "$DIR_F106E" && PATH="$DIR_F106E/minibin" bash .harness/init.sh focused_test tests/does_not_exist.py) 2>&1 )
+F106_MISSING_RC=$?
+if [ "$F106_MISSING_RC" -eq 3 ]; then
+  pass "f106: a nonexistent test_file exits 3 (honest skip), not a fake green"
+else
+  fail "f106: nonexistent test_file exited $F106_MISSING_RC, expected 3"
+fi
+assert_contains "$F106_MISSING_OUT" "does not exist" \
+  "f106: the missing-file skip names the reason"
+
+# 8. The hook's skip branch surfaces init.sh's own diagnostic output --
+# a wrong skip (like HIGH-1 before the remap) must at least carry the
+# runner's real output to the operator instead of discarding it.
+DIR_F106F="$WORK/f106-skip-diagnostics"
+make_fixture "$DIR_F106F"
+install_hooks "$DIR_F106F"
+cat > "$DIR_F106F/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+case "$1" in
+  focused_test) echo "SKIP-DIAG: no runner available here"; exit 3 ;;
+esac
+exit 0
+INITEOF
+chmod +x "$DIR_F106F/.harness/init.sh"
+OUT=$(run_hook "$DIR_F106F" verify-task-quality.sh "$F103_JSON" 2>&1 1>/dev/null)
+RC=$?
+assert_rc0 "$RC" "f106: the diagnostic-skip fixture still accepts"
+assert_contains "$OUT" "SKIP-DIAG" \
+  "f106: the skip branch surfaces init.sh's own output on stderr"
+if grep -q "skipped, no runner" "$REPO_ROOT/skills/harness-init/SKILL.md" \
+    && grep -q "3 is reserved" "$REPO_ROOT/skills/harness-init/SKILL.md"; then
+  pass "f106: SKILL.md's init.sh contract documents the skip code and its reservation"
+else
+  fail "f106: SKILL.md's init.sh contract does not document the skip code and its reservation"
 fi
 
 echo ""

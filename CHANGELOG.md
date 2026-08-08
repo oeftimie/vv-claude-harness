@@ -2,6 +2,38 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.5.0 (2026-08-09)
+
+Closes out the v5.4.0 review's deferred findings plus one older orientation bug.
+
+1. **Exit-3 skip protocol for `focused_test` (F106)** — `init.sh`'s exit-code contract
+   is now explicit: 0 means the test executed and passed; 3 means the script skipped
+   the stage (no per-file runner for the stack, or the recorded test file does not
+   exist). 3 is **reserved**: a runner's own exit 3 is remapped to 1 (pytest exits 3
+   on INTERNALERROR; mocha exits the failing-test count), so a real failure cannot be
+   laundered into an accepted skip. The TaskCompleted hook accepts a 3 on smoke alone,
+   surfaces `init.sh`'s own output on stderr, and records **no** focused baseline —
+   removing the fake-green class that could arm a false green-to-red
+   `correction_cycles` increment. Any other nonzero exit still rejects as a real
+   failure. Note: `init.sh` is a per-project copy, so **existing projects keep their
+   old skip arms until their `init.sh` is refreshed by hand** — a `harness-doctor`
+   check for the stale contract is filed as F108.
+2. **Not-run baseline keys are dropped (F105)** — `focused:<id>` / `coverage:<id>`
+   entries in `.harness/last_gate.json` are deleted when the hook reaches the stage
+   and finds it unconfigured (test_file removed, `focused_test` support gone, coverage
+   no longer numeric): a baseline exists only while its stage is genuinely being
+   exercised. A stage skipped because an *earlier* stage failed keeps its baseline —
+   ordering is not deconfiguration — so the normal fail-fix loop keeps its
+   attribution.
+3. **Orientation scope cap (F085)** — the `Next claimable:` line's scope field (382
+   chars real, 711 in the adversarial fixture) gets the same truncate-and-point
+   treatment as the description: 150-char cap with a marker naming the path count.
+
+The never-run-the-full-suite guarantee for `focused_test` now has two independent
+pins: the v5.4.0 structural check plus a behavioral test running the real template
+with a canary test file and asserting exact exit codes — closing the
+single-assertion gap the v5.4.0 review flagged.
+
 ### v5.4.0 (2026-08-08)
 
 **Quality-gate redesign: full_test moves from every task completion to the moment a

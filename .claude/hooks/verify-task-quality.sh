@@ -223,9 +223,12 @@ increment_correction_cycles() {
 GATE_BASELINE_FILE=".harness/last_gate.json"
 SMOKE_KEY="smoke${FEATURE_ID:+:$FEATURE_ID}"
 _gate_baseline() {
-    # Args: one or more "key=outcome" pairs (outcome: pass|fail). Records
-    # every pair; prints "increment" when any fail pair transitioned from a
-    # recorded "pass".
+    # Args: one or more "key=outcome" pairs (outcome: pass|fail|drop).
+    # Records pass/fail pairs; "drop" DELETES the key (F105: a baseline
+    # entry exists only while its stage is genuinely being exercised --
+    # a stage the hook reached and found unconfigured must not leave an
+    # arbitrarily old pass behind to arm a future increment). Prints
+    # "increment" when any fail pair transitioned from a recorded "pass".
     python3 - "$GATE_BASELINE_FILE" "$@" <<'PYEOF'
 import json
 import os
@@ -243,7 +246,10 @@ if not isinstance(data, dict):
 increment = False
 for pair in pairs:
     key, _, outcome = pair.rpartition("=")
-    if not key or outcome not in ("pass", "fail"):
+    if not key or outcome not in ("pass", "fail", "drop"):
+        continue
+    if outcome == "drop":
+        data.pop(key, None)
         continue
     if outcome == "fail" and data.get(key) == "pass":
         increment = True
@@ -388,11 +394,36 @@ SMOKE_OUTPUT=$(bash .harness/init.sh smoke_test 2>&1) || {
 # 3): a script that only MENTIONS focused_test in a header comment would
 # otherwise be probed and have its unknown-target error read as a failure,
 # recreating exactly the confusion this detection exists to avoid.
-FOCUSED_PASS_ARG=""
+# FOCUSED_BASELINE_ARG carries this run's verdict for the focused stage
+# into the later _gate_baseline calls: pass when it ran green, drop (F105)
+# when the hook reached this point and found the stage unconfigured for the
+# targeted feature (no test_file, or no focused_test support). A drop only
+# happens HERE -- an earlier-stage failure exits before this point, so a
+# baseline is never erased by mere ordering. Empty when there is no
+# targeted feature to key.
+FOCUSED_BASELINE_ARG=""
+if [ -n "$FEATURE_ID" ]; then
+    FOCUSED_BASELINE_ARG="focused:$FEATURE_ID=drop"
+fi
 if [ -n "$TEST_FILE" ]; then
     if grep -v '^[[:space:]]*#' .harness/init.sh 2>/dev/null | grep -q "focused_test"; then
         echo "Stage 2: Focused test ($TEST_FILE)..." >&2
-        FOCUSED_OUTPUT=$(bash .harness/init.sh focused_test "$TEST_FILE" 2>&1) || {
+        FOCUSED_RC=0
+        FOCUSED_OUTPUT=$(bash .harness/init.sh focused_test "$TEST_FILE" 2>&1) || FOCUSED_RC=$?
+        if [ "$FOCUSED_RC" -eq 3 ]; then
+            # F106 skip protocol: exit 3 means init.sh skipped the stage
+            # (no per-file runner for the stack, or the test file doesn't
+            # exist) -- not-run, never a fake green. FOCUSED_BASELINE_ARG
+            # stays at its F105 drop default, so no baseline is recorded
+            # and a later real failure has nothing stale to charge against.
+            # init.sh's own output is surfaced (PR #156 review): if a skip
+            # is ever wrong, the operator sees the runner's real output
+            # instead of only this hook's explanation.
+            echo "verify-task-quality: focused test skipped by init.sh (exit 3);" \
+                 "accepting on smoke alone, no focused baseline recorded." >&2
+            echo "Skip output (last 5 lines):" >&2
+            echo "$FOCUSED_OUTPUT" | tail -5 >&2
+        elif [ "$FOCUSED_RC" -ne 0 ]; then
             echo "Task rejected: focused test failed ($TEST_FILE). Fix the failures before marking complete." >&2
             echo "" >&2
             echo "Focused test output (last 20 lines):" >&2
@@ -400,33 +431,42 @@ if [ -n "$TEST_FILE" ]; then
             _reject_bookkeeping "$SMOKE_KEY=pass" "focused:$FEATURE_ID=fail"
             _dashboard_log "block" "focused-test-failed" || true
             exit 2
-        }
-        FOCUSED_PASS_ARG="focused:$FEATURE_ID=pass"
+        else
+            FOCUSED_BASELINE_ARG="focused:$FEATURE_ID=pass"
+        fi
     else
         echo "verify-task-quality: this project's .harness/init.sh does not support focused_test;" \
              "skipping the focused stage ($TEST_FILE). Adopt the focused_test target to enable it." >&2
     fi
 fi
 
-COVERAGE_PASS_ARG=""
+# COVERAGE_BASELINE_ARG mirrors FOCUSED_BASELINE_ARG: pass when evaluated
+# and met, drop (F105) when the gate was reached but coverage is not
+# numeric for the targeted feature -- the stage stopped existing, so its
+# old baseline must not linger.
+COVERAGE_BASELINE_ARG=""
+if [ -n "$FEATURE_ID" ]; then
+    COVERAGE_BASELINE_ARG="coverage:$FEATURE_ID=drop"
+fi
 if [ "$COVERAGE_RESULT" = "pass" ]; then
-    COVERAGE_PASS_ARG="coverage:$FEATURE_ID=pass"
+    COVERAGE_BASELINE_ARG="coverage:$FEATURE_ID=pass"
 elif [ -n "$COVERAGE_RESULT" ]; then
     ACHIEVED="${COVERAGE_RESULT%%|*}"
     TARGET="${COVERAGE_RESULT##*|}"
     echo "Task rejected: coverage $ACHIEVED% is below the target $TARGET%." >&2
     _reject_bookkeeping "$SMOKE_KEY=pass" \
-        ${FOCUSED_PASS_ARG:+"$FOCUSED_PASS_ARG"} \
+        ${FOCUSED_BASELINE_ARG:+"$FOCUSED_BASELINE_ARG"} \
         "coverage:$FEATURE_ID=fail"
     _dashboard_log "block" "coverage-below-target" || true
     exit 2
 fi
 
-# Accept path: record every stage that actually ran as green, re-arming the
-# green-to-red attribution for the next rejection.
+# Accept path: record every stage that actually ran as green (re-arming the
+# green-to-red attribution) and drop the keys of stages that turned out to
+# be unconfigured this run.
 _gate_baseline "$SMOKE_KEY=pass" \
-    ${FOCUSED_PASS_ARG:+"$FOCUSED_PASS_ARG"} \
-    ${COVERAGE_PASS_ARG:+"$COVERAGE_PASS_ARG"} >/dev/null || true
+    ${FOCUSED_BASELINE_ARG:+"$FOCUSED_BASELINE_ARG"} \
+    ${COVERAGE_BASELINE_ARG:+"$COVERAGE_BASELINE_ARG"} >/dev/null || true
 
 IN_PROGRESS_NOTE=""
 if [ "$IN_PROGRESS" -gt 0 ]; then

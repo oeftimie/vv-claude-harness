@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 106,
-  "passing": 97,
+  "total_features": 108,
+  "passing": 100,
   "features": [
     {
       "id": "F001",
@@ -2379,7 +2379,7 @@
       "id": "F085",
       "description": "Found by review-pr128-f079's round-2 review (N3), filed as a follow-up rather than fixed inline to avoid scope creep on that PR: the 'Next claimable:' line's scope field -- scope = ', '.join(f.get('scope') or []) at hooks/session-start.sh's two next-claimable code paths -- has no length cap, sitting directly beside the 200-char-capped description on the same line. Same bug class as F071/OVI-105 and F079/OVI-105 (an unbounded field printed into the orientation), not introduced by either. Measured: 382 chars on this repo's real 'Next claimable:' line today; 921 chars in a 12-scope-path adversarial fixture. Not yet fixed -- needs the same truncate-and-point treatment already applied to description (F071) and the three line-count-capped sections (F079), or folding into a genuine total-orientation-budget redesign if one is ever built (F079's notes record this as a considered, declined alternative to the current fixed-per-section budgets).",
       "priority": 85,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "hooks/session-start.sh",
         "test/run-tests.sh"
@@ -2390,11 +2390,13 @@
       ],
       "assigned_to": null,
       "test_file": null,
-      "coverage": null,
+      "coverage": "TDD: 5 assertions written first and confirmed red (711-char Next-claimable line measured in the adversarial 12-path fixture). Covers: truncation marker naming the path count and pointing at features.json on BOTH the fallback and harness_state.py-delegated delivery paths (formatter is shared today; two-path coverage guards a future de-consolidation); the oversized scope tail never reaches the orientation; the line stays under 450 chars; a short scope still prints whole with no spurious marker. Full suite 1956/1956.",
       "notes": "Filed, not yet triaged into a release batch. Low urgency today (382 chars real, well within the platform's 10,000-char cap even added to everything else measured for F079) but the same unbounded-field pattern this repo has twice already had to close elsewhere.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Single-point fix in print_next_claimable_line (the F079-era shared formatter), 150-char cap with a paths-count truncate-and-point marker mirroring F071's description treatment. The feature description predates the formatter consolidation and says 'two code paths'; the shared formatter satisfies the intent in one place."
+      ],
       "failure_reason": null,
       "discovered_via": "F079 (review-pr128-f079 round-2, nit N3)",
       "spec": null
@@ -2919,7 +2921,7 @@
       "id": "F105",
       "description": "Stale last_gate.json baseline keys can arm a false green-to-red increment: focused:<id> (and coverage:<id>) keep their last recorded value forever once the stage stops running for that feature (init.sh loses the focused_test target, the feature's test_file is dropped, or coverage stops being numeric), so an arbitrarily old 'pass' later pairs with a fresh failure and increments correction_cycles off a baseline that no longer describes the same check. Reproduced live by the PR #154 reviewer. Fix direction: on each hook run, for the targeted feature, DELETE the focused:<id> key when the focused stage did not run and the coverage:<id> key when coverage was not evaluated -- a baseline entry should exist only while its stage is genuinely being exercised.",
       "priority": 105,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/verify-task-quality.sh.template",
         ".claude/hooks/verify-task-quality.sh",
@@ -2928,11 +2930,13 @@
       "depends_on": [],
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
-      "coverage": null,
+      "coverage": "TDD: 5 drop-behavior assertions written first and confirmed red, plus 2 preservation assertions green throughout (the design's key distinction). Covers: focused_test support loss drops focused:<id> and a red return does not increment off the stale pass; test_file removal drops the key; coverage leaving the numeric domain drops coverage:<id> and a later below-target rejection has no baseline to charge; a smoke failure preserves the focused baseline and a focused failure preserves the coverage baseline (ordering skip is not deconfiguration). Full suite 1966/1966.",
       "notes": null,
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "_gate_baseline gains a third outcome 'drop' (deletes the key); FOCUSED/COVERAGE_BASELINE_ARG default to drop for a targeted feature and upgrade to pass when the stage runs green. Drops happen only at the point the hook reached the stage and found it unconfigured -- rejection exits earlier, so ordering skips can never erase a baseline mid fail-fix cycle."
+      ],
       "failure_reason": null,
       "discovered_via": "PR #154 adversarial review (review-pr154 reviewer agent), round-1 follow-up list, 2026-08-09.",
       "spec": null,
@@ -2942,7 +2946,7 @@
       "id": "F106",
       "description": "focused_test's treat-as-pass arms record a fake green baseline: init.sh.template's unknown-stack and pytest-absent arms exit 0 without running any test, and the TaskCompleted hook cannot distinguish 'ran and passed' from 'runner unavailable, skipped' -- so last_gate.json records focused:<id>=pass and a later real failure counts as green-to-red off a green that never happened (PR #154 review, follow-up 4). Fix direction: a skip protocol -- init.sh exits a distinct documented code (e.g. 3) for 'skipped, no runner', which the hook treats as not-run (no baseline write, stderr note), keeping exit 0 strictly for a test that executed and passed. Depends on F105's not-run key-deletion semantics.",
       "priority": 106,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/init.sh.template",
         "skills/harness-init/verify-task-quality.sh.template",
@@ -2955,13 +2959,62 @@
       ],
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
+      "coverage": "TDD: 8 assertions written first and confirmed red. Behavioral on the REAL template: unknown-stack and python-without-pytest focused_test runs exit exactly 3 with a canary test file proving no suite runner discovered anything -- this is the second, independent pin on the no-full-suite guarantee (the f104 structural grep is the first; PR #154's reviewer flagged that single assertion as a SPOF and the fix restructured exactly that block). Hook side: exit 3 accepts with a stderr note and records NO focused baseline (F105 drop semantics), a later real red run has nothing stale to charge (0 cycles); exit 0 still records a genuine pass; nonzero-but-not-3 still rejects. Contract documented in init.sh.template's header and SKILL.md's init.sh section, both pinned. Full suite 1979/1979. | Post-review: 6 more assertions (runner exit-3 remap, non-3 passthrough, missing-file guard + reason, skip-diagnostics surfacing, tightened SKILL.md pin). Full suite 1985/1985.",
+      "notes": "PR #156 adversarial review (round 1) found the protocol unsound as first shipped: exit 3 was not reserved, so a real runner failure exiting 3 (pytest INTERNALERROR is exactly 3; mocha exits the failing-test count) was laundered into an accepted skip that also deleted the feature's baseline -- a behavioral regression vs main, reproduced end-to-end by the reviewer. Fixed: run_focused() in init.sh's focused block remaps a runner's own exit 3 to 1 (other codes pass through), keeping 3 for the script's two explicit skip sites; plus a top-of-block [ -f FOCUS_FILE ] guard exiting 3, closing the sibling fake-green (go test on a no-test package exits 0 -- reviewer HIGH-2); plus the hook's skip branch now surfaces init.sh's own output tail so a wrong skip carries the runner's real diagnostics. 6 new assertions including fake-pytest exit-3 remap, exit-5 passthrough, missing-file skip, and skip-output surfacing. MED-3 (contract doesn't reach existing projects' init.sh copies) filed as F108; LOW-5 (check-remaining-tasks uncapped fields) as F107.",
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [
+        "Exit-code protocol (3 = skipped-no-runner) over alternatives like a sentinel string on stdout (fragile against runner output) or a hook-side runner probe (duplicates init.sh's own stack knowledge). The hook's 3-way branch keeps FOCUSED_BASELINE_ARG at its F105 drop default on skip, which is what makes the fake-green class structurally impossible rather than patched per-arm."
+      ],
+      "failure_reason": null,
+      "discovered_via": "PR #154 adversarial review (review-pr154 reviewer agent), round-1 follow-up list, 2026-08-09.",
+      "spec": null,
+      "qa_binding": "integration"
+    },
+    {
+      "id": "F107",
+      "description": "check-remaining-tasks.sh.template's reassignment message ('Next: <id>: <description> (priority N) [scope: ...]', emitted on stderr at exit 2 straight into the blocked agent's context) has NO length cap on either description or scope -- the same unbounded-field class F071 (description) and F085 (scope) closed for session-start.sh's orientation, missed here because F085's own spec named only session-start.sh. Apply both caps with the same truncate-and-point markers, in the template and the synced .claude/hooks copy.",
+      "priority": 107,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/check-remaining-tasks.sh.template",
+        ".claude/hooks/check-remaining-tasks.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
       "coverage": null,
       "notes": null,
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],
       "failure_reason": null,
-      "discovered_via": "PR #154 adversarial review (review-pr154 reviewer agent), round-1 follow-up list, 2026-08-09.",
+      "discovered_via": "PR #156 adversarial review (review-pr156 reviewer agent), 2026-08-09.",
+      "spec": null,
+      "qa_binding": "integration"
+    },
+    {
+      "id": "F108",
+      "description": ".harness/init.sh is a per-project copy made at init time, so v5.5.0's focused_test exit-code contract (exit 3 reserved for skips; runner exit-3 remapped; missing-file guard) does not reach existing projects: a project that adopted focused_test under v5.4.0 keeps its old exit-0 skip arms and the pre-F106 fake-green persists silently. harness-doctor should detect a focused_test-supporting init.sh that lacks the skip contract (e.g. no 'skipped (exit 3)' marker / no run_focused remap) and report it as upgrade-available with the hand-apply repair, mirroring how it reports other stale artifacts. INSTALL.md's --fix steps should mention init.sh is never auto-refreshed (it is the one genuinely decision-shaped per-project file).",
+      "priority": 108,
+      "status": "pending",
+      "scope": [
+        "skills/harness-doctor/doctor.py",
+        "skills/harness-doctor/SKILL.md",
+        "INSTALL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": null,
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "PR #156 adversarial review (review-pr156 reviewer agent), 2026-08-09.",
       "spec": null,
       "qa_binding": "integration"
     }
