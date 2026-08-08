@@ -11965,6 +11965,18 @@ assert_contains "$DASH_SKILL_SRC" "already ended" \
 assert_contains "$DASH_SKILL_SRC" "no \`SessionStart\` hook" \
   "f092: SKILL.md states there is no SessionStart auto-start path"
 
+# F099: session picker -- SKILL.md must describe the page's own session
+# selection instead of implying the server's auto-select is what a browser
+# user experiences.
+assert_contains "$DASH_SKILL_SRC" "GET /sessions" \
+  "f099: SKILL.md documents the page calling F090's GET /sessions"
+assert_contains "$DASH_SKILL_SRC" "Choosing which session to watch" \
+  "f099: SKILL.md has a section explaining the session picker"
+assert_contains "$DASH_SKILL_SRC" "no server restart" \
+  "f099: SKILL.md states that switching sessions in the same project needs no restart"
+assert_contains "$DASH_SKILL_SRC" "bound to a *different project*" \
+  "f099: SKILL.md's Accepted limitation note describes the cross-project reuse gap, not only same-project staleness"
+
 README_SRC=$(cat "$REPO_ROOT/README.md" 2>/dev/null)
 assert_contains "$README_SRC" "skills/harness-dashboard/" \
   "f092: README.md's component table mentions skills/harness-dashboard/"
