@@ -12184,6 +12184,151 @@ assert_not_contains "$F101A_LOG_RECHECK" "focused_test" \
   "f101: no focused_test invocation when the feature records no test_file"
 
 echo ""
+echo "== F102: passing-flip commit gate =="
+
+# full_test left the TaskCompleted hook in F101; its mechanical enforcement
+# point is now the commit that records a feature flipping to "passing". The
+# commit gate compares the INDEX's .harness/features.json against HEAD's (a
+# plain `git commit` commits the whole index, and the compound check already
+# forbids commit-time staging, so the index is exactly what the commit will
+# record) and runs `.harness/init.sh full_test` only when some feature's
+# status transitions to passing.
+
+# Recorder init.sh: logs invocations; full_test exit code is parameterized.
+write_f102_init() {
+  # $1: fixture dir, $2: full_test exit code
+  cat > "$1/.harness/init.sh" <<INITEOF
+#!/bin/bash
+echo "\$@" >> .harness/invocations.log
+case "\$1" in
+  full_test) exit $2 ;;
+esac
+exit 0
+INITEOF
+  chmod +x "$1/.harness/init.sh"
+}
+
+stage_f003_status() {
+  # $1: fixture dir, $2: new status for F003
+  python3 - "$1/.harness/features.json" "$2" <<'PYEOF'
+import json
+import sys
+
+path, status = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["status"] = status
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+  git -C "$1" add .harness/features.json
+}
+
+# 1. A staged pending->passing flip with a red full_test denies the commit,
+# names the finding class and the flipped feature, and actually ran full_test.
+DIR_F102A="$WORK/f102-flip-red"
+make_fixture "$DIR_F102A"
+install_hooks "$DIR_F102A"
+write_f102_init "$DIR_F102A" 1
+stage_f003_status "$DIR_F102A" "passing"
+OUT=$(run_commit_gate "$DIR_F102A" 'git commit -m "mark F003 passing"')
+RC=$?
+assert_rc0 "$RC" "f102: red full_test on a passing flip exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f102: red full_test denial uses JSON deny form"
+assert_contains "$OUT" "passing-flip-full-test-failed" \
+  "f102: denial names the finding class"
+assert_contains "$OUT" "F003" "f102: denial names the flipped feature"
+F102A_LOG=$(cat "$DIR_F102A/.harness/invocations.log" 2>/dev/null)
+assert_contains "$F102A_LOG" "full_test" "f102: full_test genuinely ran on the flip"
+
+# 2. The same staged flip with a green full_test allows the commit.
+DIR_F102B="$WORK/f102-flip-green"
+make_fixture "$DIR_F102B"
+install_hooks "$DIR_F102B"
+write_f102_init "$DIR_F102B" 0
+stage_f003_status "$DIR_F102B" "passing"
+OUT=$(run_commit_gate "$DIR_F102B" 'git commit -m "mark F003 passing"')
+RC=$?
+assert_rc0 "$RC" "f102: green full_test on a passing flip exits 0"
+assert_empty "$OUT" "f102: green full_test allows with empty stdout"
+F102B_LOG=$(cat "$DIR_F102B/.harness/invocations.log" 2>/dev/null)
+assert_contains "$F102B_LOG" "full_test" "f102: full_test ran before the allow"
+
+# 3. A commit with no features.json flip staged never invokes full_test --
+# the whole point of moving it out of the per-task gate.
+DIR_F102C="$WORK/f102-no-flip"
+make_fixture "$DIR_F102C"
+install_hooks "$DIR_F102C"
+write_f102_init "$DIR_F102C" 1
+echo "unrelated" > "$DIR_F102C/unrelated.txt"
+git -C "$DIR_F102C" add unrelated.txt
+OUT=$(run_commit_gate "$DIR_F102C" 'git commit -m "unrelated change"')
+RC=$?
+assert_rc0 "$RC" "f102: a no-flip commit exits 0"
+assert_empty "$OUT" "f102: a no-flip commit allows with empty stdout"
+F102C_LOG=$(cat "$DIR_F102C/.harness/invocations.log" 2>/dev/null)
+assert_not_contains "$F102C_LOG" "full_test" "f102: no full_test run without a flip"
+
+# 4. A demotion (passing -> pending, fixture F001) is not a flip; a red
+# full_test must not block walking a feature BACK from passing.
+DIR_F102D="$WORK/f102-demotion"
+make_fixture "$DIR_F102D"
+install_hooks "$DIR_F102D"
+write_f102_init "$DIR_F102D" 1
+python3 - "$DIR_F102D/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F001":
+        feature["status"] = "pending"
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+git -C "$DIR_F102D" add .harness/features.json
+OUT=$(run_commit_gate "$DIR_F102D" 'git commit -m "demote F001"')
+RC=$?
+assert_rc0 "$RC" "f102: a demotion commit exits 0"
+assert_empty "$OUT" "f102: a demotion commit allows with empty stdout"
+F102D_LOG=$(cat "$DIR_F102D/.harness/invocations.log" 2>/dev/null)
+assert_not_contains "$F102D_LOG" "full_test" "f102: no full_test run on a demotion"
+
+# 5. A non-commit command never triggers the flip check, even with a flip
+# already staged.
+DIR_F102E="$WORK/f102-non-commit"
+make_fixture "$DIR_F102E"
+install_hooks "$DIR_F102E"
+write_f102_init "$DIR_F102E" 1
+stage_f003_status "$DIR_F102E" "passing"
+OUT=$(run_commit_gate "$DIR_F102E" 'git status')
+RC=$?
+assert_rc0 "$RC" "f102: a non-commit command exits 0"
+assert_empty "$OUT" "f102: a non-commit command allows with empty stdout"
+F102E_LOG=$(cat "$DIR_F102E/.harness/invocations.log" 2>/dev/null)
+assert_not_contains "$F102E_LOG" "full_test" "f102: no full_test run for a non-commit command"
+
+# 6. A staged flip with no .harness/init.sh at all fails open with a stderr
+# note (matching this gate's documented fail-open posture for infrastructure
+# gaps; the TaskCompleted gate already fails closed on a missing init.sh).
+DIR_F102F="$WORK/f102-no-init"
+make_fixture "$DIR_F102F"
+install_hooks "$DIR_F102F"
+rm -f "$DIR_F102F/.harness/init.sh"
+stage_f003_status "$DIR_F102F" "passing"
+STDERR_F102F=$(run_commit_gate "$DIR_F102F" 'git commit -m "mark F003 passing"' 2>&1 1>/dev/null)
+RC=$?
+assert_rc0 "$RC" "f102: a flip without init.sh still exits 0 (fail-open)"
+assert_contains "$STDERR_F102F" "init.sh" \
+  "f102: the skipped flip verification is noted on stderr"
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do

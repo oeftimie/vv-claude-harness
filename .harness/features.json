@@ -2,7 +2,7 @@
   "project": "vv-claude-harness",
   "created": "2026-07-22",
   "total_features": 104,
-  "passing": 94,
+  "passing": 95,
   "features": [
     {
       "id": "F001",
@@ -2850,7 +2850,7 @@
       "id": "F102",
       "description": "With F101 removing full_test from TaskCompleted, full_test needs a mechanical enforcement point at the moment it actually decides something: a feature's status flipping to 'passing'. commit-gate.sh.template: when the staged .harness/features.json differs from HEAD by any feature whose status transitions to 'passing', run `bash .harness/init.sh full_test` and deny the commit on failure, naming the flipped feature(s) in the denial. No flip staged = no full_test run. This repo's own installed hook copy is synced.",
       "priority": 102,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/commit-gate.sh.template",
         ".claude/hooks/commit-gate.sh",
@@ -2859,8 +2859,8 @@
       "depends_on": [],
       "assigned_to": "lead",
       "test_file": "test/run-tests.sh",
-      "coverage": null,
-      "notes": null,
+      "coverage": "TDD: 6 new assertions written first and confirmed red (f102 section). Covers: staged pending->passing flip + red full_test denies via JSON deny naming finding class passing-flip-full-test-failed and the flipped feature, with full_test genuinely invoked; same flip + green full_test allows with empty stdout after running full_test; a no-flip commit and a passing->pending demotion never invoke full_test; a non-commit command never triggers the check even with a flip staged; a flip with no .harness/init.sh fails open with a stderr note. Full suite 1911/1911.",
+      "notes": "The python check-runner now prints a sentinel (__COMMIT_NO_DENY__) instead of nothing when the command is a commit and every check passed -- the shell wrapper keys the flip check on it, avoiding a duplicate shell-side tokenizer for 'is this a commit'. Flip detection compares INDEX features.json vs HEAD (git show :path vs HEAD:path): the compound-stage-and-commit check already forbids commit-time staging, so the index is exactly what the commit records. Fail-open posture preserved on every infrastructure gap; the deny reason carries the last 15 lines of full_test output. This repo's own commit recording F102 as passing was itself gated by the new check (first live exercise).",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [],

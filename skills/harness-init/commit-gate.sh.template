@@ -386,6 +386,14 @@ REPAIR_STAGED = (
 )
 REPAIR_STYLE = "replace the em dash with a comma, period, or parentheses"
 
+# Printed instead of a deny reason when the command IS a commit and every
+# check passed -- the shell wrapper keys the passing-flip full_test check
+# (F102) on this exact value. Never derived from user content: everything
+# this python prints on stdout is either one of this file's own reason
+# strings or this constant, so the wrapper's equality test cannot collide
+# with a commit message or staged diff.
+COMMIT_NO_DENY_SENTINEL = "__COMMIT_NO_DENY__"
+
 STAGING_FLAGS = {"-a", "-i", "--all", "--include"}
 
 # The set of long options `git commit` recognizes, used as the
@@ -1291,9 +1299,19 @@ def main():
         print(reason)
         return
 
+    # Every non-deny exit below prints the sentinel instead of nothing (F102):
+    # the shell wrapper needs "this IS a commit and no check denied it" as a
+    # distinct outcome from "not a commit at all" to know when to run the
+    # passing-flip full_test check, and duplicating parse_command()'s
+    # tokenization in shell to answer that would reintroduce the exact
+    # regex-vs-tokenizer divergence this file's header documents. The
+    # fail-open paths (scan timeout, unexpected exception) print it too --
+    # they fail open for the SCANS, not for the commit-ness of the command,
+    # which parse_command() already established.
     try:
         diff_text = staged_diff(project_root)
         if diff_text is None:
+            print(COMMIT_NO_DENY_SENTINEL)
             return
         lines = list(added_lines(diff_text))
         deadline = time.monotonic() + SCAN_TIME_BUDGET_SECONDS
@@ -1307,15 +1325,83 @@ def main():
             reason = find_style_violation(lines, deadline)
             if reason:
                 print(reason)
+                return
     except subprocess.TimeoutExpired:
+        print(COMMIT_NO_DENY_SENTINEL)
         return
     except Exception as exc:
         print(type(exc).__name__, file=sys.stderr)
+        print(COMMIT_NO_DENY_SENTINEL)
+        return
+    print(COMMIT_NO_DENY_SENTINEL)
 
 
 main()
 PYEOF
 )
+
+# Passing-flip full_test gate (F102). Runs only when the python above
+# established "commit, no deny" via the sentinel. The comparison is INDEX
+# features.json vs HEAD features.json: a plain `git commit` commits the whole
+# index, and the compound-stage-and-commit check above already forbids
+# commit-time staging flags and pathspecs, so the index is exactly what this
+# commit will record. Fail-open on every infrastructure gap (unparseable
+# JSON, git errors, missing init.sh) -- this gate's documented posture; the
+# TaskCompleted gate is the one that fails closed on a missing init.sh.
+if [ "$DENY_REASON" = "__COMMIT_NO_DENY__" ]; then
+    DENY_REASON=""
+    FLIPPED=$(python3 - <<'PYEOF'
+import json
+import subprocess
+
+
+def statuses(ref):
+    try:
+        proc = subprocess.run(
+            ["git", "show", ref], capture_output=True, text=True, timeout=10
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    features = data.get("features", []) if isinstance(data, dict) else []
+    return {
+        f.get("id"): f.get("status")
+        for f in features
+        if isinstance(f, dict) and f.get("id")
+    }
+
+
+try:
+    staged = statuses(":.harness/features.json")
+    if staged is not None:
+        head = statuses("HEAD:.harness/features.json") or {}
+        flipped = sorted(
+            fid for fid, status in staged.items()
+            if status == "passing" and head.get(fid) != "passing"
+        )
+        print(" ".join(flipped))
+except Exception:
+    pass
+PYEOF
+) || FLIPPED=""
+    if [ -n "$FLIPPED" ]; then
+        if [ -f ".harness/init.sh" ]; then
+            echo "commit-gate: staged features.json flips $FLIPPED to passing; running full_test..." >&2
+            FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
+                FULL_TAIL=$(printf '%s\n' "$FULL_OUTPUT" | tail -15)
+                deny_json "passing-flip-full-test-failed: this commit flips $FLIPPED to 'passing' but the full test suite fails. Fix the failures or keep the feature in-progress. Full test output (last 15 lines): $FULL_TAIL"
+            }
+        else
+            echo "commit-gate: staged features.json flips $FLIPPED to passing, but .harness/init.sh is" \
+                 "missing -- cannot verify full_test; allowing (fail-open)." >&2
+        fi
+    fi
+fi
 
 if [ -n "$DENY_REASON" ]; then
     deny_json "$DENY_REASON"
