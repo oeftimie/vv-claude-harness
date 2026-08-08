@@ -1,7 +1,7 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 106,
+  "total_features": 108,
   "passing": 100,
   "features": [
     {
@@ -2959,8 +2959,8 @@
       ],
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
-      "coverage": "TDD: 8 assertions written first and confirmed red. Behavioral on the REAL template: unknown-stack and python-without-pytest focused_test runs exit exactly 3 with a canary test file proving no suite runner discovered anything -- this is the second, independent pin on the no-full-suite guarantee (the f104 structural grep is the first; PR #154's reviewer flagged that single assertion as a SPOF and the fix restructured exactly that block). Hook side: exit 3 accepts with a stderr note and records NO focused baseline (F105 drop semantics), a later real red run has nothing stale to charge (0 cycles); exit 0 still records a genuine pass; nonzero-but-not-3 still rejects. Contract documented in init.sh.template's header and SKILL.md's init.sh section, both pinned. Full suite 1979/1979.",
-      "notes": null,
+      "coverage": "TDD: 8 assertions written first and confirmed red. Behavioral on the REAL template: unknown-stack and python-without-pytest focused_test runs exit exactly 3 with a canary test file proving no suite runner discovered anything -- this is the second, independent pin on the no-full-suite guarantee (the f104 structural grep is the first; PR #154's reviewer flagged that single assertion as a SPOF and the fix restructured exactly that block). Hook side: exit 3 accepts with a stderr note and records NO focused baseline (F105 drop semantics), a later real red run has nothing stale to charge (0 cycles); exit 0 still records a genuine pass; nonzero-but-not-3 still rejects. Contract documented in init.sh.template's header and SKILL.md's init.sh section, both pinned. Full suite 1979/1979. | Post-review: 6 more assertions (runner exit-3 remap, non-3 passthrough, missing-file guard + reason, skip-diagnostics surfacing, tightened SKILL.md pin). Full suite 1985/1985.",
+      "notes": "PR #156 adversarial review (round 1) found the protocol unsound as first shipped: exit 3 was not reserved, so a real runner failure exiting 3 (pytest INTERNALERROR is exactly 3; mocha exits the failing-test count) was laundered into an accepted skip that also deleted the feature's baseline -- a behavioral regression vs main, reproduced end-to-end by the reviewer. Fixed: run_focused() in init.sh's focused block remaps a runner's own exit 3 to 1 (other codes pass through), keeping 3 for the script's two explicit skip sites; plus a top-of-block [ -f FOCUS_FILE ] guard exiting 3, closing the sibling fake-green (go test on a no-test package exits 0 -- reviewer HIGH-2); plus the hook's skip branch now surfaces init.sh's own output tail so a wrong skip carries the runner's real diagnostics. 6 new assertions including fake-pytest exit-3 remap, exit-5 passthrough, missing-file skip, and skip-output surfacing. MED-3 (contract doesn't reach existing projects' init.sh copies) filed as F108; LOW-5 (check-remaining-tasks uncapped fields) as F107.",
       "correction_cycles": 0,
       "scope_expansions": [],
       "approaches_tried": [
@@ -2968,6 +2968,53 @@
       ],
       "failure_reason": null,
       "discovered_via": "PR #154 adversarial review (review-pr154 reviewer agent), round-1 follow-up list, 2026-08-09.",
+      "spec": null,
+      "qa_binding": "integration"
+    },
+    {
+      "id": "F107",
+      "description": "check-remaining-tasks.sh.template's reassignment message ('Next: <id>: <description> (priority N) [scope: ...]', emitted on stderr at exit 2 straight into the blocked agent's context) has NO length cap on either description or scope -- the same unbounded-field class F071 (description) and F085 (scope) closed for session-start.sh's orientation, missed here because F085's own spec named only session-start.sh. Apply both caps with the same truncate-and-point markers, in the template and the synced .claude/hooks copy.",
+      "priority": 107,
+      "status": "pending",
+      "scope": [
+        "skills/harness-init/check-remaining-tasks.sh.template",
+        ".claude/hooks/check-remaining-tasks.sh",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": null,
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "PR #156 adversarial review (review-pr156 reviewer agent), 2026-08-09.",
+      "spec": null,
+      "qa_binding": "integration"
+    },
+    {
+      "id": "F108",
+      "description": ".harness/init.sh is a per-project copy made at init time, so v5.5.0's focused_test exit-code contract (exit 3 reserved for skips; runner exit-3 remapped; missing-file guard) does not reach existing projects: a project that adopted focused_test under v5.4.0 keeps its old exit-0 skip arms and the pre-F106 fake-green persists silently. harness-doctor should detect a focused_test-supporting init.sh that lacks the skip contract (e.g. no 'skipped (exit 3)' marker / no run_focused remap) and report it as upgrade-available with the hand-apply repair, mirroring how it reports other stale artifacts. INSTALL.md's --fix steps should mention init.sh is never auto-refreshed (it is the one genuinely decision-shaped per-project file).",
+      "priority": 108,
+      "status": "pending",
+      "scope": [
+        "skills/harness-doctor/doctor.py",
+        "skills/harness-doctor/SKILL.md",
+        "INSTALL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": null,
+      "notes": null,
+      "correction_cycles": 0,
+      "scope_expansions": [],
+      "approaches_tried": [],
+      "failure_reason": null,
+      "discovered_via": "PR #156 adversarial review (review-pr156 reviewer agent), 2026-08-09.",
       "spec": null,
       "qa_binding": "integration"
     }

@@ -411,12 +411,18 @@ if [ -n "$TEST_FILE" ]; then
         FOCUSED_RC=0
         FOCUSED_OUTPUT=$(bash .harness/init.sh focused_test "$TEST_FILE" 2>&1) || FOCUSED_RC=$?
         if [ "$FOCUSED_RC" -eq 3 ]; then
-            # F106 skip protocol: exit 3 means "skipped, no per-file runner"
-            # -- not-run, never a fake green. FOCUSED_BASELINE_ARG stays at
-            # its F105 drop default, so no baseline is recorded and a later
-            # real failure has nothing stale to charge against.
-            echo "verify-task-quality: focused test skipped by init.sh (exit 3: no per-file runner" \
-                 "for this stack); accepting on smoke alone, no focused baseline recorded." >&2
+            # F106 skip protocol: exit 3 means init.sh skipped the stage
+            # (no per-file runner for the stack, or the test file doesn't
+            # exist) -- not-run, never a fake green. FOCUSED_BASELINE_ARG
+            # stays at its F105 drop default, so no baseline is recorded
+            # and a later real failure has nothing stale to charge against.
+            # init.sh's own output is surfaced (PR #156 review): if a skip
+            # is ever wrong, the operator sees the runner's real output
+            # instead of only this hook's explanation.
+            echo "verify-task-quality: focused test skipped by init.sh (exit 3);" \
+                 "accepting on smoke alone, no focused baseline recorded." >&2
+            echo "Skip output (last 5 lines):" >&2
+            echo "$FOCUSED_OUTPUT" | tail -5 >&2
         elif [ "$FOCUSED_RC" -ne 0 ]; then
             echo "Task rejected: focused test failed ($TEST_FILE). Fix the failures before marking complete." >&2
             echo "" >&2

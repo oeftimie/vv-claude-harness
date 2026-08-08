@@ -12913,17 +12913,86 @@ assert_rc2 "$RC" "f106: a non-3 nonzero exit still rejects as a real failure"
 
 # 5. Contract documentation: SKILL.md and the template header both name
 # exit 3.
-if grep -q "exit.*3" "$TEMPLATES_DIR/init.sh.template" \
-    && sed -n '1,20p' "$TEMPLATES_DIR/init.sh.template" | grep -qi "skip"; then
+if grep -q "skipped (exit 3)" "$TEMPLATES_DIR/init.sh.template" \
+    && sed -n '1,25p' "$TEMPLATES_DIR/init.sh.template" | grep -qi "skip"; then
   pass "f106: init.sh.template's header documents the skip exit code"
 else
   fail "f106: init.sh.template's header does not document the skip exit code"
 fi
-if grep -qi "exits 3" "$REPO_ROOT/skills/harness-init/SKILL.md" \
-    || grep -qi "exit code 3" "$REPO_ROOT/skills/harness-init/SKILL.md"; then
-  pass "f106: SKILL.md's init.sh contract documents the skip exit code"
+
+# 6. Exit 3 is RESERVED (PR #156 review, HIGH-1): a REAL runner exiting 3
+# (pytest INTERNALERROR is exactly 3; mocha exits the failing-test count)
+# must be remapped to a failure, never read as this script's own skip
+# sentinel -- without the remap, the hook accepts the failure as a skip
+# and deletes the feature's baseline. Fake pytest on PATH exits 3.
+DIR_F106E="$WORK/f106-runner-exit-3"
+mkdir -p "$DIR_F106E/.harness" "$DIR_F106E/tests" "$DIR_F106E/minibin"
+printf '{"stack": "python"}\n' > "$DIR_F106E/.harness/harness.json"
+printf 'assert True\n' > "$DIR_F106E/tests/test_real.py"
+cp "$TEMPLATES_DIR/init.sh.template" "$DIR_F106E/.harness/init.sh"
+chmod +x "$DIR_F106E/.harness/init.sh"
+for MINIBIN_TOOL in bash date dirname basename; do
+  ln -sf "$(command -v $MINIBIN_TOOL)" "$DIR_F106E/minibin/$MINIBIN_TOOL"
+done
+ln -sf "$(command -v python3)" "$DIR_F106E/minibin/python3"
+printf '#!/bin/bash\nexit 3\n' > "$DIR_F106E/minibin/pytest"
+chmod +x "$DIR_F106E/minibin/pytest"
+( cd "$DIR_F106E" && PATH="$DIR_F106E/minibin" bash .harness/init.sh focused_test tests/test_real.py ) >/dev/null 2>&1
+F106E_RC=$?
+if [ "$F106E_RC" -eq 1 ]; then
+  pass "f106: a real runner's own exit 3 is remapped to 1 -- never laundered into a skip"
 else
-  fail "f106: SKILL.md's init.sh contract does not document the skip exit code"
+  fail "f106: runner exit 3 passed through as $F106E_RC, expected remap to 1"
+fi
+# Other runner failure codes pass through untouched.
+printf '#!/bin/bash\nexit 5\n' > "$DIR_F106E/minibin/pytest"
+( cd "$DIR_F106E" && PATH="$DIR_F106E/minibin" bash .harness/init.sh focused_test tests/test_real.py ) >/dev/null 2>&1
+F106E_RC5=$?
+if [ "$F106E_RC5" -eq 5 ]; then
+  pass "f106: a runner's non-3 failure code passes through untouched"
+else
+  fail "f106: runner exit 5 became $F106E_RC5, expected passthrough"
+fi
+
+# 7. A recorded test_file that does not exist is an honest skip (PR #156
+# review, HIGH-2): no runner can execute it, and exiting 0 would record a
+# fake green baseline (go test on a no-test package exits 0 today).
+printf '#!/bin/bash\nexit 0\n' > "$DIR_F106E/minibin/pytest"
+chmod +x "$DIR_F106E/minibin/pytest"
+F106_MISSING_OUT=$( (cd "$DIR_F106E" && PATH="$DIR_F106E/minibin" bash .harness/init.sh focused_test tests/does_not_exist.py) 2>&1 )
+F106_MISSING_RC=$?
+if [ "$F106_MISSING_RC" -eq 3 ]; then
+  pass "f106: a nonexistent test_file exits 3 (honest skip), not a fake green"
+else
+  fail "f106: nonexistent test_file exited $F106_MISSING_RC, expected 3"
+fi
+assert_contains "$F106_MISSING_OUT" "does not exist" \
+  "f106: the missing-file skip names the reason"
+
+# 8. The hook's skip branch surfaces init.sh's own diagnostic output --
+# a wrong skip (like HIGH-1 before the remap) must at least carry the
+# runner's real output to the operator instead of discarding it.
+DIR_F106F="$WORK/f106-skip-diagnostics"
+make_fixture "$DIR_F106F"
+install_hooks "$DIR_F106F"
+cat > "$DIR_F106F/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+case "$1" in
+  focused_test) echo "SKIP-DIAG: no runner available here"; exit 3 ;;
+esac
+exit 0
+INITEOF
+chmod +x "$DIR_F106F/.harness/init.sh"
+OUT=$(run_hook "$DIR_F106F" verify-task-quality.sh "$F103_JSON" 2>&1 1>/dev/null)
+RC=$?
+assert_rc0 "$RC" "f106: the diagnostic-skip fixture still accepts"
+assert_contains "$OUT" "SKIP-DIAG" \
+  "f106: the skip branch surfaces init.sh's own output on stderr"
+if grep -q "skipped, no runner" "$REPO_ROOT/skills/harness-init/SKILL.md" \
+    && grep -q "3 is reserved" "$REPO_ROOT/skills/harness-init/SKILL.md"; then
+  pass "f106: SKILL.md's init.sh contract documents the skip code and its reservation"
+else
+  fail "f106: SKILL.md's init.sh contract does not document the skip code and its reservation"
 fi
 
 echo ""
