@@ -4,6 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
+- **v5.5.0 released 2026-08-09 (F085, F105, F106): review follow-through.** Exit-3 skip protocol for focused_test (a skip is never a green), not-run baseline keys dropped from last_gate.json (reached-and-unconfigured only; ordering skips preserve), orientation scope field capped. F086 was found already passing (stale handoff). NO pending features remain in features.json -- per the standing guidance below, new work needs fresh scoping, not an assumed queue. portage-curator still needs `/plugin` update + `/harness-doctor --fix` in its own session.
 - **v5.4.0 released 2026-08-08 (F100-F104): quality-gate redesign.** TaskCompleted now runs smoke + the feature's own focused test (never full_test); full_test is enforced by the commit gate when a staged features.json flips a status to passing; correction_cycles counts only green-to-red transitions against a .harness/last_gate.json baseline; harness-init SKILL.md carries the "full_test must be satisfiable mid-project, aggregates as ratchets" authoring rule. Motivated by a portage-curator field report (v3.5.0 hooks) -- that project still needs `/plugin` update + `/harness-doctor --fix` in its own session to pick this up. F085/F086 remain the queued pending features.
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
 - Linear-tracked arc (F012-F021, the OVI-44 A-series/P-series sub-issues) is now COMPLETE, all shipped through the same TDD + mutation-test + adversarial-review-to-APPROVE loop: F012/OVI-53 (PR #98), F013/OVI-63 (PR #99, filed F063 as a follow-up), F015/OVI-55 (PR #100), F016/OVI-57 (PR #101), F017/OVI-65 (PR #102, filed F064 as a follow-up), F018/OVI-66 (PR #103), F019/OVI-58 (root AGENTS.md + rewritten CLAUDE.md), F020/OVI-59 (skills/harness-improve/SKILL.md), F021/OVI-60 (evals/README.md + evals/orientation-recovery.md, this session, filed F066+F067 as follow-ups). See each feature's own `notes`/`approaches_tried` for the specific catches each review round made.
@@ -1728,3 +1729,31 @@ session-end.sh at the next SessionStart.
   suite-red states were the planned TDD red phases, not rejections).
 - Test growth: 1877/1878 (one pre-existing environment-dependent
   failure, fixed as F100) to 1933/1933 across five commits.
+
+## Meta-Session 2026-08-09 (F085 + F105 + F106, v5.5.0)
+- Scope accuracy: exact -- three features, all landed as scoped, zero
+  correction cycles. F086 turned out to be already passing despite the
+  last handoff listing it as "the only queued item": the handoff was
+  written before F086's completing session and never superseded. Lesson:
+  features.json is the authority on status; claude-progress.txt is a
+  narrative snapshot that can be stale the moment another session runs.
+- Approach patterns: (1) The F085 spec predated a refactor that had
+  already consolidated its "two code paths" into one shared formatter --
+  verifying the cited code shape before implementing turned a two-site
+  fix into a one-site fix. (2) F105's design hinged on one distinction
+  the spec didn't spell out: "stage unconfigured" (drop the baseline) vs
+  "stage skipped by ordering because an earlier stage failed" (keep it).
+  Writing preservation tests alongside drop tests forced that distinction
+  into the design early. (3) F106's behavioral second pin (real template,
+  canary test file, exact exit codes) came from a persisted memory note
+  out of the v5.4.0 review's mutation testing -- the reviewer's
+  "killed by exactly one assertion" observation directly shaped this
+  session's test design.
+- Gotcha (bash): `PATH=minidir bash script.sh` resolves the `bash`
+  BINARY itself with the overridden PATH, not just the child's commands
+  -- a minimal-PATH fixture must symlink bash too, or everything exits
+  127 before the script runs.
+- Model calibration: solo single-session lead, no subagents for
+  implementation; one vv-harness:reviewer pass planned at PR time
+  (pattern from v5.4.0, where round 1 found three real MEDs).
+- Test growth: 1949 -> 1979 assertions across three features.

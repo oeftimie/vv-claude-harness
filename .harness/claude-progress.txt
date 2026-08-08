@@ -1070,3 +1070,15 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
 - Next: F085/F086 still pending. portage-curator needs /plugin update +
   /harness-doctor --fix in its own session.
 - Blockers: none.
+
+## Session 2026-08-09 (F085, F105, F106 -> v5.5.0)
+- Feature: F085 (orientation scope cap), F105 (drop not-run baseline
+  keys), F106 (exit-3 skip protocol for focused_test). F086 found already
+  passing (stale handoff entry) -- no work needed.
+- Status: all three complete; suite 1979/1979.
+- Decisions: baseline drop only at the reached-and-unconfigured point
+  (ordering skips preserve); exit 3 = skipped-no-runner contract in
+  init.sh; details in context_summary.md Meta-Session 2026-08-09.
+- Next: release v5.5.0 (PR + review + merge + tag) is in flight this
+  session; after that, no pending features remain in features.json.
+- Blockers: none.

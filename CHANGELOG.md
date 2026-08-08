@@ -2,6 +2,33 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.5.0 (2026-08-09)
+
+Closes out the v5.4.0 review's deferred findings plus one older orientation bug.
+
+1. **Exit-3 skip protocol for `focused_test` (F106)** — `init.sh`'s exit-code contract
+   is now explicit: 0 strictly means the test executed and passed; 3 means "skipped,
+   no per-file runner for this stack" (the unknown-stack and pytest-absent arms). The
+   TaskCompleted hook accepts a 3 on smoke alone with a stderr note and records **no**
+   focused baseline, so a skipped stage can never masquerade as a green and later arm
+   a false green-to-red `correction_cycles` increment. Any other nonzero exit still
+   rejects as a real failure.
+2. **Not-run baseline keys are dropped (F105)** — `focused:<id>` / `coverage:<id>`
+   entries in `.harness/last_gate.json` are deleted when the hook reaches the stage
+   and finds it unconfigured (test_file removed, `focused_test` support gone, coverage
+   no longer numeric): a baseline exists only while its stage is genuinely being
+   exercised. A stage skipped because an *earlier* stage failed keeps its baseline —
+   ordering is not deconfiguration — so the normal fail-fix loop keeps its
+   attribution.
+3. **Orientation scope cap (F085)** — the `Next claimable:` line's scope field (382
+   chars real, 711 in the adversarial fixture) gets the same truncate-and-point
+   treatment as the description: 150-char cap with a marker naming the path count.
+
+The never-run-the-full-suite guarantee for `focused_test` now has two independent
+pins: the v5.4.0 structural check plus a behavioral test running the real template
+with a canary test file and asserting exact exit codes — closing the
+single-assertion gap the v5.4.0 review flagged.
+
 ### v5.4.0 (2026-08-08)
 
 **Quality-gate redesign: full_test moves from every task completion to the moment a
