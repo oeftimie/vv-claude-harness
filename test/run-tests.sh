@@ -11688,6 +11688,109 @@ assert_contains "$(cat "$CAPTURE8")" "F090-MARK-SANITIZED-8" \
 kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
 kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
 
+echo "--- group 9: F099 -- GET /sessions lists available logs; /events takes a per-connection ?session= override ---"
+
+DIR9="$WORK/dash-9"
+make_fixture "$DIR9"
+mkdir -p "$DIR9/.harness/dashboard"
+printf '{"marker":"F099-MARK-OLD-SESSION"}\n' > "$DIR9/.harness/dashboard/old-session.jsonl"
+printf '{"marker":"F099-MARK-NEW-SESSION"}\n' > "$DIR9/.harness/dashboard/new-session.jsonl"
+python3 -c "
+import os, time
+d = '$DIR9/.harness/dashboard'
+t = time.time()
+os.utime(os.path.join(d, 'old-session.jsonl'), (t - 10, t - 10))
+os.utime(os.path.join(d, 'new-session.jsonl'), (t, t))
+"
+
+PORT9=$(free_port)
+start_dashboard_server "$DIR9" "old-session" "$PORT9" "$WORK/server-9.out"
+wait_for_port 127.0.0.1 "$PORT9"
+assert_rc0 "$?" "dash: group9 server accepts connections on its bound port"
+
+SESSIONS_OUT=$(raw_get "$PORT9" "/sessions")
+assert_contains "$SESSIONS_OUT" "200" "dash: GET /sessions returns 200"
+assert_contains "$SESSIONS_OUT" "old-session" "dash: /sessions lists old-session"
+assert_contains "$SESSIONS_OUT" "new-session" "dash: /sessions lists new-session"
+assert_contains "$SESSIONS_OUT" "\"project\"" "dash: /sessions response includes a project field"
+assert_contains "$SESSIONS_OUT" "$DIR9" \
+  "dash: /sessions' project field is the server's resolved project root, not a raw dashboard_dir path"
+
+# raw_get.py's text-mode status-line write and binary body write don't
+# guarantee relative ordering in the captured output (unlike every other
+# assertion in this section, which only substring-checks -- this is the
+# first one that needs to actually parse the JSON), so locate the object by
+# its opening brace and let json.JSONDecoder.raw_decode stop at its closing
+# brace, ignoring whatever text (the status line) sits before or after it.
+python3 -c "
+import json, sys
+text = sys.stdin.read()
+data, _ = json.JSONDecoder().raw_decode(text[text.index('{'):])
+ids = [s['session_id'] for s in data['sessions']]
+sys.exit(0 if ids.index('new-session') < ids.index('old-session') else 1)
+" <<< "$SESSIONS_OUT" >/dev/null 2>&1
+assert_rc0 "$?" "dash: /sessions orders most-recently-modified first"
+
+CAPTURE9_DEFAULT="$WORK/capture-9-default.txt"
+: > "$CAPTURE9_DEFAULT"
+start_sse_reader "$PORT9" "/events" "$CAPTURE9_DEFAULT"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE9_DEFAULT")" "F099-MARK-OLD-SESSION" \
+  "dash: /events with no query param still uses the server's CLI-level default session"
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+
+CAPTURE9_OVERRIDE="$WORK/capture-9-override.txt"
+: > "$CAPTURE9_OVERRIDE"
+start_sse_reader "$PORT9" "/events?session=new-session" "$CAPTURE9_OVERRIDE"
+sleep 0.5
+assert_contains "$(cat "$CAPTURE9_OVERRIDE")" "F099-MARK-NEW-SESSION" \
+  "dash: /events?session=<id> overrides the server's default session for that connection only"
+assert_not_contains "$(cat "$CAPTURE9_OVERRIDE")" "F099-MARK-OLD-SESSION" \
+  "dash: the ?session= override replaces, not adds to, the default session's content"
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+DIR9B="$WORK/dash-9b"
+make_fixture "$DIR9B"
+mkdir -p "$DIR9B/.harness/dashboard"
+# Same traversal risk as group 8 (Finding 12), but via the query param instead
+# of the CLI arg -- sanitize_session_id() must be applied on this path too.
+printf '{"marker":"F099-MARK-OUTSIDE-SECRET-Q"}\n' > "$WORK/secret-outside-q.jsonl"
+
+PORT9B=$(free_port)
+start_dashboard_server "$DIR9B" "" "$PORT9B" "$WORK/server-9b.out"
+wait_for_port 127.0.0.1 "$PORT9B"
+assert_rc0 "$?" "dash: group9b server accepts connections on its bound port"
+
+CAPTURE9B="$WORK/capture-9b.txt"
+: > "$CAPTURE9B"
+start_sse_reader "$PORT9B" "/events?session=../../../secret-outside-q" "$CAPTURE9B"
+sleep 0.5
+assert_not_contains "$(cat "$CAPTURE9B")" "F099-MARK-OUTSIDE-SECRET-Q" \
+  "dash: a traversal-shaped ?session= query override never leaks a file outside .harness/dashboard/"
+
+kill "$READER_PID" 2>/dev/null; wait "$READER_PID" 2>/dev/null
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+DIR9C="$WORK/dash-9c"
+make_fixture "$DIR9C"
+# .harness/dashboard/ does not exist yet -- /sessions must report "no logs
+# yet", not error, so the frontend can render an empty-state message.
+SESSION9C="dash-session-9c-never-created"
+
+PORT9C=$(free_port)
+start_dashboard_server "$DIR9C" "$SESSION9C" "$PORT9C" "$WORK/server-9c.out"
+wait_for_port 127.0.0.1 "$PORT9C"
+assert_rc0 "$?" "dash: group9c server accepts connections on its bound port"
+
+EMPTY_SESSIONS_OUT=$(raw_get "$PORT9C" "/sessions")
+assert_contains "$EMPTY_SESSIONS_OUT" "200" "dash: GET /sessions returns 200 even before .harness/dashboard/ exists"
+assert_contains "$EMPTY_SESSIONS_OUT" "\"sessions\": []" \
+  "dash: /sessions reports an empty list, not an error, when no logs exist yet"
+
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
 echo ""
 echo "== F091: dashboard frontend =="
 

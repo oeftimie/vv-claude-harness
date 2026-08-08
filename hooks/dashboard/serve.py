@@ -2,7 +2,9 @@
 """Dashboard SSE server (F090): dependency-free, stdlib-only (Python 3.6+),
 serving a live Server-Sent Events stream of one harness session's dashboard
 event log (F088's .harness/dashboard/<session_id>.jsonl), plus the static
-assets (F091) that render it.
+assets (F091) that render it, plus a GET /sessions listing (F099) of every
+session log currently under dashboard_dir so the frontend can let the user
+pick which one to watch instead of the server guessing.
 
 Binds 127.0.0.1 only, always -- no bind-address override, no authentication.
 Loopback-only access is the sole, deliberately accepted control (matching
@@ -91,6 +93,36 @@ def pick_most_recent_jsonl(dashboard_dir):
     return os.path.join(dashboard_dir, names[-1])
 
 
+def list_sessions(dashboard_dir):
+    """All *.jsonl session logs under dashboard_dir as {session_id, mtime,
+    size} dicts, most-recently-modified first (ties broken by the
+    lexicographically largest session_id, matching pick_most_recent_jsonl's
+    own tie-break). [] if the directory doesn't exist or holds no logs yet --
+    callers (the /sessions endpoint) treat that as a normal empty state, not
+    an error, so the frontend can render "no sessions yet" instead of
+    guessing which log to tail (F099)."""
+    if not os.path.isdir(dashboard_dir):
+        return []
+    entries = []
+    for name in os.listdir(dashboard_dir):
+        if not name.endswith(".jsonl"):
+            continue
+        full = os.path.join(dashboard_dir, name)
+        try:
+            stat = os.stat(full)
+        except OSError:
+            continue
+        entries.append(
+            {
+                "session_id": name[: -len(".jsonl")],
+                "mtime": stat.st_mtime,
+                "size": stat.st_size,
+            }
+        )
+    entries.sort(key=lambda e: (e["mtime"], e["session_id"]), reverse=True)
+    return entries
+
+
 def resolve_target_path(dashboard_dir, session_id):
     """The absolute path to tail. An explicit session_id maps directly (the
     file itself may not exist yet -- stream_events()'s own loop waits for
@@ -169,14 +201,23 @@ def stream_events(wfile, target_path):
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        path = urllib.parse.urlparse(self.path).path
-        if path == "/events":
-            self.handle_events()
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/events":
+            self.handle_events(parsed.query)
+        elif parsed.path == "/sessions":
+            self.handle_sessions()
         else:
-            self.handle_static(path)
+            self.handle_static(parsed.path)
 
-    def handle_events(self):
-        target = resolve_target_path(self.server.dashboard_dir, self.server.session_id)
+    def handle_events(self, query):
+        """session_id for this connection: an explicit ?session= query
+        param (sanitized the same way as the CLI arg, F099 -- lets the
+        frontend's session picker target any log without the CLI-level
+        default ever changing) if present, else the server's own default
+        (CLI arg, or auto-select when that was omitted too)."""
+        override = urllib.parse.parse_qs(query).get("session", [None])[0]
+        session_id = sanitize_session_id(override) if override else self.server.session_id
+        target = resolve_target_path(self.server.dashboard_dir, session_id)
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -185,6 +226,24 @@ class Handler(BaseHTTPRequestHandler):
             stream_events(self.wfile, target)
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
+
+    def handle_sessions(self):
+        """GET /sessions: every session log currently under dashboard_dir,
+        plus the project root the server is bound to (F099) -- lets the
+        frontend show the user what they're actually watching instead of
+        the server silently guessing, and makes a cross-project server
+        reuse visible instead of indistinguishable from 'nothing happening'."""
+        body = json.dumps(
+            {
+                "project": self.server.project_root,
+                "sessions": list_sessions(self.server.dashboard_dir),
+            }
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def handle_static(self, url_path):
         rel_path = urllib.parse.unquote(url_path)
@@ -245,7 +304,8 @@ def main(argv=None):
             "is another dashboard server already running?\n"
         )
         sys.exit(1)
-    server.dashboard_dir = os.path.join(find_project_root(), ".harness", "dashboard")
+    server.project_root = find_project_root()
+    server.dashboard_dir = os.path.join(server.project_root, ".harness", "dashboard")
     server.session_id = sanitize_session_id(args.session_id)
     try:
         server.serve_forever()
