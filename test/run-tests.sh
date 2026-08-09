@@ -13988,6 +13988,67 @@ assert_not_contains "$STDERR_F107_NULL" "TypeError" \
   "f107 (null description): no python traceback reaches stderr"
 
 echo ""
+echo "== F111/F112: plugin workflow scripts (OVI-142) =="
+
+# Phase 1 of the OVI-140 Agent Teams -> Dynamic Workflows migration ships two
+# workflow scripts at plugin root. The runner is dependency-free (no node), so
+# these are structural assertions on the scripts' source text -- the same style
+# the suite uses for the bash hooks. They pin the load-bearing invariants the
+# spec-verification pass surfaced: defensive args parsing, no non-deterministic
+# calls, per-agent model, author-blind reviewer, bounded/lead-owned integration.
+
+for WF in implement-features review-branch; do
+  WF_PATH="$REPO_ROOT/workflows/$WF.js"
+  if [ -f "$WF_PATH" ]; then
+    pass "wf ($WF): workflows/$WF.js exists at plugin root"
+  else
+    fail "wf ($WF): workflows/$WF.js is missing"
+    continue
+  fi
+  WF_SRC=$(cat "$WF_PATH")
+
+  # meta must be a pure literal with the required fields.
+  assert_contains "$WF_SRC" "export const meta = {" "wf ($WF): exports a meta block"
+  assert_contains "$WF_SRC" "name: '$WF'" "wf ($WF): meta.name matches the file"
+  assert_contains "$WF_SRC" "phases: [" "wf ($WF): meta declares phases"
+
+  # No non-deterministic or dynamic-import calls (would break resume/replay).
+  assert_not_contains "$WF_SRC" "Date.now(" "wf ($WF): no Date.now()"
+  assert_not_contains "$WF_SRC" "Math.random(" "wf ($WF): no Math.random()"
+  assert_not_contains "$WF_SRC" "new Date(" "wf ($WF): no new Date()"
+  assert_not_contains "$WF_SRC" "import(" "wf ($WF): no dynamic import()"
+
+  # args arrives as a JSON string (Phase 0 Q7) -> must be parsed defensively.
+  assert_contains "$WF_SRC" "JSON.parse" "wf ($WF): parses args defensively (JSON string per Phase 0)"
+  assert_contains "$WF_SRC" "function parseArgs" "wf ($WF): has a guarded parseArgs helper"
+done
+
+# implement-features specifics.
+IF_SRC=$(cat "$REPO_ROOT/workflows/implement-features.js" 2>/dev/null)
+# Every agent() spawn in the implement path carries an explicit model or agentType.
+assert_contains "$IF_SRC" "model: 'sonnet'" "wf (impl): implementer runs Sonnet"
+assert_contains "$IF_SRC" "agentType: 'vv-harness:feature-implementer'" "wf (impl): implementer uses the plugin agent type"
+assert_contains "$IF_SRC" "agentType: 'vv-harness:reviewer'" "wf (impl): reviewer uses the plugin agent type (Opus by definition)"
+assert_contains "$IF_SRC" "isolation: 'worktree'" "wf (impl): implementers run in isolated worktrees"
+# Reviewer must not be fed the implementer's own notes/approach (author-blind to rationale).
+assert_not_contains "$IF_SRC" "impl.notes" "wf (impl): reviewer prompt never interpolates the implementer's notes"
+assert_contains "$IF_SRC" "ask for the implementer" "wf (impl): reviewer prompt states it must not read the implementer's notes"
+# The script must NOT integrate -- no merge inside the workflow (integration is the lead's).
+assert_not_contains "$IF_SRC" "git merge" "wf (impl): the script never merges (integration is the lead's)"
+assert_contains "$IF_SRC" "The lead integrates" "wf (impl): documents that integration/features.json edits are the lead's job"
+# Run-continuity: partial-result contract.
+assert_contains "$IF_SRC" "unfinished" "wf (impl): returns an unfinished-feature list (partial-result contract)"
+assert_contains "$IF_SRC" "maxReviewRounds" "wf (impl): honors a maxReviewRounds bound"
+# A feature with no supplied spec is a hard error, never implemented from its ID alone.
+assert_contains "$IF_SRC" "no verified spec supplied" "wf (impl): errors when a feature has no supplied spec"
+
+# review-branch specifics: dedup barrier before the verify fan-out.
+RB_SRC=$(cat "$REPO_ROOT/workflows/review-branch.js" 2>/dev/null)
+assert_contains "$RB_SRC" "function dedupeKey" "wf (review): dedups findings before verify"
+assert_contains "$RB_SRC" "phase('Verify')" "wf (review): has an adversarial verify phase"
+assert_not_contains "$RB_SRC" "Write" "wf (review): review-only, never writes"
+
+echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 echo "Summary: $PASS_COUNT/$TOTAL assertions passed, $FAIL_COUNT failed"
 if [ "$FAIL_COUNT" -gt 0 ]; then
