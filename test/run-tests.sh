@@ -13372,6 +13372,61 @@ else
   fail "f096-ft: the giant-tail denial's reason string is NOT capped (length $F096_FT_REASON_LEN)"
 fi
 
+echo "== F109: redirections after git commit are not pathspecs =="
+
+# F052's bare-pathspec rule denied ANY flagless token after `git commit`,
+# including shell redirections the shell consumes before git ever runs --
+# `git commit --no-edit 2>&1` was denied as compound-stage-and-commit
+# (live-reproduced; bisection showed the redirection alone triggers it, not
+# the && chain). A genuine redirection is only ever the RAW, unquoted form:
+# quoting any of it (`git commit '2>&1'`) makes bash pass it to git as an
+# ordinary word -- a real F052 working-tree-commit pathspec that must KEEP
+# denying.
+DIR_F109="$WORK/f109-redirections"
+make_fixture "$DIR_F109"
+install_hooks "$DIR_F109"
+echo "content" > "$DIR_F109/tracked.txt"
+git -C "$DIR_F109" add tracked.txt
+git -C "$DIR_F109" commit -q -m "track a file for pathspec cases"
+
+# Allowed: attached-target and dup redirections in the commit segment.
+OUT=$(run_commit_gate "$DIR_F109" 'git commit --no-edit 2>&1')
+RC=$?
+assert_rc0 "$RC" "f109: 'git commit --no-edit 2>&1' exits 0"
+assert_empty "$OUT" "f109: a dup redirection (2>&1) after commit is not a pathspec deny"
+
+OUT=$(run_commit_gate "$DIR_F109" 'git commit -m "msg" 2>/dev/null')
+assert_empty "$OUT" "f109: an attached-target redirection (2>/dev/null) is not a pathspec deny"
+
+# Allowed: bare operator with a detached target -- bash consumes BOTH tokens.
+OUT=$(run_commit_gate "$DIR_F109" 'git commit -m "msg" > commit.log')
+assert_empty "$OUT" "f109: a detached-target redirection (> commit.log) is not a pathspec deny"
+
+# Still denied: the quoted form is a real pathspec reaching git (F052).
+OUT=$(run_commit_gate "$DIR_F109" "git commit -m \"msg\" '2>&1'")
+assert_deny_json "$OUT" "f109: a QUOTED '2>&1' is a real pathspec and still denies"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "f109: the quoted-pathspec denial keeps the F052 finding class"
+
+# Still denied: a real pathspec, and a real staging flag beside a redirection.
+OUT=$(run_commit_gate "$DIR_F109" 'git commit -m "msg" tracked.txt 2>&1')
+assert_deny_json "$OUT" "f109: a real pathspec next to a redirection still denies"
+OUT=$(run_commit_gate "$DIR_F109" 'git commit -am "msg" 2>&1')
+assert_deny_json "$OUT" "f109: a real staging flag (-a) next to a redirection still denies"
+
+# The F034 bypass shapes: a real staging flag AFTER the redirection must
+# still be reached by the scan (skipping the redirection, not stopping on it).
+OUT=$(run_commit_gate "$DIR_F109" 'git commit 2>&1 -am "msg"')
+assert_deny_json "$OUT" "f109: a staging flag after a dup redirection is still seen (F034 shape)"
+OUT=$(run_commit_gate "$DIR_F109" 'git commit &> out.log -a -m "msg"')
+assert_deny_json "$OUT" "f109: a staging flag after a detached &> redirect is still seen (F034 shape)"
+
+# Still denied: a backslash-escaped operator is NOT a redirection in bash
+# (\> reaches git as a literal '>' in a pathspec).
+OUT=$(run_commit_gate "$DIR_F109" 'git commit -m "msg" 2\>file')
+assert_deny_json "$OUT" "f109: an escaped operator (2\\>file) is a pathspec, not a redirection"
+
+echo ""
 echo "== F087: readiness-stamp HMAC round-trip (env-var key source) =="
 
 # Supplementary to the F012 stamp block earlier in this file (which already

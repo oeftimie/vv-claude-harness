@@ -1028,7 +1028,12 @@ def parse_command(command):
         # decision (F051 round 2, adversarial review of PR #79).
         views = [_flag_view(t) for t in raw_tokens]
         sc, idx = segment_subcommand(tokens)
-        parsed.append((tokens, sc, idx, views))
+        # raw_tokens ride along for the one decision neither tokens nor views
+        # can make: recognizing a genuine shell redirection (F109). views
+        # strip quotes, so `'2>&1'` (a real pathspec git receives) and `2>&1`
+        # (a redirection bash consumes) are identical there; only the raw
+        # form still tells them apart.
+        parsed.append((tokens, sc, idx, views, raw_tokens))
     return parsed
 
 
@@ -1103,7 +1108,34 @@ def _consumes_next_token(view):
     return False
 
 
-def has_staging_flag(tokens, views):
+# A redirection operator token, optionally fd-prefixed (2>&1, >file, &>>log)
+# -- matched longest-alternative-first so `>>`/`>&`/heredocs aren't misread
+# as a bare `>` with an attached target.
+REDIRECTION_RE = re.compile(r"^(?:\d+|&)?(<<<|<<-|<<|<>|<&|>>|>&|>\||>|<)(.*)$")
+
+
+def _redirection_rest(raw):
+    # Returns the text attached after the redirection operator ("" means the
+    # operator is bare and bash consumes the NEXT token as its target), or
+    # None if RAW is not a genuine redirection. Decided on the RAW token
+    # only, and only when it carries no quoting, escaping, or expansion
+    # characters at all: quoting or escaping any part of the operator
+    # (`'2>&1'`, `2\>file`) makes real bash pass the word through to git as
+    # an ordinary pathspec -- the F052 working-tree-commit risk -- so any
+    # such token must fall through to the pathspec deny below, never be
+    # skipped as a redirection (F109). Over-restricting here (a $-expansion
+    # that would still resolve to a redirection) only over-denies, never
+    # bypasses -- the same safe direction every other decision in this file
+    # takes.
+    if not raw or any(c in raw for c in "'\"\\$`"):
+        return None
+    m = REDIRECTION_RE.match(raw)
+    if not m:
+        return None
+    return m.group(2)
+
+
+def has_staging_flag(tokens, views, raws):
     # Despite the name (kept to avoid an unnecessary rename ripple through
     # every call site and test), this now also catches a BARE PATHSPEC
     # argument on `git commit` -- `git commit -m x tracked.txt` and
@@ -1121,6 +1153,14 @@ def has_staging_flag(tokens, views):
     while i < n:
         tok = tokens[i]
         view = views[i]
+        # A genuine (raw, unquoted, unescaped) shell redirection is consumed
+        # by bash before git runs -- it is neither a flag nor a pathspec
+        # (F109: `git commit --no-edit 2>&1` was denied as a bare pathspec).
+        # A bare operator (`> log`) consumes its detached target token too.
+        rest = _redirection_rest(raws[i])
+        if rest is not None:
+            i += 1 if rest else 2
+            continue
         if view == "--":
             # Everything after a REAL "--" is unconditionally a pathspec,
             # never a flag -- if any token remains, its working-tree
@@ -1193,7 +1233,7 @@ def commit_is_amend(parsed):
     # the consequence is only an over-cautious HEAD^ comparison base (at
     # worst a spurious full_test run), never a bypass, so the walk stays
     # simple instead of duplicating has_staging_flag()'s value-skipping.
-    for tokens, sc, idx, _ in parsed:
+    for tokens, sc, idx, _, _ in parsed:
         if sc != "commit":
             continue
         for tok in tokens[idx + 1:]:
@@ -1205,13 +1245,14 @@ def commit_is_amend(parsed):
 
 
 def check_compound_stage_and_commit(parsed):
-    subcommands = [sc for _, sc, _, _ in parsed]
+    subcommands = [sc for _, sc, _, _, _ in parsed]
     has_stage = any(sc in ("add", "stage") for sc in subcommands)
     commit_present = any(sc == "commit" for sc in subcommands)
     if has_stage and commit_present:
         return DENY_COMPOUND
-    for tokens, sc, idx, views in parsed:
-        if sc == "commit" and has_staging_flag(tokens[idx + 1:], views[idx + 1:]):
+    for tokens, sc, idx, views, raws in parsed:
+        if sc == "commit" and has_staging_flag(
+                tokens[idx + 1:], views[idx + 1:], raws[idx + 1:]):
             return DENY_COMPOUND
     return None
 
@@ -1348,7 +1389,7 @@ def main():
     project_root = sys.argv[1]
 
     parsed = parse_command(command)
-    if not any(sc == "commit" for _, sc, _, _ in parsed):
+    if not any(sc == "commit" for _, sc, _, _, _ in parsed):
         return
 
     reason = check_compound_stage_and_commit(parsed)
