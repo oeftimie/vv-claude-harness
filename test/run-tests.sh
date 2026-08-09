@@ -13299,6 +13299,93 @@ assert_deny_json "$OUT" \
 assert_contains "$OUT" "compound-stage-and-commit" \
   "f096-cg: an oversized compound-stage-and-commit Bash command still names the finding class"
 
+echo "== F087: readiness-stamp HMAC round-trip (env-var key source) =="
+
+# The readiness-stamp HMAC recipe (schemas/readiness-stamp.md) had no round-trip test
+# anywhere in this repo (OVI-45, re-confirmed 2026-08-04): .harness/harness.json carries
+# no `prep` key, so harness-issue-prep's Step 7 never fires here, and no file under
+# .harness/, MAINTENANCE_LOG.md, or docs/ contains the string "vv-harness-readiness-stamp"
+# -- the mint has never actually run in this repo. This fixture exercises the full
+# documented recipe headlessly via the VV_HARNESS_STAMP_KEY env var (resolution source
+# 3 -- no macOS Keychain needed), against the ACTUAL Step 7 snippet extracted from
+# harness-issue-prep/SKILL.md, not a re-implementation.
+DIR_F087="$WORK/f087-stamp"
+mkdir -p "$DIR_F087"
+python3 - "$REPO_ROOT" "$DIR_F087" <<'PYEOF'
+import re
+import sys
+
+repo_root, work = sys.argv[1], sys.argv[2]
+text = open(f"{repo_root}/skills/harness-issue-prep/SKILL.md").read()
+match = re.search(
+    r'python3 - "\$SPEC_HASH" "\$BASE_SHA" "\$LANE" "\$REPO" <<\'PYEOF\'\n(.*?)\nPYEOF',
+    text, re.DOTALL,
+)
+if not match:
+    print("STEP7_EXTRACT_FAILED")
+    sys.exit(0)
+with open(f"{work}/resolve_and_hmac.py", "w") as fh:
+    fh.write(match.group(1))
+PYEOF
+if [ -f "$DIR_F087/resolve_and_hmac.py" ]; then
+  pass "f087: Step 7's key-resolution+HMAC snippet extracted from harness-issue-prep/SKILL.md"
+else
+  fail "f087: could not extract Step 7's snippet from harness-issue-prep/SKILL.md"
+fi
+
+# env -i with PATH pointed at an empty dir means no `security` binary is reachable --
+# genuinely no Keychain source available, same neutralization as F012's fixture. No
+# VV_HARNESS_STAMP_KEY_FILE is set either, so only source 3 (the env var) can yield a key.
+NOBIN_F087="$DIR_F087/nobin"
+mkdir -p "$NOBIN_F087"
+PYTHON3_BIN_F087=$(command -v python3)
+STAMP_KEY_F087="f087-env-var-key-only-source"
+
+run_stamp_f087() {
+  env -i PATH="$NOBIN_F087" HOME="$HOME" VV_HARNESS_STAMP_KEY="$STAMP_KEY_F087" \
+    "$PYTHON3_BIN_F087" "$DIR_F087/resolve_and_hmac.py" "$@"
+}
+
+# Canonical hashing per schemas/readiness-stamp.md: sha256(title + "\n" + description).
+SPEC_HASH_F087=$(printf 'F087 fixture title\nF087 fixture description' \
+  | python3 -c 'import sys, hashlib; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')
+BASE_SHA_F087="f087f087f087f087f087f087f087f087f087f087"
+TAMPERED_BASE_SHA_F087="0000000000000000000000000000000000f087"
+LANE_F087="code"
+REPO_F087="eovidiu/vv-claude-harness"
+
+HMAC_F087=$(run_stamp_f087 "$SPEC_HASH_F087" "$BASE_SHA_F087" "$LANE_F087" "$REPO_F087")
+assert_rc0 "$?" "f087: minting via the real Step 7 snippet with VV_HARNESS_STAMP_KEY (source 3, no Keychain) succeeds"
+
+# Positive round trip: a consumer re-running the identical documented recipe (message
+# spec_hash|base_sha|lane|repo, same key) recomputes the identical HMAC -- consumer
+# verification rule 2 in schemas/readiness-stamp.md.
+HMAC_F087_VERIFY=$(run_stamp_f087 "$SPEC_HASH_F087" "$BASE_SHA_F087" "$LANE_F087" "$REPO_F087")
+if [ -n "$HMAC_F087" ] && [ "$HMAC_F087" = "$HMAC_F087_VERIFY" ]; then
+  pass "f087: minted HMAC round-trips -- recomputing over the same fields and key verifies clean"
+else
+  fail "f087: expected the recomputed HMAC to match the minted one, got '$HMAC_F087' vs '$HMAC_F087_VERIFY'"
+fi
+
+# Negative: spec_hash tampered post-mint (e.g. a post-stamp issue edit) no longer
+# recomputes to the minted HMAC -- consumer rule 2 rejects it.
+BAD_SPEC_HASH_F087=$(printf 'F087 fixture title\nF087 fixture description EDITED' \
+  | python3 -c 'import sys, hashlib; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')
+HMAC_F087_BAD_SPEC=$(run_stamp_f087 "$BAD_SPEC_HASH_F087" "$BASE_SHA_F087" "$LANE_F087" "$REPO_F087")
+if [ "$HMAC_F087_BAD_SPEC" != "$HMAC_F087" ]; then
+  pass "f087: a tampered spec_hash fails HMAC verification"
+else
+  fail "f087: a tampered spec_hash should not recompute to the minted HMAC"
+fi
+
+# Negative: base_sha tampered post-mint likewise fails.
+HMAC_F087_BAD_BASE=$(run_stamp_f087 "$SPEC_HASH_F087" "$TAMPERED_BASE_SHA_F087" "$LANE_F087" "$REPO_F087")
+if [ "$HMAC_F087_BAD_BASE" != "$HMAC_F087" ]; then
+  pass "f087: a tampered base_sha fails HMAC verification"
+else
+  fail "f087: a tampered base_sha should not recompute to the minted HMAC"
+fi
+
 echo ""
 echo "== shell syntax =="
 
