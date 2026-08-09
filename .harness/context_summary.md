@@ -4,6 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
+- **v5.6.0 released 2026-08-09 (F087, F094-F098, F107, F108): the ENTIRE remaining backlog cleared in one dynamic-workflow batch.** Six worktree-isolated implementer agents in parallel (one Workflow call), lead merged their branches sequentially into eovidiu/remaining-8 with union conflict resolution on test/run-tests.sh, then a 3-reviewer + adversarial-verify workflow over the combined diff found 16 confirmed findings (all fixed in one review-round commit): the standouts were commit-gate's unbounded $FULL_TAIL converting a passing-flip DENY into a silent ALLOW (live-reproduced), F107's null-description crash suppressing the exit-2 nudge, and F097's truncation cutting the very rule pointers it protects. F098 needed no source change (commit 6f85267 had already landed the consolidation; a behavioral spawn-count test now pins it). F087's prep.stamp config remains deliberately unconfigured (Ovidiu's 2026-08-04 deferral stands). Suite 2059/2059. ZERO pending features remain in features.json -- new work needs fresh scoping. portage-curator still needs `/plugin` update + `/harness-doctor --fix` in its own session.
 - **v5.5.0 released 2026-08-09 (F085, F105, F106): review follow-through.** Exit-3 skip protocol for focused_test (a skip is never a green), not-run baseline keys dropped from last_gate.json (reached-and-unconfigured only; ordering skips preserve), orientation scope field capped. F086 was found already passing (stale handoff). NO pending features remain in features.json -- per the standing guidance below, new work needs fresh scoping, not an assumed queue. portage-curator still needs `/plugin` update + `/harness-doctor --fix` in its own session.
 - **v5.4.0 released 2026-08-08 (F100-F104): quality-gate redesign.** TaskCompleted now runs smoke + the feature's own focused test (never full_test); full_test is enforced by the commit gate when a staged features.json flips a status to passing; correction_cycles counts only green-to-red transitions against a .harness/last_gate.json baseline; harness-init SKILL.md carries the "full_test must be satisfiable mid-project, aggregates as ratchets" authoring rule. Motivated by a portage-curator field report (v3.5.0 hooks) -- that project still needs `/plugin` update + `/harness-doctor --fix` in its own session to pick this up. F085/F086 remain the queued pending features.
 - The entire locally-discovered bug/design-gap chain that started with F023 is now CLOSED: F023-F062 (40 features, no Linear issue) all shipped. Full per-feature detail lives in features.json's own per-feature `notes` fields and the per-feature Meta-Session entries below; `claude-progress.txt`'s consolidated session entries cover the wall-clock history.
@@ -123,6 +124,13 @@ This file is referenced in CLAUDE.md and loaded every session.
 - Capability-block memories decay: before telling the user something is blocked
   (permissions, tooling), re-verify against current .claude/settings.json and repo
   state — a one-line grep beats a wasted round-trip.
+- When a bug class has recurred (same root cause, different call site), sweep for the
+  class across the codebase before closing the feature -- the ARG_MAX argv class
+  needed three separate fixes across three sessions because each fix stopped at the
+  cited site. (backlog)
+- Dedup findings across review dimensions BEFORE the adversarial-verify fan-out:
+  three reviewers independently re-report the same defect, and verifying each copy
+  separately multiplies verify cost ~2x for zero extra signal. (backlog)
 - Small independent-edit batches (docs, hook guards, rule text) fit single-session
   mode regardless of file count; reserve teams for genuinely parallel feature work.
 - Ground-truth a reviewer's OWN restated claim too, not just the original code under
@@ -1757,3 +1765,32 @@ session-end.sh at the next SessionStart.
   implementation; one vv-harness:reviewer pass planned at PR time
   (pattern from v5.4.0, where round 1 found three real MEDs).
 - Test growth: 1949 -> 1979 assertions across three features.
+
+## Meta-Session 2026-08-09 (batch: F087, F094-F098, F107, F108 -> v5.6.0)
+- Scope accuracy: F094/F095/F096 recorded scope arrays WITHOUT test/run-tests.sh
+  even though every feature's tests land there -- a reassigned teammate under
+  enforce-scope would have been denied writing its own regression tests (review
+  confirmed live). Fixed in features.json; future scoping should include the test
+  runner path by default for any feature with testable behavior.
+- Model calibration: six Sonnet implementers, zero correction cycles at implement
+  time; all 16 confirmed defects were caught by the Opus reviewer + adversarial
+  verify round, and several (FULL_TAIL allow, null-description fail-open) were in
+  the implementers' *own* new guard code. Pattern holds: implementers are cheap
+  and reliable for scoped TDD work, the review round is where quality is bought.
+- Discovery lineage: the review round found a live silent-allow (FULL_TAIL) one
+  call site beyond F096's spec -- the third instance of the ARG_MAX class. When a
+  bug class recurs, grep for the CLASS (all argv interpolation sites into
+  deny_json), don't just fix the cited site.
+- Approach patterns: (1) union-merge of append-only test-section conflicts (strip
+  markers, keep both sides) worked 3/3 times with zero manual repair beyond a
+  separator line -- viable default for parallel-implementer batches sharing one
+  test file. (2) Leftover agent worktrees under .claude/worktrees/ made repo-wide
+  *.md-count assertions fail (7 copies of every file); remove worktrees before
+  running the suite from the main checkout. (3) An 11-agent verify fan-out hit the
+  session token limit mid-run; the workflow degraded gracefully (findings kept,
+  verdicts missing) and most unverified findings duplicated confirmed ones --
+  dedup BEFORE verify would have halved the verify fan-out (barrier + dedup is
+  justified there).
+- Plan approval: none used (standing "work the remaining items" instruction);
+  self-serve resolution disclosed per-feature in features.json notes.
+- Test growth: 1979 -> 2059 assertions across eight features + one review round.
