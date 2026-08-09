@@ -11946,14 +11946,14 @@ assert_not_contains "$DASHBOARD_HTML_SRC" ".teammate_name" \
 # function name, so the second "translate" entry silently overwrote the
 # first, dropping the -50%/-50% centering offset the instant a node
 # animated. Fix: centering moved off `transform` onto the standalone CSS
-# `translate` property, and the ring offset now uses distinct-axis
-# translateX/translateY keys.
+# `translate` property. (F094 later moved the ring offset itself off
+# `transform` entirely too -- see the dedicated F094 section below -- so
+# there is no longer a second transform function to collide with the
+# first at all.)
 assert_not_contains "$DASHBOARD_HTML_SRC" 'translate(-50%, -50%) translate(' \
   "dash-fe: positionRing() no longer packs two translate(...) calls into one transform string (anime.js Map key collision)"
 assert_contains "$DASHBOARD_HTML_SRC" 'translate: -50% -50%;' \
   "dash-fe: .node centers via the standalone CSS translate property (a property anime.js never reads or writes)"
-assert_contains "$DASHBOARD_HTML_SRC" 'translateX(" + x + "px) translateY(' \
-  "dash-fe: positionRing() uses distinct-axis translateX/translateY keys instead of a second bare translate(...)"
 
 # Finding 7: .node.lead had no centering rule of its own (top:50%/left:50%
 # alone puts the node's top-left corner, not its center, at the ring
@@ -13045,6 +13045,38 @@ if grep -qi 'passing' "$REPO_ROOT/README.md" \
 else
   fail "f104: README still describes the retired per-task full-suite gate"
 fi
+
+echo ""
+echo "== F094: dashboard ring positioning off transform =="
+
+# QA binding for F094 is manual (per its own features.json entry): a second
+# adversarial review of the F088-F093 dashboard chain found positionRing()
+# writing directly to style.transform while an animejs animation (pulse() at
+# 280ms, or the entrance/exit animations layoutSpokes() can interrupt) may be
+# mid-flight on the same node -- anime.js v3 rebuilds the whole transform
+# string from its own internal snapshot every animated frame, silently
+# clobbering positionRing()'s write. This repo's dependency-free bash/python3
+# runner has no browser/DOM harness, so these are supplementary structural
+# assertions on the exact source pattern the bug and its fix hinge on, not a
+# rendered/animated result.
+
+DASHBOARD_HTML_SRC=$(cat "$HOOKS_DIR/dashboard/index.html" 2>/dev/null)
+
+assert_not_contains "$DASHBOARD_HTML_SRC" 'rec.el.style.transform =' \
+  "dash-fe: positionRing() no longer writes ring position directly to style.transform (anime.js clobbers it mid-animation)"
+assert_contains "$DASHBOARD_HTML_SRC" 'rec.el.style.left = "calc(50% + " + x + "px)"' \
+  "dash-fe: positionRing() sets ring position via style.left using calc()"
+assert_contains "$DASHBOARD_HTML_SRC" 'rec.el.style.top = "calc(50% + " + y + "px)"' \
+  "dash-fe: positionRing() sets ring position via style.top using calc()"
+assert_contains "$DASHBOARD_HTML_SRC" "rec.x = x;" \
+  "dash-fe: positionRing() stores x on the node record"
+assert_contains "$DASHBOARD_HTML_SRC" "rec.y = y;" \
+  "dash-fe: positionRing() stores y on the node record"
+# The already-fixed standalone-CSS centering offset (first review round) must
+# survive this fix untouched -- transform stays exclusively anime.js's for
+# scale/opacity, never positioning.
+assert_contains "$DASHBOARD_HTML_SRC" 'translate: -50% -50%;' \
+  "dash-fe: .node still centers via the standalone CSS translate property"
 
 echo ""
 echo "== shell syntax =="
