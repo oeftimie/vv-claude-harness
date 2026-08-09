@@ -2453,7 +2453,7 @@
       "id": "F087",
       "description": "The readiness-stamp HMAC (schemas/readiness-stamp.md's mint/consumer recipe, implemented in skills/harness-issue-prep/SKILL.md Step 7) has no round-trip test anywhere in this repo. Re-verifying OVI-45's original finding on 2026-08-04 confirmed: `.harness/harness.json` has no `prep` key (harness-issue-prep runs in local-only mode on this repo today, so Step 7 never fires), and no file under `.harness/`, `MAINTENANCE_LOG.md`, or `docs/` contains the string `vv-harness-readiness-stamp` -- the mint has never actually minted a stamp here. Add a `test/run-tests.sh` fixture that exercises the full recipe headlessly (the `VV_HARNESS_STAMP_KEY` env-var key source from the documented 3-source resolution chain -- no macOS Keychain needed): compute `hmac(spec_hash|base_sha|lane|repo)` per the documented recipe, confirm it verifies, and confirm a tampered field (wrong spec_hash, wrong base_sha) fails verification. This closes the one gap the mint-side implementation doesn't already cover on its own -- a regression in the HMAC logic would otherwise go undetected until an unattended runner started depending on it.",
       "priority": 88,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-issue-prep/SKILL.md",
         "schemas/readiness-stamp.md",
@@ -2461,12 +2461,14 @@
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "Test-only feature. 5 assertions green on first run (mint-side implementation was already correct); tamper negatives proven non-vacuous via a throwaway sabotaged copy flipping them to FAIL. Review round 1: the section duplicated much of the pre-existing F012 stamp block (whose coverage the section's original comment wrongly denied existed) -- comment corrected to position this as supplementary (env-var-only key source + base_sha tamper, which F012 lacks), and added what self-comparison could not catch: an independent oracle recomputing schemas/readiness-stamp.md's documented recipe, plus lane, repo, and wrong-key tamper negatives.",
       "notes": "Deliberately deferred, not urgent -- Ovidiu's call (2026-08-04): hold until closer to actually building the external unattended runner that would consume these stamps, since nothing configures or exercises stamping on this repo today. When picked up, also worth configuring `prep.stamp` in `.harness/harness.json` (currently absent, so Step 7 is a no-op regardless of this test) as part of the same pass, and checking that whatever runner gets built actually implements all six of schemas/readiness-stamp.md's \"Consumer verification rules\", not just the marker line.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Extracts the REAL Step 7 snippet from SKILL.md (F012's extraction pattern), not a re-implementation. prep.stamp in .harness/harness.json deliberately NOT configured -- Ovidiu's 2026-08-04 deferral note stands; only the test gap is closed."
+      ],
       "failure_reason": null,
       "discovered_via": "OVI-45 (comparative-analysis re-verification during this session, 2026-08-04): original analysis flagged spec-gate signing as macOS-Keychain-only; re-checking against current code found the 3-source key-resolution chain (Keychain, key-file, env var) already resolves that, but surfaced a different, still-real gap -- zero test coverage and zero live consumers on this repo.",
       "spec": null
@@ -2671,20 +2673,23 @@
       "id": "F094",
       "description": "Dashboard: positionRing() writes directly to style.transform while an animejs animation may be mid-flight on the same node (pulse() at 280ms, layoutSpokes() on every node create/remove), and anime.js v3 rebuilds the whole transform string from its own internal snapshot on every animation frame, silently clobbering any external write. Found by a second adversarial review of the F088-F093 dashboard chain (2026-08-05): confirmed in headless Chrome that a node mid-pulse when another agent spawns (triggering layoutSpokes()) ends up stuck at its pre-layout ring position until the next full layout pass. Cosmetic only (nodes self-correct on the next layout event), not a data-correctness or security issue -- deferred rather than blocking the F088-F093 merge on the reviewer's own explicit recommendation. Fix: take positioning off `transform` entirely (the same way centering was already moved off it during the first review's fix round) -- store x/y on the node record and set style.left/style.top directly via calc(), leaving `transform` owned exclusively by anime.js for scale/opacity.",
       "priority": 94,
-      "status": "pending",
+      "status": "passing",
       "scope": [
-        "hooks/dashboard/index.html"
+        "hooks/dashboard/index.html",
+        "test/run-tests.sh"
       ],
       "depends_on": [
         "F091"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "TDD: structural assertions in run-tests.sh confirmed red against pre-fix source (worktree agent), green after. Ring position moved off style.transform onto style.left/top via calc(); transform is exclusively anime.js-owned. Review round 1 removed the write-only rec.x/rec.y record state (and its two pinning assertions) the spec's own wording had induced -- spec/cleanup conflict resolved in favor of the no-unused-state rule. Manual QA binding stands (no browser harness in the runner).",
       "notes": "Deferred, not urgent -- confirmed via headless Chrome reproduction during the second adversarial review of F088-F093, but self-corrects on the next layout pass and has no security or correctness impact beyond a transient visual glitch.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Implemented in parallel worktree batch (workflow wf_dcbc1636-cef) with F095; two pre-existing F091 assertions legitimately updated (single-arg gateBadgeKind, literal badge-gate-block class) rather than left stale."
+      ],
       "failure_reason": null,
       "discovered_via": "Second adversarial review of F088-F093 (2026-08-05), Finding 4",
       "spec": null
@@ -2693,20 +2698,23 @@
       "id": "F095",
       "description": "Dashboard: gate badges are keyed on verdict only (gate-<verdict>), not on which specific gate produced it, so when multiple gate scripts (enforce-scope, commit-gate, check-remaining-tasks, verify-task-quality) log the same verdict in one session, they share one DOM badge element and each new event's `title` (payload.gate + ': ' + payload.finding, the only place the finding class is shown) silently overwrites the previous gate's. Found by a second adversarial review of the F088-F093 dashboard chain (2026-08-05): since enforce-scope now logs skipped/allow on every tool call and commit-gate logs allow on every non-commit Bash call, the overwrite is near-continuous in practice, so the badge tooltip mostly reflects whichever gate happened to fire last rather than a specific, meaningful finding. Deferred rather than blocking the F088-F093 merge on the reviewer's own explicit recommendation -- the block-is-visible-at-all fix from the first review round still holds, this is about attribution precision within that. Fix: key the badge on both gate and verdict (`gate-<sanitized-gate-name>-<verdict>`) instead of verdict alone, adjusting the corresponding CSS attribute selector.",
       "priority": 95,
-      "status": "pending",
+      "status": "passing",
       "scope": [
-        "hooks/dashboard/index.html"
+        "hooks/dashboard/index.html",
+        "test/run-tests.sh"
       ],
       "depends_on": [
         "F091"
       ],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "TDD: structural assertions confirmed red pre-fix, green post. gateBadgeKind(gate, verdict) now keys badges per gate+verdict (shared sanitizeClassFragment helper); CSS moved to [class*=][class$=] suffix selectors so verdict colors work for any gate name. Manual QA binding stands.",
       "notes": "Deferred, not urgent -- cosmetic attribution-precision issue, not a security or correctness bug; the more severe badge-overwrite bug (a block being erased by the next allow) was already fixed in F088-F093's own merge.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Same worktree batch as F094; committed separately, each commit independently suite-green."
+      ],
       "failure_reason": null,
       "discovered_via": "Second adversarial review of F088-F093 (2026-08-05), Finding 6",
       "spec": null
@@ -2715,21 +2723,24 @@
       "id": "F096",
       "description": "enforce-scope.sh's DENY_REASON and the Bash $COMMAND it embeds are still passed via argv to the analysis python3 process in one call site each (not the deny_json() logging call, which was fixed for the ARG_MAX bypass during F088-F093's own merge) -- so an extremely large Bash command (over the OS's ARG_MAX, ~1MB on macOS, as low as 128KB per-argument on Linux) can still fail the analysis step itself and fall through to an unintended allow, via the same root-cause class as the critical bug F088-F093 fixed, just one call site earlier in the chain. Found by a second adversarial review (2026-08-05): confirmed this specific residual case is PRE-EXISTING on main (not a regression introduced by F088-F093), but F089's new deny_json() header comment overclaims that 'only small, bounded values stay on argv' when the reason string it receives is not actually bounded. Deferred rather than blocking the F088-F093 merge on the reviewer's own explicit recommendation, since it predates this feature chain and is a pre-existing gap, not a new one. Fix: feed $COMMAND to the upstream analysis python via stdin as well (mirroring the fix already applied to deny_json() itself), and/or cap DENY_REASON's length before it reaches deny_json(); at minimum, correct the overclaiming comment to disclose the residual instead of asserting full boundedness.",
       "priority": 96,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         ".claude/hooks/enforce-scope.sh",
         ".claude/hooks/commit-gate.sh",
         "skills/harness-init/enforce-scope.sh.template",
-        "skills/harness-init/commit-gate.sh.template"
+        "skills/harness-init/commit-gate.sh.template",
+        "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "TDD: 6 assertions (oversized out-of-scope write, oversized compound commit) confirmed red with the fix stashed ('Argument list too long' visible), green restored. $COMMAND now rides stdin at the analysis call sites in both hooks; DENY_REASON capped at 2048 in enforce-scope (commit-gate's python reasons traced as bounded constants). Review round 1 found and fixed the residual the comment overclaimed away: commit-gate's shell-level $FULL_TAIL deny reason was unbounded on argv -- live-reproduced silent ALLOW of a red-suite passing flip; now capped (FULL_TAIL_MAX_LEN=2048) with a regression test.",
       "notes": "Pre-existing on main, not a regression from F088-F093 -- deferred per the reviewing agent's own explicit recommendation. The critical, reachable-in-practice instance of this bug class (in deny_json() itself) was fixed as part of F088-F093's merge; this is the residual, harder-to-reach upstream call site.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Live ARG_MAX repro (2MB command) before fixing; templates and live copies kept byte-identical (F047 check covers)."
+      ],
       "failure_reason": null,
       "discovered_via": "Second adversarial review of F088-F093 (2026-08-05), Finding 3",
       "spec": null
@@ -2738,19 +2749,21 @@
       "id": "F097",
       "description": "hooks/session-start.sh has no mechanism that measures or enforces its actual total orientation output against the platform's 10,000-char cap -- only four independent, hand-tuned local budgets (three sections capped via print_budgeted_block at 2600 chars each, one description field capped separately at 200 chars) plus an unbounded rule-pointer block whose own comment admits it varies 1800-2900 chars depending on the installed CLAUDE_PLUGIN_ROOT path length and which optional WARNING blocks fire. Found by a 4-angle /simplify altitude review (2026-08-06): the git history shows this was chased reactively across three commits (2000 -> broke on real content -> recalibrated to 2600 with an arithmetic margin comment -> a later review found the margin isn't a fixed number at all, softened to a 'judgment call'). Repeated recalibration of a magic constant is the signal that the underlying problem (no measured total) was never actually solved. Fix: buffer the orientation output (or count characters as it's built) and truncate/report against the ACTUAL accumulated length at the end, as a final safety net IN ADDITION TO (not instead of) the existing per-section budgets kept for readability/prioritization -- converts 'we hope the sum of hand-tuned constants stays under 10,000 for every CLAUDE_PLUGIN_ROOT path length' into a mechanically guaranteed invariant, removing the need for a fourth recalibration commit next time install-path length or block count changes. Deliberately NOT attempted as part of the /simplify pass that discovered it -- flagged by two independent reviewers as a larger structural change than the mechanical dedup fixes done in that pass.",
       "priority": 97,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "hooks/session-start.sh",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "TDD: overflow fixture (3x5000-char blocks + 1500-char plugin root) confirmed 18241-char output red, under-10k green; no-false-positive fixture. Review round 1: truncation was cutting the buffer tail -- exactly the rule pointers and /harness-continue line -- so the footer is now built separately and survives whenever it fits; body cap clamped >= 0 and a final hard cap holds the 10k invariant even for pathological roots. New footer-survival fixture (800-char root).",
       "notes": "Deferred, not urgent -- this is an improvement to an already-working safety margin, not a live bug. The existing per-section budgets have held up in practice (no known real-world overflow incident). Additive, not a replacement, so it can land independently whenever picked up.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "ORIENTATION_CHAR_CAP=9800 (200-char margin); additive to per-section budgets, none touched."
+      ],
       "failure_reason": null,
       "discovered_via": "4-angle /simplify altitude review of hooks/session-start.sh (2026-08-06)",
       "spec": null
@@ -2759,19 +2772,21 @@
       "id": "F098",
       "description": "hooks/session-start.sh independently loads and json.load's .harness/features.json in five separate python3 subprocesses scattered through the file (passing/total count, next-claimable selection, spec-drift check, scope-enforcement check, test_file-existence check) -- each pays interpreter startup plus a fresh parse of a file whose own comments note can carry >13,000-char descriptions across many features. Found by a 4-angle /simplify review (2026-08-06, efficiency and simplification angles both flagged this independently); two of the five call sites (passing/total count, next-claimable) were already consolidated toward harness_state.py delegation in the same review pass (see F088/notes and the session-start.sh commit history around 2026-08-06), but the remaining three (spec-drift, scope-enforcement, test_file-existence) still each spawn their own process. Fix: one python3 script that loads features.json once and runs all remaining checks against the in-memory feature list, printing each block conditionally -- roughly halves the remaining python3 spawn count on this hot path (every session start, every /compact). Deliberately NOT attempted as part of the /simplify pass that discovered it -- both reviewers who found it explicitly called it 'a larger structural change... worth considering' rather than a concrete line-level fix, and the individual consolidations already applied capture most of the measured benefit (see the benchmark in this session's own conversation: ~45% reduction in per-call wall-clock time from a similar single-spawn consolidation elsewhere in this chain).",
       "priority": 98,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "hooks/session-start.sh",
         "test/run-tests.sh"
       ],
       "depends_on": [],
       "assigned_to": null,
-      "test_file": null,
-      "coverage": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "No source change needed: commit 6f85267 (already on main) had consolidated all three named checks (spec-drift, scope-enforcement, test_file-existence) into one python3 heredoc -- re-measured 0 of 3 remaining before touching anything. Added a behavioral regression test: a PATH-shimmed fake python3 logs every invocation and asserts all three checks' distinguishing fragments land in exactly ONE spawn, so a future re-split is caught empirically, not by source grep.",
       "notes": "Deferred, not urgent -- real but lower-value than F097; the individually-fixed spawns (this same review pass) already capture most of the win. A future session picking this up should re-measure the actual remaining spawn count first, since it may have already shrunk further from other work.",
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Re-measure before implementing (per lead instruction) -- avoided duplicating an already-landed consolidation."
+      ],
       "failure_reason": null,
       "discovered_via": "4-angle /simplify efficiency+simplification review of hooks/session-start.sh (2026-08-06)",
       "spec": null
@@ -2975,7 +2990,7 @@
       "id": "F107",
       "description": "check-remaining-tasks.sh.template's reassignment message ('Next: <id>: <description> (priority N) [scope: ...]', emitted on stderr at exit 2 straight into the blocked agent's context) has NO length cap on either description or scope -- the same unbounded-field class F071 (description) and F085 (scope) closed for session-start.sh's orientation, missed here because F085's own spec named only session-start.sh. Apply both caps with the same truncate-and-point markers, in the template and the synced .claude/hooks copy.",
       "priority": 107,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-init/check-remaining-tasks.sh.template",
         ".claude/hooks/check-remaining-tasks.sh",
@@ -2984,11 +2999,13 @@
       "depends_on": [],
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
-      "coverage": null,
+      "coverage": "TDD: 9 assertions (13222-char description, 12-path scope, empty-scope fallback) red-then-green against the template via install_hooks/run_hook. Reused F071/F085's exact cap values (DESC_LIMIT=200, SCOPE_LIMIT=150) and marker wording. Review round 1: an explicitly-null description crashed the formatter and set -euo pipefail suppressed the exit-2 nudge entirely (silent fail-open, a regression this feature introduced) -- formatter now null-safe and try/except-guarded, with a null-description fixture asserting exit 2 survives.",
       "notes": null,
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Template and .claude/hooks copy kept identical; F047 sync check covers the pair."
+      ],
       "failure_reason": null,
       "discovered_via": "PR #156 adversarial review (review-pr156 reviewer agent), 2026-08-09.",
       "spec": null,
@@ -2998,7 +3015,7 @@
       "id": "F108",
       "description": ".harness/init.sh is a per-project copy made at init time, so v5.5.0's focused_test exit-code contract (exit 3 reserved for skips; runner exit-3 remapped; missing-file guard) does not reach existing projects: a project that adopted focused_test under v5.4.0 keeps its old exit-0 skip arms and the pre-F106 fake-green persists silently. harness-doctor should detect a focused_test-supporting init.sh that lacks the skip contract (e.g. no 'skipped (exit 3)' marker / no run_focused remap) and report it as upgrade-available with the hand-apply repair, mirroring how it reports other stale artifacts. INSTALL.md's --fix steps should mention init.sh is never auto-refreshed (it is the one genuinely decision-shaped per-project file).",
       "priority": 108,
-      "status": "pending",
+      "status": "passing",
       "scope": [
         "skills/harness-doctor/doctor.py",
         "skills/harness-doctor/SKILL.md",
@@ -3008,11 +3025,13 @@
       "depends_on": [],
       "assigned_to": null,
       "test_file": "test/run-tests.sh",
-      "coverage": null,
+      "coverage": "TDD: 5 assertions confirmed red against pre-change doctor.py (git stash), green restored. check_focused_test_skip_contract is report-only (no fix_id; --fix leaves it, pinned by a fixture). Review round 1 hardened it: markers now checked on non-comment lines only, and a leftover pre-F106 'treating as pass' arm is positively detected -- so a partially hand-applied repair or a comment quoting the markers can no longer clear a live fake-green; 4 new fixtures plus a drift guard tying the marker strings to the shipped init.sh.template. SKILL.md check 10 and INSTALL.md updated.",
       "notes": null,
       "correction_cycles": 0,
       "scope_expansions": [],
-      "approaches_tried": [],
+      "approaches_tried": [
+        "Fixtures derived from real git history (78087c5/912bc3c), not synthetic contracts. NOTE: this repo's own .harness/init.sh has no focused_test support at all -- the v5.5.0 contract source is skills/harness-init/init.sh.template (lead's spawn note had this wrong; implementer corrected it)."
+      ],
       "failure_reason": null,
       "discovered_via": "PR #156 adversarial review (review-pr156 reviewer agent), 2026-08-09.",
       "spec": null,

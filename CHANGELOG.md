@@ -2,6 +2,43 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.6.0 (2026-08-09)
+
+Clears the entire remaining feature backlog (F087, F094–F098, F107, F108) in one
+parallel-implementation batch, plus one adversarial-review round over the combined
+diff.
+
+1. **Doctor detects a stale `focused_test` skip contract (F108)** — `harness-doctor`
+   now flags a per-project `init.sh` that supports `focused_test` but predates
+   v5.5.0's exit-3 skip protocol (F106), as upgrade-available with a hand-apply
+   repair; `--fix` never rewrites `init.sh`. The check reads non-comment lines only
+   and positively detects leftover pre-F106 `treating as pass` arms, so a partially
+   hand-applied repair or a marker-quoting comment cannot clear a live fake-green.
+   `INSTALL.md` now states `init.sh` is never auto-refreshed.
+2. **ARG_MAX silent-allow residuals closed (F096)** — `enforce-scope.sh` and
+   `commit-gate.sh` now feed `$COMMAND` to their analysis python via stdin (the
+   remaining call site of the class F088–F093 fixed), cap `DENY_REASON` at 2048
+   chars, and — found by this release's review round — cap the passing-flip deny
+   reason's `full_test` tail, which could previously blow argv and silently convert
+   that DENY into an ALLOW.
+3. **Measured orientation total (F097)** — `session-start.sh` buffers the orientation
+   body and enforces the 10k platform cap against its actual accumulated length
+   (additive to the per-section budgets), with the rule-pointer footer built
+   separately so truncation can never drop it.
+4. **Reassignment message caps (F107)** — `check-remaining-tasks.sh`'s `Next:` line
+   gets the same description/scope truncate-and-point caps as the orientation
+   (F071/F085 class), with a null-safe, guarded formatter so a malformed feature
+   entry degrades instead of suppressing the exit-2 nudge.
+5. **Dashboard fixes (F094, F095)** — ring positioning moved off `transform` (owned
+   exclusively by anime.js now) onto `style.left/top`, and gate badges are keyed
+   per gate+verdict so different gates' findings no longer overwrite one badge.
+6. **Readiness-stamp HMAC round-trip (F087)** — env-var-key round-trip test with an
+   independent schema-recipe oracle and spec_hash/base_sha/lane/repo/key tamper
+   negatives. `prep.stamp` remains deliberately unconfigured on this repo.
+7. **Single-load regression pin (F098)** — a behavioral test proves the session-start
+   checks share one `features.json`-loading python spawn (the consolidation itself
+   had already landed via an earlier perf commit).
+
 ### v5.5.0 (2026-08-09)
 
 Closes out the v5.4.0 review's deferred findings plus one older orientation bug.
