@@ -373,7 +373,28 @@ if [ "$COMMAND_RC" -eq 1 ]; then
     deny_json "command could not be safely extracted from tool input (best-effort, pattern-based check; treating as a compound-stage-and-commit risk out of caution)."
 fi
 
-DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" <<'PYEOF'
+# F096 (second adversarial review, 2026-08-05): $COMMAND used to be passed
+# to this analysis python3 process via argv (`python3 - "$COMMAND" ...`,
+# reading its own script from the same stdin the heredoc below fed it), the
+# same ARG_MAX-exec-failure class F088-F093 fixed for deny_json()'s
+# payload -- an extremely large Bash command (over ~1MB on macOS, as low as
+# 128KB per-argument on Linux) failed this exec silently, DENY_REASON came
+# back empty, and the caller below fell through to an unintended allow, one
+# call site earlier in the exact same chain deny_json() already guards
+# (mirrors the identical fix in enforce-scope.sh.template, F096). Fixed the
+# same way (F094/F089 round 2's own established pattern): the python source
+# is read into a variable via a heredoc FIRST, then invoked with `-c`,
+# freeing stdin to carry $COMMAND itself -- unbounded in size, unlike
+# $PROJECT_ROOT, which stays on argv since it never grows with attacker
+# input. Unlike enforce-scope.sh.template's analogous fix, no DENY_REASON
+# length cap is added here: every reason this script's own main() can print
+# is either one of its own fixed constants (DENY_COMPOUND et al.) or built
+# from a staged-diff path/line number, never from raw command/segment text
+# reflected back -- so, unlike enforce-scope.sh.template's write-target/
+# segment quoting, DENY_REASON here was never made attacker-sized by this
+# bug in the first place; only the argv-vs-stdin transport of $COMMAND
+# itself needed fixing.
+IFS= read -r -d '' _COMMIT_ANALYSIS_PY <<'PYEOF' || true
 import fnmatch
 import json
 import os
@@ -1322,8 +1343,10 @@ def style_gate_enabled(harness_config):
 
 
 def main():
-    command = sys.argv[1]
-    project_root = sys.argv[2]
+    # F096: read from stdin, not argv[1] -- see the heredoc-assembly comment
+    # above this script's own invocation for why.
+    command = sys.stdin.read()
+    project_root = sys.argv[1]
 
     parsed = parse_command(command)
     if not any(sc == "commit" for _, sc, _, _ in parsed):
@@ -1379,7 +1402,7 @@ def main():
 
 main()
 PYEOF
-)
+    DENY_REASON=$(printf '%s' "$COMMAND" | python3 -c "$_COMMIT_ANALYSIS_PY" "$PROJECT_ROOT")
 
 # Passing-flip full_test gate (F102). Runs only when the python above
 # established "commit, no deny" via the sentinel. The comparison is INDEX

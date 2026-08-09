@@ -13047,6 +13047,72 @@ else
 fi
 
 echo ""
+echo "== F096: \$COMMAND/DENY_REASON ARG_MAX bypass (one call site earlier than F088-F093) =="
+
+# A second adversarial review (2026-08-05) found that enforce-scope.sh's own
+# scope-analysis python3 process, and commit-gate.sh's own analysis python3
+# process, still took $COMMAND via argv rather than stdin -- the same
+# ARG_MAX-exec-failure class F088-F093 fixed for deny_json()'s payload, one
+# call site earlier in the chain. An extremely large Bash command failed
+# that analysis step silently (E2BIG) and DENY_REASON came back empty,
+# falling through to an unintended allow -- confirmed live against the
+# pre-fix hooks before this fix (rc=0, empty stdout, same as the F089 round
+# 2 incident these tests mirror).
+
+DIR_F096_ES="$WORK/f096-argmax-enforce-scope"
+make_fixture "$DIR_F096_ES"
+install_hooks "$DIR_F096_ES"
+printf 'src/parser/\n' > "$DIR_F096_ES/.claude/teammate-scope.txt"
+F096_ES_PAYLOAD=$(python3 -c "
+import json
+cmd = 'echo x > src/other/' + ('A' * 2000000) + '.txt'
+print(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'session_id': 'f096sess',
+    'tool_input': {'command': cmd},
+}))
+")
+OUT=$(run_hook_dashboard "$DIR_F096_ES" enforce-scope.sh "$F096_ES_PAYLOAD")
+RC=$?
+assert_rc0 "$RC" "f096-es: an oversized out-of-scope Bash command still exits 0"
+assert_deny_json "$OUT" \
+  "f096-es: an oversized out-of-scope Bash command still emits deny JSON (not a silent allow)"
+# The write target enforce-scope.sh quotes into its own reason string is the
+# same oversized text, so DENY_REASON itself is oversized here too -- it
+# must be capped before reaching deny_json()'s own argv-carried "reason",
+# or that exec fails the identical way, one call site later still.
+REASON_LEN=$(python3 -c "
+import json, sys
+data = json.loads(sys.argv[1])
+print(len(data['hookSpecificOutput']['permissionDecisionReason']))
+" "$OUT")
+if [ "$REASON_LEN" -gt 0 ] && [ "$REASON_LEN" -le 2048 ]; then
+  pass "f096-es: the oversized denial's own reason string is capped to a bounded length"
+else
+  fail "f096-es: the oversized denial's own reason string is NOT capped (length $REASON_LEN)"
+fi
+
+DIR_F096_CG="$WORK/f096-argmax-commit-gate"
+make_fixture "$DIR_F096_CG"
+install_hooks "$DIR_F096_CG"
+F096_CG_PAYLOAD=$(python3 -c "
+import json
+cmd = 'git commit -a -m \"test\" --author=\"' + ('A' * 2000000) + '\"'
+print(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'session_id': 'f096sess',
+    'tool_input': {'command': cmd},
+}))
+")
+OUT=$(run_hook_dashboard "$DIR_F096_CG" commit-gate.sh "$F096_CG_PAYLOAD")
+RC=$?
+assert_rc0 "$RC" "f096-cg: an oversized compound-stage-and-commit Bash command still exits 0"
+assert_deny_json "$OUT" \
+  "f096-cg: an oversized compound-stage-and-commit Bash command still emits deny JSON (not a silent allow)"
+assert_contains "$OUT" "compound-stage-and-commit" \
+  "f096-cg: an oversized compound-stage-and-commit Bash command still names the finding class"
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do
