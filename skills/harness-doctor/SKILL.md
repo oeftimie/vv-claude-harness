@@ -97,6 +97,19 @@ and points to `/harness-init` instead of running any checks.
    since `session-start.sh` is invoked directly from `CLAUDE_PLUGIN_ROOT` and is
    never copied per-project. If `.harness/mld/` doesn't exist, or the plugin root
    can't be determined, there is nothing to guard and no finding is produced.
+10. **focused_test skip contract** (F108): `.harness/init.sh` is a per-project copy
+    made at init time, so v5.5.0's focused_test exit-code contract (F106 — exit 3
+    reserved for a skip, a runner's own exit 3 remapped to 1, a missing test file
+    skipped rather than faked green) never reaches a project that adopted
+    `focused_test` before F106 shipped. If `init.sh` mentions `focused_test` outside
+    a comment (the same support-detection heuristic `verify-task-quality.sh` uses)
+    but is missing the `skipped (exit 3)` marker or the `run_focused` exit-3 remap
+    — or still carries a pre-F106 `treating as pass` fake-green arm, which catches a
+    partially hand-applied repair — the doctor reports it as upgrade-available. All
+    of these are checked against non-comment lines only, so a comment quoting the
+    markers (a TODO note, or the finding text pasted as a reminder) neither
+    satisfies nor triggers the check. An `init.sh` with no `focused_test` support
+    at all, or none present, produces no finding — there is nothing to check yet.
 
 ## Finding classification
 
@@ -125,8 +138,11 @@ field; nothing else does.
 Anything it cannot mechanically resolve —
 missing `python3`/`git`, a hard-required hook that was deleted outright, a JSON parse
 error, a `features.json` validation failure, a `context_summary.md` missing a required
-section — is reported unchanged after the fix pass, because that is a judgment call,
-not a copy step.
+section, a stale focused_test skip contract in `.harness/init.sh` (check 10) — is
+reported unchanged after the fix pass, because that is a judgment call, not a copy
+step. `init.sh` in particular is never rewritten by `--fix` at all: it is the one
+genuinely decision-shaped per-project file (it mixes in project-specific stack logic),
+so its finding always carries a hand-apply repair instead of a fix.
 
 **Report-first is the whole point: the doctor never writes anything without explicit
 approval.** Run it plain first, read the findings, and only re-run with `--fix` once

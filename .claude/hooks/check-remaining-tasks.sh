@@ -141,13 +141,38 @@ NEXT=$(printf '%s' "$RESULT" | python3 -c "
 import json
 import sys
 
+# The whole formatter is guarded: a malformed feature entry (e.g. an explicit
+# null description, which f.get('description', '') passes through as None)
+# must degrade to a minimal nudge, never crash the substitution -- under
+# set -euo pipefail a crash here would suppress the exit-2 block verdict
+# entirely (silent fail-open). Mirrors session-start.sh's own try/except
+# around the identical cap logic.
 data = json.load(sys.stdin)
 f = data['next']
-status_note = ' (retry)' if f.get('status') == 'failed' else ''
-scope = ', '.join(f.get('scope') or []) or 'no scope defined'
-print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
-      f\"{f.get('description')} (priority {f.get('priority', 'unset')})\"
-      f\"{status_note} [scope: {scope}]\")
+try:
+    status_note = ' (retry)' if f.get('status') == 'failed' else ''
+    scope_list = [str(p) for p in (f.get('scope') or [])]
+    scope = ', '.join(scope_list) or 'no scope defined'
+    # F107: description and scope are the same unbounded-field class F071 and
+    # F085 already closed for session-start.sh's orientation -- this line goes
+    # straight to stderr, into a blocked agent's context, on exit 2. Same
+    # truncate-and-point caps and marker wording, so the two hooks stay
+    # consistent.
+    SCOPE_LIMIT = 150
+    if len(scope) > SCOPE_LIMIT:
+        noun = 'path' if len(scope_list) == 1 else 'paths'
+        scope = scope[:SCOPE_LIMIT] + f\"... ({len(scope_list)} {noun} total, see .harness/features.json)\"
+    desc = f.get('description') or ''
+    DESC_LIMIT = 200
+    if len(desc) > DESC_LIMIT:
+        full_len = len(desc)
+        desc = desc[:DESC_LIMIT] + f\"... ({full_len} chars total, see .harness/features.json for the full description)\"
+    print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
+          f\"{desc} (priority {f.get('priority', 'unset')})\"
+          f\"{status_note} [scope: {scope}]\")
+except Exception:
+    print(f\"{data.get('count', '?')} claimable feature(s). Next: {f.get('id', 'unknown')}\"
+          \" (details unavailable; see .harness/features.json)\")
 ")
 
 echo "$NEXT" >&2

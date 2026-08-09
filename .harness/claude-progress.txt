@@ -1082,3 +1082,19 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
 - Next: release v5.5.0 (PR + review + merge + tag) is in flight this
   session; after that, no pending features remain in features.json.
 - Blockers: none.
+
+## Session 2026-08-09 (dynamic-workflow batch: F087, F094-F098, F107, F108 -> v5.6.0)
+- Feature: all 8 remaining pending features, implemented by 6 parallel
+  worktree agents (one Workflow call), merged sequentially, then a
+  3-reviewer + adversarial-verify workflow (16 confirmed findings, all
+  fixed in one review-round commit).
+- Status: complete; suite 2059/2059; v5.6.0 bumped with CHANGELOG entry.
+- Decisions: F087's prep.stamp left unconfigured (Ovidiu's 2026-08-04
+  deferral stands); F098 needed no source change (consolidation had
+  already landed in 6f85267 -- behavioral spawn-count test added);
+  F094's spec-mandated rec.x/rec.y turned out to be dead state and was
+  removed in review (spec/cleanup conflict disclosed in features.json).
+  Details in context_summary.md Meta-Session 2026-08-09 (batch).
+- Next: PR from eovidiu/remaining-8, review, merge, tag v5.6.0. After
+  that ZERO pending features remain -- new work needs fresh scoping.
+- Blockers: none.

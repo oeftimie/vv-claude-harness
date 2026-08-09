@@ -190,8 +190,19 @@ deny_json() {
     # silently converting a scope-violation DENIAL into an ALLOW (confirmed
     # live: a 1.2MB Write to a lead-owned file that correctly denies under
     # ARG_MAX returns rc=0 with an empty stdout once the payload is large
-    # enough). Only small, bounded values (the reason and finding strings)
-    # stay on argv.
+    # enough). "finding" is a small, fixed, per-call-site literal, genuinely
+    # bounded -- but "reason" is NOT: a second adversarial review (2026-08-05,
+    # F096) found this comment overclaiming boundedness for "reason" too. The
+    # Bash-command scope-violation reasons below quote the offending write
+    # target or raw segment verbatim (see _check_segment()/main()'s own
+    # comments), both derived from $COMMAND, so an attacker-sized $COMMAND
+    # can make "reason" itself attacker-sized -- reaching the exact same
+    # ARG_MAX exec failure this comment already describes for the payload,
+    # one call site later. The Bash-command call site below now caps its
+    # reason to DENY_REASON_MAX_LEN characters before calling this function
+    # (F096) so "reason" stays genuinely bounded by the time it lands here;
+    # the fixed literal reasons the other call sites pass (e.g. "state file
+    # is lead-owned...") were always bounded regardless.
     #
     # The python source is read into a variable via a TOP-LEVEL heredoc
     # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- see
@@ -449,7 +460,21 @@ if [ -n "$COMMAND" ]; then
         SCOPE_PATTERNS+=("$pattern")
     done < "$SCOPE_FILE"
 
-    DENY_REASON=$(python3 - "$COMMAND" "$PROJECT_ROOT" "${SCOPE_PATTERNS[@]}" <<'PYEOF'
+    # F096 (second adversarial review, 2026-08-05): $COMMAND used to be
+    # passed to this analysis python3 process via argv (`python3 -
+    # "$COMMAND" ...`, reading its own script from the same stdin the
+    # heredoc below fed it), the same ARG_MAX-exec-failure class F088-F093
+    # fixed for deny_json()'s payload -- an extremely large Bash command
+    # (over ~1MB on macOS, as low as 128KB per-argument on Linux) failed
+    # this exec silently, DENY_REASON came back empty, and the caller below
+    # (`if [ -n "$DENY_REASON" ]`) then fell through to an unintended allow,
+    # one call site earlier in the exact same chain deny_json() already
+    # guards. Fixed the same way (F094/F089 round 2's own established
+    # pattern): the python source is read into a variable via a heredoc
+    # FIRST, then invoked with `-c`, freeing stdin to carry $COMMAND itself
+    # -- unbounded in size, unlike $PROJECT_ROOT/the scope patterns, which
+    # stay on argv since neither grows with attacker input.
+    IFS= read -r -d '' _SCOPE_ANALYSIS_PY <<'PYEOF' || true
 import os
 import re
 import sys
@@ -1921,9 +1946,11 @@ def normalize(path, project_root):
 
 
 def main():
-    command = sys.argv[1]
-    project_root = sys.argv[2]
-    patterns = sys.argv[3:]
+    # F096: read from stdin, not argv[1] -- see the heredoc-assembly comment
+    # above this script's own invocation for why.
+    command = sys.stdin.read()
+    project_root = sys.argv[1]
+    patterns = sys.argv[2:]
     for segment in segments_of(command):
         try:
             if _check_segment(segment, project_root, patterns):
@@ -2028,10 +2055,20 @@ def _check_segment(segment, project_root, patterns):
 
 main()
 PYEOF
-)
+    DENY_REASON=$(printf '%s' "$COMMAND" | python3 -c "$_SCOPE_ANALYSIS_PY" "$PROJECT_ROOT" "${SCOPE_PATTERNS[@]}")
 
     if [ -n "$DENY_REASON" ]; then
-        deny_json "$DENY_REASON" "scope-violation:out-of-scope-command"
+        # F096: cap DENY_REASON before it reaches deny_json(), whose own
+        # "reason" argument stays on argv (see that function's comment) --
+        # the scope-violation messages above quote the offending write
+        # target or raw segment verbatim, both derived from $COMMAND, so an
+        # attacker-sized $COMMAND can still make DENY_REASON itself
+        # attacker-sized even after the stdin fix above (a huge write
+        # target/segment, not a huge command as a whole). 2048 matches
+        # commit-gate.sh.template's own SECRET_SCAN_MAX_LEN precedent for a
+        # bounded-cap value; well under either OS's ARG_MAX floor.
+        DENY_REASON_MAX_LEN=2048
+        deny_json "${DENY_REASON:0:$DENY_REASON_MAX_LEN}" "scope-violation:out-of-scope-command"
     fi
 fi
 
