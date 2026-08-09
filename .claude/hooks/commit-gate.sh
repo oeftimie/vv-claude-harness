@@ -386,14 +386,13 @@ fi
 # is read into a variable via a heredoc FIRST, then invoked with `-c`,
 # freeing stdin to carry $COMMAND itself -- unbounded in size, unlike
 # $PROJECT_ROOT, which stays on argv since it never grows with attacker
-# input. Unlike enforce-scope.sh.template's analogous fix, no DENY_REASON
-# length cap is added here: every reason this script's own main() can print
-# is either one of its own fixed constants (DENY_COMPOUND et al.) or built
-# from a staged-diff path/line number, never from raw command/segment text
-# reflected back -- so, unlike enforce-scope.sh.template's write-target/
-# segment quoting, DENY_REASON here was never made attacker-sized by this
-# bug in the first place; only the argv-vs-stdin transport of $COMMAND
-# itself needed fixing.
+# input. Every reason this script's python main() can print is either one
+# of its own fixed constants (DENY_COMPOUND et al.) or built from a
+# staged-diff path/line number, never from raw command/segment text
+# reflected back -- but the shell-level passing-flip deny reason below is
+# NOT bounded: it interpolates the last 15 lines of full_test output, whose
+# character count is unbounded, so that call site caps its tail to
+# FULL_TAIL_MAX_LEN before it reaches deny_json()'s argv.
 IFS= read -r -d '' _COMMIT_ANALYSIS_PY <<'PYEOF' || true
 import fnmatch
 import json
@@ -1472,8 +1471,12 @@ PYEOF
         if [ -f ".harness/init.sh" ]; then
             echo "commit-gate: staged features.json flips $FLIPPED to passing; running full_test..." >&2
             FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
+                # tail -15 bounds the line count but not the character count; an
+                # oversized tail on deny_json's argv would fail the exec (ARG_MAX)
+                # and silently convert this DENY into an allow (rc=0, no output).
+                FULL_TAIL_MAX_LEN=2048
                 FULL_TAIL=$(printf '%s\n' "$FULL_OUTPUT" | tail -15)
-                deny_json "passing-flip-full-test-failed: this commit flips $FLIPPED to 'passing' but the full test suite fails. Fix the failures or keep the feature in-progress. Full test output (last 15 lines): $FULL_TAIL"
+                deny_json "passing-flip-full-test-failed: this commit flips $FLIPPED to 'passing' but the full test suite fails. Fix the failures or keep the feature in-progress. Full test output (last 15 lines): ${FULL_TAIL:0:$FULL_TAIL_MAX_LEN}"
             }
         else
             echo "commit-gate: staged features.json flips $FLIPPED to passing, but .harness/init.sh is" \

@@ -413,12 +413,21 @@ def check_focused_test_skip_contract(project_dir):
     )
     if "focused_test" not in non_comment:
         return []  # doesn't support focused_test at all -- nothing to check
-    if "skipped (exit 3)" in text and "run_focused" in text:
+    # Both tests run against non_comment: a comment quoting the markers (a TODO
+    # note, or the doctor's own finding text pasted as a reminder) must not
+    # satisfy the contract, and the pre-F106 fake-green wording is checked
+    # positively so a partially hand-applied repair (some arms upgraded, some
+    # still 'treating as pass') is still flagged, not cleared by the first
+    # upgraded arm's markers.
+    has_markers = "skipped (exit 3)" in non_comment and "run_focused" in non_comment
+    has_fake_green = "treating as pass" in non_comment
+    if has_markers and not has_fake_green:
         return []
     return [Finding(
         "upgrade available: .harness/init.sh supports focused_test but is missing "
-        "the v5.5.0 exit-3 skip contract (F106) -- no 'skipped (exit 3)' marker "
-        "and/or no run_focused exit-3 remap, so a skip can be reported as a fake green",
+        "the v5.5.0 exit-3 skip contract (F106) -- no 'skipped (exit 3)' marker, "
+        "no run_focused exit-3 remap, and/or a leftover pre-F106 'treating as "
+        "pass' arm, so a skip can be reported as a fake green",
         "hand-apply: compare .harness/init.sh's focused_test block against "
         "skills/harness-init/init.sh.template's and add the missing skip markers "
         "and remap by hand -- init.sh is never auto-refreshed by doctor --fix "

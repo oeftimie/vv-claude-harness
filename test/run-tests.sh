@@ -13068,10 +13068,6 @@ assert_contains "$DASHBOARD_HTML_SRC" 'rec.el.style.left = "calc(50% + " + x + "
   "dash-fe: positionRing() sets ring position via style.left using calc()"
 assert_contains "$DASHBOARD_HTML_SRC" 'rec.el.style.top = "calc(50% + " + y + "px)"' \
   "dash-fe: positionRing() sets ring position via style.top using calc()"
-assert_contains "$DASHBOARD_HTML_SRC" "rec.x = x;" \
-  "dash-fe: positionRing() stores x on the node record"
-assert_contains "$DASHBOARD_HTML_SRC" "rec.y = y;" \
-  "dash-fe: positionRing() stores y on the node record"
 # The already-fixed standalone-CSS centering offset (first review round) must
 # survive this fix untouched -- transform stays exclusively anime.js's for
 # scale/opacity, never positioning.
@@ -13149,6 +13145,43 @@ assert_contains "$OUT" "orientation truncated:" \
   "f097: the final safety net marker fires when the accumulated total exceeds its cap"
 assert_contains "$OUT" "chars total, exceeds the" \
   "f097: the final safety net marker reports the actual accumulated length"
+# Review round 1: the first cut trimmed the buffer's TAIL, dropping the rule
+# pointers and the /harness-continue line -- the fixed footer the orientation
+# exists to deliver. The footer is now built separately and survives whenever
+# it fits; only the pathological 1500-char root above (footer alone near the
+# whole cap) falls back to the bare 10k invariant. An 800-char root keeps the
+# footer well inside the cap while still overflowing the body's share.
+DIR_F097_FOOTER="$WORK/f097-footer-survives"
+make_fixture "$DIR_F097_FOOTER"
+printf '%s\n' "$F097_LONG_LINE" > "$DIR_F097_FOOTER/.harness/SESSION_INCOMPLETE"
+printf '%s\n' "$F097_LONG_LINE" > "$DIR_F097_FOOTER/.harness/claude-progress.txt"
+cat > "$DIR_F097_FOOTER/.harness/context_summary.md" <<EOF
+# Context Summary
+
+## Active Context
+$F097_LONG_LINE
+
+## Cross-Cutting Concerns
+- none
+EOF
+F097_MID_ROOT=$(python3 -c "print('x' * 800)")
+OUT=$(run_session_start_with_root "$DIR_F097_FOOTER" '{"source":"startup"}' "$F097_MID_ROOT")
+RC=$?
+LEN=${#OUT}
+assert_rc0 "$RC" "f097: the realistic-root overflow still exits 0"
+if [ "$LEN" -lt 10000 ]; then
+  pass "f097: realistic-root overflow output stays under the 10k platform cap ($LEN)"
+else
+  fail "f097: realistic-root overflow output is $LEN chars, expected under 10000"
+fi
+assert_contains "$OUT" "orientation truncated:" \
+  "f097: the safety net marker fires on the realistic-root overflow"
+assert_contains "$OUT" "rules/tdd.md" \
+  "f097: the rule-pointer footer survives truncation (last pointer present)"
+assert_contains "$OUT" "rules/agent-teams-protocol.md" \
+  "f097: the rule-pointer footer survives truncation (first pointer present)"
+assert_contains "$OUT" "Run /harness-continue" \
+  "f097: the /harness-continue line survives truncation"
 
 # The safety net is additive, not a replacement: an ordinary session (nothing near
 # any per-section budget) must never show the new marker.
@@ -13299,16 +13332,57 @@ assert_deny_json "$OUT" \
 assert_contains "$OUT" "compound-stage-and-commit" \
   "f096-cg: an oversized compound-stage-and-commit Bash command still names the finding class"
 
+# Review round 1: the passing-flip deny path interpolates the last 15 lines of
+# full_test output into its deny reason. tail -15 bounds lines, not characters,
+# so a suite whose failing tail is one huge line put an unbounded string on
+# deny_json's argv -- the same ARG_MAX silent-allow class as above, reproduced
+# live: rc=0 with 0 bytes of stdout, which PreToolUse reads as ALLOW, letting a
+# red-suite passing flip commit. The fix caps the tail (FULL_TAIL_MAX_LEN)
+# before it reaches deny_json.
+DIR_F096_FT="$WORK/f096-argmax-full-tail"
+make_fixture "$DIR_F096_FT"
+install_hooks "$DIR_F096_FT"
+cat > "$DIR_F096_FT/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+case "$1" in
+  full_test)
+    python3 -c "print('X' * 2000000)"
+    exit 1
+    ;;
+esac
+exit 0
+INITEOF
+chmod +x "$DIR_F096_FT/.harness/init.sh"
+stage_f003_status "$DIR_F096_FT" "passing"
+OUT=$(run_commit_gate "$DIR_F096_FT" 'git commit -m "mark F003 passing"')
+RC=$?
+assert_rc0 "$RC" "f096-ft: a red full_test with a giant one-line tail still exits 0"
+assert_deny_json "$OUT" \
+  "f096-ft: a red full_test with a giant one-line tail still emits deny JSON (not a silent allow)"
+assert_contains "$OUT" "passing-flip-full-test-failed" \
+  "f096-ft: the giant-tail denial still names the finding class"
+F096_FT_REASON_LEN=$(python3 -c "
+import json, sys
+data = json.loads(sys.argv[1])
+print(len(data['hookSpecificOutput']['permissionDecisionReason']))
+" "$OUT" 2>/dev/null || echo 0)
+if [ "$F096_FT_REASON_LEN" -gt 0 ] && [ "$F096_FT_REASON_LEN" -le 4096 ]; then
+  pass "f096-ft: the giant-tail denial's reason string is capped to a bounded length"
+else
+  fail "f096-ft: the giant-tail denial's reason string is NOT capped (length $F096_FT_REASON_LEN)"
+fi
+
 echo "== F087: readiness-stamp HMAC round-trip (env-var key source) =="
 
-# The readiness-stamp HMAC recipe (schemas/readiness-stamp.md) had no round-trip test
-# anywhere in this repo (OVI-45, re-confirmed 2026-08-04): .harness/harness.json carries
-# no `prep` key, so harness-issue-prep's Step 7 never fires here, and no file under
-# .harness/, MAINTENANCE_LOG.md, or docs/ contains the string "vv-harness-readiness-stamp"
-# -- the mint has never actually run in this repo. This fixture exercises the full
-# documented recipe headlessly via the VV_HARNESS_STAMP_KEY env var (resolution source
-# 3 -- no macOS Keychain needed), against the ACTUAL Step 7 snippet extracted from
-# harness-issue-prep/SKILL.md, not a re-implementation.
+# Supplementary to the F012 stamp block earlier in this file (which already
+# extracts and round-trips the same Step 7 snippet against all six consumer
+# rules, keyed via VV_HARNESS_STAMP_KEY_FILE): this section adds the pieces
+# F012 does not cover -- the VV_HARNESS_STAMP_KEY env-var key source as the
+# ONLY available source, a direct base_sha tamper, lane/repo tampers, a
+# wrong-key negative, and an independent oracle recomputing the documented
+# recipe (schemas/readiness-stamp.md: hmac-sha256 over spec_hash|base_sha|
+# lane|repo) so a SKILL.md edit that drifts from the schema's message
+# construction is caught, not mirrored.
 DIR_F087="$WORK/f087-stamp"
 mkdir -p "$DIR_F087"
 python3 - "$REPO_ROOT" "$DIR_F087" <<'PYEOF'
@@ -13384,6 +13458,51 @@ if [ "$HMAC_F087_BAD_BASE" != "$HMAC_F087" ]; then
   pass "f087: a tampered base_sha fails HMAC verification"
 else
   fail "f087: a tampered base_sha should not recompute to the minted HMAC"
+fi
+
+# Review round 1 additions: the assertions above only compared the snippet
+# against itself, so a SKILL.md edit that dropped fields, reordered the
+# message, or ignored the key entirely would still round-trip green.
+
+# Independent oracle: recompute the documented recipe (schemas/readiness-
+# stamp.md -- hmac-sha256 over spec_hash|base_sha|lane|repo, pipe-joined,
+# that order) WITHOUT the snippet, and require the snippet's output to match.
+HMAC_F087_ORACLE=$(python3 -c "
+import hashlib, hmac, sys
+key, spec, base, lane, repo = sys.argv[1:6]
+msg = '|'.join([spec, base, lane, repo]).encode('utf-8')
+print(hmac.new(key.encode('utf-8'), msg, hashlib.sha256).hexdigest())
+" "$STAMP_KEY_F087" "$SPEC_HASH_F087" "$BASE_SHA_F087" "$LANE_F087" "$REPO_F087")
+if [ -n "$HMAC_F087" ] && [ "$HMAC_F087" = "$HMAC_F087_ORACLE" ]; then
+  pass "f087: the snippet's HMAC matches an independent recomputation of the documented recipe"
+else
+  fail "f087: snippet HMAC '$HMAC_F087' diverges from the schema-recipe oracle '$HMAC_F087_ORACLE'"
+fi
+
+# Negative: lane and repo tampers each change the HMAC (the message carries
+# all four fields, not just the first two).
+HMAC_F087_BAD_LANE=$(run_stamp_f087 "$SPEC_HASH_F087" "$BASE_SHA_F087" "docs" "$REPO_F087")
+if [ "$HMAC_F087_BAD_LANE" != "$HMAC_F087" ]; then
+  pass "f087: a tampered lane fails HMAC verification"
+else
+  fail "f087: a tampered lane should not recompute to the minted HMAC"
+fi
+HMAC_F087_BAD_REPO=$(run_stamp_f087 "$SPEC_HASH_F087" "$BASE_SHA_F087" "$LANE_F087" "attacker/other-repo")
+if [ "$HMAC_F087_BAD_REPO" != "$HMAC_F087" ]; then
+  pass "f087: a tampered repo fails HMAC verification"
+else
+  fail "f087: a tampered repo should not recompute to the minted HMAC"
+fi
+
+# Negative: a different key produces a different HMAC (the key is not ignored).
+HMAC_F087_OTHER_KEY=$(env -i PATH="$NOBIN_F087" HOME="$HOME" \
+  VV_HARNESS_STAMP_KEY="f087-a-completely-different-key" \
+  "$PYTHON3_BIN_F087" "$DIR_F087/resolve_and_hmac.py" \
+  "$SPEC_HASH_F087" "$BASE_SHA_F087" "$LANE_F087" "$REPO_F087")
+if [ -n "$HMAC_F087_OTHER_KEY" ] && [ "$HMAC_F087_OTHER_KEY" != "$HMAC_F087" ]; then
+  pass "f087: a different VV_HARNESS_STAMP_KEY produces a different HMAC (key is not ignored)"
+else
+  fail "f087: changing the key must change the HMAC, got '$HMAC_F087_OTHER_KEY'"
 fi
 
 echo ""
@@ -13572,6 +13691,117 @@ FIX_OUT=$(run_doctor "$DIR_DOC_FOCUSED_FIX" --fix)
 assert_contains "$FIX_OUT" "exit-3 skip contract (F106)" \
   "hd (F108): --fix leaves the init.sh finding in place unfixed"
 
+# Review round 1: a PARTIALLY hand-applied repair (the missing-file arm
+# upgraded to the exit-3 contract and run_focused defined, but another arm
+# still 'treating as pass' and falling through to exit 0) satisfied the
+# original markers-only check while two fake-green paths stayed live. The
+# check now also positively detects the pre-F106 fake-green wording.
+DIR_DOC_FOCUSED_PART="$WORK/doctor-focused-partial"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_PART"
+cat > "$DIR_DOC_FOCUSED_PART/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+TARGET=${1:-full_test}
+FOCUS_FILE="${2:-}"
+if [ "$TARGET" = "focused_test" ]; then
+    if [ ! -f "$FOCUS_FILE" ]; then
+        echo "focused_test: test file '$FOCUS_FILE' does not exist -- skipped (exit 3)."
+        exit 3
+    fi
+    run_focused() {
+        local rc=0
+        "$@" || rc=$?
+        if [ "$rc" -eq 3 ]; then
+            rc=1
+        fi
+        return $rc
+    }
+    if command -v pytest &>/dev/null; then
+        run_focused pytest --tb=short "$FOCUS_FILE"
+    else
+        echo "focused_test: pytest not available; no per-file runner -- treating as pass (smoke_test already ran)."
+    fi
+    exit 0
+fi
+echo "full test"
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_PART/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_PART" add -A
+git -C "$DIR_DOC_FOCUSED_PART" commit -q -m "init.sh with a partially hand-applied F106 repair"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_PART")
+assert_contains "$OUT" "exit-3 skip contract (F106)" \
+  "hd (F108): a partially hand-applied repair (markers present, 'treating as pass' arm remains) is still flagged"
+
+# Review round 1: the markers were checked against the RAW file text, so a
+# comment quoting them (a TODO note deferring the hand-apply, or the doctor's
+# own finding text pasted as a reminder) cleared a genuinely pre-F106 body.
+# Markers are now checked against non-comment lines only.
+DIR_DOC_FOCUSED_CMT="$WORK/doctor-focused-comment"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_CMT"
+cat > "$DIR_DOC_FOCUSED_CMT/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+# TODO: add run_focused / skipped (exit 3) per the F106 contract
+TARGET=${1:-full_test}
+FOCUS_FILE="${2:-}"
+if [ "$TARGET" = "focused_test" ]; then
+    pytest --tb=short "$FOCUS_FILE" || echo "no runner; treating as pass"
+    exit 0
+fi
+echo "full test"
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_CMT/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_CMT" add -A
+git -C "$DIR_DOC_FOCUSED_CMT" commit -q -m "init.sh with comment-quoted markers over a pre-F106 body"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_CMT")
+assert_contains "$OUT" "exit-3 skip contract (F106)" \
+  "hd (F108): comment-quoted markers do not clear a pre-F106 fake-green body"
+
+# The documented no-finding branches (SKILL.md check 10): an init.sh with no
+# focused_test support at all, and one mentioning focused_test only inside a
+# comment, both produce no finding.
+DIR_DOC_FOCUSED_NONE="$WORK/doctor-focused-none"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_NONE"
+cat > "$DIR_DOC_FOCUSED_NONE/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+TARGET=${1:-full_test}
+case "$TARGET" in
+  smoke_test) echo "smoke" ;;
+  full_test) echo "full test" ;;
+esac
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_NONE/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_NONE" add -A
+git -C "$DIR_DOC_FOCUSED_NONE" commit -q -m "init.sh without focused_test support"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_NONE")
+assert_not_contains "$OUT" "exit-3 skip contract" \
+  "hd (F108): an init.sh with no focused_test support produces no finding"
+
+DIR_DOC_FOCUSED_CMTONLY="$WORK/doctor-focused-comment-only"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_CMTONLY"
+cat > "$DIR_DOC_FOCUSED_CMTONLY/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+# focused_test is not supported by this project's init.sh
+TARGET=${1:-full_test}
+echo "full test"
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_CMTONLY/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_CMTONLY" add -A
+git -C "$DIR_DOC_FOCUSED_CMTONLY" commit -q -m "init.sh mentioning focused_test only in a comment"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_CMTONLY")
+assert_not_contains "$OUT" "exit-3 skip contract" \
+  "hd (F108): focused_test mentioned only in a comment produces no finding"
+
+# Drift guard: the doctor's marker strings must keep matching the shipped
+# template -- both markers on non-comment lines, and no pre-F106 fake-green
+# wording anywhere in the current template.
+TPL_INIT="$REPO_ROOT/skills/harness-init/init.sh.template"
+TPL_NON_COMMENT=$(grep -v '^[[:space:]]*#' "$TPL_INIT")
+assert_contains "$TPL_NON_COMMENT" "skipped (exit 3)" \
+  "hd (F108): shipped init.sh.template carries the 'skipped (exit 3)' marker on a non-comment line"
+assert_contains "$TPL_NON_COMMENT" "run_focused" \
+  "hd (F108): shipped init.sh.template carries run_focused on a non-comment line"
+assert_not_contains "$(cat "$TPL_INIT")" "treating as pass" \
+  "hd (F108): shipped init.sh.template carries no pre-F106 'treating as pass' wording"
+
 echo ""
 echo "== F107: check-remaining-tasks.sh reassignment message field caps =="
 # check-remaining-tasks.sh's "Next: <id>: <description> (priority N) [scope: ...]"
@@ -13667,6 +13897,40 @@ PYEOF
 STDERR_F107_EMPTY=$(run_hook "$DIR_F107_EMPTY_SCOPE" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
 assert_contains "$STDERR_F107_EMPTY" "[scope: no scope defined]" \
   "f107 (empty scope): the pre-existing empty-scope fallback text is unchanged"
+
+# Review round 1: an explicitly-null description crashed the formatter
+# (f.get('description', '') returns None for a present-but-null key, then
+# len(None) raises), and under set -euo pipefail the failed command
+# substitution suppressed the exit-2 nudge entirely -- a silent fail-open.
+# The formatter is now null-safe and try/except-guarded, so the block
+# verdict survives any malformed feature entry.
+DIR_F107_NULL="$WORK/f107-null-description"
+make_fixture "$DIR_F107_NULL"
+install_hooks "$DIR_F107_NULL"
+python3 - "$DIR_F107_NULL/.harness/features.json" <<'PYEOF'
+import json
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["description"] = None
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+STDERR_F107_NULL=$(run_hook "$DIR_F107_NULL" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
+RC=$?
+if [ "$RC" -eq 2 ]; then
+  pass "f107 (null description): the hook still exits 2 (nudge not suppressed)"
+else
+  fail "f107 (null description): hook exited $RC, expected 2 -- the nudge was suppressed"
+fi
+assert_contains "$STDERR_F107_NULL" "Next: F003" \
+  "f107 (null description): the feature id still appears with a null description"
+assert_not_contains "$STDERR_F107_NULL" "TypeError" \
+  "f107 (null description): no python traceback reaches stderr"
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

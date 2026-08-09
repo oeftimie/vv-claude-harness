@@ -335,6 +335,14 @@ if [ -n "$MISMATCH" ]; then
 fi
 
 echo ""
+)
+
+# The fixed footer (rule pointers + the /harness-continue line) is built
+# separately so the safety-net truncation below can never cut it: the overflow
+# is always caused by the variable-length body blocks, and cutting the buffer's
+# tail would otherwise drop exactly the rules the session is being told to
+# read (found by adversarial review of this feature's first round).
+FOOTER=$(
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
   echo "Agent Teams protocol: read $CLAUDE_PLUGIN_ROOT/rules/agent-teams-protocol.md" \
     "before spawning teammates."
@@ -349,12 +357,29 @@ fi
 echo "Run /harness-continue for the full interactive flow (mode choice, smoke test, team plan)."
 )
 
+# The body is capped at what the 9800-char total leaves after the footer and a
+# 200-char allowance for the truncation marker line, so body + marker + footer
+# stays under the platform's 10,000-char cap with the footer surviving whenever
+# it can (a pathologically long CLAUDE_PLUGIN_ROOT can make the footer alone
+# approach the cap; the clamp and the final hard cap keep the total invariant
+# even then, at the cost of the footer's tail).
 ORIENTATION_CHAR_CAP=9800
-ORIENTATION_LEN=${#ORIENTATION}
-if [ "$ORIENTATION_LEN" -gt "$ORIENTATION_CHAR_CAP" ]; then
-  printf '%s\n' "${ORIENTATION:0:$ORIENTATION_CHAR_CAP}"
-  echo "... (orientation truncated: $ORIENTATION_LEN chars total, exceeds the ${ORIENTATION_CHAR_CAP}-char safety cap; see .harness/ files directly for full context)"
+BODY_CHAR_CAP=$((ORIENTATION_CHAR_CAP - ${#FOOTER} - 200))
+if [ "$BODY_CHAR_CAP" -lt 0 ]; then
+  BODY_CHAR_CAP=0
+fi
+ORIENTATION_LEN=$(( ${#ORIENTATION} + ${#FOOTER} ))
+if [ "${#ORIENTATION}" -gt "$BODY_CHAR_CAP" ]; then
+  FINAL="${ORIENTATION:0:$BODY_CHAR_CAP}
+... (orientation truncated: $ORIENTATION_LEN chars total, exceeds the ${ORIENTATION_CHAR_CAP}-char safety cap; see .harness/ files directly for full context)
+$FOOTER"
 else
-  printf '%s\n' "$ORIENTATION"
+  FINAL="$ORIENTATION
+$FOOTER"
+fi
+if [ "${#FINAL}" -gt "$ORIENTATION_CHAR_CAP" ]; then
+  printf '%s\n' "${FINAL:0:$ORIENTATION_CHAR_CAP}"
+else
+  printf '%s\n' "$FINAL"
 fi
 exit 0

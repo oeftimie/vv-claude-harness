@@ -256,11 +256,9 @@
       // animated frame (pulse() at 280ms, or layoutSpokes() firing mid-
       // animation on node create/remove), so a direct style.transform write
       // here would be silently clobbered until the next full layout pass.
-      // x/y are stored on the node record and applied via style.left/top
-      // using calc() off the CSS-declared 50%/50% base, leaving `transform`
-      // owned exclusively by anime.js for scale/opacity.
-      rec.x = x;
-      rec.y = y;
+      // Position is applied via style.left/top using calc() off the
+      // CSS-declared 50%/50% base, leaving `transform` owned exclusively
+      // by anime.js for scale/opacity.
       rec.el.style.left = "calc(50% + " + x + "px)";
       rec.el.style.top = "calc(50% + " + y + "px)";
     }
@@ -338,7 +336,7 @@
 
     spokesEl.appendChild(el);
 
-    rec = { agentType: agentType || null, el: el, labelEl: labelEl, badgesEl: badgesEl, isJudge: false, x: 0, y: 0 };
+    rec = { agentType: agentType || null, el: el, labelEl: labelEl, badgesEl: badgesEl, isJudge: false };
     agents[agentId] = rec;
 
     if (isJudgeType(agentType)) markAsJudge(rec);
