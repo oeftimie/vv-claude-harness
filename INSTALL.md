@@ -181,6 +181,15 @@ initialized under v3, run without the plugin's install mechanism):
    field (F068) to the currently installed plugin's version, so the next `harness-doctor`
    run compares against the version you're actually on rather than a stale one.
 
+`.harness/init.sh` is never auto-refreshed by `--fix` — it's the one genuinely
+decision-shaped per-project file (it mixes in project-specific stack logic), so
+upgrades to it are always hand-applied. In particular, a project that adopted the
+`focused_test` target before v5.5.0 (F106) may still carry the pre-F106 exit-0 skip
+arms instead of the exit-3 skip contract (a `skipped (exit 3)` marker, a `run_focused`
+exit-3 remap); `harness-doctor` reports the gap, but closing it means comparing
+`.harness/init.sh`'s `focused_test` block against
+`skills/harness-init/init.sh.template`'s by hand.
+
 ## Personalize your CLAUDE.md
 
 `templates/CLAUDE.md` in this repo is a starting template for your personal

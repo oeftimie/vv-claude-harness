@@ -13396,6 +13396,95 @@ for TPL in "$TEMPLATES_DIR"/*.sh.template; do
   fi
 done
 
+echo "== harness-doctor: focused_test skip contract (F108) =="
+
+# .harness/init.sh is a per-project copy made at init time -- v5.5.0's
+# focused_test exit-code contract (F106: exit 3 reserved for skips, a
+# runner's own exit 3 remapped to 1, a missing test file skipped rather
+# than faked green) never reaches a project that adopted focused_test
+# under v5.4.0. This mirrors the pre-F106/post-F106 shapes of
+# skills/harness-init/init.sh.template's focused_test block (see git log
+# 78087c5/912bc3c) rather than inventing a synthetic contract.
+DIR_DOC_FOCUSED_OK="$WORK/doctor-focused-ok"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_OK"
+cat > "$DIR_DOC_FOCUSED_OK/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+TARGET=${1:-full_test}
+FOCUS_FILE="${2:-}"
+if [ "$TARGET" = "focused_test" ]; then
+    if [ ! -f "$FOCUS_FILE" ]; then
+        echo "focused_test: test file '$FOCUS_FILE' does not exist -- skipped (exit 3)."
+        exit 3
+    fi
+    run_focused() {
+        local rc=0
+        "$@" || rc=$?
+        if [ "$rc" -eq 3 ]; then
+            rc=1
+        fi
+        return $rc
+    }
+    run_focused pytest --tb=short "$FOCUS_FILE"
+    exit 0
+fi
+echo "full test"
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_OK/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_OK" add -A
+git -C "$DIR_DOC_FOCUSED_OK" commit -q -m "init.sh at v5.5.0 focused_test contract"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_OK")
+assert_not_contains "$OUT" "exit-3 skip contract" \
+  "hd (F108): an init.sh already at the v5.5.0 focused_test contract produces no finding"
+
+DIR_DOC_FOCUSED_STALE="$WORK/doctor-focused-stale"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_STALE"
+cat > "$DIR_DOC_FOCUSED_STALE/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+TARGET=${1:-full_test}
+FOCUS_FILE="${2:-}"
+STACK=python
+if [ "$TARGET" = "focused_test" ]; then
+    case "$STACK" in
+        python)
+            if command -v pytest &>/dev/null; then
+                pytest --tb=short "$FOCUS_FILE"
+            else
+                echo "focused_test: pytest not available; no per-file runner -- treating as pass (smoke_test already ran)."
+            fi
+            ;;
+        *)
+            echo "focused_test: no focused runner for stack '$STACK'; treating as pass (smoke_test already ran)."
+            ;;
+    esac
+    exit 0
+fi
+echo "full test"
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_STALE/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_STALE" add -A
+git -C "$DIR_DOC_FOCUSED_STALE" commit -q -m "init.sh at pre-F106 focused_test contract"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_STALE")
+RC=$?
+assert_rc_nonzero "$RC" "hd (F108): a pre-F106 focused_test init.sh exits non-zero"
+assert_contains "$OUT" "upgrade available: .harness/init.sh supports focused_test but is missing" \
+  "hd (F108): pre-F106 init.sh is reported as upgrade-available"
+assert_contains "$OUT" "exit-3 skip contract (F106)" \
+  "hd (F108): finding names the F106 exit-3 skip contract"
+assert_contains "$OUT" "hand-apply" \
+  "hd (F108): repair is a hand-apply instruction, not an automatic fix"
+
+# --fix never touches init.sh (the one genuinely decision-shaped per-project
+# file): the finding must survive a --fix pass unchanged.
+DIR_DOC_FOCUSED_FIX="$WORK/doctor-focused-fix"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_FIX"
+cp "$DIR_DOC_FOCUSED_STALE/.harness/init.sh" "$DIR_DOC_FOCUSED_FIX/.harness/init.sh"
+chmod +x "$DIR_DOC_FOCUSED_FIX/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_FIX" add -A
+git -C "$DIR_DOC_FOCUSED_FIX" commit -q -m "init.sh at pre-F106 focused_test contract"
+FIX_OUT=$(run_doctor "$DIR_DOC_FOCUSED_FIX" --fix)
+assert_contains "$FIX_OUT" "exit-3 skip contract (F106)" \
+  "hd (F108): --fix leaves the init.sh finding in place unfixed"
+
 echo ""
 echo "== F107: check-remaining-tasks.sh reassignment message field caps =="
 # check-remaining-tasks.sh's "Next: <id>: <description> (priority N) [scope: ...]"

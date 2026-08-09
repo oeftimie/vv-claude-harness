@@ -394,6 +394,39 @@ def check_version_drift(project_dir, plugin_root):
     )]
 
 
+def check_focused_test_skip_contract(project_dir):
+    """F108: .harness/init.sh is a per-project copy made at init time, so
+    v5.5.0's focused_test exit-code contract (F106 -- exit 3 reserved for
+    skips, a runner's own exit 3 remapped to 1, missing test files skipped
+    rather than faked green) never reaches a project that adopted
+    focused_test before F106 shipped. That project's init.sh still has the
+    old exit-0 skip arms, and the pre-F106 fake-green persists silently.
+    init.sh is the one genuinely decision-shaped per-project file (it mixes
+    in project-specific stack logic), so this is report-only, same as
+    check_feature_test_files: there is no fixer, only a hand-apply repair."""
+    init_path = os.path.join(project_dir, ".harness", "init.sh")
+    if not os.path.isfile(init_path):
+        return []  # already reported by verify-task-quality's own missing-init.sh gate
+    text = open(init_path).read()
+    non_comment = "\n".join(
+        line for line in text.splitlines() if not line.strip().startswith("#")
+    )
+    if "focused_test" not in non_comment:
+        return []  # doesn't support focused_test at all -- nothing to check
+    if "skipped (exit 3)" in text and "run_focused" in text:
+        return []
+    return [Finding(
+        "upgrade available: .harness/init.sh supports focused_test but is missing "
+        "the v5.5.0 exit-3 skip contract (F106) -- no 'skipped (exit 3)' marker "
+        "and/or no run_focused exit-3 remap, so a skip can be reported as a fake green",
+        "hand-apply: compare .harness/init.sh's focused_test block against "
+        "skills/harness-init/init.sh.template's and add the missing skip markers "
+        "and remap by hand -- init.sh is never auto-refreshed by doctor --fix "
+        "since it carries project-specific stack logic (see INSTALL.md's "
+        "'Upgrading an existing harness project' section)",
+    )]
+
+
 def check_mld_non_injection(project_dir, plugin_root):
     mld_dir = os.path.join(project_dir, ".harness", "mld")
     if not os.path.isdir(mld_dir):
@@ -466,6 +499,7 @@ def run_checks(project_dir, plugin_root):
     findings.extend(check_harness_state_files(project_dir, plugin_root))
     findings.extend(check_feature_test_files(project_dir))
     findings.extend(check_version_drift(project_dir, plugin_root))
+    findings.extend(check_focused_test_skip_contract(project_dir))
     findings.extend(check_mld_non_injection(project_dir, plugin_root))
     findings.extend(check_plugin_root_unset(project_dir, plugin_root))
     return findings
