@@ -13047,6 +13047,57 @@ else
 fi
 
 echo ""
+echo "== F097: measured-total orientation safety net =="
+
+# The per-section budgets (SESSION_INCOMPLETE/claude-progress.txt/context_summary.md
+# at 2600 chars each, the rule-pointer block echoing CLAUDE_PLUGIN_ROOT six times)
+# each bound one block in isolation, but never the SUM. Force all of them near
+# their own budget AT ONCE plus a pathologically long CLAUDE_PLUGIN_ROOT -- the
+# combination the per-section budgets can't catch since each one individually
+# stays under its own cap.
+F097_LONG_LINE=$(python3 -c "print('z' * 5000)")
+F097_LONG_ROOT=$(python3 -c "print('x' * 1500)")
+
+DIR_F097_OVERFLOW="$WORK/f097-measured-overflow"
+make_fixture "$DIR_F097_OVERFLOW"
+printf '%s\n' "$F097_LONG_LINE" > "$DIR_F097_OVERFLOW/.harness/SESSION_INCOMPLETE"
+printf '%s\n' "$F097_LONG_LINE" > "$DIR_F097_OVERFLOW/.harness/claude-progress.txt"
+cat > "$DIR_F097_OVERFLOW/.harness/context_summary.md" <<EOF
+# Context Summary
+
+## Active Context
+$F097_LONG_LINE
+
+## Cross-Cutting Concerns
+- none
+EOF
+OUT=$(run_session_start_with_root "$DIR_F097_OVERFLOW" '{"source":"startup"}' "$F097_LONG_ROOT")
+RC=$?
+LEN=${#OUT}
+assert_rc0 "$RC" "f097: an overflowing combination still exits 0"
+if [ "$LEN" -lt 10000 ]; then
+  pass "f097: the measured-total safety net keeps final output under the 10k platform cap ($LEN)"
+else
+  fail "f097: final output is $LEN chars, expected under 10000 despite the per-section budgets"
+fi
+assert_contains "$OUT" "orientation truncated:" \
+  "f097: the final safety net marker fires when the accumulated total exceeds its cap"
+assert_contains "$OUT" "chars total, exceeds the" \
+  "f097: the final safety net marker reports the actual accumulated length"
+
+# The safety net is additive, not a replacement: an ordinary session (nothing near
+# any per-section budget) must never show the new marker.
+DIR_F097_NORMAL="$WORK/f097-normal"
+make_fixture "$DIR_F097_NORMAL"
+OUT=$(run_session_start "$DIR_F097_NORMAL" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "f097: an ordinary session exits 0"
+assert_not_contains "$OUT" "orientation truncated:" \
+  "f097: the final safety net does not fire on ordinary, non-pathological content"
+assert_contains "$OUT" "## Harness orientation" \
+  "f097: ordinary orientation content still prints in full"
+
+echo ""
 echo "== shell syntax =="
 
 for SCRIPT in "$HOOKS_DIR"/*.sh "$SCRIPT_DIR/run-tests.sh" "$REPO_ROOT/scripts/stamp.sh"; do

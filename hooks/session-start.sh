@@ -43,6 +43,19 @@ SESSION_ID=${PARSED#*$FIELD_SEP}
 # injection (found by adversarial review of PR #62).
 SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
 
+# F097: the per-section budgets below (print_budgeted_block, the description/
+# scope truncation in print_next_claimable_line) each bound one block in
+# isolation, but nothing ever measured their SUM against the platform's
+# 10,000-char cap (line 3) -- three PR #128 commits chased that sum by hand
+# (2000 -> broke on real content -> recalibrated to 2600 -> a later review
+# found even that constant was a judgment call, not a derived bound) and the
+# rule-pointer block's own comment admits its length still varies 1800-2900
+# chars with CLAUDE_PLUGIN_ROOT's install path. Buffering the whole body in
+# this subshell and measuring $ORIENTATION's actual length below turns "we
+# hope the sum of hand-tuned constants stays under 10,000" into a mechanically
+# guaranteed invariant, additive to (not a replacement for) the per-section
+# budgets kept for readability/prioritization.
+ORIENTATION=$(
 if [ "$SOURCE" = "compact" ]; then
   echo "## Compaction recovery"
   echo "Context was just compacted. Re-read the Active Context section of"
@@ -334,4 +347,14 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
   echo "TDD process: $CLAUDE_PLUGIN_ROOT/rules/tdd.md (read before implementing a feature or bugfix)."
 fi
 echo "Run /harness-continue for the full interactive flow (mode choice, smoke test, team plan)."
+)
+
+ORIENTATION_CHAR_CAP=9800
+ORIENTATION_LEN=${#ORIENTATION}
+if [ "$ORIENTATION_LEN" -gt "$ORIENTATION_CHAR_CAP" ]; then
+  printf '%s\n' "${ORIENTATION:0:$ORIENTATION_CHAR_CAP}"
+  echo "... (orientation truncated: $ORIENTATION_LEN chars total, exceeds the ${ORIENTATION_CHAR_CAP}-char safety cap; see .harness/ files directly for full context)"
+else
+  printf '%s\n' "$ORIENTATION"
+fi
 exit 0
