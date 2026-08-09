@@ -13397,6 +13397,102 @@ for TPL in "$TEMPLATES_DIR"/*.sh.template; do
 done
 
 echo ""
+echo "== F107: check-remaining-tasks.sh reassignment message field caps =="
+# check-remaining-tasks.sh's "Next: <id>: <description> (priority N) [scope: ...]"
+# line goes straight to stderr and into a blocked agent's context on exit 2
+# (F046). Its description and scope fields were the same unbounded-field
+# class F071 and F085 already closed for session-start.sh's orientation --
+# missed here because F085's own spec named only session-start.sh. Reuse the
+# same truncate-and-point caps and marker wording (DESC_LIMIT=200,
+# SCOPE_LIMIT=150) so the two hooks stay consistent.
+F107_LONG_DESC_LEN=13222
+F107_LONG_DESC=$(python3 -c "print('X' * $F107_LONG_DESC_LEN)")
+
+DIR_F107_DESC="$WORK/f107-long-description"
+make_fixture "$DIR_F107_DESC"
+install_hooks "$DIR_F107_DESC"
+python3 - "$DIR_F107_DESC/.harness/features.json" "$F107_LONG_DESC" <<'PYEOF'
+import json
+import sys
+path, long_desc = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["description"] = long_desc
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+STDERR_F107_DESC=$(run_hook "$DIR_F107_DESC" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
+assert_contains "$STDERR_F107_DESC" "Next: F003" \
+  "f107 (description): the feature id still appears when its description is truncated"
+assert_contains "$STDERR_F107_DESC" "$F107_LONG_DESC_LEN chars total, see .harness/features.json for the full description" \
+  "f107 (description): the truncation marker names the real length and points at the full text"
+assert_not_contains "$STDERR_F107_DESC" "$F107_LONG_DESC" \
+  "f107 (description): the full 13222-char description no longer reaches stderr whole"
+
+F107_LONG_SCOPE_JSON=$(python3 -c "
+import json
+paths = [f'src/deeply/nested/module_{i:02d}/submodule/implementation/' for i in range(12)]
+print(json.dumps(paths))")
+F107_LONG_SCOPE_LAST="module_11"
+
+DIR_F107_SCOPE="$WORK/f107-long-scope"
+make_fixture "$DIR_F107_SCOPE"
+install_hooks "$DIR_F107_SCOPE"
+python3 - "$DIR_F107_SCOPE/.harness/features.json" "$F107_LONG_SCOPE_JSON" <<'PYEOF'
+import json
+import sys
+path, scope_json = sys.argv[1], sys.argv[2]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["scope"] = json.loads(scope_json)
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+STDERR_F107_SCOPE=$(run_hook "$DIR_F107_SCOPE" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
+assert_contains "$STDERR_F107_SCOPE" "Next: F003" \
+  "f107 (scope): the feature id still appears with an oversized scope"
+assert_contains "$STDERR_F107_SCOPE" "12 paths total, see .harness/features.json" \
+  "f107 (scope): the scope truncation marker names the path count and points at the full list"
+assert_not_contains "$STDERR_F107_SCOPE" "$F107_LONG_SCOPE_LAST" \
+  "f107 (scope): the tail of the oversized scope no longer reaches stderr"
+F107_NEXT_LINE=$(printf '%s\n' "$STDERR_F107_SCOPE" | grep "Next: F003")
+if [ "${#F107_NEXT_LINE}" -lt 450 ]; then
+  pass "f107 (scope): the Next line stays bounded (${#F107_NEXT_LINE} chars)"
+else
+  fail "f107 (scope): the Next line is ${#F107_NEXT_LINE} chars, expected under 450"
+fi
+
+# No-scope path (F003's default fixture scope is small but non-empty; a
+# feature with an empty scope list must still read "no scope defined", not
+# an empty or truncated-looking string) -- guards the caps above from
+# breaking the pre-existing empty-scope fallback.
+DIR_F107_EMPTY_SCOPE="$WORK/f107-empty-scope"
+make_fixture "$DIR_F107_EMPTY_SCOPE"
+install_hooks "$DIR_F107_EMPTY_SCOPE"
+python3 - "$DIR_F107_EMPTY_SCOPE/.harness/features.json" <<'PYEOF'
+import json
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F003":
+        feature["scope"] = []
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+STDERR_F107_EMPTY=$(run_hook "$DIR_F107_EMPTY_SCOPE" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
+assert_contains "$STDERR_F107_EMPTY" "[scope: no scope defined]" \
+  "f107 (empty scope): the pre-existing empty-scope fallback text is unchanged"
+
+echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 echo "Summary: $PASS_COUNT/$TOTAL assertions passed, $FAIL_COUNT failed"
 if [ "$FAIL_COUNT" -gt 0 ]; then
