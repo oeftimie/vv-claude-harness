@@ -3056,6 +3056,86 @@
       "approaches_tried": [
         "Bisected the live denial to the redirection token (chains/pipes were innocent -- segmentation handles them). _flag_view strips quotes, so the quoted-pathspec vs redirection distinction required threading raw_tokens through parse_command's tuples into has_staging_flag."
       ]
+    },
+    {
+      "id": "F110",
+      "priority": 110,
+      "status": "in-progress",
+      "description": "Phase 0 (OVI-141): empirically verify gate/hook/worktree behavior under Dynamic Workflow agents before any migration code. Deliverable: evals/workflow-gate-verification.md with a grounded verdict (VERIFIED-YES/NO/PARTIAL) + reproduction for all 8 questions, and a go/no-go. Acceptance: no plugin-source changes (evals/ + .harness/ only); probe worktrees cleaned up.",
+      "scope": [
+        "evals/workflow-gate-verification.md",
+        ".harness/context_summary.md"
+      ],
+      "depends_on": [],
+      "assigned_to": "single-session",
+      "test_file": "evals/workflow-gate-verification.md",
+      "coverage": null,
+      "discovered_via": null,
+      "linear": "OVI-141",
+      "approaches_tried": [],
+      "notes": "Spikes ran against this repo with worktree isolation (a toy project can't exercise the launch project's hooks from this session). GO verdict: enforcement hooks fire for workflow agents, so OVI-140's hard-gate escape (move enforcement into script verify phases) is NOT triggered."
+    },
+    {
+      "id": "F111",
+      "priority": 111,
+      "status": "pending",
+      "description": "Phase 1a (OVI-142 WP1.1): ship workflows/implement-features.js in the plugin. Parameterized by args (JSON-STRING per Phase 0 Q7 -- script MUST JSON.parse defensively). meta pure-literal {name,description,phases}; no Date.now/Math.random/new Date/import. Preflight (no agent): parse args, validate features is a non-empty array, fail fast otherwise. Implement phase: pipeline over features, one implementer per feature, model sonnet, isolation worktree, prompt carries the feature's spec+scope+TDD+deliverable contract; structured schema {feature_id,status(implemented|blocked),files_changed[],test_file,tests_run{passed,failed},worktree_branch,notes}. Review phase (same pipeline, next stage): reviewer per feature reading spec + the worktree branch's own diff but NEVER the implementer's notes/approaches (author-blindness applies to the implementer's RATIONALE, not the code -- the reviewer legitimately reads the diff); returns {feature_id,verdict(APPROVE|REVISE|REJECT),findings[],rounds_used}. The script NEVER merges/commits/edits features.json -- integration is the lead's so gates fire in the lead session. Run-continuity per OVI-140: agent() null -> filter(Boolean), return a structured partial naming unfinished feature IDs; prompts derived from args only (resume cache-stability).",
+      "scope": [
+        "workflows/implement-features.js",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F110"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "discovered_via": null,
+      "linear": "OVI-142",
+      "approaches_tried": [],
+      "notes": "SPEC RESOLUTIONS (spec-verification returned ASK; resolved under the standing don't-stop instruction, disclosed here): (Q-args) args is a JSON string -> JSON.parse. (Q-reviewer-input) reviewer gets spec+diff, not implementer notes; OVI-142's 'spec-only, preserves F017' mis-attributed -- F017 author-blindness is the CONFORMANCE-tester's, not the reviewer's. (Q-reviewer-model) reviewer runs opus via agentType frontmatter (reviewer.md model:opus), NOT sonnet -- resolves the OVI-142-vs-reviewer.md conflict in favor of reviewer.md and Ovidiu's 'opus-as-orchestrator' mapping; reviewModel arg is an optional downgrade knob. (Q-fix-step) the review loop RETURNS verdicts; FIXES are applied by the lead, not by in-workflow agents editing merged code in parallel worktrees (per OVI-140's corrected review-loop row) -- supersedes OVI-142's 'loop review->fix->re-review' wording. (Q-blocked) a blocked implementer short-circuits its own review; other features proceed. (Q-concurrency) platform caps at min(16,cores-2); batches sized <15. (Q-spec-source) each feature's spec text is passed IN via args by the lead (script gets no file access it needs); args.featureSpecs maps id->{spec,scope,risk}."
+    },
+    {
+      "id": "F112",
+      "priority": 112,
+      "status": "pending",
+      "description": "Phase 1b (OVI-142 WP1.2): ship workflows/review-branch.js -- a thin review-only workflow for re-reviewing an existing branch/diff. args (JSON-string, parsed): {diffScope|branch, features?[], conformance?:bool}. Fan a reviewer over the diff scope, optionally a conformance-tester per feature (spec-only, author-blind per F017), dedup findings by file+line+claim at a barrier BEFORE an adversarial-verify fan-out (OVI-140 improvement), return ranked verdicts {file,line,claim,severity,verdict}. Same meta/forbidden-call conventions and structured-output schemas as F111. Used by Phase 6 field validation and the lead's fix-and-recheck loop.",
+      "scope": [
+        "workflows/review-branch.js",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F111"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "discovered_via": null,
+      "linear": "OVI-142",
+      "approaches_tried": [],
+      "notes": "Dedup-before-verify barrier is the concrete lesson from the 2026-08-09 review run (wf_62aae2ac-e3b) where 3 dimensions re-reported the same defects and each copy was verified separately."
+    },
+    {
+      "id": "F113",
+      "priority": 113,
+      "status": "pending",
+      "description": "Phase 2 (OVI-143): rewire skills/harness-continue/SKILL.md so the parallel path orchestrates via the implement-features workflow, Teams demoted-not-deleted (removed in Phase 3). Step 4 becomes a THREE-way mode decision: single-session (default; 1 feature / sequential / <5 files); workflow mode (new primary parallel: 2+ independent verified features, where independent = empty depends_on AND non-overlapping scope); peer-debate exception (competing-hypothesis research -> plain parallel subagents). Availability probe (Phase 0 Q8): on version<2.1.154 or Workflow tool absent, fall back to the existing worktree-isolated plain-subagent path (repoint the current graceful-degradation clause, don't duplicate). Step 5b workflow orchestration flow (lead, in ORDER): confirm each candidate has a verified spec (exclude unverified); mirror each feature into TaskCreate WITH metadata.feature_id (mandatory -- arms the TaskCompleted focused/coverage stages per Phase 0 Q2); launch with args carrying feature specs; on return integrate PER FEATURE in the order run-focused+smoke -> merge -> flip features.json status -> mark task complete (gate fires) -> commit (add+commit separate calls); remove the changed worktree after merge before any repo-wide suite (Phase 0 Q4); blocked/REJECT/rounds-exhausted results surfaced to Ovidiu, never auto-merged. WP2.3: replace team-spawn-prompts.md content with workflow prompt+schema templates and a pre-LAUNCH checklist (specs verified, tasks mirrored WITH feature_id, branch clean, git fetch+rebase). Tests: doc-assertions for the three-way decision, mandatory feature_id mirroring, the integration ORDER (test before merge before status-flip before task-complete before commit), fallback-to-plain-subagents, and NO instruction to edit features.json before tests pass; existing Teams assertions updated not deleted.",
+      "scope": [
+        "skills/harness-continue/SKILL.md",
+        "skills/harness-continue/team-spawn-prompts.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F111",
+        "F112"
+      ],
+      "assigned_to": null,
+      "test_file": null,
+      "coverage": null,
+      "discovered_via": null,
+      "linear": "OVI-143",
+      "approaches_tried": [],
+      "notes": "SPEC RESOLUTIONS (spec-verification ASK, self-resolved+disclosed): line refs 104-148 drifted -> locate by heading not number. 'independent' := empty depends_on AND non-overlapping scope. single-vs-workflow tie (2 independent <5-file features): workflow mode wins (parallel gain > single-session simplicity once 2 verified independent features exist). AC1 'both gates' = commit-gate.sh + verify-task-quality.sh, observed on the Phase-2 toy run (also closes Phase 0 Q2's focused-stage PARTIAL on a focused_test-capable project). team-spawn-prompts.md keeps a Teams section until Phase 3; SKILL.md's Step 5b Teams pointer stays valid. teammate-scope.txt NOT needed in workflow mode (worktree isolation is physical)."
     }
   ]
 }
