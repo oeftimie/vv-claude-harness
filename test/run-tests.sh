@@ -13112,6 +13112,128 @@ assert_contains "$DASHBOARD_HTML_SRC" '[class$="-block"]' \
 assert_contains "$DASHBOARD_HTML_SRC" '[class$="-skipped"]' \
   "dash-fe: skipped-verdict CSS rule matches any gate name via a suffix selector"
 
+echo "== F097: measured-total orientation safety net =="
+
+# The per-section budgets (SESSION_INCOMPLETE/claude-progress.txt/context_summary.md
+# at 2600 chars each, the rule-pointer block echoing CLAUDE_PLUGIN_ROOT six times)
+# each bound one block in isolation, but never the SUM. Force all of them near
+# their own budget AT ONCE plus a pathologically long CLAUDE_PLUGIN_ROOT -- the
+# combination the per-section budgets can't catch since each one individually
+# stays under its own cap.
+F097_LONG_LINE=$(python3 -c "print('z' * 5000)")
+F097_LONG_ROOT=$(python3 -c "print('x' * 1500)")
+
+DIR_F097_OVERFLOW="$WORK/f097-measured-overflow"
+make_fixture "$DIR_F097_OVERFLOW"
+printf '%s\n' "$F097_LONG_LINE" > "$DIR_F097_OVERFLOW/.harness/SESSION_INCOMPLETE"
+printf '%s\n' "$F097_LONG_LINE" > "$DIR_F097_OVERFLOW/.harness/claude-progress.txt"
+cat > "$DIR_F097_OVERFLOW/.harness/context_summary.md" <<EOF
+# Context Summary
+
+## Active Context
+$F097_LONG_LINE
+
+## Cross-Cutting Concerns
+- none
+EOF
+OUT=$(run_session_start_with_root "$DIR_F097_OVERFLOW" '{"source":"startup"}' "$F097_LONG_ROOT")
+RC=$?
+LEN=${#OUT}
+assert_rc0 "$RC" "f097: an overflowing combination still exits 0"
+if [ "$LEN" -lt 10000 ]; then
+  pass "f097: the measured-total safety net keeps final output under the 10k platform cap ($LEN)"
+else
+  fail "f097: final output is $LEN chars, expected under 10000 despite the per-section budgets"
+fi
+assert_contains "$OUT" "orientation truncated:" \
+  "f097: the final safety net marker fires when the accumulated total exceeds its cap"
+assert_contains "$OUT" "chars total, exceeds the" \
+  "f097: the final safety net marker reports the actual accumulated length"
+
+# The safety net is additive, not a replacement: an ordinary session (nothing near
+# any per-section budget) must never show the new marker.
+DIR_F097_NORMAL="$WORK/f097-normal"
+make_fixture "$DIR_F097_NORMAL"
+OUT=$(run_session_start "$DIR_F097_NORMAL" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "f097: an ordinary session exits 0"
+assert_not_contains "$OUT" "orientation truncated:" \
+  "f097: the final safety net does not fire on ordinary, non-pathological content"
+assert_contains "$OUT" "## Harness orientation" \
+  "f097: ordinary orientation content still prints in full"
+
+echo ""
+echo "== F098: single features.json load for the remaining session-start checks =="
+
+# Arrange all three checks (spec drift, scope-unarmed, test_file-existence) to
+# fire at once: the base fixture already ships F001/F002 with test_file paths
+# that don't exist on disk (F066's real-world shape), so only spec drift and
+# scope-unarmed need explicit setup.
+DIR_F098="$WORK/f098-single-load"
+make_fixture "$DIR_F098"
+mkdir -p "$DIR_F098/.claude/hooks"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_F098/.claude/hooks/enforce-scope.sh"
+python3 - "$DIR_F098/.harness/features.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    data = json.load(fh)
+for feature in data["features"]:
+    if feature["id"] == "F002":
+        feature["assigned_to"] = "api"
+    if feature["id"] == "F003":
+        feature["spec"] = {"hash": "0" * 60 + "dead", "verdict": "PASS", "sv_version": "1.0"}
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PYEOF
+
+# A fake python3 ahead of the real one on PATH logs every invocation's argv and
+# stdin to its own file and forwards to the real interpreter, so the actual
+# process count and per-process content can be inspected after the run --
+# behavioral proof, not just a grep of the script's source text.
+F098_FAKE_DIR="$WORK/f098-fake-python3"
+mkdir -p "$F098_FAKE_DIR"
+F098_LOG_DIR="$WORK/f098-python3-calls"
+mkdir -p "$F098_LOG_DIR"
+F098_REAL_PYTHON3=$(command -v python3)
+cat > "$F098_FAKE_DIR/python3" <<WRAP
+#!/bin/bash
+N=\$(ls "$F098_LOG_DIR" | wc -l | tr -d ' ')
+N=\$((N + 1))
+STDIN_CONTENT=\$(cat)
+printf '%s' "\$STDIN_CONTENT" > "$F098_LOG_DIR/call_\$N.log"
+printf '%s' "\$STDIN_CONTENT" | "$F098_REAL_PYTHON3" "\$@"
+WRAP
+chmod +x "$F098_FAKE_DIR/python3"
+
+OUT=$(cd "$DIR_F098" && printf '%s' '{"source":"startup"}' \
+  | PATH="$F098_FAKE_DIR:$PATH" CLAUDE_PROJECT_DIR="$DIR_F098" env -u CLAUDE_PLUGIN_ROOT \
+    bash "$HOOKS_DIR/session-start.sh")
+RC=$?
+assert_rc0 "$RC" "f098: the triple-warning fixture still exits 0"
+assert_contains "$OUT" "WARNING: spec drift" "f098: spec-drift warning still fires"
+assert_contains "$OUT" "WARNING: scope enforcement unarmed" "f098: scope-unarmed warning still fires"
+assert_contains "$OUT" "WARNING: test_file does not exist for" "f098: test_file-existence warning still fires"
+
+SPEC_DRIFT_CALLS=$(grep -l 'import hashlib' "$F098_LOG_DIR"/*.log 2>/dev/null | wc -l | tr -d ' ')
+SCOPE_CALLS=$(grep -l 'armed_needed' "$F098_LOG_DIR"/*.log 2>/dev/null | wc -l | tr -d ' ')
+TESTFILE_CALLS=$(grep -l 'os.path.isfile(os.path.join(root, test_file))' "$F098_LOG_DIR"/*.log 2>/dev/null | wc -l | tr -d ' ')
+if [ "$SPEC_DRIFT_CALLS" = "1" ] && [ "$SCOPE_CALLS" = "1" ] && [ "$TESTFILE_CALLS" = "1" ]; then
+  pass "f098: each of the three checks appears in exactly one logged python3 invocation"
+else
+  fail "f098: expected each check in exactly 1 invocation, got spec-drift=$SPEC_DRIFT_CALLS scope=$SCOPE_CALLS test_file=$TESTFILE_CALLS"
+fi
+
+SAME_CALL=$(grep -l 'import hashlib' "$F098_LOG_DIR"/*.log 2>/dev/null)
+if [ -n "$SAME_CALL" ] && grep -q 'armed_needed' "$SAME_CALL" && grep -q 'os.path.isfile(os.path.join(root, test_file))' "$SAME_CALL"; then
+  pass "f098: all three checks run inside the SAME python3 invocation (one features.json load)"
+else
+  fail "f098: the three checks are not all in the same python3 invocation -- consolidation regressed"
+fi
+
 echo ""
 echo "== shell syntax =="
 
