@@ -1,4 +1,54 @@
-# Agent Teams Spawn Prompt Templates
+# Spawn & Launch Prompt Templates
+
+This file has two parts: the **Workflow launch templates** (the primary parallel mode,
+Step 5b) and the **Agent Teams spawn templates** (legacy, Step 5c — retained until Agent
+Teams is retired in a later migration phase).
+
+---
+
+## Workflow launch (primary — `/vv-harness:implement-features`)
+
+### Pre-launch checklist
+
+Before launching the workflow, confirm all of:
+
+- **Specs verified** — every feature in the batch has `spec.verdict: "PASS"` (or a fresh
+  `harness-issue-prep` pass). Unverified features are excluded from the batch.
+- **Tasks mirrored WITH `feature_id`** — one `TaskCreate` per feature, each carrying
+  `metadata.feature_id`. This arms the `TaskCompleted` gate's focused-test/coverage
+  stages; a mirrored task without `feature_id` leaves them inert.
+- **Branch clean, rebased** — `git fetch` + rebase on the integration branch; working
+  tree clean before launch.
+
+Worktree isolation is physical, so **`.claude/teammate-scope.txt` is NOT written for
+workflow mode** — it belongs to the shared-branch Teams path only.
+
+### `args` shape
+
+```
+{
+  features: ["F0NN", "F0MM"],
+  featureSpecs: {
+    F0NN: { spec: "<the verified spec text, verbatim>", scope: ["path/…"], risk: "standard|elevated", mergeBase: "<sha or branch>" },
+    F0MM: { … }
+  },
+  maxReviewRounds: 3,
+  reviewModel: "opus"   // optional; omit to use the reviewer agent's own model
+}
+```
+
+### Structured-output schemas (single source of truth is the script; mirror here for the lead)
+
+- **Implement**: `{ feature_id, status: implemented|blocked, files_changed[], test_file, tests_run: {passed, failed}, worktree_branch, head_sha, notes, blocker }`
+- **Review**: `{ feature_id, verdict: APPROVE|REVISE|REJECT, findings[], rounds_used }`
+- **Workflow return**: `{ per_feature: [{ feature_id, implement, review, outcome: approved|blocked|needs-lead|died }], unfinished: [ids], complete: bool }`
+
+The lead integrates approved features per Step 5b's ordered flow; `blocked` / non-APPROVE
+/ `unfinished` features are surfaced to the user, never auto-merged.
+
+---
+
+# Agent Teams Spawn Prompt Templates (legacy)
 
 Per-feature spawn prompts for the vv-harness plugin agents. The lead fills in the
 placeholders and passes the result as the `prompt` parameter in Agent tool calls, with

@@ -13988,6 +13988,56 @@ assert_not_contains "$STDERR_F107_NULL" "TypeError" \
   "f107 (null description): no python traceback reaches stderr"
 
 echo ""
+echo "== F113: harness-continue workflow mode (OVI-143) =="
+
+# Phase 2 rewires the parallel path to orchestrate via the implement-features
+# workflow. These assertions pin the load-bearing decisions from the spec gate:
+# the three-way mode decision, mandatory feature_id-carrying task mirroring, the
+# integration ORDER (tests before merge before status-flip before task-complete
+# before commit), the fallback pointer, and that no step tells the lead to edit
+# features.json before tests pass. Teams text is demoted, not deleted.
+HC_SKILL_F113="$REPO_ROOT/skills/harness-continue/SKILL.md"
+HC_SKILL_SRC=$(cat "$HC_SKILL_F113")
+
+assert_contains "$HC_SKILL_SRC" "Choose Workflow mode (the primary parallel path)" \
+  "f113: Step 4 presents workflow mode as the primary parallel path"
+assert_contains "$HC_SKILL_SRC" "empty \`depends_on\` AND non-overlapping \`scope\`" \
+  "f113: 'independent' is defined operationally (empty depends_on AND non-overlapping scope)"
+assert_contains "$HC_SKILL_SRC" "Peer-debate exception" \
+  "f113: the peer-debate exception routes to plain subagents"
+assert_contains "$HC_SKILL_SRC" "Availability probe" \
+  "f113: an availability probe gates workflow mode with a fallback"
+assert_contains "$HC_SKILL_SRC" "Step 5b: Workflow Orchestration" \
+  "f113: Step 5b is the workflow orchestration flow"
+# Mandatory task mirroring WITH feature_id (Phase 0 Q2: arms the focused/coverage stages).
+assert_contains "$HC_SKILL_SRC" "metadata.feature_id" \
+  "f113: task mirroring is mandatory and carries metadata.feature_id"
+# Integration order, stated as a single ordered clause.
+assert_contains "$HC_SKILL_SRC" "run the feature's focused test + smoke locally → merge its" \
+  "f113: integration runs local tests before merging"
+assert_contains "$HC_SKILL_SRC" "complete (gate fires) → commit (commit gate fires" \
+  "f113: task-complete precedes commit in the integration order"
+assert_contains "$HC_SKILL_SRC" "Never flip status or mark a task" \
+  "f113: never flip status / complete a task before tests pass on merged code"
+assert_contains "$HC_SKILL_SRC" "remove the changed worktree before any repo-wide" \
+  "f113: leftover-worktree hygiene step is present (Phase 0 Q4)"
+assert_contains "$HC_SKILL_SRC" "resumeFromRunId" \
+  "f113: unfinished features are resumed/reconciled, not dropped (run-continuity)"
+# Legacy Teams text demoted but retained.
+assert_contains "$HC_SKILL_SRC" "Step 5c: Agent Teams Workflow (legacy)" \
+  "f113: Agent Teams flow is demoted to Step 5c (legacy), not deleted"
+assert_contains "$HC_SKILL_SRC" "no longer the default parallel mode" \
+  "f113: the fallback clause states Teams is no longer the default"
+# team-spawn-prompts.md gains the workflow launch templates + pre-launch checklist.
+TSP_SRC=$(cat "$REPO_ROOT/skills/harness-continue/team-spawn-prompts.md")
+assert_contains "$TSP_SRC" "Workflow launch (primary" \
+  "f113: team-spawn-prompts.md carries the workflow launch template"
+assert_contains "$TSP_SRC" "Pre-launch checklist" \
+  "f113: the pre-launch checklist replaces the pre-spawn checklist for workflow mode"
+assert_contains "$TSP_SRC" "Tasks mirrored WITH \`feature_id\`" \
+  "f113: the pre-launch checklist requires feature_id-carrying task mirroring"
+
+echo ""
 echo "== F111/F112: plugin workflow scripts (OVI-142) =="
 
 # Phase 1 of the OVI-140 Agent Teams -> Dynamic Workflows migration ships two
