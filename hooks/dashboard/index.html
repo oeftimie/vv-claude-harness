@@ -179,17 +179,20 @@
     color: #12141a;
     font-weight: 600;
   }
-  /* Gate verdict badges: keyed by the verdict itself (gateBadgeKind()
-     below), not one shared "gate" kind -- addBadge() reuses an existing
-     element by DOM lookup on its kind string, so a single shared kind let
-     a block verdict's badge be silently overwritten by the very next
-     allow verdict. The attribute selector is the default look for any
-     verdict (matches the old shared amber styling); the block/skipped
-     rules override it for the verdicts that must stay visually distinct,
-     using equal specificity so source order (below) decides. */
+  /* Gate verdict badges: keyed by both the gate AND the verdict
+     (gateBadgeKind() below), not verdict alone -- addBadge() reuses an
+     existing element by DOM lookup on its kind string, so a shared
+     per-verdict kind let two different gate scripts logging the same
+     verdict in one session (e.g. enforce-scope's allow and commit-gate's
+     allow) silently overwrite each other's title/finding. The attribute
+     selector is the default look for any gate/verdict pair (matches the
+     old shared amber styling); the block/skipped rules override it via a
+     suffix selector on the verdict, so they apply regardless of which
+     gate produced it, using equal specificity so source order (below)
+     decides. */
   .badge[class*="badge-gate-"] { background: var(--gate); }
-  .badge.badge-gate-block { background: var(--permission); color: #fff; }
-  .badge.badge-gate-skipped { background: var(--border); color: var(--text); }
+  .badge[class*="badge-gate-"][class$="-block"] { background: var(--permission); color: #fff; }
+  .badge[class*="badge-gate-"][class$="-skipped"] { background: var(--border); color: var(--text); }
   .badge-judge { background: var(--judge); color: #fff; }
   .badge-permission { background: var(--permission); color: #fff; }
 </style>
@@ -397,23 +400,29 @@
 
   var leadNode = { el: leadNodeEl, badgesEl: leadBadgesEl };
 
-  function gateBadgeKind(verdict) {
-    // Each verdict gets its own badge kind ("gate-block", "gate-allow",
-    // "gate-skipped", ...) so addBadge()'s reuse-by-lookup never lets one
-    // verdict's badge silently overwrite a different verdict's -- a block
-    // verdict must stay visible instead of being erased by the next allow.
-    // Sanitized to a safe class-name fragment since verdict is data from a
-    // hook payload, not a fixed enum this page controls.
-    var normalized = String(verdict || "unknown")
+  function sanitizeClassFragment(value) {
+    // Safe class-name fragment for data from a hook payload, not a fixed
+    // enum this page controls.
+    return String(value || "unknown")
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, "-");
-    return "gate-" + normalized;
+  }
+
+  function gateBadgeKind(gate, verdict) {
+    // Each (gate, verdict) pair gets its own badge kind ("gate-commit-gate-
+    // block", "gate-enforce-scope-allow", ...) so addBadge()'s reuse-by-
+    // lookup never lets one gate's verdict badge silently overwrite a
+    // different gate's -- keying on verdict alone let enforce-scope's
+    // allow/skipped and commit-gate's allow (both logged on nearly every
+    // tool call) repeatedly clobber each other's title/finding even though
+    // they came from different gate scripts.
+    return "gate-" + sanitizeClassFragment(gate) + "-" + sanitizeClassFragment(verdict);
   }
 
   function handleGateEvent(payload, node) {
     // Quality-gate hooks (F089): a gate/verdict/finding-bearing log line.
     var text = "GATE:" + (payload.verdict || "?");
-    var badgeEl = addBadge(node.badgesEl, gateBadgeKind(payload.verdict), text);
+    var badgeEl = addBadge(node.badgesEl, gateBadgeKind(payload.gate, payload.verdict), text);
     badgeEl.title = payload.gate + (payload.finding ? ": " + payload.finding : "");
   }
 

@@ -11967,10 +11967,10 @@ assert_contains "$DASHBOARD_HTML_SRC" 'translate: -50% -50%;' \
 # block verdict's badge is never displaced by an unrelated allow verdict.
 assert_not_contains "$DASHBOARD_HTML_SRC" 'addBadge(node.badgesEl, "gate", text)' \
   "dash-fe: gate badges are no longer added under one shared \"gate\" kind (a block verdict badge could be silently overwritten by the next allow)"
-assert_contains "$DASHBOARD_HTML_SRC" "function gateBadgeKind(verdict)" \
-  "dash-fe: a gateBadgeKind() function derives a verdict-specific badge kind"
-assert_contains "$DASHBOARD_HTML_SRC" "badge-gate-block" \
-  "dash-fe: page source defines a distinct badge-gate-block kind so a block verdict cannot be silently overwritten by an allow"
+assert_contains "$DASHBOARD_HTML_SRC" "function gateBadgeKind(gate, verdict)" \
+  "dash-fe: a gateBadgeKind() function derives a gate-and-verdict-specific badge kind (F095: keyed on both, not verdict alone)"
+assert_contains "$DASHBOARD_HTML_SRC" '[class$="-block"]' \
+  "dash-fe: page source defines a distinct block-verdict CSS rule so a block verdict cannot be silently overwritten by an allow"
 assert_not_contains "$DASHBOARD_HTML_SRC" ".badge-gate {" \
   "dash-fe: no single shared .badge-gate CSS rule remains (verdict-specific rules replace it)"
 
@@ -13077,6 +13077,40 @@ assert_contains "$DASHBOARD_HTML_SRC" "rec.y = y;" \
 # scale/opacity, never positioning.
 assert_contains "$DASHBOARD_HTML_SRC" 'translate: -50% -50%;' \
   "dash-fe: .node still centers via the standalone CSS translate property"
+
+echo ""
+echo "== F095: dashboard gate badges keyed on gate and verdict =="
+
+# QA binding for F095 is manual (per its own features.json entry): a second
+# adversarial review of the F088-F093 dashboard chain found gate badges keyed
+# on verdict only (gate-<verdict>), so multiple gate scripts (enforce-scope,
+# commit-gate, check-remaining-tasks, verify-task-quality) logging the same
+# verdict in one session share a single DOM badge element and silently
+# overwrite each other's title/finding. This repo's dependency-free
+# bash/python3 runner has no browser/DOM harness, so these are supplementary
+# structural assertions on the exact source pattern, not a rendered result.
+
+assert_contains "$DASHBOARD_HTML_SRC" "function gateBadgeKind(gate, verdict)" \
+  "dash-fe: gateBadgeKind() now takes both gate and verdict"
+assert_contains "$DASHBOARD_HTML_SRC" "gateBadgeKind(payload.gate, payload.verdict)" \
+  "dash-fe: handleGateEvent() passes both payload.gate and payload.verdict to gateBadgeKind()"
+assert_not_contains "$DASHBOARD_HTML_SRC" "gateBadgeKind(verdict)" \
+  "dash-fe: gateBadgeKind() no longer takes verdict alone"
+# The gate name is data from a hook payload, not a fixed enum this page
+# controls, so it must be sanitized the same way verdict already is before
+# becoming part of a class name.
+assert_contains "$DASHBOARD_HTML_SRC" "sanitizeClassFragment(gate)" \
+  "dash-fe: gateBadgeKind() sanitizes the gate name against arbitrary payload data (same routine verdict already uses)"
+assert_contains "$DASHBOARD_HTML_SRC" "sanitizeClassFragment(verdict)" \
+  "dash-fe: gateBadgeKind() sanitizes the verdict through the same routine as the gate name"
+assert_not_contains "$DASHBOARD_HTML_SRC" '.badge.badge-gate-block {' \
+  "dash-fe: no gate-name-agnostic .badge-gate-block CSS rule remains"
+assert_not_contains "$DASHBOARD_HTML_SRC" '.badge.badge-gate-skipped {' \
+  "dash-fe: no gate-name-agnostic .badge-gate-skipped CSS rule remains"
+assert_contains "$DASHBOARD_HTML_SRC" '[class$="-block"]' \
+  "dash-fe: block-verdict CSS rule matches any gate name via a suffix selector"
+assert_contains "$DASHBOARD_HTML_SRC" '[class$="-skipped"]' \
+  "dash-fe: skipped-verdict CSS rule matches any gate name via a suffix selector"
 
 echo ""
 echo "== shell syntax =="
