@@ -2,6 +2,19 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.6.1 (2026-08-09)
+
+One commit-gate fix (F109): shell redirections after `git commit` are no longer
+misread as pathspecs. The F052 bare-pathspec rule denied any flagless token after
+`commit`, so `git commit --no-edit 2>&1` was blocked as compound-stage-and-commit —
+but bash consumes an unquoted redirection before git ever runs. The gate now skips
+a genuine redirection (and its detached target, e.g. `> log`), deciding on the RAW
+token only: quoting or escaping any of it (`git commit '2>&1'`, `2\>file`) still
+denies as a real working-tree-commit pathspec, and the F034 bypass shapes (a real
+staging flag before *or after* the redirection) still deny. Raw tokens are now
+threaded through the parser for exactly this decision, since the flag view strips
+quotes and cannot tell the two forms apart.
+
 ### v5.6.0 (2026-08-09)
 
 Clears the entire remaining feature backlog (F087, F094–F098, F107, F108) in one

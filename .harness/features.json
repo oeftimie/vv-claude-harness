@@ -3036,6 +3036,26 @@
       "discovered_via": "PR #156 adversarial review (review-pr156 reviewer agent), 2026-08-09.",
       "spec": null,
       "qa_binding": "integration"
+    },
+    {
+      "id": "F109",
+      "priority": 109,
+      "status": "passing",
+      "description": "commit-gate's F052 bare-pathspec rule classifies ANY flagless token after `git commit` as a pathspec, including shell redirections the shell consumes before git ever runs: `git commit --no-edit 2>&1` is denied as compound-stage-and-commit (live-reproduced in a fixture; bisection shows `2>&1` alone triggers it -- `&&` chains and pipes are segmented correctly and were never the problem). Any redirection in the commit segment (2>&1, >log, 2>/dev/null) false-positives the same way. Fix: in has_staging_flag, recognize redirection tokens and skip them (skip the NEXT token too when the operator is bare, e.g. `> log`, since bash consumes it as the target) -- but ONLY when the RAW token carries no quote/escape/expansion characters, because _flag_view strips quotes, so the raw form is the only place a quoted pathspec that merely LOOKS like a redirection (`git commit '2>&1'` -- a real F052 working-tree-commit risk that must keep denying) differs from a genuine redirection. Requires threading raw tokens through parse_command's parsed tuples into has_staging_flag. Template and live copy stay identical.",
+      "scope": [
+        ".claude/hooks/commit-gate.sh",
+        "skills/harness-init/commit-gate.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "discovered_via": "F096",
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "TDD: 11 assertions, all key cases confirmed against the pre-fix hook first (three false denies red, four deny-preserving cases already denying). End-to-end through run_commit_gate fixtures: 2>&1 / 2>/dev/null / detached '> log' now allow; quoted '2>&1', a real pathspec, escaped 2\\>file, -a beside a redirection, and both F034 bypass shapes (staging flag AFTER 2>&1 and after detached &>) all still deny. Full suite 2070/2070. Recognition is raw-token-only (no quote/escape/expansion chars) -- the same safe over-deny direction the file's other decisions take.",
+      "notes": "Found when this control denied the lead's own non-staging `git commit --no-edit 2>&1 | tail -2 && ...` during the v5.6.0 merge phase; initially misdiagnosed in HARNESS_BACKLOG.md as over-broad compound detection on && chains (chains were innocent -- corrected there as part of this feature). The other denial that session was the separate push guard blocking a tag push while checked out on main -- a different control, tracked as its own backlog row, not part of this fix. Shipped in v5.6.1.",
+      "approaches_tried": [
+        "Bisected the live denial to the redirection token (chains/pipes were innocent -- segmentation handles them). _flag_view strips quotes, so the quoted-pathspec vs redirection distinction required threading raw_tokens through parse_command's tuples into has_staging_flag."
+      ]
     }
   ]
 }

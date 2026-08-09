@@ -1098,3 +1098,15 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
 - Next: PR from eovidiu/remaining-8, review, merge, tag v5.6.0. After
   that ZERO pending features remain -- new work needs fresh scoping.
 - Blockers: none.
+
+## Session 2026-08-09 (continuation: F109 -> v5.6.1)
+- Feature: F109 -- commit-gate misread unquoted redirections after `git
+  commit` as F052 pathspecs (the v5.6.0 session's false-positive denial;
+  bisected to `2>&1`, not the && chain the backlog row first blamed).
+- Status: complete; suite 2070/2070; v5.6.1 released.
+- Decisions: recognition is raw-token-only so quoted/escaped forms keep
+  denying as real pathspecs; F034 flag-after-redirect shapes re-pinned.
+  Backlog row corrected + marked promoted; push-guard tag-push false
+  positive filed as its own candidate row (not fixed).
+- Next: nothing pending. The push-guard row is the only open candidate.
+- Blockers: none.
