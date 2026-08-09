@@ -144,9 +144,24 @@ import sys
 data = json.load(sys.stdin)
 f = data['next']
 status_note = ' (retry)' if f.get('status') == 'failed' else ''
-scope = ', '.join(f.get('scope') or []) or 'no scope defined'
+scope_list = f.get('scope') or []
+scope = ', '.join(scope_list) or 'no scope defined'
+# F107: description and scope are the same unbounded-field class F071 and
+# F085 already closed for session-start.sh's orientation -- this line goes
+# straight to stderr, into a blocked agent's context, on exit 2. Same
+# truncate-and-point caps and marker wording, so the two hooks stay
+# consistent.
+SCOPE_LIMIT = 150
+if len(scope) > SCOPE_LIMIT:
+    noun = 'path' if len(scope_list) == 1 else 'paths'
+    scope = scope[:SCOPE_LIMIT] + f\"... ({len(scope_list)} {noun} total, see .harness/features.json)\"
+desc = f.get('description', '')
+DESC_LIMIT = 200
+if len(desc) > DESC_LIMIT:
+    full_len = len(desc)
+    desc = desc[:DESC_LIMIT] + f\"... ({full_len} chars total, see .harness/features.json for the full description)\"
 print(f\"{data['count']} claimable feature(s). Next: {f.get('id')}: \"
-      f\"{f.get('description')} (priority {f.get('priority', 'unset')})\"
+      f\"{desc} (priority {f.get('priority', 'unset')})\"
       f\"{status_note} [scope: {scope}]\")
 ")
 
