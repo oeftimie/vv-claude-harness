@@ -277,8 +277,10 @@ the `TaskCompleted` and commit gates fire in the lead session. Run these steps *
    from the batch, never silently included.
 2. **Mirror tasks — mandatory.** `TaskCreate` one task per feature, **each carrying
    `metadata.feature_id`** (dependencies via `addBlockedBy`). This is what arms the
-   `TaskCompleted` gate's focused-test and coverage stages — a mirrored task *without*
-   `feature_id` leaves those stages inert (verified in Phase 0). Not optional.
+   `TaskCompleted` gate's focused-test and coverage stages. The hook has a task-subject
+   `FXXX:` fallback (`verify-task-quality.sh` parses the ID off the subject when
+   `feature_id` is absent), but do not rely on it — a subject without the exact `FXXX:`
+   prefix, or a mismatched ID, silently skips those stages. Set `feature_id` explicitly.
 3. **Launch.** Call the workflow with `args` carrying the feature IDs **and each
    feature's verified spec text** (the script has no way to read `features.json` from
    inside a workflow): `{ features: [...], featureSpecs: { F0NN: { spec, scope, risk,

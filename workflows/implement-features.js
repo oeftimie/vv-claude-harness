@@ -9,7 +9,9 @@ export const meta = {
 
 // args arrives as a JSON-ENCODED STRING on the current CLI, not a parsed object
 // (Phase 0 / OVI-141 Q7). Parse defensively; a bare object is tolerated too so the
-// script stays correct if a future CLI marshals args as an object.
+// script stays correct if a future CLI marshals args as an object. Exported-by-name
+// via a sentinel so test/run-tests.sh can execute this pure helper (see the
+// node-guarded workflow-helper tests).
 function parseArgs(raw) {
   if (raw && typeof raw === 'object') return raw
   if (typeof raw !== 'string' || raw.length === 0) return null
@@ -18,6 +20,18 @@ function parseArgs(raw) {
   } catch (e) {
     return null
   }
+}
+
+// Classify one pipeline result into the lead-facing outcome. Pure and total: every
+// input shape maps to exactly one of died | blocked | unreviewed | needs-lead |
+// approved. `result` is the pipeline entry (null if BOTH stages threw); `impl`/`review`
+// are its stages (either may be null if that stage's agent died — agent() resolves to
+// null on skip/terminal error, e.g. a rate limit).
+function classifyOutcome(result) {
+  if (!result || !result.implement) return { outcome: 'died', reviewed: false }
+  if (result.implement.status === 'blocked') return { outcome: 'blocked', reviewed: true }
+  if (!result.review) return { outcome: 'unreviewed', reviewed: false } // reviewer died
+  return { outcome: result.review.verdict === 'APPROVE' ? 'approved' : 'needs-lead', reviewed: true }
 }
 
 const IMPLEMENT_SCHEMA = {
@@ -88,15 +102,15 @@ function implementPrompt(spec) {
   ].join('\n')
 }
 
-// The reviewer reads the feature's spec and the branch's own diff (`git diff` against
-// the merge base) — that is its job. It is NOT given the implementer's completion notes
-// or approach rationale: the author-blindness that matters here is to the implementer's
+// The reviewer reads the feature's spec and the branch's own diff against the supplied
+// merge base — that is its job. It is NOT given the implementer's completion notes or
+// approach rationale: the author-blindness that matters here is to the implementer's
 // REASONING, so the review can't be talked into agreeing. (Full spec-only author-
 // blindness to the code itself is the conformance-tester's job, not the reviewer's.)
 function reviewPrompt(spec, branch) {
   return [
     'You are a senior code reviewer. Review the work on git branch `' + branch + '` for feature ' + spec.id + '.',
-    'Inspect it with read-only git only: `git diff <mergeBase>...' + branch + '`, `git show`, and file reads. You may run the test suite. Do NOT edit files. Do NOT read or ask for the implementer\'s own notes, approach, or completion message — judge the code and tests against the spec alone.',
+    'Inspect it with read-only git only: `git diff ' + spec.mergeBase + '...' + branch + '`, `git show`, and file reads. You may run the test suite. Do NOT edit files. Do NOT read or ask for the implementer\'s own notes, approach, or completion message — judge the code and tests against the spec alone.',
     '',
     '## The verified specification (your only source of truth for intent)',
     spec.spec,
@@ -106,6 +120,10 @@ function reviewPrompt(spec, branch) {
   ].join('\n')
 }
 
+// The pure helpers above (parseArgs, classifyOutcome) are defined before this marker
+// and depend on no workflow globals — test/run-tests.sh slices everything above the
+// marker into a temp module and executes them directly (node-guarded), so the
+// classification and arg-parsing logic has real coverage, not just source greps.
 // ---- run --------------------------------------------------------------------
 const parsed = parseArgs(args)
 
@@ -118,7 +136,6 @@ if (!Array.isArray(featureIds) || featureIds.length === 0) {
   throw new Error('implement-features: args.features must be a non-empty array of feature IDs.')
 }
 const featureSpecs = parsed.featureSpecs || {}
-const maxReviewRounds = typeof parsed.maxReviewRounds === 'number' ? parsed.maxReviewRounds : 3
 
 // Build one spec object per feature. The lead passes the verified spec text in via
 // args (the script has no sanctioned way to read project state from inside a workflow,
@@ -129,7 +146,13 @@ const specs = featureIds.map((id) => {
   if (!fs.spec) {
     throw new Error('implement-features: no verified spec supplied for ' + id + ' in args.featureSpecs.')
   }
-  return { id: id, spec: fs.spec, scope: fs.scope || [], risk: fs.risk || 'standard', mergeBase: fs.mergeBase || parsed.mergeBase || 'HEAD' }
+  return {
+    id: id,
+    spec: fs.spec,
+    scope: fs.scope || [],
+    risk: fs.risk === 'elevated' ? 'elevated' : 'standard',
+    mergeBase: fs.mergeBase || parsed.mergeBase || 'HEAD',
+  }
 })
 
 phase('Implement')
@@ -154,6 +177,7 @@ const results = await pipeline(
     }
     // Reviewer runs on its agentType's own model (reviewer = Opus per its definition);
     // an explicit reviewModel override downgrades it (e.g. 'sonnet' for a cheap pass).
+    // An elevated-risk feature gets a higher-effort review pass.
     const reviewOpts = {
       label: 'review:' + spec.id,
       phase: 'Review',
@@ -161,44 +185,35 @@ const results = await pipeline(
       agentType: 'vv-harness:reviewer',
     }
     if (parsed.reviewModel) reviewOpts.model = parsed.reviewModel
+    if (spec.risk === 'elevated') reviewOpts.effort = 'high'
     return agent(reviewPrompt(spec, impl.worktree_branch), reviewOpts)
       .then((review) => ({ feature_id: spec.id, implement: impl, review: review }))
   }
 )
 
-// Classify. `results` entries are null only if BOTH stages threw for that item.
+// Classify. Every feature that did not reach an approved+reviewed state and is not a
+// clean `blocked` (which the lead surfaces intentionally) goes on `unfinished`, so the
+// lead's resume/reconcile path fires — a dead implementer OR a dead reviewer both count.
 const perFeature = []
 const unfinished = []
 for (let i = 0; i < specs.length; i++) {
   const id = specs[i].id
   const r = results[i]
-  if (!r) {
-    unfinished.push(id)
-    perFeature.push({ feature_id: id, implement: null, review: null, outcome: 'died' })
-    continue
-  }
-  const impl = r.implement
-  if (!impl) {
-    unfinished.push(id)
-    perFeature.push({ feature_id: id, implement: null, review: null, outcome: 'died' })
-    continue
-  }
-  if (impl.status === 'blocked') {
-    perFeature.push({ feature_id: id, implement: impl, review: null, outcome: 'blocked' })
-    continue
-  }
-  const verdict = r.review && r.review.verdict
+  const c = classifyOutcome(r)
   perFeature.push({
     feature_id: id,
-    implement: impl,
-    review: r.review,
-    outcome: verdict === 'APPROVE' ? 'approved' : 'needs-lead',
+    implement: r ? r.implement : null,
+    review: r ? r.review : null,
+    outcome: c.outcome,
   })
+  if (c.outcome === 'died' || c.outcome === 'unreviewed') unfinished.push(id)
 }
 
-log('implement-features: ' + perFeature.filter((f) => f.outcome === 'approved').length + ' approved, '
+log('implement-features: '
+  + perFeature.filter((f) => f.outcome === 'approved').length + ' approved, '
   + perFeature.filter((f) => f.outcome === 'blocked').length + ' blocked, '
-  + unfinished.length + ' unfinished (died) — ' + (unfinished.length ? unfinished.join(',') : 'none'))
+  + perFeature.filter((f) => f.outcome === 'needs-lead').length + ' needs-lead, '
+  + unfinished.length + ' unfinished — ' + (unfinished.length ? unfinished.join(',') : 'none'))
 
 // The lead integrates: for each approved feature, run its focused test + smoke, merge
 // its worktree_branch, flip features.json, mark the mirrored task complete, commit.
@@ -206,7 +221,6 @@ log('implement-features: ' + perFeature.filter((f) => f.outcome === 'approved').
 // non-empty `unfinished` means the lead should resume this run (resumeFromRunId) or
 // reconcile from the committed branches after the rate window resets.
 return {
-  maxReviewRounds: maxReviewRounds,
   per_feature: perFeature,
   unfinished: unfinished,
   complete: unfinished.length === 0,

@@ -16,7 +16,8 @@ Before launching the workflow, confirm all of:
   `harness-issue-prep` pass). Unverified features are excluded from the batch.
 - **Tasks mirrored WITH `feature_id`** — one `TaskCreate` per feature, each carrying
   `metadata.feature_id`. This arms the `TaskCompleted` gate's focused-test/coverage
-  stages; a mirrored task without `feature_id` leaves them inert.
+  stages. A task-subject `FXXX:` fallback exists but is fragile (a subject without the
+  exact prefix, or a mismatched ID, silently skips the stages) — set `feature_id`.
 - **Branch clean, rebased** — `git fetch` + rebase on the integration branch; working
   tree clean before launch.
 

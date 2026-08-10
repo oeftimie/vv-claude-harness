@@ -57,10 +57,12 @@ self-completed task in a non-Teams session and ran `smoke_test`.
   the Phase 2 toy-project run (OVI-143 AC1). The gate mechanism itself is VERIFIED-YES;
   only the focused branch is unexercised on this repo.
 - **Correlation caveat (grounds a Phase 2 test)**: the focused/coverage stages key on
-  `metadata.task.metadata.feature_id` (`verify-task-quality.sh:143-145`). A mirrored
-  task created *without* `feature_id` passes the "one task per feature" instruction
-  while leaving those stages inert — so "mirror with `feature_id`" must be a hard,
-  tested step in the workflow-protocol rule, not prose.
+  the task's `feature_id` (`verify-task-quality.sh` reads `task.metadata.feature_id`,
+  then falls back to parsing an `FXXX:` prefix off the task subject). A mirrored task
+  with neither an explicit `feature_id` nor a house-style `FXXX:` subject skips those
+  stages — so "mirror with an explicit `feature_id`" must be a documented step, with the
+  subject fallback called out as fragile (not relied on). This is a design caveat, not a
+  Phase-0 empirical result: Q2 exercised only the with-`feature_id` case (F109).
 
 ## Q3 — SubagentStart/SubagentStop reach plugin hooks · VERIFIED-YES
 
@@ -136,8 +138,9 @@ into OVI-140's improved plan and carried into the Phase-1 feature specs):
 1. Scripts `JSON.parse(args)` defensively (Q7) — non-negotiable.
 2. Worktree hygiene (lead removes changed worktrees post-merge, before suite) is a
    written rule step, not tribal knowledge (Q4).
-3. Mirrored tasks must carry `metadata.feature_id` or the focused/coverage gate stages
-   go inert (Q2) — a tested requirement.
+3. Mirrored tasks should carry an explicit `metadata.feature_id` to arm the
+   focused/coverage gate stages (Q2); the `FXXX:` task-subject fallback exists but is
+   fragile, so the requirement is documented, not relied on.
 4. Enforcement (Q1) is confirmed present, so OVI-140's hard-gate condition ("if Q1 or
    Q2 is VERIFIED-NO, move enforcement into script verify phases") is **not** triggered
    — hooks stay the enforcement layer. Flag the `CLAUDE_PROJECT_DIR`-unset dependency

@@ -14012,11 +14012,34 @@ assert_contains "$HC_SKILL_SRC" "Step 5b: Workflow Orchestration" \
 # Mandatory task mirroring WITH feature_id (Phase 0 Q2: arms the focused/coverage stages).
 assert_contains "$HC_SKILL_SRC" "metadata.feature_id" \
   "f113: task mirroring is mandatory and carries metadata.feature_id"
-# Integration order, stated as a single ordered clause.
-assert_contains "$HC_SKILL_SRC" "run the feature's focused test + smoke locally → merge its" \
-  "f113: integration runs local tests before merging"
-assert_contains "$HC_SKILL_SRC" "complete (gate fires) → commit (commit gate fires" \
-  "f113: task-complete precedes commit in the integration order"
+# Integration order: assert ALL FIVE tokens appear in the required order (test ->
+# merge -> flip status -> task complete -> commit), not just two disjoint transitions,
+# so a reorder that flips features.json before the merge is caught.
+F113_ORDER_OK=$(python3 - "$HC_SKILL_F113" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+# The Step 5b integration bullet (item 4). Restrict to that region to avoid matching
+# the same words elsewhere in the skill.
+m = re.search(r"Integrate per feature, in this order.*?(?=\n5\. )", text, re.DOTALL)
+region = m.group(0) if m else ""
+tokens = ["focused test + smoke", "merge its", "flip `features.json` status",
+          "mark the mirrored task", "commit (commit gate fires"]
+pos = -1
+ok = True
+for t in tokens:
+    i = region.find(t)
+    if i == -1 or i < pos:
+        ok = False
+        break
+    pos = i
+print("OK" if ok else "BAD")
+PYEOF
+)
+if [ "$F113_ORDER_OK" = "OK" ]; then
+  pass "f113: integration order pins all five steps (test -> merge -> status -> task-complete -> commit)"
+else
+  fail "f113: the five integration steps are missing or out of order in Step 5b"
+fi
 assert_contains "$HC_SKILL_SRC" "Never flip status or mark a task" \
   "f113: never flip status / complete a task before tests pass on merged code"
 assert_contains "$HC_SKILL_SRC" "remove the changed worktree before any repo-wide" \
@@ -14085,18 +14108,81 @@ assert_not_contains "$IF_SRC" "impl.notes" "wf (impl): reviewer prompt never int
 assert_contains "$IF_SRC" "ask for the implementer" "wf (impl): reviewer prompt states it must not read the implementer's notes"
 # The script must NOT integrate -- no merge inside the workflow (integration is the lead's).
 assert_not_contains "$IF_SRC" "git merge" "wf (impl): the script never merges (integration is the lead's)"
-assert_contains "$IF_SRC" "The lead integrates" "wf (impl): documents that integration/features.json edits are the lead's job"
-# Run-continuity: partial-result contract.
-assert_contains "$IF_SRC" "unfinished" "wf (impl): returns an unfinished-feature list (partial-result contract)"
-assert_contains "$IF_SRC" "maxReviewRounds" "wf (impl): honors a maxReviewRounds bound"
+# Run-continuity: a dead implementer OR a dead reviewer both land on the unfinished list.
+assert_contains "$IF_SRC" "unfinished.push(id)" "wf (impl): pushes died/unreviewed features onto the unfinished list"
+assert_contains "$IF_SRC" "'unreviewed'" "wf (impl): a dead reviewer yields an 'unreviewed' outcome, not a false needs-lead"
 # A feature with no supplied spec is a hard error, never implemented from its ID alone.
 assert_contains "$IF_SRC" "no verified spec supplied" "wf (impl): errors when a feature has no supplied spec"
+# mergeBase must be interpolated into the reviewer prompt, not a literal placeholder.
+assert_not_contains "$IF_SRC" "git diff <mergeBase>" "wf (impl): reviewer prompt has no literal <mergeBase> placeholder"
+assert_contains "$IF_SRC" "spec.mergeBase + '...' + branch" "wf (impl): reviewer prompt interpolates the real merge base"
+# risk is live, not a dead arg: an elevated feature escalates the review effort.
+assert_contains "$IF_SRC" "spec.risk === 'elevated') reviewOpts.effort" "wf (impl): elevated risk escalates the review pass"
 
-# review-branch specifics: dedup barrier before the verify fan-out.
+# review-branch specifics.
 RB_SRC=$(cat "$REPO_ROOT/workflows/review-branch.js" 2>/dev/null)
 assert_contains "$RB_SRC" "function dedupeKey" "wf (review): dedups findings before verify"
 assert_contains "$RB_SRC" "phase('Verify')" "wf (review): has an adversarial verify phase"
-assert_not_contains "$RB_SRC" "Write" "wf (review): review-only, never writes"
+# Severity comparator uses ?? not || so critical (0) is not pushed last.
+assert_not_contains "$RB_SRC" "|| 3" "wf (review): severity score does not use || (which mis-ranks critical)"
+assert_contains "$RB_SRC" "=== undefined ? 3" "wf (review): severity score treats only unknown as 3"
+# Partial-result contract: dead verifiers are unverified, never counted as refuted.
+assert_contains "$RB_SRC" "unverified" "wf (review): reports an unverified list (dead verifiers not counted as refuted)"
+assert_contains "$RB_SRC" "dropped:" "wf (review): reports dropped reviewer/verifier counts"
+# Read-only invariant: every agent() call carries a read-only agentType (reviewer), and
+# the write-capable conformance agent is worktree-isolated off the lead's checkout.
+assert_not_contains "$RB_SRC" "conformance-tester', model: 'sonnet' }" "wf (review): conformance agent is not spawned without isolation"
+assert_contains "$RB_SRC" "conformance-tester', model: 'sonnet', isolation: 'worktree'" "wf (review): the write-capable conformance agent runs in an isolated worktree"
+assert_contains "$RB_SRC" "phase: 'Verify', schema: VERDICT_SCHEMA, agentType: 'vv-harness:reviewer'" "wf (review): verify agents carry the read-only reviewer agentType"
+# Conformance without featureSpecs is a hard error, not a silent no-op.
+assert_contains "$RB_SRC" "conformance requires \`featureSpecs\`" "wf (review): conformance throws when featureSpecs is missing"
+# Custom dimensions are validated, not silently degraded to 'dimension: undefined'.
+assert_contains "$RB_SRC" "must be an object with a non-empty" "wf (review): custom dimensions are validated"
+
+# Executable coverage of the pure helpers (node-guarded; SKIP visibly when node is
+# absent, like the suite's other optional-tool checks). Slices the helper prefix (above
+# the run marker -- no top-level return/await there) into temp modules and runs them.
+if command -v node >/dev/null 2>&1; then
+  WF_HELP_DIR="$WORK/wf-helpers"
+  mkdir -p "$WF_HELP_DIR"
+  python3 - "$REPO_ROOT" "$WF_HELP_DIR" <<'PYEOF'
+import sys
+repo, out = sys.argv[1], sys.argv[2]
+def prefix(path):
+    return open(path).read().split('// ---- run')[0]
+open(out + '/if_helpers.mjs', 'w').write(prefix(repo + '/workflows/implement-features.js') + '\nexport {parseArgs, classifyOutcome};\n')
+open(out + '/rb_helpers.mjs', 'w').write(prefix(repo + '/workflows/review-branch.js') + '\nexport {parseArgs, severityScore, dedupeKey, mergeFindings};\n')
+PYEOF
+  WF_HELP_OUT=$(node --input-type=module -e '
+import * as IF from "'"$WF_HELP_DIR"'/if_helpers.mjs";
+import * as RB from "'"$WF_HELP_DIR"'/rb_helpers.mjs";
+const chk=(c,m)=>console.log((c?"OK":"BAD")+" "+m);
+chk(IF.parseArgs("")===null,"parseArgs-empty");
+chk(Array.isArray(IF.parseArgs("[1,2]")),"parseArgs-array");
+chk(IF.parseArgs("{\"features\":[\"F1\"]}").features[0]==="F1","parseArgs-json");
+chk(IF.parseArgs({x:1}).x===1,"parseArgs-obj");
+chk(IF.classifyOutcome(null).outcome==="died","classify-died");
+chk(IF.classifyOutcome({implement:{status:"blocked"}}).outcome==="blocked","classify-blocked");
+chk(IF.classifyOutcome({implement:{status:"implemented"},review:null}).outcome==="unreviewed","classify-unreviewed");
+chk(IF.classifyOutcome({implement:{status:"implemented"},review:{verdict:"APPROVE"}}).outcome==="approved","classify-approved");
+chk(IF.classifyOutcome({implement:{status:"implemented"},review:{verdict:"REVISE"}}).outcome==="needs-lead","classify-needslead");
+chk(RB.severityScore("critical")<RB.severityScore("minor"),"critical-lt-minor");
+chk(RB.severityScore("critical")<RB.severityScore("major"),"critical-lt-major");
+chk(RB.severityScore(undefined)===3,"unknown-sev-3");
+const m=RB.mergeFindings([{file:"a",line:1,claim:"x",severity:"minor",dimension:"t"},{file:"a",line:1,claim:"x",severity:"critical",dimension:"c"}]);
+chk(m.length===1,"dedup-collapses");
+chk(m[0].severity==="critical","dedup-keeps-max-severity");
+chk(m[0].dimensions.length===2,"dedup-unions-dimensions");
+' 2>&1)
+  for CASE in parseArgs-empty parseArgs-array parseArgs-json parseArgs-obj classify-died classify-blocked classify-unreviewed classify-approved classify-needslead critical-lt-minor critical-lt-major unknown-sev-3 dedup-collapses dedup-keeps-max-severity dedup-unions-dimensions; do
+    case "$WF_HELP_OUT" in
+      *"OK $CASE"*) pass "wf-exec: $CASE" ;;
+      *) fail "wf-exec: $CASE -- node output: $WF_HELP_OUT" ;;
+    esac
+  done
+else
+  echo "SKIP: node not available -- workflow helper execution tests skipped"
+fi
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
