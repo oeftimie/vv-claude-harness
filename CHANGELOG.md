@@ -2,6 +2,39 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v5.7.0 (2026-08-10)
+
+**Agent Teams → Dynamic Workflows migration, Phases 0–2 (OVI-140).** Workflow mode
+becomes the primary parallel path; Agent Teams is demoted, not yet removed (its
+retirement is a later phase — this release is additive and the rollback boundary holds).
+
+1. **Phase 0 verification (F110/OVI-141)** — `evals/workflow-gate-verification.md`
+   records grounded verdicts for all 8 spike questions. Established empirically:
+   PreToolUse gates and the secret scan fire for worktree workflow agents (via the
+   `CLAUDE_PROJECT_DIR`-unset git-toplevel fallback — a fragility flagged for doctor);
+   `TaskCompleted` fires on lead self-completion; `SubagentStart`/`Stop` reach hooks
+   with `agent_id`/`agent_type`; unchanged worktrees auto-remove while changed ones need
+   lead cleanup; `acceptEdits` coexists with exit-2 denies; and `args` arrives as a
+   JSON **string** (scripts must `JSON.parse`).
+2. **Workflow scripts (F111/F112/OVI-142)** — `workflows/implement-features.js` (one
+   Sonnet implementer per feature in an isolated worktree, then an Opus reviewer over
+   the branch diff; returns per-feature results with a partial-result/`unfinished`
+   contract; never merges, commits, or edits `features.json`) and
+   `workflows/review-branch.js` (fan reviewers, dedup findings before an adversarial
+   verify pass, ranked confirmed verdicts, optional author-blind conformance). Covered
+   by structural assertions plus node-guarded **executable** tests of the pure helpers.
+3. **harness-continue workflow mode (F113/OVI-143)** — Step 4 is now a three-way mode
+   decision (single-session / workflow / peer-debate) with an availability probe and a
+   plain-subagent fallback; a new Step 5b orchestration flow pins the integration order
+   (local tests → merge → status flip → task complete → commit), mandatory
+   `feature_id`-carrying task mirroring, worktree hygiene, and resume of unfinished
+   runs. Agent Teams is retained as Step 5c (legacy).
+
+One adversarial-review round over the combined diff fixed 20 confirmed findings in the
+new scripts and tests before release (severity-rank inversion, an un-interpolated
+`<mergeBase>`, silent conformance no-ops, dead-agent accounting, and the grep-only tests
+that let those ship green — now backed by executed helper coverage).
+
 ### v5.6.1 (2026-08-09)
 
 One commit-gate fix (F109): shell redirections after `git commit` are no longer
