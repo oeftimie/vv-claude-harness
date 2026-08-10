@@ -1110,3 +1110,20 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
   positive filed as its own candidate row (not fixed).
 - Next: nothing pending. The push-guard row is the only open candidate.
 - Blockers: none.
+
+## Session 2026-08-10 (OVI-140 Phases 0-2 -> v5.7.0)
+- Feature: F110 (Phase 0 spikes + eval), F111/F112 (workflow scripts),
+  F113 (harness-continue workflow mode). Roles per Ovidiu: Fable planner,
+  Opus review, Sonnet execute.
+- Status: complete; suite 2144/2144; v5.7.0.
+- Decisions: workflow mode primary, Teams demoted to Step 5c (not
+  retired -- Phases 3-6 remain). args is a JSON string. Reviewer runs
+  Opus + reads diff (reviewer.md wins over OVI-142's Sonnet/spec-only
+  wording; F017 is the conformance-tester's). Adversarial review fixed
+  20 confirmed findings pre-release; added the suite's first executable
+  (node-guarded) coverage after a review found grep-only tests let script
+  bugs ship green. Details in context_summary.md Meta-Session 2026-08-10.
+- Next: OVI-140 Phase 3 (retire Teams machinery) onward -- a fresh
+  session, after this release. Open backlog item: lint for grep-only
+  tests over executable code.
+- Blockers: none.

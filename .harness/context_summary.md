@@ -4,6 +4,7 @@ Persistent record of architectural decisions, discovered patterns, gotchas, and 
 This file is referenced in CLAUDE.md and loaded every session.
 
 ## Active Context
+- **v5.7.0 released 2026-08-10 (F110-F113): OVI-140 Agent Teams -> Dynamic Workflows migration, Phases 0-2.** Workflow mode is now the primary parallel path in harness-continue; Agent Teams demoted to legacy Step 5c (retirement is a later phase, the rollback boundary). Phase 0 empirically de-risked the swap (evals/workflow-gate-verification.md, 8 grounded verdicts): hooks fire for worktree workflow agents via the CLAUDE_PROJECT_DIR-unset git-toplevel fallback (flagged fragile for doctor), args arrives as a JSON STRING (scripts JSON.parse). Shipped workflows/implement-features.js + review-branch.js. One adversarial-review round fixed 20 confirmed findings BEFORE release -- the load-bearing lesson: the first test pass was 100% source greps and let a severity-rank inversion and an un-interpolated <mergeBase> ship green; now backed by node-guarded EXECUTABLE helper coverage. Suite 2144/2144. Phases 3-6 (retire Teams, rules/docs rewrite, dashboard, field validation) remain in OVI-140.
 - **v5.6.1 released 2026-08-09 (F109): commit-gate redirection fix.** The F052 bare-pathspec rule misread unquoted shell redirections after `git commit` as pathspecs (`git commit --no-edit 2>&1` denied as compound-stage-and-commit -- the false positive logged during the v5.6.0 merges; the initial backlog diagnosis blaming && chains was wrong and is corrected there). Fix skips genuine redirections deciding on the RAW token only (quoted `'2>&1'` still denies; F034 bypass shapes still deny); raw tokens now ride through parse_command for that one decision. Suite 2070/2070. The push guard's tag-push-while-on-main block is a separate, still-open backlog row.
 - **v5.6.0 released 2026-08-09 (F087, F094-F098, F107, F108): the ENTIRE remaining backlog cleared in one dynamic-workflow batch.** Six worktree-isolated implementer agents in parallel (one Workflow call), lead merged their branches sequentially into eovidiu/remaining-8 with union conflict resolution on test/run-tests.sh, then a 3-reviewer + adversarial-verify workflow over the combined diff found 16 confirmed findings (all fixed in one review-round commit): the standouts were commit-gate's unbounded $FULL_TAIL converting a passing-flip DENY into a silent ALLOW (live-reproduced), F107's null-description crash suppressing the exit-2 nudge, and F097's truncation cutting the very rule pointers it protects. F098 needed no source change (commit 6f85267 had already landed the consolidation; a behavioral spawn-count test now pins it). F087's prep.stamp config remains deliberately unconfigured (Ovidiu's 2026-08-04 deferral stands). Suite 2059/2059. ZERO pending features remain in features.json -- new work needs fresh scoping. portage-curator still needs `/plugin` update + `/harness-doctor --fix` in its own session.
 - **v5.5.0 released 2026-08-09 (F085, F105, F106): review follow-through.** Exit-3 skip protocol for focused_test (a skip is never a green), not-run baseline keys dropped from last_gate.json (reached-and-unconfigured only; ordering skips preserve), orientation scope field capped. F086 was found already passing (stale handoff). NO pending features remain in features.json -- per the standing guidance below, new work needs fresh scoping, not an assumed queue. portage-curator still needs `/plugin` update + `/harness-doctor --fix` in its own session.
@@ -1795,3 +1796,45 @@ session-end.sh at the next SessionStart.
 - Plan approval: none used (standing "work the remaining items" instruction);
   self-serve resolution disclosed per-feature in features.json notes.
 - Test growth: 1979 -> 2059 assertions across eight features + one review round.
+
+## Meta-Session 2026-08-10 (OVI-140 Phases 0-2 -> v5.7.0)
+- Scope accuracy: authoring the two workflow scripts DIRECTLY (not via
+  implementer subagents) was right -- they are single-file artifacts that
+  encode all the spec-gate resolutions and Phase 0 constraints at once;
+  a subagent would have lost that cross-cutting context. But it removed
+  the built-in review a delegated implementer's own TDD provides, which
+  is exactly why the adversarial-review round found 20 real bugs.
+- Model calibration: Fable planner / Opus review / Sonnet execute worked
+  as instructed. The Opus review pair (+ verify) was the entire quality
+  buy: every one of the 20 confirmed defects was in code the planner
+  wrote and the grep-tests passed. Reviewers >> author self-review.
+- Discovery lineage: the biggest finding (no executable coverage) was
+  META -- it explained WHY the other script bugs shipped green. Fixing it
+  (node-guarded prefix-slice execution of the pure helpers) retroactively
+  catches the severity-inversion and classification bugs. When a review
+  finds "the tests can't catch this class," fix the test harness first.
+- Approach patterns: (1) spec-verification returned ASK on both phase
+  specs; self-resolving under the standing instruction and recording each
+  resolution in the feature's own notes kept the trail auditable. (2)
+  Two grep assertions straddled a line-wrap and failed -- the recurring
+  wrapped-phrase gotcha; matched un-wrapped fragments instead. (3) A
+  `git worktree remove` deleted the shell's own cwd mid-command; cd back
+  to repo root to recover.
+- Plan-vs-reviewer.md conflict: OVI-142 said "Sonnet reviewer, spec-only
+  (F017)"; reviewer.md says model:opus and the reviewer legitimately
+  reads the diff (F017 author-blindness is the conformance-tester's).
+  Resolved in favor of reviewer.md -- reviewer runs Opus, reads the diff,
+  never the implementer's notes. Documented in F111 notes.
+- Test growth: 2070 -> 2144 assertions (incl. 15 node-executed helper
+  assertions -- the suite's first executable coverage of JS, node-guarded
+  so the dependency-free contract holds when node is absent).
+
+## Meta-Patterns
+- Source-grep-only tests for executable code are a false safety net: they
+  pass against inverted logic and syntax errors. When a diff adds a real
+  program (not just prose/config), add executed coverage of its pure
+  helpers, guarded on the interpreter's presence so the dependency-free
+  contract survives. (backlog)
+- When an adversarial review finds "the test suite structurally cannot
+  detect this defect class," that meta-finding outranks the individual
+  bugs -- fix the harness before re-verifying. (backlog)

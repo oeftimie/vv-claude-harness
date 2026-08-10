@@ -111,35 +111,53 @@ Adjust as you transition between phases during the session.
 
 When choosing single-session, explicitly declare it: "Running in single-session mode — I'm both lead and implementer." This makes the decision conscious and documented, preventing ambiguity between "I forgot plan mode" and "plan mode doesn't apply here."
 
-**Choose Agent Teams if:**
-- Multiple independent features are ready
-- The next feature has clearly independent components
-- `harness.json` has a team_structure defined
-- User explicitly asks for parallel work
+**Choose Workflow mode (the primary parallel path) if:**
+- Two or more **independent, spec-verified** features are ready, where independent means
+  **empty `depends_on` AND non-overlapping `scope`**. (When two verified independent
+  features each touch fewer than 5 files, workflow mode still wins over single-session —
+  the parallel gain outweighs single-session's simplicity once two independent verified
+  features exist.)
+- User explicitly asks for parallel work.
 
-**Graceful degradation — Agent Teams unavailable:**
+Workflow mode orchestrates via the plugin's `/vv-harness:implement-features` workflow
+(Step 5b) instead of spawning teammates: one Sonnet implementer per feature in an
+isolated worktree, then a reviewer per feature, returning structured per-feature results
+the lead integrates. `agent()` returns are runtime-guaranteed and schema-validated (no
+`SendMessage` delivery protocol), worktree isolation is first-class, and a run is
+resumable in-session — the structural fixes for the Teams failure classes this project hit.
 
-Agent Teams is gated by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; the implicit team,
-`SendMessage`, and the `TaskCompleted`/`TeammateIdle` coordination hooks are active only
-when it is set. If the variable is unset or team coordination is unavailable, do NOT
-abort parallel work. Fall back to direct subagents spawned via the Agent tool using the
-same vv-harness agent types
+**Availability probe.** Workflow mode needs Claude Code ≥ 2.1.154 and the `Workflow`
+tool present (not org-disabled via `disableWorkflows`). Probe by capability: parse
+`claude --version` and confirm the `Workflow` tool is available. **If unavailable**
+(older CLI, `disableWorkflows`, or a plan without it), fall back to the
+worktree-isolated plain-subagent path below — this is the same degradation path Agent
+Teams unavailability uses, repointed, not duplicated.
+
+**Peer-debate exception:** research or competing-hypothesis work that genuinely needs
+inter-agent discussion is *not* what the implement→review pipeline does. For that, spawn
+plain parallel subagents (or legacy Agent Teams while it still exists).
+
+**Fallback / legacy — plain subagents or Agent Teams:**
+
+When workflow mode is unavailable, do NOT abort parallel work. Fall back to direct
+subagents spawned via the Agent tool using the same vv-harness agent types
 (`vv-harness:feature-implementer`, `vv-harness:layer-implementer`,
 `vv-harness:researcher`, `vv-harness:reviewer`), passing `isolation: "worktree"` at
 spawn time for independent feature scopes — worktree isolation is documented platform
-behavior for subagents. The lead merges the worktree branches at synthesis (Phase 4).
-
-This is the supported, non-experimental path. Team-only machinery does not apply in
-this mode: no SendMessage interface negotiation, no TeammateIdle reassignment —
+behavior for subagents. The lead merges the worktree branches at synthesis. Legacy Agent
+Teams (gated by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; the `SendMessage`/`TeammateIdle`
+coordination path) remains available until it is retired in a later migration phase, but
+is no longer the default parallel mode. Team-only machinery does not apply to the
+subagent fallback: no SendMessage interface negotiation, no TeammateIdle reassignment —
 sequencing falls back to the lead, which spawns dependent work only after its
 prerequisites are merged.
 
 Ask the user if it's ambiguous:
 
 ```
-I see [N] features ready. I can either:
+I see [N] verified features ready. I can either:
 1. Work on F00X in a focused single session
-2. Spawn a team to work on F00X and F00Y in parallel
+2. Launch the implement-features workflow on F00X and F00Y in parallel
 
 Which do you prefer?
 ```
@@ -248,7 +266,53 @@ Before declaring the session complete, work through the full checklist in `${CLA
 
 ---
 
-## Step 5b: Agent Teams Workflow
+## Step 5b: Workflow Orchestration (primary parallel mode)
+
+The lead (an Opus 5 session) never edits feature code directly in this mode — it prepares
+inputs, launches `/vv-harness:implement-features`, and integrates the returned results so
+the `TaskCompleted` and commit gates fire in the lead session. Run these steps **in order**:
+
+1. **Verify specs.** Confirm every candidate feature has a verified spec (`spec.verdict:
+   "PASS"`, or a fresh `harness-issue-prep` pass). Unverified features are **excluded**
+   from the batch, never silently included.
+2. **Mirror tasks — mandatory.** `TaskCreate` one task per feature, **each carrying
+   `metadata.feature_id`** (dependencies via `addBlockedBy`). This is what arms the
+   `TaskCompleted` gate's focused-test and coverage stages. The hook has a task-subject
+   `FXXX:` fallback (`verify-task-quality.sh` parses the ID off the subject when
+   `feature_id` is absent), but do not rely on it — a subject without the exact `FXXX:`
+   prefix, or a mismatched ID, silently skips those stages. Set `feature_id` explicitly.
+3. **Launch.** Call the workflow with `args` carrying the feature IDs **and each
+   feature's verified spec text** (the script has no way to read `features.json` from
+   inside a workflow): `{ features: [...], featureSpecs: { F0NN: { spec, scope, risk,
+   mergeBase } }, maxReviewRounds: 3 }`. Set `reviewModel: 'opus'` explicitly only if you
+   need to force it; the reviewer already runs Opus by its agent definition. Size the
+   batch under the platform concurrency cap (min(16, cores−2); guideline < 15) — chain
+   multiple runs rather than one oversized batch.
+4. **Integrate per feature, in this order** (only for features the workflow returned as
+   approved): **run the feature's focused test + smoke locally → merge its
+   `worktree_branch` → flip `features.json` status to passing → mark the mirrored task
+   complete (gate fires) → commit (commit gate fires; `git add` and `git commit` as
+   SEPARATE calls)**. Never flip status or mark a task complete before its tests pass on
+   the merged code. After merging, **remove the changed worktree before any repo-wide
+   suite run** (a leftover worktree gives duplicate copies of every file to repo-wide
+   assertions — verified in Phase 0).
+5. **Surface, never auto-merge, the rest.** A feature returned `status: blocked`, verdict
+   `REJECT`/`REVISE`, or in the workflow's `unfinished` list is reported to the user with
+   its structured findings. For `unfinished` features (an agent died — e.g. a session
+   rate limit), either resume the run (`Workflow({scriptPath, resumeFromRunId})`, which
+   replays completed agents from cache) after the reset, or reconcile from the committed
+   worktree branches; do not silently drop them.
+6. **Retrospective.** The Phase 5.5 retrospective/promotion/ablation passes and the MLD
+   telemetry below apply unchanged.
+
+The prompt and structured-output schema templates for this flow live in
+`team-spawn-prompts.md` (this skill's directory). The pre-launch checklist there is:
+specs verified, tasks mirrored **with `feature_id`**, branch state clean, `git fetch` +
+rebase done.
+
+---
+
+## Step 5c: Agent Teams Workflow (legacy)
 
 Before any team coordination, Read the Agent Teams protocol at
 `${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. Agent Teams is experimental and
