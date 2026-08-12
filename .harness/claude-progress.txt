@@ -1127,3 +1127,4 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
   session, after this release. Open backlog item: lint for grep-only
   tests over executable code.
 - Blockers: none.
+2026-08-12: harness-issue-prep OVI-144 (remote): SV BLOCK -> RV x3 (ASK, ASK, PASS); 13 questions answered; normalized + written back; stamped (elevated/code, hmac ok); harness-ready applied.
