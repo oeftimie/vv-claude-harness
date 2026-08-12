@@ -1144,3 +1144,4 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
   carry retired tokens; disclosed on OVI-144).
 - Next: PR + merge; then OVI-145 (Phase 4) onward. v6.0.0 bump waits for Phase 6 (OVI-147).
 - Blockers: none.
+2026-08-12: harness-issue-prep OVI-145 (remote): SV BLOCK -> RV x3 (ASK, ASK, PASS); 11 questions answered; normalized + written back; stamped (standard/code); harness-ready applied.
