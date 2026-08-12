@@ -1127,3 +1127,20 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
   session, after this release. Open backlog item: lint for grep-only
   tests over executable code.
 - Blockers: none.
+2026-08-12: harness-issue-prep OVI-144 (remote): SV BLOCK -> RV x3 (ASK, ASK, PASS); 13 questions answered; normalized + written back; stamped (elevated/code, hmac ok); harness-ready applied.
+
+## Session 2026-08-12 (F114/OVI-144: Phase 3 -- Agent Teams machinery retired)
+- Feature: F114 (OVI-144, Phase 3 of OVI-140) -- TeammateIdle wiring, env flag,
+  teammate-scope mechanism, protocol doc all retired; doctor gained migration
+  checks + workflow-support notices; enforce-scope lead-owned guards now arm
+  structurally via worktree detection; rules/parallel-work.md is the surviving
+  home; launch-prompts.md replaces team-spawn-prompts.md (AC14 deviation, F113
+  had repurposed it).
+- Status: complete on branch eovidiu/ovi-144-phase-3-retire-agent-teams-machinery-teammateidle-wiring-env; suite 1995/1995; PR pending.
+- Prep: SV BLOCK -> 3 RV cycles -> PASS; stamped elevated/code; normalized spec on Linear.
+- Coordination: 5 agents (1 main checkout + 3 worktrees + 1 test-rewrite respawn after
+  an account-limit death); sequential merges, union on test/run-tests.sh.
+- AC21/AC22 pass as amended (test absence assertions + runbook retirement records
+  carry retired tokens; disclosed on OVI-144).
+- Next: PR + merge; then OVI-145 (Phase 4) onward. v6.0.0 bump waits for Phase 6 (OVI-147).
+- Blockers: none.

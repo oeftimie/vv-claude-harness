@@ -13,7 +13,7 @@ supplements: Project-level CLAUDE.md files in individual repositories
 
 **ALWAYS, without exception:**
 - Address me as "{{USER_NAME}}" at all times
-- Present a plan and wait for explicit "Go ahead" before executing non-trivial work **when interacting directly with {{USER_NAME}}**. A go-ahead is durable: it covers the approved work until its goal is accomplished; do not re-ask at intermediate steps or phase transitions. Stop again only when the goal is reached, the work is blocked, or the plan itself must change. When spawned as a sub-agent or teammate, execute immediately per the Agent Autonomy rules.
+- Present a plan and wait for explicit "Go ahead" before executing non-trivial work **when interacting directly with {{USER_NAME}}**. A go-ahead is durable: it covers the approved work until its goal is accomplished; do not re-ask at intermediate steps or phase transitions. Stop again only when the goal is reached, the work is blocked, or the plan itself must change. When spawned as a sub-agent, execute immediately per the Agent Autonomy rules.
 - Verify git identity before any push/pull/clone (see Git Workflow)
 - Run existing tests before committing changes
 - Write output to files before reporting success (results must survive unexpected termination)
@@ -30,7 +30,7 @@ supplements: Project-level CLAUDE.md files in individual repositories
 - Silently retry more than specified limits
 - Lose work without explicit rollback decision
 - Create documentation files unless explicitly requested (update existing docs freely)
-- Set the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable in a harness project — it can override a spawned agent's model, silently defeating the per-role bindings table in `rules/agent-teams-protocol.md`'s Model Selection section; treat it as a footgun in any harness project regardless of the exact platform behavior in your current CLI version
+- Set the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable in a harness project — it can override a spawned agent's model, silently defeating the per-role bindings table in `rules/parallel-work.md`'s Model Selection section; treat it as a footgun in any harness project regardless of the exact platform behavior in your current CLI version
 
 ---
 
@@ -83,14 +83,14 @@ Claude Code operates in two modes depending on whether the harness is active. Th
 
 ### Harness-Managed Projects
 
-When `.harness/` exists, the harness skills (`/harness-init`, `/harness-continue`) and the Agent Teams protocol rule (`agent-teams-protocol.md`) govern the workflow. Don't duplicate their instructions here; follow them.
+When `.harness/` exists, the harness skills (`/harness-init`, `/harness-continue`) and the parallel-work rule (`parallel-work.md`) govern the workflow. Don't duplicate their instructions here; follow them.
 
 Context persistence in harness projects uses these files:
 
 | File | Purpose | Who Updates |
 |------|---------|-------------|
-| `.harness/features.json` | Feature tracking, status, scope, dependencies, coverage, operational metrics (correction_cycles, scope_expansions, approaches_tried, failure_reason, discovered_via) | Lead agent (never teammates) |
-| `.harness/context_summary.md` | Architectural decisions, patterns, gotchas, active context, Meta-Patterns, Meta-Session retrospectives | Lead agent (never teammates) |
+| `.harness/features.json` | Feature tracking, status, scope, dependencies, coverage, operational metrics (correction_cycles, scope_expansions, approaches_tried, failure_reason, discovered_via) | Lead agent (never spawned agents) |
+| `.harness/context_summary.md` | Architectural decisions, patterns, gotchas, active context, Meta-Patterns, Meta-Session retrospectives | Lead agent (never spawned agents) |
 | `.harness/claude-progress.txt` | Session-boundary handoff notes | Lead agent at session end |
 
 ### Non-Harness Projects
@@ -116,7 +116,7 @@ Implement directly when:
 - The task is a single-file edit or a sequential implementation step
 - The coordination overhead of spawning and monitoring a sub-agent exceeds the work itself
 - The task requires continuous access to evolving state (mid-TDD loop, iterative debugging)
-- You're a teammate yourself (no nesting; do your own work)
+- You're a spawned agent yourself (no nesting; do your own work)
 
 ### Compaction Survival
 
@@ -195,15 +195,15 @@ This does not apply to code implementation where {{USER_NAME}} has already appro
 
 ---
 
-## Sub-Agent and Teammate Standards
+## Sub-Agent Standards
 
-These apply to both Agent Teams teammates (in harness projects) and general sub-agents (in non-harness projects).
+These apply to both workflow-mode agents (in harness projects) and general sub-agents (in non-harness projects).
 
 ### Agent Autonomy
 
-> **Overrides the Critical Invariant:** The "present a plan and wait for Go ahead" rule applies only when interacting directly with {{USER_NAME}}. When spawned as a sub-agent or teammate, the rules below apply instead.
+> **Overrides the Critical Invariant:** The "present a plan and wait for Go ahead" rule applies only when interacting directly with {{USER_NAME}}. When spawned as a sub-agent, the rules below apply instead.
 
-1. Execute immediately. Do not wait for "Go ahead" confirmations when spawned as a sub-agent or teammate.
+1. Execute immediately. Do not wait for "Go ahead" confirmations when spawned as a sub-agent.
 2. Do not poll TaskList more than 5 times. If a blocking task hasn't completed, proceed independently or report the blocker.
 3. Write output to a file before finishing so results are preserved even if the agent terminates unexpectedly.
 4. Verify your output was actually produced before reporting success.
@@ -220,11 +220,11 @@ Assess whether a failure is transient (allow one retry) or structural (give spec
 ### Partial Success in Parallel Work
 Merge successful work and verify it passes tests independently; re-assess failed work with new context and respawn with revised prompts. Do NOT block successful work waiting for failed streams, and do NOT abandon failed work without {{USER_NAME}}'s approval.
 
-### Agent Teams (Harness Projects Only)
+### Workflow Mode (Harness Projects Only)
 
-When `.harness/` exists and multiple features need parallel work, the Agent Teams protocol shipped with the vv-harness plugin (the SessionStart orientation block names its absolute path) governs all team coordination. That protocol covers: model selection, plan mode, native messaging (SendMessage), task dependencies (TaskCreate + TaskUpdate with addBlockedBy), quality gates (TaskCompleted and TeammateIdle hooks), plan approval, scope assignment, conflict resolution, integration failure recovery, and git strategy.
+When `.harness/` exists and multiple features need parallel work, workflow mode governs it: the lead spawns worktree-isolated agents and merges their working trees. The parallel-work rule shipped with the vv-harness plugin (`rules/parallel-work.md`; the SessionStart orientation block names its absolute path) covers: model selection, dynamic risk/lane overrides, lead-owned state, scope assignment, integration failure recovery, and git strategy.
 
-Don't re-implement those rules here. Follow the protocol.
+Don't re-implement those rules here. Follow the rule.
 
 ---
 
@@ -354,6 +354,6 @@ Deeper procedures ship as separate rule files in the vv-harness plugin. There is
 | Rule file | Read when |
 |-----------|-----------|
 | `rules/code-quality.md` | Before writing code (mechanical limits, naming, comments) |
-| `rules/agent-teams-protocol.md` | Before spawning teammates for parallel work |
+| `rules/parallel-work.md` | Before spawning workflow agents for parallel work |
 | `rules/context-summary.md` | Before editing `context_summary.md` (full template + update rules) |
 | `rules/task-completion.md` | Before declaring work complete (full checklist) |

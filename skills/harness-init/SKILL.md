@@ -58,14 +58,10 @@ mkdir -p /tmp/vv-harness-stamp
 cat > /tmp/vv-harness-stamp/answers.txt <<EOF
 project_name=PROJECT_NAME
 stack=DETECTED_OR_SPECIFIED_STACK
-team_mode=teams
 mode=new
 EOF
 ```
 
-`team_mode=teams` unconditionally enables the experimental Agent Teams env flag for every
-new project (matches this skill's existing behavior; Step 6 still decides per-project
-whether `team_structure` is actually populated -- this key does not add a new question).
 `mode=new` is correct here; `mode=upgrade` exists in `stamp.sh` for re-stamping an
 existing project and is not used by this skill.
 
@@ -80,15 +76,15 @@ reported; do not work around the abort by deleting their files.
 
 On success this writes, byte-verbatim or rendered from a template in
 `skills/harness-init/templates/` -- never hand-transcribed:
-- `.claude/settings.json`: statusLine, env, permissions, and the full hook wiring
-  (PreToolUse scope/git-identity/commit-gate, TaskCompleted, TeammateIdle), plus the
+- `.claude/settings.json`: statusLine, permissions, and the full hook wiring
+  (PreToolUse scope/git-identity/commit-gate, TaskCompleted), plus the
   stack-appropriate PostToolUse build-check block selected from
   `templates/posttooluse-<stack>.json` when `stack` is `typescript`, `swift`, `python`,
   `go`, or `rust`; any other stack gets no PostToolUse hook.
-- `.claude/hooks/{verify-task-quality.sh, check-remaining-tasks.sh, enforce-scope.sh,
+- `.claude/hooks/{verify-task-quality.sh, enforce-scope.sh,
   verify-git-identity.sh, commit-gate.sh, harness_state.py, statusline.sh}`, all
   executable. `harness_state.py` is the shared, stdlib-only `features.json` read/write
-  module that `verify-task-quality.sh` and `check-remaining-tasks.sh` consume (schema in
+  module that `verify-task-quality.sh` consumes (schema in
   `${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json`). `commit-gate.sh` is a PreToolUse
   Bash hook that fires only on `git commit`, denying compound stage-and-commit forms and
   staged secret-shaped content (see the template's own header for the full check list).
@@ -96,8 +92,8 @@ On success this writes, byte-verbatim or rendered from a template in
   `created` filled in, plus `plugin_version` (F068) when `${CLAUDE_PLUGIN_ROOT}/
   .claude-plugin/plugin.json` is readable -- purely mechanical, unlike the two fields
   below, so the stamp writes it directly rather than deferring it to a follow-up step;
-  `git_identity` and `team_structure` are left `null` here (this step and Step 6,
-  respectively, are the decisions that fill them).
+  `git_identity` is left `null` here (this step is the decision that fills it), and
+  `workflow.size_guideline` is absent until Step 6 decides whether to write it.
 - `.gitignore` gains `.harness/SESSION_INCOMPLETE`, `.harness/features.json.lock`, `.harness/dashboard/`, and `.harness/last_gate.json`
   (OVI-107), all four appended idempotently.
 
@@ -105,13 +101,13 @@ On success this writes, byte-verbatim or rendered from a template in
 are required vs. optional, the status enum) is defined once in
 `${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json` and illustrated with the one worked
 example in the Feature Schema section of
-`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. `scripts/validate-features.py`
+`${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`. `scripts/validate-features.py`
 enforces it in the test suite.
 
 The done-definition (passing / done / shipped) and the optional claim-matched-proof
 fields (`qa_binding`, `proof`, `coverage_target`, `delivered`, `design_contract`) are
 defined once, in the Feature Schema section of
-`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md` — see that section rather than
+`${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md` — see that section rather than
 this one for the current definition.
 
 A feature may also carry a `spec` verification object; see the Feature Schema section of the Agent Teams protocol.
@@ -169,7 +165,7 @@ with open(".harness/harness.json", "w") as f:
 PYEOF
 ```
 
-The `models` values are the CURRENT row values from `rules/agent-teams-protocol.md`'s
+The `models` values are the CURRENT row values from `rules/parallel-work.md`'s
 Model Selection table (the single bindings table) at the time you run this -- if that
 table has since been requalified to different bindings, use those instead of the
 `opus`/`sonnet`/`opus` shown here. Schema: `schemas/feature.schema.json`'s
@@ -261,10 +257,10 @@ feature's acceptance criteria.
 ## Step 3.6: Quality Gate Hooks (via the Stamp)
 
 The stamp run in Step 3 already wrote and `chmod +x`'d every quality gate hook
-(`verify-task-quality.sh`, `check-remaining-tasks.sh`, `enforce-scope.sh`,
-`verify-git-identity.sh`, `commit-gate.sh`, `harness_state.py`, `statusline.sh`) and
-wired the full `.claude/settings.json` block (statusLine, env, permissions, and the
-PreToolUse/TaskCompleted/TeammateIdle hooks) -- there is nothing left to do here beyond
+(`verify-task-quality.sh`, `enforce-scope.sh`, `verify-git-identity.sh`,
+`commit-gate.sh`, `harness_state.py`, `statusline.sh`) and wired the full
+`.claude/settings.json` block (statusLine, permissions, and the
+PreToolUse/TaskCompleted hooks) -- there is nothing left to do here beyond
 the verification in Step 3.7.
 
 Do NOT wire a per-project PostCompact hook. The plugin's SessionStart hook (which fires
@@ -278,26 +274,21 @@ After installing hooks, verify they execute correctly:
 ```bash
 echo '{}' | "$CLAUDE_PROJECT_DIR"/.claude/hooks/verify-task-quality.sh
 echo "Exit code: $?"
-
-echo '{}' | "$CLAUDE_PROJECT_DIR"/.claude/hooks/check-remaining-tasks.sh
-echo "Exit code: $?"
 ```
 
 Expected results:
 - `verify-task-quality.sh`: exit 0 if tests pass, exit 2 if tests fail
-- `check-remaining-tasks.sh`: exit 0 if no pending features, exit 2 if pending features exist
 
-If either script fails to execute (permission denied, syntax error, missing dependency), fix the issue before proceeding. Silent hook failures mean quality gates don't enforce anything.
+If the script fails to execute (permission denied, syntax error, missing dependency), fix the issue before proceeding. Silent hook failures mean quality gates don't enforce anything.
 
 Tell the user:
 
 ```
-I've set up five hooks plus a status line:
-- PreToolUse (scope): blocks edits to files outside the teammate's assigned scope. Only active when .claude/teammate-scope.txt exists.
+I've set up four hooks plus a status line:
+- PreToolUse (scope): blocks writes to lead-owned state files (features.json, context_summary.md). Armed automatically inside workflow-agent worktrees; unrestricted in the main checkout.
 - PreToolUse (git identity): blocks git push/pull/clone if identity doesn't match .harness/harness.json.
 - PreToolUse (commit gate): blocks git commit if it stages-and-commits in one step, or if staged content looks like a secret.
-- TaskCompleted: runs tests when a teammate marks work done. Rejects if tests fail.
-- TeammateIdle: checks for remaining features when a teammate finishes. Prompts teammate to pick up next task.
+- TaskCompleted: runs tests when an agent marks work done. Rejects if tests fail.
 - Status line: live feature progress (N/M passing, in-progress IDs, incomplete-session flag).
 
 Session orientation and post-compaction recovery are injected by the vv-harness
@@ -329,7 +320,7 @@ This project uses the Long-Running Agent Harness (vv-harness plugin).
 - Context and decisions: `.harness/context_summary.md` (READ THIS at session start)
 - Progress handoff: `.harness/claude-progress.txt`
 - Build/test: `.harness/init.sh`
-- Quality gates: `.claude/hooks/` (TaskCompleted, TeammateIdle, scope, git identity)
+- Quality gates: `.claude/hooks/` (TaskCompleted, scope, git identity, commit gate)
 
 ## Git Identity
 
@@ -393,42 +384,49 @@ If the user explicitly waives the gate ("skip verification"), write the features
 `"spec": null` and note the waiver in `claude-progress.txt`. Never fill `spec` for a
 feature the gate did not pass.
 
-## Step 6: Assess Team Structure
+## Step 6: Assess Workflow Sizing
 
-If the features have independent components, suggest a team structure:
+Parallel work runs as worktree-isolated agents dispatched by a workflow, sized per
+run rather than per project. Ask once, about expected parallelism, so later sessions
+have a stated ceiling to size against:
 
 ```
-Looking at the features, I think Agent Teams would work well here:
+Parallel work here runs as worktree-isolated agents inside a workflow, sized per run.
+What's the expected parallelism for this project?
 
-Teammate A (Sonnet): [scope] for F001
-Teammate B (Sonnet): [scope] for F002
-Reviewer (Opus): reviews both after completion
+- small: a handful of independent features at a time
+- medium: a moderate parallel front
+- large: no ceiling worth stating -- size each run on its own
 
-Or we can work through these one at a time in single-session mode.
-
-Which approach do you prefer?
+Or skip this, and I'll size each run on its own with no standing advice.
 ```
 
-If the user chooses Agent Teams, store the team structure in `harness.json` under `team_structure`:
+Map the answer to `workflow.size_guideline` in `.harness/harness.json`:
 
-```json
-{
-  "team_structure": {
-    "mode": "agent-teams",
-    "teammates": [
-      {
-        "role": "ROLE_NAME",
-        "scope": ["src/auth/", "tests/auth/"],
-        "features": ["F001"],
-        "model": "sonnet",
-        "require_plan_approval": false
-      }
-    ]
-  }
-}
+| Answer   | `workflow.size_guideline` | What it advises                    |
+| -------- | ------------------------- | ---------------------------------- |
+| small    | `"small"`                 | at most 5 agents per workflow      |
+| medium   | `"medium"`                | at most 15 agents per workflow     |
+| large    | `"large"`                 | no cap                             |
+| skipped  | key not written           | no sizing advice                   |
+
+The key is optional: an absent key means no advice, which is exactly what a project
+that skipped this question wants. Write it only for an answer the user actually gave:
+
+```bash
+python3 - <<'PYEOF'
+import json
+
+with open(".harness/harness.json") as f:
+    data = json.load(f)
+data.setdefault("workflow", {})["size_guideline"] = "SMALL_MEDIUM_OR_LARGE"
+with open(".harness/harness.json", "w") as f:
+    json.dump(data, f, indent=2)
+PYEOF
 ```
 
-The team_structure is a starting suggestion. The lead may restructure during /harness-continue based on current project state.
+This is a guideline, not a gate. The lead sizes each workflow run on the work actually
+in front of it during /harness-continue.
 
 ## Step 7: Commit and Report
 
@@ -444,9 +442,9 @@ Harness (vv-harness plugin) initialized:
 - .harness/ created with [N] features (scope, dependencies, spec gate: [passed | waived])
 - Git identity captured: [user] <[email]>
 - Build hook: [installed | skipped] for [STACK]
-- Quality gates: TaskCompleted + TeammateIdle hooks installed and verified
+- Quality gates: TaskCompleted + PreToolUse hooks installed and verified
 - CLAUDE.md updated
-- Team structure: [single-session | Agent Teams with N teammates]
+- Workflow sizing: [small | medium | large | not set]
 
 Next: run /harness-continue to start working.
 ```

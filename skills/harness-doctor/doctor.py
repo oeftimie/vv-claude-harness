@@ -15,11 +15,20 @@ import sys
 
 HARD_REQUIRED_HOOKS = (
     "verify-task-quality.sh",
-    "check-remaining-tasks.sh",
     "enforce-scope.sh",
     "verify-git-identity.sh",
     "statusline.sh",
 )
+
+# Agent Teams was retired in v5.7.0, when worktree-isolated workflows replaced it.
+# These three artifacts are what a project initialized under v5.x still carries.
+TEAMS_ENV_FLAG = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
+RETIRED_IDLE_HOOK = "check-remaining-tasks.sh"
+RETIRED_SCOPE_FILE = "teammate-scope.txt"
+
+# Workflow mode's floor, per the OVI-140 spike (evals/workflow-gate-verification.md,
+# Q8): below this the single-session fallback applies.
+WORKFLOW_MIN_CLI_VERSION = (2, 1, 154)
 
 REQUIRED_CONTEXT_HEADINGS = (
     "## Active Context",
@@ -117,9 +126,8 @@ def _check_optional_v5_hooks(hooks_dir, plugin_root):
         findings.append(Finding(
             "upgrade available: harness_state.py not present (post-OVI-50)",
             "copy skills/harness-init/harness_state.py.template to "
-            ".claude/hooks/harness_state.py and chmod +x; re-copy verify-task-quality.sh/"
-            "check-remaining-tasks.sh too, since older per-project copies may carry "
-            "pre-OVI-50 inline logic",
+            ".claude/hooks/harness_state.py and chmod +x; re-copy verify-task-quality.sh "
+            "too, since older per-project copies may carry pre-OVI-50 inline logic",
             fix_id="copy_harness_state",
         ))
     elif not os.access(state_path, os.X_OK):
@@ -147,11 +155,6 @@ def _check_optional_v5_hooks(hooks_dir, plugin_root):
 SETTINGS_WIRING_CHECKS = (
     ("statusLine", lambda s: "statusLine" in s, "statusLine wiring"),
     (
-        "env",
-        lambda s: s.get("env", {}).get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") is not None,
-        "env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS wiring",
-    ),
-    (
         "permissions",
         lambda s: bool(s.get("permissions", {}).get("allow")),
         "permissions.allow wiring",
@@ -170,11 +173,6 @@ SETTINGS_WIRING_CHECKS = (
         lambda s: _hook_wired(s, "TaskCompleted", "verify-task-quality.sh"),
         "TaskCompleted wiring for verify-task-quality.sh",
     ),
-    (
-        "TeammateIdle",
-        lambda s: _hook_wired(s, "TeammateIdle", "check-remaining-tasks.sh"),
-        "TeammateIdle wiring for check-remaining-tasks.sh",
-    ),
 )
 
 
@@ -186,6 +184,20 @@ def _hook_wired(settings, event, script_name, matcher=None):
             if script_name in hook.get("command", ""):
                 return True
     return False
+
+
+def _read_settings(project_dir):
+    """Loads .claude/settings.json, or None when it is missing or unparseable.
+    check_settings reports both of those cases with their own messages, so
+    every other reader just declines to run rather than duplicating them."""
+    path = os.path.join(project_dir, ".claude", "settings.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
 
 
 def check_settings(project_dir):
@@ -217,6 +229,129 @@ def check_settings(project_dir):
             fix_id="remove_postcompact",
         )))
     return findings
+
+
+def check_teams_migration(project_dir):
+    """Agent Teams was retired in v5.7.0. A project initialized under v5.x
+    still carries its wiring -- a TeammateIdle route to a hook that no longer
+    ships, the experimental env flag, the orphaned hook file, and whatever
+    teammate-scope.txt the last team left behind. None of it does anything
+    now, and the scope file actively gates edits, so each is reported as a
+    migration step with a fixer behind the same --fix approval as every other
+    repair here."""
+    findings = _check_stale_teams_settings(project_dir)
+    hook_path = os.path.join(project_dir, ".claude", "hooks", RETIRED_IDLE_HOOK)
+    if os.path.isfile(hook_path):
+        findings.append(Finding(
+            f".claude/hooks/{RETIRED_IDLE_HOOK} is left over from the retired "
+            "TeammateIdle nudge (Agent Teams, retired in v5.7.0)",
+            "nothing invokes it any more -- run doctor --fix to delete it",
+            fix_id="remove_retired_idle_hook",
+        ))
+    scope_path = os.path.join(project_dir, ".claude", RETIRED_SCOPE_FILE)
+    if os.path.isfile(scope_path):
+        findings.append(Finding(
+            f".claude/{RETIRED_SCOPE_FILE} is stale Agent Teams state "
+            "(retired in v5.7.0)",
+            "workflow mode isolates each agent in its own worktree instead -- run "
+            "doctor --fix to delete it",
+            fix_id="remove_teammate_scope",
+        ))
+    return findings
+
+
+def _check_stale_teams_settings(project_dir):
+    """The two settings.json halves of the migration. They share one fix_id so
+    a single fixer makes both edits under one settings.json.bak -- two fixers
+    would have the second overwrite the first's backup with already-mutated
+    content."""
+    settings = _read_settings(project_dir)
+    if settings is None:
+        return []
+    findings = []
+    if _hook_wired(settings, "TeammateIdle", RETIRED_IDLE_HOOK):
+        findings.append(_with_drift(project_dir, ".claude/settings.json", Finding(
+            f".claude/settings.json still wires TeammateIdle to {RETIRED_IDLE_HOOK} "
+            "(Agent Teams, retired in v5.7.0)",
+            "run doctor --fix to drop that hook entry -- a user-authored TeammateIdle "
+            "hook alongside it is preserved, and the event key is removed only if "
+            "nothing is left",
+            fix_id="remove_teams_settings",
+        )))
+    if TEAMS_ENV_FLAG in settings.get("env", {}):
+        findings.append(_with_drift(project_dir, ".claude/settings.json", Finding(
+            f".claude/settings.json still sets env.{TEAMS_ENV_FLAG} "
+            "(Agent Teams, retired in v5.7.0)",
+            "run doctor --fix to remove it -- the flag gates nothing now",
+            fix_id="remove_teams_settings",
+        )))
+    return findings
+
+
+def _probe_cli_version():
+    """The claude CLI's version as an (int, int, int) tuple, or None when the
+    CLI is absent, errors, or prints anything this can't parse. Defensive by
+    construction: the output format is not a contract, and no version probe
+    may ever fail a health report."""
+    if shutil.which("claude") is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["claude", "--version"], capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    parts = result.stdout.strip().split(" ")[0].split(".")
+    if len(parts) < 3:
+        return None
+    try:
+        return tuple(int(part) for part in parts[:3])
+    except ValueError:
+        return None
+
+
+def _workflow_tool_disabled(project_dir):
+    """True when the settings explicitly turn the Workflow tool off. Two
+    literal forms are recognized, deliberately no more: a permissions.deny
+    entry naming Workflow, and the org-level disableWorkflows switch named in
+    evals/workflow-gate-verification.md Q8. Anything subtler is detected at
+    runtime by the skill, which falls back on the tool simply being absent."""
+    settings = _read_settings(project_dir)
+    if settings is None:
+        return False
+    if settings.get("disableWorkflows") is True:
+        return True
+    for entry in settings.get("permissions", {}).get("deny", []):
+        if entry == "Workflow" or (
+            isinstance(entry, str) and entry.startswith("Workflow(")
+        ):
+            return True
+    return False
+
+
+def check_workflow_support(project_dir):
+    """Workflow mode needs a recent CLI and an enabled Workflow tool. Neither
+    is a health defect: without them the single-session fallback applies and
+    the project is fine. So this returns notice lines, never Findings -- they
+    are printed alongside the report but never change its exit code."""
+    version = _probe_cli_version()
+    if version is None:
+        return ["INFO: claude CLI version undetectable -- skipping workflow-support check"]
+    notices = []
+    if version < WORKFLOW_MIN_CLI_VERSION:
+        detected = ".".join(str(part) for part in version)
+        floor = ".".join(str(part) for part in WORKFLOW_MIN_CLI_VERSION)
+        notices.append(
+            f"WARN: claude CLI {detected} < {floor} -- workflow mode unavailable, "
+            "single-session fallback applies"
+        )
+    if _workflow_tool_disabled(project_dir):
+        notices.append(
+            "WARN: Workflow tool disabled in settings -- workflow mode unavailable"
+        )
+    return notices
 
 
 def _with_drift(project_dir, rel_path, finding):
@@ -504,6 +639,7 @@ def run_checks(project_dir, plugin_root):
     findings.extend(check_dependencies())
     findings.extend(check_hooks(project_dir, plugin_root))
     findings.extend(check_settings(project_dir))
+    findings.extend(check_teams_migration(project_dir))
     findings.extend(check_gitignore(project_dir))
     findings.extend(check_harness_state_files(project_dir, plugin_root))
     findings.extend(check_feature_test_files(project_dir))
@@ -548,6 +684,8 @@ def main(argv):
         return 2
 
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    for notice in check_workflow_support(project_dir):
+        print(notice)
     findings = run_checks(project_dir, plugin_root)
     if fix:
         findings = apply_fixes(project_dir, plugin_root, findings)

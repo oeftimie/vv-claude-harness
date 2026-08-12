@@ -1,20 +1,26 @@
 #!/bin/bash
-# VV Claude Code Harness - PreToolUse scope enforcement hook
-# Runs before Edit/Write/MultiEdit tool calls (scope enforcement) and before Bash tool
-# calls (best-effort write-boundary coverage) when a teammate scope file exists.
-# The pre-existing out-of-scope Edit/Write check below is a legacy path: it blocks by
-# exiting 2, unchanged since before state ownership + Bash coverage were added. The two
-# denial paths added for that feature -- lead-owned state files, and Bash write
-# commands -- use the hookSpecificOutput.permissionDecision:"deny" JSON form (exit 0)
-# instead, per cross-harness reconciliation (OVI-51).
+# VV Claude Code Harness - PreToolUse lead-owned-state guard
+# Runs before Edit/Write/MultiEdit tool calls and before Bash tool calls
+# (best-effort write-boundary coverage) whenever the process runs inside a git
+# WORKTREE -- the workflow-mode shape (OVI-144): parallel agents each work in an
+# isolated worktree, so per-file scope enforcement is physical and the only
+# guards left here are the lead-owned state files (.harness/features.json,
+# context_summary.md, claude-progress.txt, harness.json, and the .harness/mld/
+# prefix), which a workflow agent must never write -- it reports the needed
+# change in its final result and the lead applies it. In the main checkout (the
+# lead's own session) nothing is restricted. Both denial paths -- lead-owned
+# Edit/Write targets, and Bash write commands -- use the
+# hookSpecificOutput.permissionDecision:"deny" JSON form (exit 0), per
+# cross-harness reconciliation (OVI-51).
 # Failure posture: fail-open for ENVIRONMENT failures, fail-closed for per-segment
-# ANALYSIS failures (F042). If PROJECT_ROOT can't be resolved, the scope file is
-# unreadable, or the tool-input JSON can't be parsed, the action is ALLOWED, not
-# blocked. Residual: a broken environment silently disables enforcement rather than
-# blocking everything. Bash coverage is pattern-based and evadable by construction
+# ANALYSIS failures (F042). If PROJECT_ROOT can't be resolved, git is absent or
+# the directory is not a git repo at all (worktree detection impossible), or the
+# tool-input JSON can't be parsed, the action is ALLOWED, not blocked. Residual:
+# a broken environment silently disables enforcement rather than blocking
+# everything. Bash coverage is pattern-based and evadable by construction
 # (compound commands, command substitution/subshells, and a write hidden inside a
 # heredoc body fed to a nested interpreter are known false-negative surfaces) --
-# the goal is stopping accidental drift, not defeating an adversarial teammate.
+# the goal is stopping accidental drift, not defeating an adversarial agent.
 # Once a segment's own analysis begins, though, an exception anywhere in it (a
 # decoder crash, or anything else _check_segment() can't handle) denies that
 # segment unconditionally instead -- see main()'s own comment for why. The same
@@ -30,11 +36,10 @@
 # preserved and stripped from the captured group -- the regex has no way to tell
 # a real redirect from a test-bracket comparison operator; distinguishing them
 # would need real shell parsing, judged disproportionate for this hook. Since
-# write_targets() now checks every target it finds (F024) and denies on the
-# FIRST out-of-scope one, a bogus match like this can deny a command before a
-# real, later, genuinely in-scope redirect is ever reached -- broader than
-# when only the last match was checked, but still the same underlying
-# trade-off, not a new one.
+# write_targets() checks every target it finds (F024) and denies on the FIRST
+# lead-owned one, a bogus match like this only matters if its captured text
+# itself resolves to a lead-owned path -- the same underlying trade-off as
+# when scope patterns were checked here, not a new one.
 # write_targets()/redirect_targets() return EVERY write target in a segment,
 # not just one: a command with multiple real write targets (`rm a b`, `tee`
 # or `sed -i` given two files, multiple redirects like `> f1 2> f2`, or a
@@ -153,15 +158,21 @@ PYEOF
         >/dev/null 2>/dev/null || true
 }
 
-# Only enforce if a scope file exists. In practice this is teammates only (the
-# lead's own session has no scope file of its own to spawn WITH) -- but this
-# check has no actual session-awareness: it's a single shared file's existence,
-# checked identically regardless of who is asking. While ANY teammate's scope
-# file exists, the LEAD's own actions are gated by it too (confirmed live
-# during F060's review: the lead's own reassignment-rewrite and teardown-delete
-# of this very file are denied while a team is active) -- see F061.
-SCOPE_FILE=".claude/teammate-scope.txt"
-if [ ! -f "$SCOPE_FILE" ]; then
+# Structural arming (OVI-144): only enforce inside a git worktree, which
+# identifies "workflow agent, not lead" -- workflow mode runs every parallel
+# agent in its own worktree, while the lead works in the main checkout. The
+# detection is `git rev-parse --git-dir` differing from `--git-common-dir`:
+# in a worktree they diverge (<main>/.git/worktrees/<name> vs <main>/.git);
+# in the main checkout they are identical. The comparison runs AFTER the cd
+# to PROJECT_ROOT above, where a main checkout yields the same ".git" for
+# both -- from a subdirectory git prints the two in different relative/
+# absolute forms, so comparing them anywhere but the root would false-arm.
+# Fail-open on environment failure (git absent, or not a git repo at all):
+# both values come back empty and the guard stays unarmed, matching this
+# file's documented environment-failure posture.
+GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || true)
+GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null || true)
+if [ -z "$GIT_DIR" ] || [ -z "$GIT_COMMON_DIR" ] || [ "$GIT_DIR" = "$GIT_COMMON_DIR" ]; then
     _dashboard_log "skipped" || true
     exit 0
 fi
@@ -170,16 +181,14 @@ ANNOTATION="(verified live 2026-07-24 on Claude Code 2.1.218)"
 
 deny_json() {
     local reason="$1"
-    # F089 round 2 (adversarial review): finding class is now an explicit,
+    # F089 round 2 (adversarial review): finding class is an explicit,
     # per-call-site argument (default "scope-violation:deny-json" for any
     # caller that doesn't pass one) rather than a single hardcoded
-    # "scope-violation" string -- that hardcoded value made every one of
-    # this function's five distinct call sites indistinguishable from each
-    # other in the dashboard log, unlike this file's two legacy exit-2 sites
-    # (which already carry their own "scope-violation:out-of-scope-edit" /
-    # "scope-violation:unsafe-extraction" suffixes). Every call site below
-    # now names its own, following the same "scope-violation:<site>"
-    # convention.
+    # "scope-violation" string -- that hardcoded value made this function's
+    # distinct call sites indistinguishable from each other in the
+    # dashboard log, unlike the legacy exit-2 site (which carries its own
+    # "scope-violation:unsafe-extraction" suffix). Every call site below
+    # names its own, following the same "scope-violation:<site>" convention.
     local finding="${2:-scope-violation:deny-json}"
     # F089 round 2: the JSON payload is fed via STDIN, never argv -- a large
     # Write/Edit payload on argv can exceed the OS's exec() argument-list
@@ -275,7 +284,7 @@ PYEOF
 # MultiEdit tool calls are blocked outright; Bash coverage is only best-
 # effort). Unlike normalize(), no trailing-"/" restore is needed here: an
 # Edit/Write/MultiEdit file_path is always a file, never a directory, so
-# there's no directory-style scope-pattern case to preserve -- confirmed
+# there's no directory-style prefix case (.harness/mld/) to preserve -- confirmed
 # dead code by mutation-testing (removing it changed zero assertions),
 # consistent with this project's "no error handling for impossible states"
 # standard (found by adversarial review of PR #48, F026 round 2). Literal
@@ -334,9 +343,9 @@ if [ "$FILE_PATH_RC" -eq 1 ]; then
     # (code.claude.com/docs/en/hooks) -- this legacy exit-2 site (unlike
     # deny_json()'s own JSON-on-stdout-at-exit-0 path used elsewhere in this
     # file) still wrote its message to stdout, silently discarding it on
-    # every real PreToolUse block (F053, the identical defect F046 fixed in
-    # check-remaining-tasks.sh.template).
-    echo "Edit blocked: file_path could not be safely extracted from tool input (treating as outside your assigned scope). $ANNOTATION" >&2
+    # every real PreToolUse block (F053; F046 fixed the identical defect in
+    # a since-retired hook).
+    echo "Edit blocked: file_path could not be safely extracted from tool input (refusing to check it against lead-owned state). $ANNOTATION" >&2
     _dashboard_log "block" "scope-violation:unsafe-extraction" || true
     exit 2
 fi
@@ -359,107 +368,47 @@ except Exception:
 " 2>/dev/null)
 COMMAND_RC=$?
 if [ "$COMMAND_RC" -eq 1 ]; then
-    deny_json "command could not be safely extracted from tool input (best-effort, pattern-based check; treating as outside your assigned scope). $ANNOTATION" \
+    deny_json "command could not be safely extracted from tool input (best-effort, pattern-based check; refusing to check it against lead-owned state). $ANNOTATION" \
         "scope-violation:unsafe-command-extraction"
 fi
 
 if [ -n "$FILE_PATH" ]; then
     case "$FILE_PATH" in
-        # .harness/harness.json added by F058: it was NOT lead-owned before this --
-        # only protected by the ordinary scope check below, so a teammate scoped to
-        # .harness/ (or to harness.json specifically) could edit it directly like any
-        # other assigned file (confirmed live before this fix: both a Write and a Bash
-        # redirect to it returned ALLOW under a .harness/ scope, unlike features.json's
-        # genuine denial). harness.json holds git identity config, prep/stamp config,
-        # and (as of F054) commit-gate.sh's secret-scan exemption list -- security-
-        # relevant configuration a scoped teammate shouldn't be able to edit
-        # unilaterally the way it edits its own assigned source files (F058).
+        # .harness/harness.json added by F058: harness.json holds git identity
+        # config, prep/stamp config, and (as of F054) commit-gate.sh's
+        # secret-scan exemption list -- security-relevant configuration a
+        # workflow agent must not edit unilaterally the way it edits ordinary
+        # source files (F058).
         .harness/features.json|.harness/context_summary.md|.harness/claude-progress.txt|.harness/harness.json)
-            deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION" \
+            deny_json "state file is lead-owned; report the needed change in your final result instead of editing it. $ANNOTATION" \
                 "scope-violation:lead-owned-state-file"
             ;;
-        # .claude/teammate-scope.txt added by F060: confirmed live (review-pr91-f058)
-        # that a teammate scoped to .claude/ could edit its OWN scope definition
-        # directly -- a strictly larger hole than F058's harness.json gap, since the
-        # edit takes effect on the teammate's very next tool call in the same
-        # session. Deliberately NOT extended to .claude/hooks/*.sh (the enforcement
-        # hooks themselves): per rules/agent-teams-protocol.md, this file is
-        # created/rewritten by the LEAD per spawn/reassignment, so a teammate never
-        # legitimately needs to touch it regardless of what it's assigned -- unlike
-        # the hooks, which a teammate explicitly scoped to .claude/hooks/ can be
-        # legitimately assigned to modify (this repo's own sweep does exactly that
-        # routinely). Protecting only the scope-definition file, not the whole
-        # .claude/ directory or the hooks, closes the MOST DIRECT self-widening
-        # route without blocking real hook-development work -- two others remain
-        # deliberately open: a teammate scoped to .claude/ can still rewrite
-        # .claude/hooks/enforce-scope.sh itself, or edit .claude/settings.json to
-        # remove the hook wiring outright, disarming enforcement entirely. Both
-        # residuals are accepted for the same reason (a teammate can be
-        # legitimately assigned that scope), not fixed here (F060).
-        .claude/teammate-scope.txt)
-            deny_json "teammate-scope.txt is lead-owned; report via SendMessage instead. $ANNOTATION" \
-                "scope-violation:lead-owned-scope-file"
-            ;;
-        # .harness/mld/ added by F062: skills/harness-continue/SKILL.md documents this
-        # directory as lead-only ("the lead -- never a teammate -- writes
-        # .harness/mld/YYYY-MM-DD-<session-id>.md"), but it was unprotected -- confirmed
-        # live before this fix that a teammate scoped to .harness/ gets ALLOW on a Write
-        # here, the same class of gap F058/F060 closed elsewhere. The FIRST prefix-style
-        # entry in this set: mld files are dated/session-named, not a fixed path, so
-        # (unlike every entry above) a glob is needed here -- bash `case` patterns are
-        # shell globs natively, so this arm needs no new mechanism, but the mirrored
-        # python-side LEAD_OWNED check below does (see is_lead_owned_prefix()). Lower
-        # severity than harness.json/teammate-scope.txt (telemetry a teammate could
-        # pollute or fabricate, not security-relevant configuration or an enforcement
-        # boundary), but the same criterion applies: a file only the lead legitimately
-        # writes, never a teammate. Documented residual (found by adversarial review of
-        # PR #96): a bare-directory destination WITHOUT a trailing slash (`cp f
-        # .harness/mld`, `mv f .harness/mld`, `rm -rf .harness/mld`) normalizes to
-        # `.harness/mld` (no trailing "/"), which matches neither this glob arm nor
-        # the mirrored python prefix check, so a file landing INSIDE the directory via
-        # one of these forms is not caught -- `cp -t .harness/mld/ f` (trailing slash
-        # preserved) correctly DENIES, so the two spellings disagree. Accepted, not
-        # fixed: this is a deliberate-evasion-only route (the natural path a teammate
-        # takes is Write, or a `>`-redirect, both covered), and `.harness/` itself can
-        # already be `rm -rf`'d wholesale regardless of this fix, so directory-level
-        # destruction is a broader, pre-existing hole this narrower feature doesn't
-        # attempt to close.
+        # .harness/mld/ added by F062: skills/harness-continue/SKILL.md documents
+        # this directory as lead-only. The one prefix-style entry in this set:
+        # mld files are dated/session-named, not a fixed path, so (unlike every
+        # entry above) a glob is needed here -- bash `case` patterns are shell
+        # globs natively, so this arm needs no new mechanism, but the mirrored
+        # python-side LEAD_OWNED check below does (see is_lead_owned_prefix()).
+        # Documented residual (found by adversarial review of PR #96): a
+        # bare-directory destination WITHOUT a trailing slash (`cp f
+        # .harness/mld`, `mv f .harness/mld`, `rm -rf .harness/mld`) normalizes
+        # to `.harness/mld` (no trailing "/"), which matches neither this glob
+        # arm nor the mirrored python prefix check, so a file landing INSIDE the
+        # directory via one of these forms is not caught -- `cp -t .harness/mld/
+        # f` (trailing slash preserved) correctly DENIES, so the two spellings
+        # disagree. Accepted, not fixed: this is a deliberate-evasion-only route
+        # (the natural path an agent takes is Write, or a `>`-redirect, both
+        # covered), and `.harness/` itself can already be `rm -rf`'d wholesale
+        # regardless of this fix, so directory-level destruction is a broader,
+        # pre-existing hole this narrower guard doesn't attempt to close.
         .harness/mld/*)
-            deny_json "state file is lead-owned; report via SendMessage instead. $ANNOTATION" \
+            deny_json "state file is lead-owned; report the needed change in your final result instead of editing it. $ANNOTATION" \
                 "scope-violation:lead-owned-mld"
             ;;
     esac
-
-    # Legacy path (unchanged): check if file path matches any scope pattern
-    while IFS= read -r pattern || [ -n "$pattern" ]; do
-        # Skip empty lines and comments
-        [[ -z "$pattern" || "$pattern" =~ ^# ]] && continue
-        # Use bash pattern matching
-        if [[ "$FILE_PATH" == $pattern* ]]; then
-            _dashboard_log "allow" || true
-            exit 0
-        fi
-    done < "$SCOPE_FILE"
-
-    # F053: same stdout-discard-on-exit-2 defect as above -- every line of
-    # this denial (including the scope-file dump) must reach stderr, or a
-    # scoped teammate blocked from an out-of-scope edit sees nothing at all.
-    echo "Edit blocked: $FILE_PATH is outside your assigned scope." >&2
-    echo "Your scope (from $SCOPE_FILE):" >&2
-    grep -v -e '^#' -e '^$' "$SCOPE_FILE" >&2
-    echo "" >&2
-    echo "Repair: request a scope expansion from the lead: SendMessage({ type: \"message\", recipient: \"team-lead\", content: \"Requesting scope expansion to $FILE_PATH because [reason].\" })" >&2
-    _dashboard_log "block" "scope-violation:out-of-scope-edit" || true
-    exit 2
 fi
 
 if [ -n "$COMMAND" ]; then
-    SCOPE_PATTERNS=()
-    while IFS= read -r pattern || [ -n "$pattern" ]; do
-        [[ -z "$pattern" || "$pattern" =~ ^# ]] && continue
-        SCOPE_PATTERNS+=("$pattern")
-    done < "$SCOPE_FILE"
-
     # F096 (second adversarial review, 2026-08-05): $COMMAND used to be
     # passed to this analysis python3 process via argv (`python3 -
     # "$COMMAND" ...`, reading its own script from the same stdin the
@@ -472,8 +421,8 @@ if [ -n "$COMMAND" ]; then
     # guards. Fixed the same way (F094/F089 round 2's own established
     # pattern): the python source is read into a variable via a heredoc
     # FIRST, then invoked with `-c`, freeing stdin to carry $COMMAND itself
-    # -- unbounded in size, unlike $PROJECT_ROOT/the scope patterns, which
-    # stay on argv since neither grows with attacker input.
+    # -- unbounded in size, unlike $PROJECT_ROOT, which stays on argv since
+    # it never grows with attacker input.
     IFS= read -r -d '' _SCOPE_ANALYSIS_PY <<'PYEOF' || true
 import os
 import re
@@ -487,11 +436,6 @@ LEAD_OWNED = {
     # full rationale (git identity, prep/stamp config, and the F054 secret-scan
     # exemption list are all security-relevant configuration this file holds).
     ".harness/harness.json",
-    # Added by F060 -- see the mirrored Edit/Write case statement above for the
-    # full rationale (a teammate's own scope definition; the lead is its only
-    # legitimate writer, deliberately narrower than protecting .claude/hooks/*.sh
-    # too, which a teammate can be legitimately assigned to work on).
-    ".claude/teammate-scope.txt",
 }
 
 # Added by F062 -- .harness/mld/ files are dated/session-named
@@ -507,24 +451,6 @@ def is_lead_owned_prefix(norm):
 
 
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"
-
-# A narrow, enumerated allowlist of ordinary character-device sinks (never
-# part of the project tree, so a write to one of these is never a real scope
-# violation) -- deliberately NOT the whole /dev/* namespace. An earlier
-# version of this exemption matched any path starting with "/dev/", which
-# also silently allowed /dev/shm/* (a real writable tmpfs on Linux, where
-# this template runs in CI) and bash's /dev/tcp/HOST/PORT network-redirect
-# extension (confirmed live: bash attempts a real TCP connect for this path,
-# not a "no such file" error -- a live egress channel, not a device node) --
-# found by adversarial review of PR #53, round 1. /dev/fd/N (bash's
-# process-substitution/fd-as-path idiom) is matched by pattern, not the
-# fixed set, since N is unbounded.
-DEV_EXEMPT_EXACT = {"/dev/null", "/dev/zero", "/dev/stdout", "/dev/stderr", "/dev/tty"}
-DEV_FD_PATTERN = re.compile(r"^/dev/fd/\d+$")
-
-
-def is_dev_exempt(norm):
-    return norm in DEV_EXEMPT_EXACT or DEV_FD_PATTERN.match(norm) is not None
 
 
 def strip_heredoc_bodies(command):
@@ -661,7 +587,7 @@ def _decode_ansi_c_escape(m):
     # empirically (`\u2b` consumes BOTH hex-looking characters as one
     # 2-digit codepoint 0x2B ('+'), not \u2 followed by literal "b"), and
     # the resulting codepoint is encoded the same way Python's own str
-    # type stores it (chr()), which downstream scope-pattern string
+    # type stores it (chr()), which the downstream lead-owned path
     # comparisons consume directly with no further byte-level re-encoding
     # needed. Both \u and \U reject two ranges into the literal-text
     # fallback rather than calling chr() unconditionally: a codepoint
@@ -743,7 +669,7 @@ def unquote_token(token):
     # Strips quote characters from a single ALREADY-EXTRACTED target token --
     # never used to re-segment or re-tokenize, only to normalize a target
     # string (which may be fully quoted, "foo"/'foo'/$'foo', or partially
-    # quoted, foo/"bar".txt) before comparing it against scope patterns. Safe
+    # quoted, foo/"bar".txt) before comparing it against the lead-owned set. Safe
     # here specifically because segments_of() has already correctly resolved
     # segment boundaries using mask_quotes(); this function never looks at
     # separators. A $'...' span's inner text is decoded per bash's ANSI-C
@@ -1008,14 +934,16 @@ def _attached_value_raw(tok, prefix_len):
     # to inside the value) throws off the count by one per escape, since this
     # walk counts a quote character as free but a backslash as a real,
     # counted character -- `cp -\tsrc/parser/x a.txt`, `cp $'-t'src/parser/x
-    # a.txt`, and `cp --target-\directory=src/parser/x a.txt` are all
-    # genuinely in scope but wrongly DENIED (18 false positives found across
-    # 112 brute-forced prefix/destination spellings, zero fail-opens --
-    # strictly over-denial, not a bypass, and a new-vs-main regression only
-    # in this narrow, adversarial-quoting shape). Not fixed: nobody escapes
-    # characters inside a bare flag name in practice, and closing this
-    # would require tracking escape state through the prefix walk itself,
-    # not just counting past it.
+    # a.txt`, and `cp --target-\directory=src/parser/x a.txt` all extract a
+    # destination shifted by one character per escape (18 wrong extractions
+    # found across 112 brute-forced prefix/destination spellings under the
+    # original scope-pattern check, where all were strictly over-denials).
+    # Under the lead-owned check the shifted string simply fails the
+    # lead-owned match, so this narrow, adversarial-quoting shape can miss
+    # a lead-owned -t destination spelled with an escaped flag prefix. Not
+    # fixed: nobody escapes characters inside a bare flag name in practice,
+    # and closing this would require tracking escape state through the
+    # prefix walk itself, not just counting past it.
     seen = 0
     for idx, ch in enumerate(tok):
         if ch in ("'", '"'):
@@ -1600,13 +1528,11 @@ def sed_inplace_targets(args):
         # containing the undecoded escape) is returned as-is -- once
         # write_targets() unquotes it later, the resulting "target" is just
         # a bare "*" rather than the true suffix-with-file-substituted
-        # path, which can wrongly DENY an otherwise in-scope command (the
-        # bare "*" never matches a real scope prefix). Confirmed this can
-        # only ever OVER-deny, never bypass: the derived string here and
-        # the true (fully-substituted) string always share the same prefix
-        # up to the first "*", and scope matching is a plain prefix check
-        # with no globbing, so wrongly denying is the only possible
-        # direction of error. Not fixed: doing so would require detecting
+        # path. A bare "*" never matches the lead-owned set, so a backup
+        # suffix whose only "*" is ANSI-C-escaped AND whose derived path
+        # lands on a lead-owned file goes unchecked -- an escaped-asterisk-
+        # in-a-sed-backup-suffix-into-.harness shape with no non-deliberate
+        # route to it. Not fixed: doing so would require detecting
         # AND substituting against the same (decoded) representation while
         # still returning a RAW value for write_targets()'s single later
         # unquote pass -- a real restructure for an edge case that needs an
@@ -1909,28 +1835,26 @@ def write_targets(segment):
 
 def normalize(path, project_root):
     # Strips the project-root prefix, then resolves "."/".." segments so a
-    # write target that escapes an allowed directory via traversal
-    # (`src/allowed/../forbidden/x.txt`, which real bash resolves to
-    # src/forbidden/x.txt) no longer merely STARTS WITH the allowed prefix
-    # string -- an earlier version returned the path unresolved, so the
-    # scope-prefix check (a bare .startswith()) and the lead-owned exact-
-    # match check (both read this same return value) were both fooled by
-    # traversal. A path that resolves to something outside the project
-    # entirely (more ".." than real leading segments, e.g. "../../etc/x")
-    # is left with a leading ".." by os.path.normpath, which correctly
-    # never matches any scope pattern (found by adversarial review of PR
-    # #42/F023, reported as F026). os.path.normpath also strips a trailing
-    # "/", which this hook's directory-style scope patterns (and a `cp -t
-    # DIR/` destination) rely on for prefix matching -- restored if the
-    # pre-normalize path had one, so a destination that IS a scope
-    # directory (e.g. "src/parser/") still compares equal to the pattern
-    # itself, not just its own strict subdirectories. os.path.normpath is
+    # write target that reaches a lead-owned file via traversal
+    # (`src/parser/../../.harness/features.json`, which real bash resolves
+    # to .harness/features.json) can't dodge the exact-match/prefix check
+    # as an unresolved string -- an earlier version returned the path
+    # unresolved, so the lead-owned check (reading this same return value)
+    # was fooled by traversal. A path that resolves to something outside
+    # the project entirely (more ".." than real leading segments, e.g.
+    # "../../etc/x") is left with a leading ".." by os.path.normpath, which
+    # correctly never matches a lead-owned entry (found by adversarial
+    # review of PR #42/F023, reported as F026). os.path.normpath also
+    # strips a trailing "/", which the .harness/mld/ prefix entry (via a
+    # `cp -t DIR/` destination) relies on for matching -- restored if the
+    # pre-normalize path had one, so a directory destination keeps its
+    # trailing slash for the prefix comparison. os.path.normpath is
     # purely lexical (string manipulation only, no filesystem access) --
-    # if a scope directory contains a symlink, a target that traverses
-    # THROUGH it (e.g. "src/allowed/link/../escape.txt" where "link" points
-    # outside "src/allowed/") resolves lexically to "src/allowed/escape.txt"
-    # (in scope) while the real write, after the kernel follows the
-    # symlink, lands somewhere else entirely. Accepted: this hook has no
+    # if a directory on the path contains a symlink, a target that
+    # traverses THROUGH it (e.g. "src/allowed/link/../escape.txt" where
+    # "link" points outside "src/allowed/") resolves lexically to
+    # "src/allowed/escape.txt" while the real write, after the kernel
+    # follows the symlink, lands somewhere else entirely. Accepted: this hook has no
     # filesystem access either (it only ever sees the command string), so
     # resolving symlinks would need to run in a live checkout and still
     # couldn't know what the symlink pointed to WHEN the write actually
@@ -1950,53 +1874,41 @@ def main():
     # above this script's own invocation for why.
     command = sys.stdin.read()
     project_root = sys.argv[1]
-    patterns = sys.argv[2:]
     for segment in segments_of(command):
         try:
-            if _check_segment(segment, project_root, patterns):
+            if _check_segment(segment, project_root):
                 return
         except Exception:
             # ANY exception anywhere while analyzing this segment -- a
             # decoder crash inside write_targets() (still none currently
             # known; F038 rounds 2-3 closed the only two ever found, this
             # is defense-in-depth against the next one), or anywhere else
-            # in normalize()/is_dev_exempt()/the scope-comparison below --
-            # means denying UNCONDITIONALLY, never comparing any
-            # attacker-controlled fallback text against scope (F042).
+            # in normalize()/the lead-owned comparison below -- means
+            # denying UNCONDITIONALLY, never comparing any
+            # attacker-controlled fallback text against the lead-owned set
+            # (F042).
             #
             # An earlier version of this fix instead fell back to treating
             # raw, undecoded text (either one target's raw token, or the
-            # whole raw segment) as if it were a real path to compare
-            # against scope patterns, reasoning that a still-escaped
-            # string "essentially never" matches a real scope-directory
-            # prefix. That reasoning was FALSE: the attacker chooses the
-            # raw text, and can trivially place an in-scope-looking prefix
-            # (e.g. "src/parser/") immediately before the crash-triggering
-            # escape, making the exact SAME construction this fix's own
-            # tests used to prove "processing continues past the crash"
-            # into a genuine bypass instead -- confirmed live (adversarial
-            # review of PR #73): `src/parser/$'\Qx' > src/other/evil.txt`
-            # silently ALLOWed the real out-of-scope redirect, because the
-            # raw segment fallback text happened to start with "src/parser/".
-            # Comparing ANY fallback text against scope patterns is
-            # unsound in general, since the fallback text is exactly the
-            # part of the input that couldn't be safely analyzed -- there
-            # is no text to fall back to that isn't also attacker-
-            # controlled. Denying unconditionally removes that lever
-            # entirely: a segment (or anything in it) that can't be
-            # analyzed is always treated as a violation, full stop, same
-            # as this hook already refuses to run rather than guess when
-            # PROJECT_ROOT/the scope file/the tool-input JSON can't be
-            # resolved (see this file's own header). This also closes a
-            # SEPARATE gap the per-target/per-segment split had: the
-            # final `print(f"Bash write to '{norm}' is outside...")` call
-            # below crashes with UnicodeEncodeError if `norm` ever
-            # contains a raw lone surrogate (the actual F038 round 2
-            # incident -- a surrogate reaching PRINT, not a ValueError
-            # from chr() itself, which F038's own fix already prevents by
-            # returning literal escape text instead of a real surrogate
-            # character) -- that print() call sits INSIDE this same
-            # try/except now, not in a separate uncovered path.
+            # whole raw segment) as if it were a real path to compare.
+            # That reasoning was FALSE: the attacker chooses the raw text,
+            # so any fallback comparison is decided by exactly the part of
+            # the input that couldn't be safely analyzed (confirmed live,
+            # adversarial review of PR #73, against the scope-pattern
+            # comparison this hook performed at the time). Denying
+            # unconditionally removes that lever entirely: a segment (or
+            # anything in it) that can't be analyzed is always treated as
+            # a violation, full stop, same as this hook already refuses to
+            # run rather than guess when PROJECT_ROOT/the tool-input JSON
+            # can't be resolved (see this file's own header). This also
+            # closes a SEPARATE gap the per-target/per-segment split had:
+            # the lead-owned print() below crashes with UnicodeEncodeError
+            # if `norm` ever contains a raw lone surrogate (the actual
+            # F038 round 2 incident -- a surrogate reaching PRINT, not a
+            # ValueError from chr() itself, which F038's own fix already
+            # prevents by returning literal escape text instead of a real
+            # surrogate character) -- that print() call sits INSIDE this
+            # same try/except now, not in a separate uncovered path.
             #
             # A one-line stderr note is added here (F042 round 2): before
             # this fix, ANY decoder crash left a visible Python traceback
@@ -2008,46 +1920,23 @@ def main():
             print(f"enforce-scope: segment analysis failed, denying: {segment!r}", file=sys.stderr)
             print(
                 f"Bash write target in {segment!r} could not be safely analyzed "
-                f"(best-effort, pattern-based check; treating as outside your "
-                f"assigned scope). {ANNOTATION}"
+                f"(best-effort, pattern-based check; refusing to check it "
+                f"against lead-owned state). {ANNOTATION}"
             )
             return
 
 
-def _check_segment(segment, project_root, patterns):
-    # Returns True once a real scope decision has been printed for this
+def _check_segment(segment, project_root):
+    # Returns True once a real deny decision has been printed for this
     # segment (main() must stop entirely at that point, not keep scanning
     # later segments) -- False means this segment raised no violation, so
     # main()'s own loop should move on to the next one.
     for target in write_targets(segment):
         norm = normalize(target, project_root)
-        # normalize() runs before this check so equivalent spellings of
-        # an exempt path (`/dev//null`, `/dev/./null`)
-        # are recognized as the same exact string is_dev_exempt() checks
-        # against -- NOT to prevent traversal from laundering a real
-        # out-of-scope path INTO looking exempt: is_dev_exempt() is
-        # exact-set/pattern membership, not a prefix match, so
-        # `/dev/../etc/passwd` (which resolves to `/etc/passwd`) was
-        # never going to match regardless of ordering -- confirmed by
-        # mutation-testing this ordering claim itself (moving the check
-        # before normalize() changed zero assertions). An earlier
-        # version of this comment claimed the ordering was load-bearing
-        # against traversal laundering; that was true of round 1's
-        # broad `startswith("/dev/")` prefix check, but became false
-        # once this round narrowed the check to exact membership --
-        # found by adversarial review of PR #53, round 2. Ordering WOULD
-        # become load-bearing again if DEV_EXEMPT_EXACT/DEV_FD_PATTERN
-        # were ever widened back to a prefix-style match.
-        if is_dev_exempt(norm):
-            continue
         if norm in LEAD_OWNED or is_lead_owned_prefix(norm):
-            print(f"state file is lead-owned; report via SendMessage instead. {ANNOTATION}")
-            return True
-        if not any(norm.startswith(p) for p in patterns):
             print(
-                f"Bash write to '{norm}' is outside your assigned scope "
-                f"(best-effort, pattern-based check; see .claude/teammate-scope.txt). "
-                f"{ANNOTATION}"
+                f"state file is lead-owned; report the needed change in "
+                f"your final result instead of editing it. {ANNOTATION}"
             )
             return True
     return False
@@ -2055,27 +1944,26 @@ def _check_segment(segment, project_root, patterns):
 
 main()
 PYEOF
-    DENY_REASON=$(printf '%s' "$COMMAND" | python3 -c "$_SCOPE_ANALYSIS_PY" "$PROJECT_ROOT" "${SCOPE_PATTERNS[@]}")
+    DENY_REASON=$(printf '%s' "$COMMAND" | python3 -c "$_SCOPE_ANALYSIS_PY" "$PROJECT_ROOT")
 
     if [ -n "$DENY_REASON" ]; then
         # F096: cap DENY_REASON before it reaches deny_json(), whose own
         # "reason" argument stays on argv (see that function's comment) --
-        # the scope-violation messages above quote the offending write
-        # target or raw segment verbatim, both derived from $COMMAND, so an
-        # attacker-sized $COMMAND can still make DENY_REASON itself
-        # attacker-sized even after the stdin fix above (a huge write
-        # target/segment, not a huge command as a whole). 2048 matches
-        # commit-gate.sh.template's own SECRET_SCAN_MAX_LEN precedent for a
-        # bounded-cap value; well under either OS's ARG_MAX floor.
+        # the segment-analysis-failure message above quotes the offending
+        # raw segment verbatim, derived from $COMMAND, so an attacker-sized
+        # $COMMAND can still make DENY_REASON itself attacker-sized even
+        # after the stdin fix above (a huge segment, not a huge command as
+        # a whole). 2048 matches commit-gate.sh.template's own
+        # SECRET_SCAN_MAX_LEN precedent for a bounded-cap value; well under
+        # either OS's ARG_MAX floor.
         DENY_REASON_MAX_LEN=2048
-        deny_json "${DENY_REASON:0:$DENY_REASON_MAX_LEN}" "scope-violation:out-of-scope-command"
+        deny_json "${DENY_REASON:0:$DENY_REASON_MAX_LEN}" "scope-violation:lead-owned-bash-write"
     fi
 fi
 
-# F089 round 2: an ordinary in-scope (or write-free) Bash command reaches
-# this final exit 0 with no prior _dashboard_log() call anywhere on this
-# path -- unlike the Edit/Write scope-match branch above (line ~407) and
-# every deny_json()/legacy-exit-2 site, this was the one decision point in
-# this file that logged nothing at all.
+# F089 round 2: an ordinary allowed (or write-free) Bash or Edit/Write call
+# reaches this final exit 0 with no prior _dashboard_log() call anywhere on
+# this path -- unlike every deny_json()/legacy-exit-2 site, this was the one
+# decision point in this file that logged nothing at all.
 _dashboard_log "allow" || true
 exit 0
