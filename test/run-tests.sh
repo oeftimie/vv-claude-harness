@@ -5186,17 +5186,17 @@ else
   fail "hs2: reviewer.md missing the Bash-backstop acknowledgment"
 fi
 
-# F055: the TeammateIdle hook re-fires on every idle check regardless of teammate
-# role (the hook itself doesn't act on the payload's teammate_name, a deliberate
-# design decision -- see F069), so a reviewer that declines an offered
-# implementation feature must not re-message the lead on every repeat -- that
-# discipline has to live in the agent definition, since only it knows the role.
-if grep -q "Send that decline message only once per review assignment" "$REPO_ROOT/agents/reviewer.md" \
-  && grep -q "role-limited teammate" "$REPO_ROOT/agents/reviewer.md"; then
-  pass "hs2 (F055): reviewer.md dedups the TeammateIdle decline instead of re-messaging the lead"
-else
-  fail "hs2 (F055): reviewer.md missing the TeammateIdle decline-dedup instruction"
-fi
+# OVI-144 Phase 3: the shipped agents run worktree-isolated under workflow mode
+# and report to the lead in their final message -- the TeammateIdle nudge and
+# SendMessage teammate coordination they used to document are retired. Pin the
+# absence so a teammate-era instruction can't creep back into a shipped agent.
+for AGENT_MD in feature-implementer.md layer-implementer.md reviewer.md; do
+  if grep -q -e "TeammateIdle" -e "SendMessage" "$REPO_ROOT/agents/$AGENT_MD"; then
+    fail "hs2: agents/$AGENT_MD still references TeammateIdle/SendMessage machinery"
+  else
+    pass "hs2: agents/$AGENT_MD carries no TeammateIdle/SendMessage reference"
+  fi
+done
 
 if grep -qi "best-effort" "$REPO_ROOT/README.md" && grep -q "lead-owned" "$REPO_ROOT/README.md"; then
   pass "hs2: README's tiers table documents best-effort Bash coverage + lead-owned files"
@@ -7749,44 +7749,34 @@ else
   fail "wp35: harness-continue/SKILL.md still has a Step 5c reference"
 fi
 
-# F055's reviewer.md text ("the lead shuts teammates down at Phase 5 teardown...
-# not the moment your individual review lands") was accurate when written, but
-# F059 makes it WRONG in the other direction: the lead is now expected to
-# release a reviewer promptly, not wait for Phase 5. Confirm the stale claim is
-# gone and the corrected one is present, the same drift class F058's round-1
-# review caught in commit-gate.sh's comments after a sibling fix changed the
-# ground truth out from under them.
-if grep -q "expected to release you promptly" "$REPO_ROOT/agents/reviewer.md" \
-  && ! grep -q "not the moment your individual review lands" "$REPO_ROOT/agents/reviewer.md"; then
-  pass "mnt (F059): agents/reviewer.md's shutdown-timing claim was updated for the new early-release rule"
-else
-  fail "mnt (F059): agents/reviewer.md still asserts the pre-F059 Phase-5-only shutdown timing"
-fi
+# OVI-144 Phase 3 removed agents/reviewer.md's release-timing passage entirely
+# (F055/F059 governed teammate shutdown, which no longer exists in workflow
+# mode); the absence is pinned by the hs2 agent sweep above.
 
 # F061's Teams-specific limitation callouts were deleted with the protocol
 # file (WP3.5); only the maintenance-runbook probe wiring remains asserted.
 
-# F061's retirement condition named a check (re-fetch the hooks docs for a new
-# discriminator field) that no existing maintenance probe performs -- probe
-# item 3 covers TaskCompleted/TeammateIdle/SessionStart/SessionEnd PAYLOAD
-# SHAPE regressions, not PreToolUse hook input for a NEW field's addition.
-# Pin that the retirement condition is actually wired to a probe, not just
-# stated and left unchecked.
+# OVI-144 Phase 3 retired the runbook's probe item 6 (F061/F067/F069): the
+# Agent Teams machinery it probed is gone. Pin the dated retirement record so
+# the item stays a readable record rather than a silently deleted probe, and
+# pin that the runbook's remaining probes no longer name the retired
+# TeammateIdle hook.
 RUNBOOK_MD="$REPO_ROOT/docs/maintenance-runbook.md"
-if grep -q "Lead/teammate hook-blindness (F061)" "$RUNBOOK_MD" \
-  && grep -q "record F061 here as FIXED" "$RUNBOOK_MD"; then
-  pass "mnt (F061): the maintenance runbook has a probe wired to F061's retirement condition"
+if grep -q "Retired 2026-08-12 as part of OVI-144 Phase 3" "$RUNBOOK_MD" \
+  && grep -q "structural worktree detection" "$RUNBOOK_MD"; then
+  pass "mnt: the maintenance runbook records probe item 6's retirement (OVI-144 Phase 3)"
 else
-  fail "mnt (F061): the maintenance runbook has no probe for F061's retirement condition"
+  fail "mnt: the maintenance runbook is missing probe item 6's retirement record"
+fi
+if grep -q '`TeammateIdle`' "$RUNBOOK_MD"; then
+  fail "mnt: the runbook's hook-payload probe still lists the retired TeammateIdle hook"
+else
+  pass "mnt: the runbook's hook-payload probe no longer lists TeammateIdle (retirement record aside)"
 fi
 
-# F067's Teams-specific limitation callouts were deleted with the protocol
-# file (WP3.5); only the maintenance-runbook probe wiring remains asserted.
-if grep -q "F067 here as FIXED" "$RUNBOOK_MD"; then
-  pass "mnt (F067): the maintenance runbook has a probe wired to F067's retirement condition"
-else
-  fail "mnt (F067): the maintenance runbook has no probe for F067's retirement condition"
-fi
+# F067's Teams-specific assertions (protocol-doc callouts, escape-hatch
+# behavior, runbook probe wiring) retired with OVI-144 Phase 3; the runbook
+# item-6 retirement record is pinned by the OVI-144 Phase 3 cluster below.
 
 # F067's fix touches the live .claude/hooks/ copy AND the shipped template --
 # they must stay byte-identical. Not a new check: the pre-existing F047 loop
@@ -10728,19 +10718,10 @@ echo ""
 echo "== F069: correct the falsified TeammateIdle identity claim =="
 
 # F055's original claim (TeammateIdle carries no teammate identity at all) was
-# found false during F067's round-1 review. F069 covers the remaining false
-# claims F067 didn't touch: agents/reviewer.md and README.md.
-if grep -q "it has no teammate identity" "$REPO_ROOT/agents/reviewer.md"; then
-  fail "f069: agents/reviewer.md still asserts the falsified 'no teammate identity' claim"
-else
-  pass "f069: agents/reviewer.md no longer asserts the falsified claim"
-fi
-if grep -q "does not use your role to decide whether to" "$REPO_ROOT/agents/reviewer.md" \
-  && grep -q "carry your \`teammate_name\`" "$REPO_ROOT/agents/reviewer.md"; then
-  pass "f069: agents/reviewer.md states the corrected fact (teammate_name present, hook doesn't act on it)"
-else
-  fail "f069: agents/reviewer.md missing the corrected TeammateIdle fact"
-fi
+# found false during F067's round-1 review; F069 corrected agents/reviewer.md
+# and README.md. OVI-144 Phase 3 then removed reviewer.md's TeammateIdle
+# passage entirely (absence pinned by the hs2 agent sweep), leaving README.md
+# as the corrected site checked here.
 
 if grep -q "the hook payload carries" "$REPO_ROOT/README.md" && grep -q "no teammate identity" "$REPO_ROOT/README.md"; then
   fail "f069: README.md still asserts the falsified 'no teammate identity' claim"
@@ -10762,15 +10743,9 @@ fi
 # separate assertion needed here even though this feature edited both (F067's
 # round-1 review already flagged this exact duplication once).
 
-# round-1 review (PR #115, finding #7): the protocol.md text claims a retirement
-# condition maintenance-runbook.md's probe item 6 "already tracks" -- pin that
-# item 6 was actually extended to reference F069, not just F061/F067.
-if grep -q "declined teammate-role carve-out (F069)" "$REPO_ROOT/docs/maintenance-runbook.md" \
-  && grep -q "design decision here as worth revisiting" "$REPO_ROOT/docs/maintenance-runbook.md"; then
-  pass "f069: maintenance-runbook.md's probe item 6 is actually wired to F069's retirement condition, not just referenced"
-else
-  fail "f069: maintenance-runbook.md's probe item 6 does not reference F069's retirement condition"
-fi
+# maintenance-runbook.md's probe item 6 (which tracked F069's retirement
+# condition) retired with OVI-144 Phase 3 -- its dated retirement record is
+# pinned in the maintenance-loop cluster above.
 
 echo ""
 echo "== OVI-106: harness-continue's smoke test actually runs smoke_test =="
@@ -14193,6 +14168,58 @@ RC=$?
 assert_rc0 "$RC" "ovi144-hd: a denied Workflow tool does not fail the report"
 assert_contains "$OUT" "WARN: Workflow tool disabled in settings -- workflow mode unavailable" \
   "ovi144-hd: a denied Workflow tool prints the exact WARN line"
+
+echo "== OVI-144 Phase 3: Agent Teams retirement (docs/schema/agents) =="
+
+# Workflow mode (worktree-isolated agents, rules/parallel-work.md) is the only
+# parallel path. The shipped consumer template, the feature schema, and the
+# docs must neither point consumers at the retired protocol nor reference the
+# retired TeammateIdle hook, its env flag, or SendMessage coordination.
+TEMPLATE_CLAUDE="$REPO_ROOT/templates/CLAUDE.md"
+if grep -q -e "agent-teams-protocol" -e "TeammateIdle" \
+  -e "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" -e "SendMessage" "$TEMPLATE_CLAUDE"; then
+  fail "p3: templates/CLAUDE.md still references retired Agent Teams machinery"
+else
+  pass "p3: templates/CLAUDE.md carries no Agent Teams machinery reference"
+fi
+if grep -q "rules/parallel-work.md" "$TEMPLATE_CLAUDE"; then
+  pass "p3: templates/CLAUDE.md points parallel work at rules/parallel-work.md"
+else
+  fail "p3: templates/CLAUDE.md does not point at rules/parallel-work.md"
+fi
+
+if grep -q "agent-teams-protocol" "$REPO_ROOT/schemas/feature.schema.json"; then
+  fail "p3: feature.schema.json still points a doc reference at agent-teams-protocol.md"
+else
+  pass "p3: feature.schema.json carries no agent-teams-protocol.md pointer"
+fi
+if [ "$(grep -c "rules/parallel-work.md" "$REPO_ROOT/schemas/feature.schema.json")" -ge 3 ]; then
+  pass "p3: feature.schema.json's three doc pointers target rules/parallel-work.md"
+else
+  fail "p3: feature.schema.json is missing re-pointed rules/parallel-work.md references"
+fi
+
+if grep -q "promoted-to: rules/parallel-work.md" "$REPO_ROOT/rules/context-summary.md"; then
+  pass "p3: context-summary.md's promoted-to example targets rules/parallel-work.md"
+else
+  fail "p3: context-summary.md's promoted-to example does not target rules/parallel-work.md"
+fi
+
+if grep -q "rules/parallel-work.md" "$REPO_ROOT/docs/requalification.md" \
+  && ! grep -q "agent-teams-protocol" "$REPO_ROOT/docs/requalification.md"; then
+  pass "p3: requalification.md's bindings-table pointer targets rules/parallel-work.md"
+else
+  fail "p3: requalification.md still points the bindings table at agent-teams-protocol.md"
+fi
+
+for HOOK_PAIR_FILE in .claude/hooks/verify-task-quality.sh .claude/hooks/verify-git-identity.sh \
+  skills/harness-init/verify-task-quality.sh.template skills/harness-init/verify-git-identity.sh.template; do
+  if grep -q "check-remaining-tasks" "$REPO_ROOT/$HOOK_PAIR_FILE"; then
+    fail "p3: $HOOK_PAIR_FILE still references the deleted check-remaining-tasks hook"
+  else
+    pass "p3: $HOOK_PAIR_FILE carries no check-remaining-tasks reference"
+  fi
+done
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

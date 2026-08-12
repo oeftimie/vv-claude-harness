@@ -164,8 +164,7 @@ if [ ! -f ".harness/init.sh" ]; then
     # stderr back to the blocked agent as its error message
     # (code.claude.com/docs/en/hooks) -- this and the other three exit-2
     # sites below wrote their rejection message to stdout, silently
-    # discarding it on every real TaskCompleted rejection (F053, the
-    # identical defect F046 fixed in check-remaining-tasks.sh.template).
+    # discarding it on every real TaskCompleted rejection (F053).
     echo "Task rejected: .harness/init.sh not found. Cannot verify tests pass." >&2
     echo "Run /harness-init to create the test script, or create it manually." >&2
     _dashboard_log "block" "missing-init-script" || true

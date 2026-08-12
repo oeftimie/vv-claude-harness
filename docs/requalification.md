@@ -22,7 +22,7 @@ eval result.
 
 ## 2. Review the bindings table
 
-`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`'s Model Selection section holds the ONE bindings table:
+`${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`'s Model Selection section holds the ONE bindings table:
 role -> model. Requalification updates a row in THAT table — never the protocol prose
 around it ("lead needs deep reasoning" is policy and doesn't change; "lead: Opus" is a
 binding that might). When these names age, the fix is one row in that table and a

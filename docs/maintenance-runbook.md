@@ -99,7 +99,7 @@ way.
    needs updating.
 
 3. **Hook events fire with expected payloads**: `TaskCompleted`,
-   `TeammateIdle`, `SessionStart` (all sources: `startup`, `resume`, `clear`,
+   `SessionStart` (all sources: `startup`, `resume`, `clear`,
    `compact`), `SessionEnd`. No workaround to retire — this probe exists to
    catch a payload-shape change before a hook silently stops firing or starts
    misparsing.
@@ -116,43 +116,11 @@ way.
    stale name kept out of inertia) and to remove it if it stops being one.
 
 6. **Lead/teammate hook-blindness (F061), TeammateIdle task-list blindness
-   (F067), and the declined teammate-role carve-out (F069).** All three are
-   the same underlying probe action (re-fetch the same docs page for a new
-   field), so this item covers all of them rather than duplicating the fetch.
-   - `rules/agent-teams-protocol.md`'s "Known limitation (F061)" callout
-     documents that no hook-facing field or environment variable distinguishes
-     the lead's own session from a teammate's, confirmed against
-     `code.claude.com/docs/en/hooks`'s common input fields
-     (`session_id`, `prompt_id`, `transcript_path`, `cwd`, `permission_mode`,
-     `effort`, `hook_event_name`, plus `agent_id`/`agent_type` for
-     `--agent`/subagent mode only) as of the date that callout was written.
-   - `rules/agent-teams-protocol.md`'s "Known limitation (F067)" callout
-     documents that `TeammateIdle`'s hook input carries the common fields
-     plus `teammate_name`/`team_name`, but no task-list snapshot, confirmed
-     against the same page on the same date. (F067's round-1 review found an
-     earlier draft of this callout, and F055's original claim, wrongly said
-     `TeammateIdle` carries no teammate identity at all -- a WebFetch-based
-     check had truncated before reaching the relevant section of the page;
-     a raw fetch corrected it. `teammate_name` being present does not close
-     the task-list-snapshot gap this item's retirement condition tracks.)
-   - `rules/agent-teams-protocol.md`'s "Considered and declined" note (F069)
-     documents that `teammate_name` is present but carries no role/type
-     information -- it identifies WHICH teammate, not WHAT KIND. The
-     mechanical carve-out question (should `check-remaining-tasks.sh`
-     pattern-match it) was declined on that basis, not deferred pending a
-     future field.
-   No existing probe covers any of the three: item 3 above checks
-   `TaskCompleted`/`TeammateIdle`/`SessionStart`/`SessionEnd` PAYLOAD SHAPE
-   for regressions, not PreToolUse/TeammateIdle hook input for a NEW field's
-   addition.
-   **Retirement condition**: re-fetch `code.claude.com/docs/en/hooks`'s common
-   input fields; if a team-role/lead-vs-teammate discriminator field appears,
-   record F061 here as FIXED; if a task-list snapshot field appears, record
-   F067 here as FIXED; if a teammate-role/type discriminator field appears
-   (distinct from the plain `teammate_name` already present), record F069's
-   design decision here as worth revisiting (the three can retire
-   independently of each other).
-   Removing either limitation callout and updating the corresponding hook
-   template to use the new field, or reopening F069's declined design
-   decision, is a separate, explicit, approval-required follow-up — not
-   automatically performed as part of a probe run.
+   (F067), and the declined teammate-role carve-out (F069).**
+   Retired 2026-08-12 as part of OVI-144 Phase 3 (approved by Ovidiu during
+   prep). F067 probed the TeammateIdle hook's input for a task-list field;
+   that hook's wiring is deleted. F069 concerned check-remaining-tasks.sh's
+   pattern-matching; that file is deleted. F061's lead-vs-teammate
+   discriminator gap is superseded by enforce-scope.sh's
+   structural worktree detection (git-dir vs git-common-dir).
+   Nothing remains to probe.

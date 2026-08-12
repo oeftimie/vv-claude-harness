@@ -83,8 +83,7 @@ if [ "$COMMAND_RC" -eq 1 ]; then
     # stderr back to the blocked agent as its error message
     # (code.claude.com/docs/en/hooks) -- this and the identity-mismatch exit-2
     # site below wrote their message to stdout, silently discarding it on
-    # every real PreToolUse block (F053, the identical defect F046 fixed in
-    # check-remaining-tasks.sh.template).
+    # every real PreToolUse block (F053).
     echo "Git operation blocked: command could not be safely extracted from tool input (treating as a possible push/pull/clone/fetch out of caution)." >&2
     exit 2
 fi

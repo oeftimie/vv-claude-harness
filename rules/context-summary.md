@@ -44,7 +44,7 @@ Create once, update continuously.
      (see skills/harness-continue/SKILL.md), so a pattern stops being restated
      verbatim across sessions once it has a place to live:
        - (promoted-to: X) -- already landed as a rule/hook/schema/agent/skill
-         change; X names it (e.g. "promoted-to: rules/agent-teams-protocol.md
+         change; X names it (e.g. "promoted-to: rules/parallel-work.md
          Dynamic overrides"). Keep the entry as a one-line historical pointer,
          not the full original prose.
        - (backlog) -- filed as a row in .harness/HARNESS_BACKLOG.md, not yet
