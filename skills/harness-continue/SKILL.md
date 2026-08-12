@@ -262,7 +262,8 @@ Before declaring the session complete, work through the full checklist in `${CLA
 
 ## Step 5b: Workflow Orchestration (primary parallel mode)
 
-The lead (an Opus 5 session) never edits feature code directly in this mode — it prepares
+The lead (model policy: `${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`, "Model
+policy") never edits feature code directly in this mode — it prepares
 inputs, launches `/vv-harness:implement-features`, and integrates the returned results so
 the `TaskCompleted` and commit gates fire in the lead session. Run these steps **in order**:
 
@@ -276,15 +277,16 @@ the `TaskCompleted` and commit gates fire in the lead session. Run these steps *
    only this pass remembers.
 2. **Mirror tasks — mandatory.** `TaskCreate` one task per feature, **each carrying
    `metadata.feature_id`** (dependencies via `addBlockedBy`). This is what arms the
-   `TaskCompleted` gate's focused-test and coverage stages. The hook has a task-subject
-   `FXXX:` fallback (`verify-task-quality.sh` parses the ID off the subject when
-   `feature_id` is absent), but do not rely on it — a subject without the exact `FXXX:`
-   prefix, or a mismatched ID, silently skips those stages. Set `feature_id` explicitly.
+   `TaskCompleted` gate's focused-test and coverage stages; the norm — including why
+   the task-subject `FXXX:` fallback is never to be relied on — is
+   `${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`, "Task mirroring and integration
+   order".
 3. **Launch.** Call the workflow with `args` carrying the feature IDs **and each
    feature's verified spec text** (the script has no way to read `features.json` from
    inside a workflow): `{ features: [...], featureSpecs: { F0NN: { spec, scope, risk,
    mergeBase } }, maxReviewRounds: 3 }`. Set `reviewModel: 'opus'` explicitly only if you
-   need to force it; the reviewer already runs Opus by its agent definition. Size the
+   need to force it (Opus review routing is canonical in
+   `${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`, "Escalation"). Size the
    batch under the platform concurrency cap (min(16, cores−2); guideline < 15) — chain
    multiple runs rather than one oversized batch. Also read the optional
    `workflow.size_guideline` key from `.harness/harness.json` when sizing the batch
@@ -347,8 +349,9 @@ the `TaskCompleted` and commit gates fire in the lead session. Run these steps *
    complete (gate fires) → commit (commit gate fires; `git add` and `git commit` as
    SEPARATE calls)**. Never flip status or mark a task complete before its tests pass on
    the merged code. After merging, **remove the changed worktree before any repo-wide
-   suite run** (a leftover worktree gives duplicate copies of every file to repo-wide
-   assertions — verified in Phase 0).
+   suite run**. This order and the worktree rationale are canonical in
+   `${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md` ("Task mirroring and integration
+   order", "Worktree hygiene").
 5. **Surface, never auto-merge, the rest.** A feature returned `status: blocked`, verdict
    `REJECT`/`REVISE`, or in the workflow's `unfinished` list is reported to the user with
    its structured findings. For `unfinished` features (an agent died — e.g. a session
@@ -358,10 +361,11 @@ the `TaskCompleted` and commit gates fire in the lead session. Run these steps *
 6. **Retrospective.** Run the retrospective, promotion, and ablation passes plus the
    MLD telemetry — the Retrospective section below.
 
-The launch checklist, `args` shape, and structured-output schema templates for this
-flow live in `launch-prompts.md` (this skill's directory). The pre-launch checklist
-there is: specs verified, tasks mirrored **with `feature_id`**, branch state clean,
-`git fetch` + rebase done.
+The launch checklist and `args` shape for this flow live in `launch-prompts.md` (this
+skill's directory); the structured-output contracts it references are canonical in
+`${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`, "Structured-output contracts". The
+pre-launch checklist there is: specs verified, tasks mirrored **with `feature_id`**,
+branch state clean, `git fetch` + rebase done.
 
 ---
 

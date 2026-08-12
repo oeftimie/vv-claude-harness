@@ -1,8 +1,8 @@
 #!/bin/bash
 # Harness - TaskCompleted quality gate hook
-# Runs when a teammate marks a task as complete.
+# Runs when an agent marks a task as complete.
 # Exit code 0 = accept completion
-# Exit code 2 = reject completion, send feedback to teammate
+# Exit code 2 = reject completion, send feedback to the agent
 #
 # Staged evaluation (inspired by HyperAgents):
 #   Stage 1: smoke_test   — fast compile/syntax check, always runs
@@ -274,7 +274,7 @@ PYEOF
 }
 
 # Shared rejection bookkeeping: records the failing stage's verdict, notes a
-# missing feature_id (diagnostics for the blocked teammate -- their task
+# missing feature_id (diagnostics for the blocked agent -- its task
 # metadata or subject should carry one), and increments correction_cycles
 # only on a green-to-red transition for a targeted feature.
 _reject_bookkeeping() {
@@ -481,7 +481,7 @@ fi
 # identical exit-2 stdout-discard defect, but on this exit-0 accept path
 # instead). The two warnings above used to reach this point via plain `echo`
 # (stdout), which this docs page says lands only in the debug log for
-# TaskCompleted -- a teammate accepting a task with no proof recorded, or with
+# TaskCompleted -- an agent accepting a task with no proof recorded, or with
 # a stale in-progress sibling feature, never actually saw either warning. The
 # same docs page documents `systemMessage` as a universal JSON output field
 # ("warning message shown to the user") that IS surfaced regardless of event

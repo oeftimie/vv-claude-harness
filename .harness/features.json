@@ -3189,6 +3189,44 @@
       ],
       "discovered_via": null,
       "linear": "OVI-144"
+    },
+    {
+      "id": "F115",
+      "priority": 115,
+      "status": "passing",
+      "description": "Phase 4 (OVI-145): rules & docs rewrite. Canonical normalized spec on Linear OVI-145 (stamped, hash below). AC1: rules/parallel-work.md gains 7 governance sections (script authoring constraints; structured-output schema contracts; task-mirroring + integration order test->merge->status-flip->task-complete->commit; author-blindness; worktree hygiene; escalation; model policy) as the single canonical source. AC2: 4 remaining agents (researcher, conformance-tester, spec-verification, reverification-guard) Modes paragraphs restructured -- zero teammate/SendMessage/TaskUpdate tokens in agents/. AC3: residual vocabulary sweep (harness-init SKILL:113, harness-issue-prep SKILL:172, task-completion.md, verify-task-quality pair, commit-gate pair, harness-improve SKILL, dashboard/index.html). AC4: doctor.py:23 version comment -> v6. AC5: evals capture annotated. AC6: grep -ri teammate|SendMessage|agent-teams-protocol over rules/skills/agents/hooks hits only skills/harness-doctor/. AC7: presence pins for 7 sections, author-blindness pin, integration-order consistency pin, absence assertions incl unhyphenated 'Agent Teams protocol'. AC8: suite green. Out of scope: version/CHANGELOG (Phase 6).",
+      "scope": [
+        "rules/",
+        "agents/",
+        "skills/",
+        "hooks/dashboard/index.html",
+        ".claude/hooks/",
+        "evals/orientation-recovery.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [
+        "F114"
+      ],
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "coverage": "2017/2017; gov cluster (11) pins the 7 governance sections + cross-file integration-order consistency + de-dup; p4 cluster (11) pins agent token absence, the AC6 grep contract (--exclude-dir=worktrees), unhyphenated-phrase absence, evals annotation",
+      "risk": "standard",
+      "qa_binding": "integration",
+      "notes": "Doctor's retirement strings now say v6 (integration commit); AC4's one-line scope grew to 5 same-class occurrences, disclosed.",
+      "approaches_tried": [
+        "2 parallel worktree agents (governance sections vs vocabulary sweep) with disjoint file sets; single additive tail conflict in test/run-tests.sh, union-resolved",
+        "sweep agent correctly extended AC2 to researcher.md frontmatter (AC6 would fail otherwise) and escalated doctor.py's out-of-scope v5.7.0 user-facing strings to the lead instead of exceeding its mandate",
+        "parallel-work.md landed at 406 lines vs the <400 advisory target -- kept (advisory; trims would cut grounded content)"
+      ],
+      "discovered_via": null,
+      "linear": "OVI-145",
+      "spec": {
+        "hash": "b9999d19183f4efaaed3e4629fa298ca30b806f2805530b984d4d9688bf89f7a",
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-08-12T18:33:43Z",
+        "source": "linear:OVI-145"
+      }
     }
   ]
 }

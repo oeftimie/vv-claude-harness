@@ -19,10 +19,9 @@
   permission event with no agent_id attaches to the lead's own badge, using
   the same rule.
 
-  Node labels: agent_type only, NEVER teammate_name (no documented
-  correlation between tool-activity identity and Agent-Teams identity -- see
-  F088's notes). A node whose agent_type is missing is labeled
-  "(unknown agent)".
+  Node labels: agent_type only -- the hook payload's tool-activity identity
+  (agent_id/agent_type) is the sole labeling source (see F088's notes). A
+  node whose agent_type is missing is labeled "(unknown agent)".
 
   QA binding: manual (see this repo's .harness/features.json F091 entry).
   This repo's dependency-free bash/python3 test runner has no browser/DOM
@@ -273,9 +272,8 @@
   }
 
   function labelFor(agentType) {
-    // Node labels are agent_type only, NEVER teammate_name -- there is no
-    // documented correlation between tool-activity identity (agent_id/
-    // agent_type) and Agent-Teams identity (teammate_name/team_name).
+    // Node labels are agent_type only -- the hook payload's tool-activity
+    // identity (agent_id/agent_type) is the sole labeling source.
     return agentType || "(unknown agent)";
   }
 
