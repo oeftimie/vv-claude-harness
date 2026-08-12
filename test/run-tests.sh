@@ -13938,6 +13938,141 @@ for HOOK_PAIR_FILE in .claude/hooks/verify-task-quality.sh .claude/hooks/verify-
 done
 
 echo ""
+echo "== OVI-145 AC1: parallel-work.md governance sections =="
+
+# Phase 4 makes rules/parallel-work.md the single canonical source for workflow
+# governance. Seven sections join the existing anchors: script authoring
+# constraints, structured-output contracts, task mirroring + integration order,
+# author blindness, worktree hygiene, escalation, model policy.
+# skills/harness-continue/SKILL.md and launch-prompts.md REFERENCE these
+# sections instead of duplicating the normative text.
+GOV_MD="$REPO_ROOT/rules/parallel-work.md"
+
+for GOV_HEADING in "Script authoring constraints" "Structured-output contracts" \
+  "Task mirroring and integration order" "Author blindness" "Worktree hygiene" \
+  "Escalation" "Model policy"; do
+  if grep -q "^## $GOV_HEADING" "$GOV_MD"; then
+    pass "gov: parallel-work.md has the '## $GOV_HEADING' section"
+  else
+    fail "gov: parallel-work.md is missing the '## $GOV_HEADING' section"
+  fi
+done
+
+# Distinctive content per section, anchored to the section body (not a whole-file
+# grep -- the same discipline as the f017/f018 section-scoped checks, since e.g.
+# `metadata.feature_id` also appears in Lead-owned state).
+GOV_SECTION_ERRORS=$(python3 - "$GOV_MD" <<'PYEOF'
+import re
+import sys
+
+text = open(sys.argv[1]).read()
+
+def need(title, phrases):
+    m = re.search(r"## " + re.escape(title) + r"\n(.*?)(?=\n## |\Z)", text, re.DOTALL)
+    if not m:
+        print(title + ": section not found")
+        return
+    body = m.group(1)
+    for p in phrases:
+        if p not in body:
+            print(title + ": missing '" + p + "'")
+
+# a. Script authoring: pure-literal meta, the non-determinism bans, budget guards
+#    on unbounded loops, bounded review rounds, log() on any silent cap.
+need("Script authoring constraints",
+     ["pure literal", "`Date.now()`", "`Math.random()`", "`new Date()`",
+      "`import()`", "`budget`", "`maxReviewRounds`", "`log()`"])
+# b. Structured-output contracts: the three result shapes and their enums.
+need("Structured-output contracts",
+     ["Implementer result", "Reviewer result", "Conformance result",
+      "implemented|blocked", "APPROVE|REVISE|REJECT", "PASS|FAIL|NOT-TESTABLE",
+      "launch-prompts.md"])
+# c. Task mirroring: metadata.feature_id per feature, fallback not relied on.
+need("Task mirroring and integration order",
+     ["`TaskCreate` one task per feature", "metadata.feature_id",
+      "never rely on the fallback"])
+# d. Author blindness (invariant pin): the rule text forbids the implementation
+#    diff and the implementer's tests as derivation input, for BOTH prompt kinds.
+need("Author blindness",
+     ["implementation diff", "implementer's tests", "as derivation input",
+      "reviewer", "conformance"])
+# e. Worktree hygiene: scripts never merge; the lead integrates; changed
+#    worktrees are removed after merge, before any repo-wide suite run.
+need("Worktree hygiene",
+     ["never merge", "the lead integrates",
+      "remove the changed worktree before any repo-wide suite run"])
+# f. Escalation: Opus review routing, and the single-session fallback triggers
+#    (blocked results, review rounds exhausted).
+need("Escalation",
+     ["reviewer runs Opus", "falls back to single-session", "blocked",
+      "review rounds are exhausted"])
+# g. Model policy: tier policy here, model-name bindings in the table.
+need("Model policy",
+     ["stronger model tier", "execution tier", "Model Selection"])
+PYEOF
+)
+if [ -z "$GOV_SECTION_ERRORS" ]; then
+  pass "gov: each governance section carries its load-bearing content"
+else
+  fail "gov: governance section content -- $GOV_SECTION_ERRORS"
+fi
+
+# AC7 consistency: the five-step integration order appears in BOTH
+# rules/parallel-work.md and harness-continue/SKILL.md, in the SAME order --
+# extracted and compared as sequences, not grepped independently, so a reorder
+# in one file that the other doesn't mirror is caught.
+GOV_ORDER_OK=$(python3 - "$GOV_MD" "$REPO_ROOT/skills/harness-continue/SKILL.md" <<'PYEOF'
+import re
+import sys
+
+tokens = ["focused test + smoke", "merge its", "flip `features.json` status",
+          "mark the mirrored task", "commit (commit gate fires"]
+
+def sequence(region, label):
+    found = []
+    for t in tokens:
+        i = region.find(t)
+        if i == -1:
+            print("BAD " + label + ": missing token '" + t + "'")
+            return None
+        found.append((i, t))
+    return [t for _, t in sorted(found)]
+
+rule_text = open(sys.argv[1]).read()
+skill_text = open(sys.argv[2]).read()
+
+m = re.search(r"## Task mirroring and integration order\n(.*?)(?=\n## |\Z)",
+              rule_text, re.DOTALL)
+rule_seq = sequence(m.group(1), "rule") if m else print("BAD rule: section not found")
+m = re.search(r"Integrate per feature, in this order.*?(?=\n5\. )",
+              skill_text, re.DOTALL)
+skill_seq = sequence(m.group(0), "skill") if m else print("BAD skill: region not found")
+
+if rule_seq and skill_seq:
+    if rule_seq == skill_seq == tokens:
+        print("OK")
+    else:
+        print("BAD order differs: rule=" + str(rule_seq) + " skill=" + str(skill_seq))
+PYEOF
+)
+if [ "$GOV_ORDER_OK" = "OK" ]; then
+  pass "gov: integration order is present and CONSISTENT across parallel-work.md and SKILL.md"
+else
+  fail "gov: integration-order consistency -- $GOV_ORDER_OK"
+fi
+
+# De-duplication direction: launch-prompts.md now cites the rule for the schema
+# contracts instead of claiming its own mirror is a source.
+GOV_LP="$REPO_ROOT/skills/harness-continue/launch-prompts.md"
+if grep -q "rules/parallel-work.md" "$GOV_LP"; then
+  pass "gov: launch-prompts.md references rules/parallel-work.md for the contracts"
+else
+  fail "gov: launch-prompts.md does not reference rules/parallel-work.md"
+fi
+assert_not_contains "$(cat "$GOV_LP")" "single source of truth is the script" \
+  "gov: launch-prompts.md no longer claims to mirror the schemas as a source"
+
+echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 echo "Summary: $PASS_COUNT/$TOTAL assertions passed, $FAIL_COUNT failed"
 if [ "$FAIL_COUNT" -gt 0 ]; then

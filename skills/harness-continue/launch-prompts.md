@@ -15,8 +15,9 @@ Before launching the workflow, confirm all of:
   `harness-issue-prep` pass). Unverified features are excluded from the batch.
 - **Tasks mirrored WITH `feature_id`** — one `TaskCreate` per feature, each carrying
   `metadata.feature_id`. This arms the `TaskCompleted` gate's focused-test/coverage
-  stages. A task-subject `FXXX:` fallback exists but is fragile (a subject without the
-  exact prefix, or a mismatched ID, silently skips the stages) — set `feature_id`.
+  stages; the norm (and the task-subject fallback's fragility) is
+  `${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`, "Task mirroring and integration
+  order".
 - **Branch clean, rebased** — `git fetch` + rebase on the integration branch; working
   tree clean before launch.
 
@@ -34,11 +35,13 @@ Before launching the workflow, confirm all of:
 }
 ```
 
-### Structured-output schemas (single source of truth is the script; mirror here for the lead)
+### Structured-output schemas
 
-- **Implement**: `{ feature_id, status: implemented|blocked, files_changed[], test_file, tests_run: {passed, failed}, worktree_branch, head_sha, notes, blocker }`
-- **Review**: `{ feature_id, verdict: APPROVE|REVISE|REJECT, findings[], rounds_used }`
-- **Workflow return**: `{ per_feature: [{ feature_id, implement, review, outcome: approved|blocked|needs-lead|died }], unfinished: [ids], complete: bool }`
+The implementer/reviewer/conformance result shapes are canonical in
+`${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`, "Structured-output contracts"; the
+`schema` constants in `workflows/*.js` enforce them at runtime. The workflow itself
+returns `{ per_feature: [{ feature_id, implement, review, outcome:
+approved|blocked|needs-lead|died }], unfinished: [ids], complete: bool }`.
 
 The lead integrates approved features per Step 5b's ordered flow; `blocked` / non-APPROVE
 / `unfinished` features are surfaced to the user, never auto-merged.
