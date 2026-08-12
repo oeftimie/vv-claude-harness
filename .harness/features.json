@@ -3179,7 +3179,11 @@
         "sv_version": "1.0",
         "verified_at": "2026-08-12T04:31:09Z",
         "source": "linear:OVI-144"
-      }
+      },
+      "notes": "",
+      "approaches_tried": [],
+      "discovered_via": null,
+      "linear": "OVI-144"
     }
   ]
 }

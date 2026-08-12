@@ -75,7 +75,7 @@ try:
         "hook_event_name": data.get("hook_event_name", ""),
         "session_id": session_id,
     }
-    for key in ("agent_id", "agent_type", "tool_name", "teammate_name", "team_name"):
+    for key in ("agent_id", "agent_type", "tool_name"):
         value = data.get(key)
         if value:
             line[key] = value

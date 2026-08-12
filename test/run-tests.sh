@@ -1384,12 +1384,8 @@ LINE=$(cat "$DL_LOG" 2>/dev/null)
 assert_contains "$LINE" '"hook_event_name": "TaskCompleted"' "dl: TaskCompleted logs hook_event_name"
 assert_not_contains "$LINE" "leaked-task-subject" "dl: TaskCompleted does not log the task subject (not in the field list)"
 
-# TeammateIdle: teammate_name and team_name, when present.
-> "$DL_LOG"
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"TeammateIdle","session_id":"sess1","teammate_name":"reviewer-1","team_name":"legacy-team"}' '1' >/dev/null
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"teammate_name": "reviewer-1"' "dl: TeammateIdle logs teammate_name"
-assert_contains "$LINE" '"team_name": "legacy-team"' "dl: TeammateIdle logs team_name"
+# The retired TeammateIdle route and its two teammate-only fields are covered
+# by absence assertions in the OVI-144 section at the end of this file.
 
 # Multiple events for the same session append, one JSON line each (single write() per line).
 > "$DL_LOG"
@@ -2255,12 +2251,6 @@ done
 echo ""
 echo "== hook templates =="
 
-if grep -q '^# Degraded behavior:' "$TEMPLATES_DIR/check-remaining-tasks.sh.template"; then
-  pass "ht: check-remaining-tasks documents its degraded behavior"
-else
-  fail "ht: check-remaining-tasks lacks a '# Degraded behavior:' header line"
-fi
-
 if grep -q '^# Formatting:' "$TEMPLATES_DIR/verify-task-quality.sh.template"; then
   pass "ht: verify-task-quality documents its formatting ownership"
 else
@@ -2296,7 +2286,7 @@ fi
 # after F046's fix had already merged into the template). This guard fails
 # loudly the moment the two drift apart again, rather than relying on someone
 # noticing during the next unrelated review.
-for HOOK_NAME in enforce-scope.sh check-remaining-tasks.sh verify-task-quality.sh verify-git-identity.sh commit-gate.sh; do
+for HOOK_NAME in enforce-scope.sh verify-task-quality.sh verify-git-identity.sh commit-gate.sh; do
   if diff -q "$TEMPLATES_DIR/$HOOK_NAME.template" "$REPO_ROOT/.claude/hooks/$HOOK_NAME" > /dev/null 2>&1; then
     pass "ht: this repo's installed $HOOK_NAME matches its template (F047)"
   else
@@ -5180,7 +5170,7 @@ assert_rc0 "$RC" "hs2 (F043): genuinely unparseable JSON still exits 0 (stays fa
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F043): unparseable JSON has no deny fields (unchanged environment-failure contract)"
 
-for TPL in check-remaining-tasks.sh.template enforce-scope.sh.template \
+for TPL in enforce-scope.sh.template \
   verify-git-identity.sh.template verify-task-quality.sh.template; do
   if grep -q '^# Failure posture:' "$TEMPLATES_DIR/$TPL"; then
     pass "hs2: $TPL documents its failure posture"
@@ -5292,100 +5282,11 @@ OUT=$(run_hook "$DIR_HG_NOIDENT" verify-git-identity.sh "$SURROGATE_PUSH_JSON")
 RC=$?
 assert_rc0 "$RC" "hg (F050): no identity configured + surrogate command still allows, rc 0"
 
-DIR_HR="$WORK/ht-remaining"
-make_fixture "$DIR_HR"
-install_hooks "$DIR_HR"
-OUT=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}' 2>&1)
-RC=$?
-assert_rc2 "$RC" "ht: check-remaining-tasks exits 2 when a feature is claimable"
-assert_contains "$OUT" "F003" "ht: offers the claimable feature id"
-
-# F046: the guidance text must be on STDERR specifically -- that's the channel
-# actually surfaced back to a blocked teammate on a TeammateIdle re-prompt, not
-# stdout (confirmed live before the fix: stdout carried the whole message and
-# stderr was empty, leaving an idle teammate with no visible guidance at all).
-STDOUT_ONLY=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}' 2>/dev/null)
-assert_empty "$STDOUT_ONLY" "ht: check-remaining-tasks writes nothing to stdout"
-STDERR_ONLY=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
-assert_contains "$STDERR_ONLY" "F003" "ht: the claimable feature id is on stderr specifically"
-
-# F055: the hook cannot tell a review-only teammate from an implementer (no
-# identity in the TeammateIdle payload), so the guidance itself must say the
-# claim-it instruction does not apply to a role with no Edit/Write tools.
-assert_contains "$STDERR_ONLY" "no Edit/Write tools" \
-  "ht (F055): guidance states the claim instruction doesn't apply to non-implementer roles"
-assert_contains "$STDERR_ONLY" "does not apply to you" \
-  "ht (F055): guidance's non-implementer carve-out is actionable, not just descriptive"
-
-# F067: the escape hatch also covers a teammate with Edit/Write (not role-limited
-# by construction) whose ASSIGNMENT was a scoped, already-delivered one-shot task --
-# the general-purpose-subagent case F055's tool-only carve-out doesn't reach.
-assert_contains "$STDERR_ONLY" "already-delivered scoped task" \
-  "ht (F067): guidance also carves out a scoped one-shot assignment, not just role by construction"
-assert_contains "$STDERR_ONLY" "decline once, then stay idle" \
-  "ht (F067): guidance tells a carved-out teammate not to keep responding to repeated nudges"
-
-python3 - "$DIR_HR/.harness/features.json" <<'PYEOF'
-import json
-import sys
-
-path = sys.argv[1]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    feature["status"] = "passing"
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
-OUT=$(run_hook "$DIR_HR" check-remaining-tasks.sh '{}')
-RC=$?
-assert_rc0 "$RC" "ht: check-remaining-tasks exits 0 when nothing is claimable"
-
-DIR_HM="$WORK/ht-remaining-malformed"
-make_fixture "$DIR_HM"
-install_hooks "$DIR_HM"
-python3 - "$DIR_HM/.harness/features.json" <<'PYEOF'
-import json
-import sys
-
-path = sys.argv[1]
-with open(path) as fh:
-    data = json.load(fh)
-data["features"][0] = "not a feature object"
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
-OUT=$(run_hook "$DIR_HM" check-remaining-tasks.sh '{}' 2>&1)
-RC=$?
-assert_rc2 "$RC" "ht: a malformed feature entry does not stop idle reassignment"
-assert_contains "$OUT" "F003" "ht: the valid claimable feature is still offered"
-assert_contains "$OUT" "malformed feature entry" "ht: the malformed entry is noted on stderr"
-
-DIR_HF="$WORK/ht-remaining-malformed-field"
-make_fixture "$DIR_HF"
-install_hooks "$DIR_HF"
-python3 - "$DIR_HF/.harness/features.json" <<'PYEOF'
-import json
-import sys
-
-path = sys.argv[1]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    if feature["id"] == "F002":
-        feature["status"] = "pending"
-        feature["depends_on"] = 5
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
-OUT=$(run_hook "$DIR_HF" check-remaining-tasks.sh '{}' 2>&1)
-RC=$?
-assert_rc2 "$RC" "ht: a malformed field inside a feature does not stop idle reassignment"
-assert_contains "$OUT" "F003" "ht: the valid claimable feature is still offered past a bad field"
-assert_contains "$OUT" "malformed feature entry" "ht: the bad-field entry is noted on stderr"
+# The check-remaining-tasks.sh behavioral suite that lived here retired with
+# the hook itself (OVI-144): the TeammateIdle nudge, its stderr channel, its
+# role/one-shot escape hatch, and its malformed-entry tolerance all went with
+# the Agent Teams machinery. See the OVI-144 section at the end of this file
+# for the absence assertions and the doctor's migration path that replace them.
 
 DIR_HQ="$WORK/ht-quality-noinit"
 make_fixture "$DIR_HQ"
@@ -6382,7 +6283,6 @@ write_stamp_answers() {
   cat > "$1" <<EOF
 project_name=Demo Project
 stack=python
-team_mode=teams
 mode=$2
 EOF
 }
@@ -6402,7 +6302,6 @@ STAMP_EXPECTED_FILES="
 .harness/harness.json
 .harness/features.json
 .claude/hooks/verify-task-quality.sh
-.claude/hooks/check-remaining-tasks.sh
 .claude/hooks/enforce-scope.sh
 .claude/hooks/verify-git-identity.sh
 .claude/hooks/commit-gate.sh
@@ -6447,8 +6346,6 @@ with open(path) as fh:
 
 if "statusLine" not in settings:
     print("missing statusLine")
-if settings.get("env", {}).get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS") != "1":
-    print("env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS should be '1' for team_mode=teams")
 if not settings.get("permissions", {}).get("allow"):
     print("missing permissions.allow")
 
@@ -6466,8 +6363,6 @@ for script_name in ("enforce-scope.sh", "verify-git-identity.sh", "commit-gate.s
         print(f"PreToolUse missing {script_name}")
 if not hook_wired("TaskCompleted", "verify-task-quality.sh"):
     print("TaskCompleted missing verify-task-quality.sh")
-if not hook_wired("TeammateIdle", "check-remaining-tasks.sh"):
-    print("TeammateIdle missing check-remaining-tasks.sh")
 
 posttooluse = settings.get("hooks", {}).get("PostToolUse", [])
 if not any("py_compile" in h.get("command", "") for entry in posttooluse for h in entry.get("hooks", [])):
@@ -6611,7 +6506,6 @@ STAMP_ANSWERS_QUOTE="$STAMP_DIR/answers-quote.txt"
 cat > "$STAMP_ANSWERS_QUOTE" <<'EOF'
 project_name=My "Cool" App
 stack=python
-team_mode=teams
 mode=new
 EOF
 "$STAMP_SH" "$STAMP_ANSWERS_QUOTE" "$STAMP_QUOTE_PROJECT" >/dev/null
@@ -6636,7 +6530,6 @@ STAMP_ANSWERS_INJECT="$STAMP_DIR/answers-inject.txt"
 cat > "$STAMP_ANSWERS_INJECT" <<'EOF'
 project_name=Evil", "stack": "pwned
 stack=python
-team_mode=teams
 mode=new
 EOF
 "$STAMP_SH" "$STAMP_ANSWERS_INJECT" "$STAMP_INJECT_PROJECT" >/dev/null
@@ -6695,7 +6588,6 @@ make_healthy_doctor_fixture() {
   cat > "$1/.claude/settings.json" <<'SETTINGSEOF'
 {
   "statusLine": {"type": "command", "command": "bash .claude/hooks/statusline.sh"},
-  "env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"},
   "permissions": {"allow": ["Bash(bash .claude/hooks/*.sh)"]},
   "hooks": {
     "PreToolUse": [
@@ -6714,9 +6606,6 @@ make_healthy_doctor_fixture() {
     ],
     "TaskCompleted": [
       {"hooks": [{"type": "command", "command": "bash .claude/hooks/verify-task-quality.sh"}]}
-    ],
-    "TeammateIdle": [
-      {"hooks": [{"type": "command", "command": "bash .claude/hooks/check-remaining-tasks.sh"}]}
     ]
   }
 }
@@ -6777,7 +6666,7 @@ import json, sys
 path = sys.argv[1]
 with open(path) as f:
     settings = json.load(f)
-del settings["env"]
+del settings["statusLine"]
 with open(path, "w") as f:
     json.dump(settings, f)
 PYEOF
@@ -6790,7 +6679,7 @@ assert_contains "$OUT" "hook 'enforce-scope.sh' is not executable" \
   "hd: seeded fixture names the non-executable hook"
 assert_contains "$OUT" "chmod +x .claude/hooks/enforce-scope.sh" \
   "hd: seeded fixture gives the non-executable hook's repair"
-assert_contains "$OUT" "missing env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS wiring" \
+assert_contains "$OUT" "missing statusLine wiring" \
   "hd: seeded fixture names the missing settings wiring"
 assert_contains "$OUT" "does not parse" \
   "hd: seeded fixture names the invalid features.json"
@@ -6841,7 +6730,7 @@ import json, sys
 path = sys.argv[1]
 with open(path) as f:
     settings = json.load(f)
-del settings["env"]
+del settings["statusLine"]
 settings["hooks"]["PostCompact"] = [{"hooks": [{"type": "command", "command": "echo stale"}]}]
 with open(path, "w") as f:
     json.dump(settings, f)
@@ -6916,7 +6805,7 @@ import json, sys
 path = sys.argv[1]
 with open(path) as f:
     settings = json.load(f)
-del settings["env"]
+del settings["statusLine"]
 with open(path, "w") as f:
     json.dump(settings, f)
 PYEOF
@@ -6924,7 +6813,7 @@ git -C "$DIR_DOC_COMMITTED" add -A
 git -C "$DIR_DOC_COMMITTED" commit -q -m "commit the gap itself"
 OUT=$(run_doctor "$DIR_DOC_COMMITTED")
 assert_contains "$OUT" \
-  "missing env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS wiring (matches the last commit; any problem here is committed, not local)" \
+  "missing statusLine wiring (matches the last commit; any problem here is committed, not local)" \
   "hd: an artifact matching the last commit is classified as committed drift"
 
 # Spec item 3: settings.json must parse.
@@ -7123,7 +7012,7 @@ import json, sys
 path = sys.argv[1]
 with open(path) as f:
     settings = json.load(f)
-del settings["env"]
+del settings["statusLine"]
 with open(path, "w") as f:
     json.dump(settings, f)
 PYEOF
@@ -7385,9 +7274,9 @@ with tempfile.TemporaryDirectory() as d:
     if fixes._load_json(bad_path) is not None:
         errors.append("_load_json should return None for invalid JSON")
 
-    # partial hooks: TeammateIdle present, TaskCompleted missing -> only the
+    # partial hooks: PreToolUse present, TaskCompleted missing -> only the
     # missing event should be added (exercises the per-event "changed" branch).
-    partial_hooks = {"TeammateIdle": [{"hooks": [{"type": "command", "command": "x"}]}]}
+    partial_hooks = {"PreToolUse": [{"hooks": [{"type": "command", "command": "x"}]}]}
     with open(settings_path, "w") as fh:
         json.dump({"hooks": partial_hooks}, fh)
     if not fixes._add_settings_wiring(d, None):
@@ -7396,7 +7285,7 @@ with tempfile.TemporaryDirectory() as d:
         merged = json.load(fh)
     if "TaskCompleted" not in merged["hooks"]:
         errors.append("_add_settings_wiring did not add the missing TaskCompleted block")
-    if merged["hooks"]["TeammateIdle"] != partial_hooks["TeammateIdle"]:
+    if merged["hooks"]["PreToolUse"] != partial_hooks["PreToolUse"]:
         errors.append("_add_settings_wiring should not touch an already-present hook event")
 
     # F068: _update_plugin_version's no-op branches, plus its actual write.
@@ -7484,15 +7373,13 @@ try:
         repo_root, "skills", "harness-init", "templates", "settings.json.tmpl"
     )
     text = open(tmpl_path).read()
-    # ENV_TEAMS_FLAG is a string_values placeholder in scripts/stamp.sh (JSON-encoded
-    # before insertion, per its own substitute() docstring); POSTTOOLUSE_HOOKS is a
-    # raw_json_values placeholder (inserted verbatim as an already-valid JSON array).
-    text = text.replace("{{ENV_TEAMS_FLAG}}", json.dumps("1")).replace(
-        "{{POSTTOOLUSE_HOOKS}}", "[]"
-    )
+    # POSTTOOLUSE_HOOKS is a raw_json_values placeholder in scripts/stamp.sh
+    # (inserted verbatim as an already-valid JSON array), per its own
+    # substitute() docstring.
+    text = text.replace("{{POSTTOOLUSE_HOOKS}}", "[]")
     rendered = json.loads(text)
 
-    for key in ("statusLine", "env", "permissions"):
+    for key in ("statusLine", "permissions"):
         if fixes.CANONICAL_WIRING[key] != rendered[key]:
             errors.append(f"CANONICAL_WIRING[{key!r}] does not match settings.json.tmpl")
 
@@ -10020,57 +9907,6 @@ else
   fail "f089-cg: disabled logging creates no dashboard directory -- it exists"
 fi
 
-# --- check-remaining-tasks.sh: 2 decision points (one block, one allow) ---
-
-DIR_CT89="$WORK/f089-check-remaining"
-make_fixture "$DIR_CT89"
-install_hooks "$DIR_CT89"
-CT89_LOG="$DIR_CT89/.harness/dashboard/ct89sess.jsonl"
-CT89_JSON=$(python3 -c "import json; print(json.dumps({'hook_event_name': 'TeammateIdle', 'session_id': 'ct89sess'}))")
-
-OUT=$(run_hook_dashboard "$DIR_CT89" check-remaining-tasks.sh "$CT89_JSON" 2>&1)
-RC=$?
-assert_rc2 "$RC" "f089-ct: a claimable feature still exits 2"
-LINE=$(cat "$CT89_LOG" 2>/dev/null)
-assert_contains "$LINE" '"gate": "check-remaining-tasks"' "f089-ct: block entry names the gate"
-assert_contains "$LINE" '"verdict": "block"' "f089-ct: a claimable feature logs verdict=block"
-assert_contains "$LINE" '"finding": "claimable-feature-pending"' \
-  "f089-ct: a claimable feature logs its finding class"
-assert_contains "$LINE" '"hook_event_name": "TeammateIdle"' \
-  "f089-ct: the log entry carries hook_event_name from the payload"
-
-python3 - "$DIR_CT89/.harness/features.json" <<'PYEOF'
-import json
-import sys
-
-path = sys.argv[1]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    feature["status"] = "passing"
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
-> "$CT89_LOG"
-OUT=$(run_hook_dashboard "$DIR_CT89" check-remaining-tasks.sh "$CT89_JSON")
-RC=$?
-assert_rc0 "$RC" "f089-ct: nothing claimable exits 0"
-LINE=$(cat "$CT89_LOG" 2>/dev/null)
-assert_contains "$LINE" '"verdict": "allow"' "f089-ct: nothing claimable logs verdict=allow"
-
-DIR_CT89_OFF="$WORK/f089-check-remaining-disabled"
-make_fixture "$DIR_CT89_OFF"
-install_hooks "$DIR_CT89_OFF"
-OUT=$(run_hook "$DIR_CT89_OFF" check-remaining-tasks.sh "$CT89_JSON" 2>&1)
-RC=$?
-assert_rc2 "$RC" "f089-ct: disabled logging does not change the gate's own verdict"
-if [ ! -e "$DIR_CT89_OFF/.harness/dashboard" ]; then
-  pass "f089-ct: disabled logging creates no dashboard directory"
-else
-  fail "f089-ct: disabled logging creates no dashboard directory -- it exists"
-fi
-
 # --- verify-task-quality.sh: 5 decision points (four block sites, one allow) ---
 
 DIR_VQ89A="$WORK/f089-verify-quality-noinit"
@@ -10289,22 +10125,6 @@ assert_contains "$LINE" '"agent_id": "agent-7"' \
   "f089r2-cg: deny_json() propagates agent_id from the payload"
 assert_contains "$LINE" '"agent_type": "teammate"' \
   "f089r2-cg: deny_json() propagates agent_type from the payload"
-
-DIR_AID_CT="$WORK/f089r2-agentid-check-remaining"
-make_fixture "$DIR_AID_CT"
-install_hooks "$DIR_AID_CT"
-AID_CT_LOG="$DIR_AID_CT/.harness/dashboard/aidsess.jsonl"
-AID_CT_PAYLOAD=$(python3 -c "
-import json
-print(json.dumps({'hook_event_name': 'TeammateIdle', 'session_id': 'aidsess',
-                   'agent_id': 'agent-7', 'agent_type': 'teammate'}))
-")
-OUT=$(run_hook_dashboard "$DIR_AID_CT" check-remaining-tasks.sh "$AID_CT_PAYLOAD" 2>&1)
-LINE=$(cat "$AID_CT_LOG" 2>/dev/null)
-assert_contains "$LINE" '"agent_id": "agent-7"' \
-  "f089r2-ct: _dashboard_log() propagates agent_id from the payload"
-assert_contains "$LINE" '"agent_type": "teammate"' \
-  "f089r2-ct: _dashboard_log() propagates agent_type from the payload"
 
 DIR_AID_VQ="$WORK/f089r2-agentid-verify-quality"
 make_fixture "$DIR_AID_VQ"
@@ -11001,23 +10821,6 @@ else
   fail "f069: expected 3 declined-design reasons, found $F069_REASON_COUNT"
 fi
 
-# check-remaining-tasks.sh's comment must no longer say the mechanical fix is
-# merely "tracked as a follow-up" (implying still-open/undecided) -- it was
-# investigated and declined, a closed design question, not a pending TODO.
-if grep -q "tracked as a follow-up, not done here" "$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh"; then
-  fail "f069: check-remaining-tasks.sh still frames the mechanical fix as merely deferred, not declined"
-else
-  pass "f069: check-remaining-tasks.sh no longer frames the mechanical fix as merely deferred"
-fi
-# round-1 review (PR #115): the assertion above was a pure negative tripwire --
-# deleting the entire declined-decision comment (not just reverting to the old
-# wording) still passed it, since there was no positive counterpart pinning what
-# should be there instead.
-if grep -q "Investigated and declined (F069)" "$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh"; then
-  pass "f069: check-remaining-tasks.sh positively states the declined (not deferred) design decision"
-else
-  fail "f069: check-remaining-tasks.sh is missing the declined-design-decision comment entirely"
-fi
 # The pre-existing F047 drift-detection loop (~line 1592) already diffs
 # check-remaining-tasks.sh's live copy against its template on every run; no
 # separate assertion needed here even though this feature edited both (F067's
@@ -11603,7 +11406,7 @@ assert_contains "$MISSING_OUT" "404" "dash: a request for a nonexistent static f
 TRAVERSAL_OUT=$(raw_get "$PORT3" "/../hooks.json")
 assert_not_contains "$TRAVERSAL_OUT" "HTTP/1.0 200" \
   "dash: a traversal attempt to escape hooks/dashboard/ is not served with 200"
-assert_not_contains "$TRAVERSAL_OUT" "TeammateIdle" \
+assert_not_contains "$TRAVERSAL_OUT" "SubagentStart" \
   "dash: the traversal attempt never leaks hooks.json's actual content"
 
 kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
@@ -13592,11 +13395,9 @@ STOCK_BASH_3_2_FILES="
 $HOOKS_DIR/dashboard-log.sh
 $REPO_ROOT/.claude/hooks/enforce-scope.sh
 $REPO_ROOT/.claude/hooks/commit-gate.sh
-$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh
 $REPO_ROOT/.claude/hooks/verify-task-quality.sh
 $TEMPLATES_DIR/enforce-scope.sh.template
 $TEMPLATES_DIR/commit-gate.sh.template
-$TEMPLATES_DIR/check-remaining-tasks.sh.template
 $TEMPLATES_DIR/verify-task-quality.sh.template
 "
 if [ -x /bin/bash ]; then
@@ -13858,136 +13659,6 @@ assert_not_contains "$(cat "$TPL_INIT")" "treating as pass" \
   "hd (F108): shipped init.sh.template carries no pre-F106 'treating as pass' wording"
 
 echo ""
-echo "== F107: check-remaining-tasks.sh reassignment message field caps =="
-# check-remaining-tasks.sh's "Next: <id>: <description> (priority N) [scope: ...]"
-# line goes straight to stderr and into a blocked agent's context on exit 2
-# (F046). Its description and scope fields were the same unbounded-field
-# class F071 and F085 already closed for session-start.sh's orientation --
-# missed here because F085's own spec named only session-start.sh. Reuse the
-# same truncate-and-point caps and marker wording (DESC_LIMIT=200,
-# SCOPE_LIMIT=150) so the two hooks stay consistent.
-F107_LONG_DESC_LEN=13222
-F107_LONG_DESC=$(python3 -c "print('X' * $F107_LONG_DESC_LEN)")
-
-DIR_F107_DESC="$WORK/f107-long-description"
-make_fixture "$DIR_F107_DESC"
-install_hooks "$DIR_F107_DESC"
-python3 - "$DIR_F107_DESC/.harness/features.json" "$F107_LONG_DESC" <<'PYEOF'
-import json
-import sys
-path, long_desc = sys.argv[1], sys.argv[2]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    if feature["id"] == "F003":
-        feature["description"] = long_desc
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
-STDERR_F107_DESC=$(run_hook "$DIR_F107_DESC" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
-assert_contains "$STDERR_F107_DESC" "Next: F003" \
-  "f107 (description): the feature id still appears when its description is truncated"
-assert_contains "$STDERR_F107_DESC" "$F107_LONG_DESC_LEN chars total, see .harness/features.json for the full description" \
-  "f107 (description): the truncation marker names the real length and points at the full text"
-assert_not_contains "$STDERR_F107_DESC" "$F107_LONG_DESC" \
-  "f107 (description): the full 13222-char description no longer reaches stderr whole"
-
-F107_LONG_SCOPE_JSON=$(python3 -c "
-import json
-paths = [f'src/deeply/nested/module_{i:02d}/submodule/implementation/' for i in range(12)]
-print(json.dumps(paths))")
-F107_LONG_SCOPE_LAST="module_11"
-
-DIR_F107_SCOPE="$WORK/f107-long-scope"
-make_fixture "$DIR_F107_SCOPE"
-install_hooks "$DIR_F107_SCOPE"
-python3 - "$DIR_F107_SCOPE/.harness/features.json" "$F107_LONG_SCOPE_JSON" <<'PYEOF'
-import json
-import sys
-path, scope_json = sys.argv[1], sys.argv[2]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    if feature["id"] == "F003":
-        feature["scope"] = json.loads(scope_json)
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
-STDERR_F107_SCOPE=$(run_hook "$DIR_F107_SCOPE" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
-assert_contains "$STDERR_F107_SCOPE" "Next: F003" \
-  "f107 (scope): the feature id still appears with an oversized scope"
-assert_contains "$STDERR_F107_SCOPE" "12 paths total, see .harness/features.json" \
-  "f107 (scope): the scope truncation marker names the path count and points at the full list"
-assert_not_contains "$STDERR_F107_SCOPE" "$F107_LONG_SCOPE_LAST" \
-  "f107 (scope): the tail of the oversized scope no longer reaches stderr"
-F107_NEXT_LINE=$(printf '%s\n' "$STDERR_F107_SCOPE" | grep "Next: F003")
-if [ "${#F107_NEXT_LINE}" -lt 450 ]; then
-  pass "f107 (scope): the Next line stays bounded (${#F107_NEXT_LINE} chars)"
-else
-  fail "f107 (scope): the Next line is ${#F107_NEXT_LINE} chars, expected under 450"
-fi
-
-# No-scope path (F003's default fixture scope is small but non-empty; a
-# feature with an empty scope list must still read "no scope defined", not
-# an empty or truncated-looking string) -- guards the caps above from
-# breaking the pre-existing empty-scope fallback.
-DIR_F107_EMPTY_SCOPE="$WORK/f107-empty-scope"
-make_fixture "$DIR_F107_EMPTY_SCOPE"
-install_hooks "$DIR_F107_EMPTY_SCOPE"
-python3 - "$DIR_F107_EMPTY_SCOPE/.harness/features.json" <<'PYEOF'
-import json
-import sys
-path = sys.argv[1]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    if feature["id"] == "F003":
-        feature["scope"] = []
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
-STDERR_F107_EMPTY=$(run_hook "$DIR_F107_EMPTY_SCOPE" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
-assert_contains "$STDERR_F107_EMPTY" "[scope: no scope defined]" \
-  "f107 (empty scope): the pre-existing empty-scope fallback text is unchanged"
-
-# Review round 1: an explicitly-null description crashed the formatter
-# (f.get('description', '') returns None for a present-but-null key, then
-# len(None) raises), and under set -euo pipefail the failed command
-# substitution suppressed the exit-2 nudge entirely -- a silent fail-open.
-# The formatter is now null-safe and try/except-guarded, so the block
-# verdict survives any malformed feature entry.
-DIR_F107_NULL="$WORK/f107-null-description"
-make_fixture "$DIR_F107_NULL"
-install_hooks "$DIR_F107_NULL"
-python3 - "$DIR_F107_NULL/.harness/features.json" <<'PYEOF'
-import json
-import sys
-path = sys.argv[1]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    if feature["id"] == "F003":
-        feature["description"] = None
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
-STDERR_F107_NULL=$(run_hook "$DIR_F107_NULL" check-remaining-tasks.sh '{}' 2>&1 1>/dev/null)
-RC=$?
-if [ "$RC" -eq 2 ]; then
-  pass "f107 (null description): the hook still exits 2 (nudge not suppressed)"
-else
-  fail "f107 (null description): hook exited $RC, expected 2 -- the nudge was suppressed"
-fi
-assert_contains "$STDERR_F107_NULL" "Next: F003" \
-  "f107 (null description): the feature id still appears with a null description"
-assert_not_contains "$STDERR_F107_NULL" "TypeError" \
-  "f107 (null description): no python traceback reaches stderr"
-
-echo ""
 echo "== F113: harness-continue workflow mode (OVI-143) =="
 
 # Phase 2 rewires the parallel path to orchestrate via the implement-features
@@ -14183,6 +13854,404 @@ chk(m[0].dimensions.length===2,"dedup-unions-dimensions");
 else
   echo "SKIP: node not available -- workflow helper execution tests skipped"
 fi
+
+echo ""
+echo "== OVI-144 WP3.1/3.2: TeammateIdle nudge + Agent Teams flag retirement =="
+
+# Dynamic workflows (worktree-isolated subagents) replaced Agent Teams in
+# v5.7.0, so the TeammateIdle idle-nudge and the experimental Teams env flag
+# are retired. The behavioral suites that exercised check-remaining-tasks.sh
+# are replaced by the absence assertions below plus harness-doctor's migration
+# checks -- a consumer project that still carries the old wiring is now
+# handled by the doctor, not by the hook itself.
+
+if [ -e "$TEMPLATES_DIR/check-remaining-tasks.sh.template" ]; then
+  fail "ovi144: skills/harness-init/check-remaining-tasks.sh.template is deleted -- it still exists"
+else
+  pass "ovi144: skills/harness-init/check-remaining-tasks.sh.template is deleted"
+fi
+if [ -e "$REPO_ROOT/.claude/hooks/check-remaining-tasks.sh" ]; then
+  fail "ovi144: this repo's installed check-remaining-tasks.sh is deleted -- it still exists"
+else
+  pass "ovi144: this repo's installed check-remaining-tasks.sh is deleted"
+fi
+
+OVI144_TMPL="$TEMPLATES_DIR/templates/settings.json.tmpl"
+assert_not_contains "$(cat "$OVI144_TMPL")" "TeammateIdle" \
+  "ovi144: settings.json.tmpl has no TeammateIdle block"
+assert_not_contains "$(cat "$OVI144_TMPL")" "ENV_TEAMS_FLAG" \
+  "ovi144: settings.json.tmpl has no ENV_TEAMS_FLAG placeholder"
+assert_not_contains "$(cat "$OVI144_TMPL")" "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" \
+  "ovi144: settings.json.tmpl no longer sets the Agent Teams env flag"
+
+# AC7: this repo runs on its own harness, so its live settings.json is the
+# other half of the same retirement -- not just the shipped template.
+OVI144_REPO_SETTINGS_ERRORS=$(python3 - "$REPO_ROOT/.claude/settings.json" 2>&1 <<'PYEOF'
+import json
+import sys
+
+with open(sys.argv[1]) as fh:
+    settings = json.load(fh)
+if "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" in settings.get("env", {}):
+    print("env still sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS")
+if "TeammateIdle" in settings.get("hooks", {}):
+    print("hooks still carry a TeammateIdle entry")
+PYEOF
+)
+if [ -z "$OVI144_REPO_SETTINGS_ERRORS" ]; then
+  pass "ovi144: this repo's .claude/settings.json carries no Agent Teams flag or TeammateIdle route"
+else
+  fail "ovi144: this repo's .claude/settings.json -- $OVI144_REPO_SETTINGS_ERRORS"
+fi
+
+# AC4: the dashboard log's TeammateIdle route and its two teammate-only fields.
+OVI144_HOOKS_JSON_ERRORS=$(python3 - "$REPO_ROOT/hooks/hooks.json" 2>&1 <<'PYEOF'
+import json
+import sys
+
+with open(sys.argv[1]) as fh:
+    routes = json.load(fh).get("hooks", {})
+if "TeammateIdle" in routes:
+    print("hooks.json still routes TeammateIdle to dashboard-log.sh")
+PYEOF
+)
+if [ -z "$OVI144_HOOKS_JSON_ERRORS" ]; then
+  pass "ovi144: hooks/hooks.json has no TeammateIdle route"
+else
+  fail "ovi144: $OVI144_HOOKS_JSON_ERRORS"
+fi
+
+DIR_OVI144_DL="$WORK/ovi144-dashboard"
+make_fixture "$DIR_OVI144_DL"
+OVI144_DL_LOG="$DIR_OVI144_DL/.harness/dashboard/sess144.jsonl"
+run_dashboard_log "$DIR_OVI144_DL" \
+  '{"hook_event_name":"TeammateIdle","session_id":"sess144","teammate_name":"reviewer-1","team_name":"legacy-team"}' \
+  '1' >/dev/null
+OVI144_DL_LINE=$(cat "$OVI144_DL_LOG" 2>/dev/null)
+assert_contains "$OVI144_DL_LINE" '"session_id": "sess144"' \
+  "ovi144: an unrouted TeammateIdle-shaped payload is still logged structurally"
+assert_not_contains "$OVI144_DL_LINE" "teammate_name" \
+  "ovi144: dashboard-log no longer extracts teammate_name"
+assert_not_contains "$OVI144_DL_LINE" "team_name" \
+  "ovi144: dashboard-log no longer extracts team_name"
+assert_not_contains "$(cat "$HOOKS_DIR/dashboard-log.py")" "teammate_name" \
+  "ovi144: dashboard-log.py's field list drops teammate_name"
+assert_not_contains "$(cat "$HOOKS_DIR/dashboard-log.sh")" "TeammateIdle" \
+  "ovi144: dashboard-log.sh's header no longer documents a TeammateIdle route"
+assert_contains "$(cat "$HOOKS_DIR/dashboard-log.sh")" "eight wired event names" \
+  "ovi144: dashboard-log.sh's header states the corrected wired-event count"
+
+# AC6: stamp.sh no longer templates the env flag, and team_mode is neither
+# required nor consumed -- an answers file that still carries it (written
+# before this release) is ignored, not rejected.
+assert_not_contains "$(cat "$STAMP_SH")" "ENV_TEAMS_FLAG" \
+  "ovi144: stamp.sh has no ENV_TEAMS_FLAG substitution left"
+assert_not_contains "$(cat "$STAMP_SH")" "TEAM_MODE" \
+  "ovi144: stamp.sh no longer reads a team_mode answer into a variable"
+assert_not_contains "$(cat "$STAMP_SH")" "team_mode)" \
+  "ovi144: stamp.sh's answers-file parser has no team_mode case arm"
+
+OVI144_STAMP_DIR="$WORK/ovi144-stamp"
+mkdir -p "$OVI144_STAMP_DIR"
+cat > "$OVI144_STAMP_DIR/answers.txt" <<'EOF'
+project_name=Phase3 Demo
+stack=python
+mode=new
+EOF
+OVI144_STAMP_P1="$OVI144_STAMP_DIR/p1"
+mkdir -p "$OVI144_STAMP_P1"
+"$STAMP_SH" "$OVI144_STAMP_DIR/answers.txt" "$OVI144_STAMP_P1" >/dev/null 2>&1
+assert_rc0 "$?" "ovi144: stamp.sh runs with no team_mode answer at all"
+OVI144_STAMP_ERRORS=$(python3 - "$OVI144_STAMP_P1" 2>&1 <<'PYEOF'
+import json
+import os
+import sys
+
+target = sys.argv[1]
+with open(os.path.join(target, ".claude", "settings.json")) as fh:
+    settings = json.load(fh)
+if "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" in settings.get("env", {}):
+    print("stamped settings.json still sets the Agent Teams env flag")
+if "TeammateIdle" in settings.get("hooks", {}):
+    print("stamped settings.json still wires TeammateIdle")
+if os.path.exists(os.path.join(target, ".claude", "hooks", "check-remaining-tasks.sh")):
+    print("stamp still writes check-remaining-tasks.sh")
+with open(os.path.join(target, ".harness", "harness.json")) as fh:
+    harness = json.load(fh)
+if "team_structure" in harness:
+    print("stamped harness.json still carries the retired team_structure key")
+PYEOF
+)
+if [ -z "$OVI144_STAMP_ERRORS" ]; then
+  pass "ovi144: a freshly stamped project carries no Agent Teams wiring"
+else
+  fail "ovi144: freshly stamped project -- $OVI144_STAMP_ERRORS"
+fi
+
+OVI144_STAMP_P2="$OVI144_STAMP_DIR/p2"
+mkdir -p "$OVI144_STAMP_P2"
+cat > "$OVI144_STAMP_DIR/answers-legacy.txt" <<'EOF'
+project_name=Phase3 Legacy
+stack=python
+team_mode=teams
+mode=new
+EOF
+OVI144_LEGACY_OUT=$("$STAMP_SH" "$OVI144_STAMP_DIR/answers-legacy.txt" "$OVI144_STAMP_P2" 2>&1)
+OVI144_LEGACY_RC=$?
+assert_rc0 "$OVI144_LEGACY_RC" \
+  "ovi144: an old answers file still carrying team_mode is ignored, not rejected"
+assert_not_contains "$OVI144_LEGACY_OUT" "team_mode" \
+  "ovi144: the legacy team_mode key produces no complaint of its own"
+
+# AC5: the Teams-framed team_structure question becomes a workflow-sizing
+# question writing an optional harness.json workflow.size_guideline.
+OVI144_INIT_SKILL="$TEMPLATES_DIR/SKILL.md"
+assert_not_contains "$(cat "$OVI144_INIT_SKILL")" "team_mode=" \
+  "ovi144: harness-init/SKILL.md's answers file no longer sets team_mode"
+assert_not_contains "$(cat "$OVI144_INIT_SKILL")" "ENV_TEAMS_FLAG" \
+  "ovi144: harness-init/SKILL.md no longer mentions the env-flag placeholder"
+assert_contains "$(cat "$OVI144_INIT_SKILL")" "workflow.size_guideline" \
+  "ovi144: harness-init/SKILL.md names the workflow.size_guideline key"
+assert_contains "$(cat "$OVI144_INIT_SKILL")" "expected parallelism" \
+  "ovi144: harness-init/SKILL.md asks the workflow-sizing question"
+assert_contains "$(cat "$OVI144_INIT_SKILL")" "at most 5 agents per workflow" \
+  "ovi144: harness-init/SKILL.md documents the small size guideline"
+assert_contains "$(cat "$OVI144_INIT_SKILL")" "at most 15 agents per workflow" \
+  "ovi144: harness-init/SKILL.md documents the medium size guideline"
+assert_contains "$(cat "$OVI144_INIT_SKILL")" "no cap" \
+  "ovi144: harness-init/SKILL.md documents the large size guideline"
+assert_contains "$(cat "$OVI144_INIT_SKILL")" "absent key means no advice" \
+  "ovi144: harness-init/SKILL.md states that an absent key means no sizing advice"
+assert_not_contains "$(cat "$TEMPLATES_DIR/templates/harness.json.tmpl")" "team_structure" \
+  "ovi144: harness.json.tmpl no longer stamps the retired team_structure key"
+
+# --- harness-doctor migration checks (AC2, AC8) ---
+#
+# A v5.x-style consumer project: the settings.json content is built inline
+# here (not copied from any current template) precisely so this fixture keeps
+# describing the OLD shape after the templates stop producing it.
+make_stale_teams_fixture() {
+  make_healthy_doctor_fixture "$1"
+  cat > "$1/.claude/settings.json" <<'STALEEOF'
+{
+  "statusLine": {"type": "command", "command": "bash .claude/hooks/statusline.sh"},
+  "env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"},
+  "permissions": {"allow": ["Bash(bash .claude/hooks/*.sh)"]},
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{"type": "command", "command": "bash .claude/hooks/enforce-scope.sh"}]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "bash .claude/hooks/enforce-scope.sh"},
+          {"type": "command", "command": "bash .claude/hooks/verify-git-identity.sh"},
+          {"type": "command", "command": "bash .claude/hooks/commit-gate.sh"}
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {"hooks": [{"type": "command", "command": "bash .claude/hooks/verify-task-quality.sh"}]}
+    ],
+    "TeammateIdle": [
+      {"hooks": [{"type": "command", "command": "bash .claude/hooks/check-remaining-tasks.sh"}]}
+    ]
+  }
+}
+STALEEOF
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$1/.claude/hooks/check-remaining-tasks.sh"
+  chmod +x "$1/.claude/hooks/check-remaining-tasks.sh"
+  printf 'src/parser/\n' > "$1/.claude/teammate-scope.txt"
+}
+
+DIR_OVI144_STALE="$WORK/ovi144-doctor-stale"
+make_stale_teams_fixture "$DIR_OVI144_STALE"
+OUT=$(run_doctor "$DIR_OVI144_STALE")
+assert_contains "$OUT" "still wires TeammateIdle to check-remaining-tasks.sh" \
+  "ovi144-hd: stale TeammateIdle wiring is flagged as a migration step"
+assert_contains "$OUT" "still sets env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" \
+  "ovi144-hd: the stale Agent Teams env flag is flagged as a migration step"
+assert_contains "$OUT" ".claude/hooks/check-remaining-tasks.sh is left over" \
+  "ovi144-hd: an orphan check-remaining-tasks.sh on disk is flagged"
+assert_contains "$OUT" ".claude/teammate-scope.txt is stale Agent Teams state" \
+  "ovi144-hd: a live teammate-scope.txt is flagged"
+
+# A stale .bak from an earlier run must be overwritten with the state this
+# --fix is about to change, never left describing an older shape.
+printf '{"sentinel": "stale-backup"}\n' > "$DIR_OVI144_STALE/.claude/settings.json.bak"
+FIX_OUT=$(run_doctor "$DIR_OVI144_STALE" --fix)
+FIX_RC=$?
+assert_rc0 "$FIX_RC" "ovi144-hd: --fix resolves every migration finding (exit 0)"
+assert_not_contains "$FIX_OUT" "TeammateIdle" \
+  "ovi144-hd: --fix leaves no TeammateIdle finding behind"
+assert_not_contains "$FIX_OUT" "teammate-scope.txt" \
+  "ovi144-hd: --fix leaves no teammate-scope finding behind"
+if [ -e "$DIR_OVI144_STALE/.claude/hooks/check-remaining-tasks.sh" ]; then
+  fail "ovi144-hd: --fix deletes the orphan hook file -- it still exists"
+else
+  pass "ovi144-hd: --fix deletes the orphan hook file"
+fi
+if [ -e "$DIR_OVI144_STALE/.claude/teammate-scope.txt" ]; then
+  fail "ovi144-hd: --fix deletes the stale teammate-scope.txt -- it still exists"
+else
+  pass "ovi144-hd: --fix deletes the stale teammate-scope.txt"
+fi
+OVI144_FIXED_ERRORS=$(python3 - "$DIR_OVI144_STALE/.claude" 2>&1 <<'PYEOF'
+import json
+import os
+import sys
+
+claude_dir = sys.argv[1]
+with open(os.path.join(claude_dir, "settings.json")) as fh:
+    settings = json.load(fh)
+if "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" in settings.get("env", {}):
+    print("--fix left the Agent Teams env flag in place")
+if "TeammateIdle" in settings.get("hooks", {}):
+    print("--fix left an empty TeammateIdle key behind")
+if "TaskCompleted" not in settings.get("hooks", {}):
+    print("--fix dropped an unrelated hook event")
+backup = os.path.join(claude_dir, "settings.json.bak")
+if not os.path.isfile(backup):
+    print("--fix wrote no settings.json.bak")
+else:
+    text = open(backup).read()
+    if "stale-backup" in text:
+        print("--fix left the stale .bak in place instead of overwriting it")
+    if "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" not in text:
+        print(".bak does not capture the pre-fix state")
+PYEOF
+)
+if [ -z "$OVI144_FIXED_ERRORS" ]; then
+  pass "ovi144-hd: --fix drops the env flag and the emptied TeammateIdle key, backing up first"
+else
+  fail "ovi144-hd: --fix -- $OVI144_FIXED_ERRORS"
+fi
+
+# A user-authored TeammateIdle hook alongside the harness entry: only the
+# harness entry goes, and the event key survives.
+DIR_OVI144_USERHOOK="$WORK/ovi144-doctor-userhook"
+make_stale_teams_fixture "$DIR_OVI144_USERHOOK"
+python3 - "$DIR_OVI144_USERHOOK/.claude/settings.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    settings = json.load(fh)
+settings["hooks"]["TeammateIdle"][0]["hooks"].append(
+    {"type": "command", "command": "bash .claude/hooks/my-own-idle-hook.sh"}
+)
+with open(path, "w") as fh:
+    json.dump(settings, fh, indent=2)
+PYEOF
+run_doctor "$DIR_OVI144_USERHOOK" --fix >/dev/null
+OVI144_USERHOOK_ERRORS=$(python3 - "$DIR_OVI144_USERHOOK/.claude/settings.json" 2>&1 <<'PYEOF'
+import json
+import sys
+
+with open(sys.argv[1]) as fh:
+    hooks = json.load(fh).get("hooks", {})
+entries = hooks.get("TeammateIdle")
+if not entries:
+    print("the user-authored TeammateIdle hook was dropped with the harness one")
+    sys.exit(0)
+commands = [h.get("command", "") for entry in entries for h in entry.get("hooks", [])]
+if not any("my-own-idle-hook.sh" in c for c in commands):
+    print("the user-authored hook command did not survive --fix")
+if any("check-remaining-tasks.sh" in c for c in commands):
+    print("the harness hook entry survived --fix")
+PYEOF
+)
+if [ -z "$OVI144_USERHOOK_ERRORS" ]; then
+  pass "ovi144-hd: --fix preserves a user-authored TeammateIdle hook and keeps the key"
+else
+  fail "ovi144-hd: user-authored hook -- $OVI144_USERHOOK_ERRORS"
+fi
+
+# --- AC8: workflow-support checks are messaging, never a hard failure ---
+
+DIR_OVI144_WF="$WORK/ovi144-doctor-workflow"
+make_healthy_doctor_fixture "$DIR_OVI144_WF"
+
+OVI144_OLD_CLI="$WORK/ovi144-bin-old"
+mkdir -p "$OVI144_OLD_CLI"
+printf '#!/bin/sh\necho "2.1.100 (Claude Code)"\n' > "$OVI144_OLD_CLI/claude"
+chmod +x "$OVI144_OLD_CLI/claude"
+OUT=$( (export PATH="$OVI144_OLD_CLI:$PATH"; run_doctor "$DIR_OVI144_WF") )
+RC=$?
+assert_rc0 "$RC" "ovi144-hd: an under-floor CLI version does not fail the report"
+assert_contains "$OUT" \
+  "WARN: claude CLI 2.1.100 < 2.1.154 -- workflow mode unavailable, single-session fallback applies" \
+  "ovi144-hd: an under-floor CLI version prints the exact WARN line"
+
+OVI144_NEW_CLI="$WORK/ovi144-bin-new"
+mkdir -p "$OVI144_NEW_CLI"
+printf '#!/bin/sh\necho "2.1.226 (Claude Code)"\n' > "$OVI144_NEW_CLI/claude"
+chmod +x "$OVI144_NEW_CLI/claude"
+OUT=$( (export PATH="$OVI144_NEW_CLI:$PATH"; run_doctor "$DIR_OVI144_WF") )
+RC=$?
+assert_rc0 "$RC" "ovi144-hd: a supported CLI version keeps the healthy report at exit 0"
+assert_not_contains "$OUT" "WARN: claude CLI" \
+  "ovi144-hd: a supported CLI version prints no version warning"
+assert_not_contains "$OUT" "INFO: claude CLI" \
+  "ovi144-hd: a parseable CLI version does not report itself undetectable"
+
+OVI144_BAD_CLI="$WORK/ovi144-bin-bad"
+mkdir -p "$OVI144_BAD_CLI"
+printf '#!/bin/sh\necho "not-a-version-at-all"\n' > "$OVI144_BAD_CLI/claude"
+chmod +x "$OVI144_BAD_CLI/claude"
+OUT=$( (export PATH="$OVI144_BAD_CLI:$PATH"; run_doctor "$DIR_OVI144_WF") )
+RC=$?
+assert_rc0 "$RC" "ovi144-hd: unparseable CLI output does not fail the report"
+assert_contains "$OUT" "INFO: claude CLI version undetectable -- skipping workflow-support check" \
+  "ovi144-hd: unparseable CLI output prints the exact INFO line"
+
+# CLI genuinely absent: exercised at the module level so the assertion does
+# not depend on whether the machine running this suite happens to have the
+# real CLI on PATH.
+OVI144_ABSENT_ERRORS=$(python3 - "$REPO_ROOT" "$DIR_OVI144_WF" 2>&1 <<'PYEOF'
+import os
+import sys
+import tempfile
+
+repo_root, project_dir = sys.argv[1], sys.argv[2]
+sys.path.insert(0, os.path.join(repo_root, "skills", "harness-doctor"))
+import doctor
+
+with tempfile.TemporaryDirectory() as empty:
+    os.environ["PATH"] = empty
+    notices = doctor.check_workflow_support(project_dir)
+expected = "INFO: claude CLI version undetectable -- skipping workflow-support check"
+if notices != [expected]:
+    print(f"expected exactly [{expected!r}] with no CLI on PATH, got {notices!r}")
+PYEOF
+)
+if [ -z "$OVI144_ABSENT_ERRORS" ]; then
+  pass "ovi144-hd: an absent claude CLI yields the INFO line and skips the check"
+else
+  fail "ovi144-hd: absent CLI -- $OVI144_ABSENT_ERRORS"
+fi
+
+DIR_OVI144_WFOFF="$WORK/ovi144-doctor-workflow-denied"
+make_healthy_doctor_fixture "$DIR_OVI144_WFOFF"
+python3 - "$DIR_OVI144_WFOFF/.claude/settings.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path) as fh:
+    settings = json.load(fh)
+settings["permissions"]["deny"] = ["Workflow"]
+with open(path, "w") as fh:
+    json.dump(settings, fh, indent=2)
+PYEOF
+OUT=$( (export PATH="$OVI144_NEW_CLI:$PATH"; run_doctor "$DIR_OVI144_WFOFF") )
+RC=$?
+assert_rc0 "$RC" "ovi144-hd: a denied Workflow tool does not fail the report"
+assert_contains "$OUT" "WARN: Workflow tool disabled in settings -- workflow mode unavailable" \
+  "ovi144-hd: a denied Workflow tool prints the exact WARN line"
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

@@ -41,19 +41,17 @@ and points to `/harness-init` instead of running any checks.
 2. **Hook set**, each entry classified so a missing artifact is reported at the right
    severity:
    - **Hard-required** (missing or non-executable = error): `verify-task-quality.sh`,
-     `check-remaining-tasks.sh`, `enforce-scope.sh`, `verify-git-identity.sh`,
-     `statusline.sh`.
+     `enforce-scope.sh`, `verify-git-identity.sh`, `statusline.sh`.
    - **Optional-v5** (missing = "upgrade available", not an error): `harness_state.py`
-     (post-OVI-50) — `verify-task-quality.sh` and `check-remaining-tasks.sh` work
-     identically with or without it, so its absence is a suggestion, not a defect.
+     (post-OVI-50) — `verify-task-quality.sh` works identically with or without it,
+     so its absence is a suggestion, not a defect.
    - **Not-yet-applicable**: a commit-content gate (post-S4/OVI-64). The doctor only
      checks for this once the running plugin version actually ships a commit-gate
      template; until then, a missing per-project copy produces no finding of any kind.
-3. **`.claude/settings.json`**: parses; carries `statusLine`, the
-   `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var, a non-empty `permissions.allow`, and
-   hook wiring for `PreToolUse` (enforce-scope.sh, verify-git-identity.sh),
-   `TaskCompleted` (verify-task-quality.sh), and `TeammateIdle`
-   (check-remaining-tasks.sh). The check is structural — it accepts either the
+3. **`.claude/settings.json`**: parses; carries `statusLine`, a non-empty
+   `permissions.allow`, and hook wiring for `PreToolUse` (enforce-scope.sh,
+   verify-git-identity.sh, commit-gate.sh) and `TaskCompleted`
+   (verify-task-quality.sh). The check is structural — it accepts either the
    `"$CLAUDE_PROJECT_DIR"/...` form or a simpler relative path, since both are
    functionally equivalent; it does not enforce one string form over the other. A
    stale `PostCompact` hook block (superseded by the plugin's SessionStart `compact`
@@ -110,6 +108,36 @@ and points to `/harness-init` instead of running any checks.
     markers (a TODO note, or the finding text pasted as a reminder) neither
     satisfies nor triggers the check. An `init.sh` with no `focused_test` support
     at all, or none present, produces no finding — there is nothing to check yet.
+11. **Agent Teams migration** (OVI-144): Agent Teams was retired in v5.7.0, when
+    worktree-isolated workflows replaced it. A project initialized under v5.x still
+    carries four artifacts of it, each reported as a migration step with a fixer:
+    a `TeammateIdle` route to `check-remaining-tasks.sh`, the
+    `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var, the orphaned
+    `.claude/hooks/check-remaining-tasks.sh` itself, and a leftover
+    `.claude/teammate-scope.txt`. The last one is the only remnant that still has an
+    effect — while it exists, `enforce-scope.sh` gates edits against a scope no
+    running teammate owns.
+
+## Workflow-support notices
+
+Workflow mode needs the `claude` CLI at 2.1.154 or newer and the `Workflow` tool
+enabled. Neither is a health defect: without them the single-session fallback applies
+and the project is fine. So these are printed as notice lines beside the report and
+never change its exit code:
+
+```
+WARN: claude CLI 2.1.100 < 2.1.154 -- workflow mode unavailable, single-session fallback applies
+WARN: Workflow tool disabled in settings -- workflow mode unavailable
+INFO: claude CLI version undetectable -- skipping workflow-support check
+```
+
+The version probe is defensive in the same way `harness-continue`'s worker-epoch check
+is: an absent CLI, a non-zero exit, or output this can't parse all produce the `INFO`
+line and skip the check rather than failing anything. "Disabled in settings" means the
+settings explicitly turn the tool off — a `permissions.deny` entry naming `Workflow`,
+or the org-level `disableWorkflows` switch. Anything subtler than those two literal
+forms is left to the skill, which detects unavailability at runtime by the tool simply
+being absent.
 
 ## Finding classification
 
@@ -128,13 +156,20 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/harness-doctor/doctor.py" --fix .
 
 This applies only the mechanical actions from INSTALL.md's upgrade section: remove a
 stale `PostCompact` block; copy `statusline.sh` from the plugin; add the missing
-`statusLine`/`env`/`permissions`/hook wiring to `.claude/settings.json`; append
+`statusLine`/`permissions`/hook wiring to `.claude/settings.json`; append
 `.harness/SESSION_INCOMPLETE` to `.gitignore`; copy `harness_state.py.template` (and
-re-copy `verify-task-quality.sh`/`check-remaining-tasks.sh`, since older per-project
-copies may carry pre-OVI-50 inline logic); write or update `.harness/harness.json`'s
-`plugin_version` to the currently installed plugin's version (F068) — this is how a
-project that predates F068, or has simply drifted, ever acquires or refreshes the
-field; nothing else does.
+re-copy `verify-task-quality.sh`, since older per-project copies may carry pre-OVI-50
+inline logic); write or update `.harness/harness.json`'s `plugin_version` to the
+currently installed plugin's version (F068) — this is how a project that predates
+F068, or has simply drifted, ever acquires or refreshes the field; nothing else does.
+
+It also applies the Agent Teams migration (check 11): it deletes the orphaned
+`check-remaining-tasks.sh` and the stale `teammate-scope.txt`, and strips both
+settings.json remnants under a single `.claude/settings.json.bak` written immediately
+before the edit (overwriting any older `.bak`, so the backup always describes the
+state this run is about to change). Only the harness's own hook entry leaves the
+`TeammateIdle` array — a user-authored hook sitting alongside it is preserved, and the
+event key itself is removed only when nothing is left to run.
 Anything it cannot mechanically resolve —
 missing `python3`/`git`, a hard-required hook that was deleted outright, a JSON parse
 error, a `features.json` validation failure, a `context_summary.md` missing a required

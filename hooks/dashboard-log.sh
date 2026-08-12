@@ -5,7 +5,7 @@
 # gate scripts (F089) cannot reach a plugin-root file, so they independently
 # duplicate this same JSON-line schema inline. Wired in hooks/hooks.json for
 # PreToolUse, PostToolUse, SubagentStart, SubagentStop, PermissionRequest,
-# PermissionDenied, TaskCreated, TaskCompleted, and TeammateIdle.
+# PermissionDenied, TaskCreated, and TaskCompleted.
 #
 # Enablement: VV_HARNESS_DASHBOARD must equal exactly "1" (unset, empty, "0",
 # or any other value is disabled). This check is the very first operation --
@@ -28,17 +28,12 @@
 # record -- cite THAT, not this comment, for the platform doc text itself):
 #   ts               -- UTC timestamp this hook produced the line (not a
 #                        platform-supplied field)
-#   hook_event_name  -- one of the nine wired event names above
+#   hook_event_name  -- one of the eight wired event names above
 #   session_id       -- sanitized, matches the log file name
 #   agent_id         -- when present (subagent/--agent mode only)
 #   agent_type       -- when present (subagent/--agent mode only)
 #   tool_name        -- when present (PreToolUse/PostToolUse/PermissionRequest/
 #                        PermissionDenied)
-#   teammate_name    -- when present (TeammateIdle)
-#   team_name        -- when present (TeammateIdle; platform accepts but
-#                        ignores this argument at spawn time per
-#                        rules/agent-teams-protocol.md, logged here anyway
-#                        since the hook payload still carries it)
 #   summary          -- for tool-bearing events only: a per-tool-type redacted
 #                        summary capped at 200 chars, reusing this repo's
 #                        truncate-and-point convention (F071/F079). NEVER the
@@ -65,7 +60,7 @@ set -uo pipefail
 # Prefers CLAUDE_PROJECT_DIR, matching every gate script's own
 # PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel ...)}"
 # resolution (.claude/hooks/enforce-scope.sh, commit-gate.sh,
-# check-remaining-tasks.sh, verify-task-quality.sh) and hooks/session-start.sh.
+# verify-task-quality.sh) and hooks/session-start.sh.
 # Before this fix, this hook ignored CLAUDE_PROJECT_DIR entirely and always
 # fell back to git-toplevel-or-pwd -- in a harness project nested inside a
 # larger git repo, that resolves to the OUTER repo's root while the gate

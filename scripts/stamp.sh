@@ -11,10 +11,11 @@
 #                   (an unrecognized stack gets no PostToolUse build-check
 #                   hook -- matches today's behavior, which only offers one
 #                   for these 5 known stacks)
-#   team_mode     - single | teams (sets env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
-#                   to "0" or "1"; always present so a doctor/settings check
-#                   can rely on the key existing)
 #   mode          - new | upgrade
+#
+# Any other key in the answers file is ignored. An answers file written before
+# Agent Teams was retired still carries a team_mode line; it no longer selects
+# anything, and its presence is not an error.
 #
 # new mode: aborts (exit 1) if ANY target file already exists, listing every
 # collision, and writes NOTHING.
@@ -47,7 +48,6 @@ fi
 
 PROJECT_NAME=""
 STACK=""
-TEAM_MODE=""
 MODE=""
 while IFS='=' read -r key value || [ -n "$key" ]; do
   case "$key" in
@@ -56,7 +56,6 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
   case "$key" in
     project_name) PROJECT_NAME="$value" ;;
     stack) STACK="$value" ;;
-    team_mode) TEAM_MODE="$value" ;;
     mode) MODE="$value" ;;
   esac
 done < "$ANSWERS_FILE"
@@ -69,23 +68,10 @@ if [ -z "$STACK" ]; then
   echo "stamp.sh: answers file missing required key: stack" >&2
   exit 1
 fi
-if [ -z "$TEAM_MODE" ]; then
-  echo "stamp.sh: answers file missing required key: team_mode" >&2
-  exit 1
-fi
 if [ -z "$MODE" ]; then
   echo "stamp.sh: answers file missing required key: mode" >&2
   exit 1
 fi
-
-case "$TEAM_MODE" in
-  single) ENV_TEAMS_FLAG="0" ;;
-  teams) ENV_TEAMS_FLAG="1" ;;
-  *)
-    echo "stamp.sh: team_mode must be 'single' or 'teams', got: $TEAM_MODE" >&2
-    exit 1
-    ;;
-esac
 
 case "$MODE" in
   new|upgrade) ;;
@@ -112,12 +98,12 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # Render the three templated JSON files into $WORKDIR first, entirely
 # independent of $TARGET_DIR -- new mode's collision pre-flight needs every
 # target's content decided before touching disk.
-python3 - "$TEMPLATES_DIR" "$WORKDIR" "$PROJECT_NAME" "$STACK" "$CREATED" "$ENV_TEAMS_FLAG" "$POSTTOOLUSE_FRAGMENT" "$PLUGIN_ROOT" <<'PYEOF'
+python3 - "$TEMPLATES_DIR" "$WORKDIR" "$PROJECT_NAME" "$STACK" "$CREATED" "$POSTTOOLUSE_FRAGMENT" "$PLUGIN_ROOT" <<'PYEOF'
 import json
 import os
 import sys
 
-templates_dir, workdir, project_name, stack, created, env_teams_flag, posttooluse_fragment, plugin_root = sys.argv[1:9]
+templates_dir, workdir, project_name, stack, created, posttooluse_fragment, plugin_root = sys.argv[1:8]
 
 
 def read(path):
@@ -146,7 +132,7 @@ if posttooluse_fragment:
 settings_text = substitute(
     read(f"{templates_dir}/settings.json.tmpl"),
     {"POSTTOOLUSE_HOOKS": posttooluse_json},
-    {"ENV_TEAMS_FLAG": env_teams_flag},
+    {},
 )
 json.loads(settings_text)
 
@@ -192,11 +178,10 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Byte-verbatim files: the 4 gate hook templates, harness_state.py,
+# Byte-verbatim files: the 3 gate hook templates, harness_state.py,
 # commit-gate.sh, and the plugin's shared statusline.sh.
 mkdir -p "$WORKDIR/hooks"
 cp "$SKILL_DIR/verify-task-quality.sh.template" "$WORKDIR/hooks/verify-task-quality.sh"
-cp "$SKILL_DIR/check-remaining-tasks.sh.template" "$WORKDIR/hooks/check-remaining-tasks.sh"
 cp "$SKILL_DIR/enforce-scope.sh.template" "$WORKDIR/hooks/enforce-scope.sh"
 cp "$SKILL_DIR/verify-git-identity.sh.template" "$WORKDIR/hooks/verify-git-identity.sh"
 cp "$SKILL_DIR/commit-gate.sh.template" "$WORKDIR/hooks/commit-gate.sh"
@@ -207,7 +192,6 @@ MANIFEST="settings.json:.claude/settings.json
 harness.json:.harness/harness.json
 features.json:.harness/features.json
 hooks/verify-task-quality.sh:.claude/hooks/verify-task-quality.sh
-hooks/check-remaining-tasks.sh:.claude/hooks/check-remaining-tasks.sh
 hooks/enforce-scope.sh:.claude/hooks/enforce-scope.sh
 hooks/verify-git-identity.sh:.claude/hooks/verify-git-identity.sh
 hooks/commit-gate.sh:.claude/hooks/commit-gate.sh
