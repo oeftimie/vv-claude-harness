@@ -133,6 +133,13 @@ requalification pass, since the table alone doesn't change what actually gets sp
 
 Default to Sonnet for implementers; use Opus only when justified.
 
+## Model policy
+
+The lead/orchestrator runs the stronger model tier — decomposition, integration, and
+synthesis are the highest-leverage reasoning in a session — while implementers run the
+execution tier for scoped, spec-verified TDD. The tier split is policy; which model
+NAME fills each tier is a binding, held in the Model Selection table above.
+
 ## Dynamic overrides
 
 **Static elevation criteria**: a feature is elevated risk — upgrade its implementer to
@@ -166,6 +173,20 @@ exists (first session, new scope), default to Sonnet.
 
 **Metrics hygiene**: these historical signals apply within the current worker epoch (F016/OVI-57's `.harness/harness.json` `worker` block); signals from a prior epoch are advisory only, not a mechanical trigger, since a correction-cycle count from a different model generation doesn't describe this one.
 
+## Escalation
+
+**When review routes to Opus**: the reviewer runs Opus by its agent definition — no
+per-launch flag needed; the `reviewModel` override exists only to deliberately
+downgrade (e.g. a cheap Sonnet pass). An elevated-risk feature (`featureSpecs[ID].risk:
+"elevated"`) also gets a high-effort review pass, and its implementer is upgraded to
+Opus per the Dynamic overrides above.
+
+**When a feature falls back to single-session**: a feature that returns `status:
+blocked`, or whose review rounds are exhausted without an APPROVE (`maxReviewRounds`
+reached on REVISE/REJECT), leaves the parallel path: surfaced to the user with its
+structured findings — never auto-merged — then fixed directly by the lead in
+single-session mode, or re-launched with a corrected spec.
+
 ## Lead-owned state
 
 The lead is the only writer of `.harness/features.json`, `.harness/context_summary.md`,
@@ -180,10 +201,36 @@ field.
 The lead:
 1. Reads project state (`.harness/features.json`, `claude-progress.txt`, `context_summary.md`, git log) and selects features using `scope`, `depends_on`, and the operational metrics above
 2. Mirrors tasks (`TaskCreate` with `metadata.feature_id`, dependencies via `addBlockedBy` derived from `depends_on`) and sets `assigned_to` when launching
-3. Integrates returned work per `/harness-continue` Step 5b's ordered flow, updating `features.json` (status, test_file, coverage, approaches_tried, scope_expansions, failure_reason as appropriate)
+3. Integrates returned work in the order pinned in Task mirroring and integration order below, updating `features.json` (status, test_file, coverage, approaches_tried, scope_expansions, failure_reason as appropriate)
 4. Runs the retrospective, updates `context_summary.md` (Meta-Session + Meta-Patterns), and writes the session handoff to `claude-progress.txt`
 
 **Locking is advisory and hook-scoped, not a substitute for this rule (OVI-107).** `harness_state.py`'s `increment-correction-cycles` write path holds an `fcntl.flock` for the duration of its own read-modify-write-rename, which prevents concurrent *hook* invocations (e.g. two `TaskCompleted` callbacks) from losing each other's writes. It does NOT protect against the lead's own direct `Edit`/`Write` calls on `features.json` — those go through no lock at all, by construction, since Edit/Write aren't routed through `harness_state.py`. The lock closes a hook-vs-hook race; it does not make lead-vs-hook writes safe to interleave. The rule above (lead owns these three files; hooks only touch `correction_cycles` via the shared module) is still what prevents that class of conflict, not the lock.
+
+## Task mirroring and integration order
+
+Before any parallel launch, the lead mirrors the batch into tasks:
+`TaskCreate` one task per feature, each carrying `metadata.feature_id`
+(dependencies via `addBlockedBy` derived from `depends_on`). This arms the
+`TaskCompleted` gate's focused-test and coverage stages. `verify-task-quality.sh`
+has a task-subject `FXXX:` fallback, but a subject without the exact prefix, or
+with a mismatched ID, silently skips those stages — set `feature_id` explicitly;
+never rely on the fallback.
+
+Integration is per feature, in this order, only for features returned approved:
+**run the feature's focused test + smoke locally → merge its `worktree_branch` →
+flip `features.json` status to passing → mark the mirrored task complete (gate
+fires) → commit (commit gate fires; `git add` and `git commit` as SEPARATE
+calls)**. Never flip status or mark a task complete before its tests pass on the
+merged code.
+
+## Worktree hygiene
+
+Workflow scripts never merge, never commit to the integration branch, and never edit
+`.harness/features.json` — the lead integrates. An implementer's committed worktree
+branch is its durable deliverable: work survives a dead agent because it is committed
+on that branch, not because the agent reported it. After merging a feature's branch,
+remove the changed worktree before any repo-wide suite run — a leftover worktree
+hands repo-wide assertions a duplicate copy of every file (verified in Phase 0).
 
 ## Integration failure recovery
 
@@ -200,6 +247,53 @@ When merging worktree branches reveals integration issues:
 The goal is always: get back to green tests as fast as possible. A clean revert is
 better than a broken merge — each feature's work sits on its own worktree branch, so
 selective reverts are trivial.
+
+## Script authoring constraints
+
+Workflow scripts (`workflows/*.js`) run under resume/replay: a resumed run replays
+completed agents from cache, so the script text must be deterministic.
+
+- `meta` is a pure literal — name, description, phases as literal values only, never
+  computed fields.
+- No `Date.now()`, `Math.random()`, `new Date()`, and no dynamic `import()` — any of
+  these breaks byte-for-byte replay.
+- `args` arrives as a JSON-encoded STRING on the current CLI — parse it defensively
+  (guarded `JSON.parse`) and fail fast with a clear error on bad input.
+- Every loop whose iteration count depends on agent output is bounded: put a `budget`
+  guard on unbounded loops, and an explicit round cap on fix-and-recheck cycles
+  (`maxReviewRounds` bounds the implement→review loop).
+- Any silently applied cap or drop emits `log()`: a capped loop, a dead agent, a
+  skipped optional pass each log what was capped or dropped — never degrade silently.
+
+## Structured-output contracts
+
+Result shapes for workflow agents are contracts, enforced at runtime by the `schema`
+option on each `agent()` call in `workflows/*.js`; this is their single canonical
+statement, which `skills/harness-continue/launch-prompts.md`'s templates reference.
+
+- **Implementer result**: `{ feature_id, status: implemented|blocked, files_changed[],
+  test_file, tests_run: {passed, failed}, worktree_branch, head_sha, notes, blocker }`
+  — required: `feature_id`, `status`, `files_changed`, `worktree_branch`.
+- **Reviewer result**: `{ feature_id, verdict: APPROVE|REVISE|REJECT, findings[],
+  rounds_used }` — each finding carries `summary` (required) plus optional `file`,
+  `line`, and `severity: critical|major|minor`.
+- **Conformance result**: `{ feature_id, criteria: [{ criterion, result:
+  PASS|FAIL|NOT-TESTABLE, note }] }` — one entry per acceptance criterion.
+
+## Author blindness
+
+Successor to the F017 clause, applied to every review-shaped prompt: a reviewer or
+conformance prompt never includes the implementation diff or the implementer's tests
+as derivation input.
+
+- A **reviewer** prompt carries the verified spec and the branch name only. The
+  reviewer inspects the diff itself with read-only git — that is its job — but is
+  never handed the implementer's notes, rationale, or completion message, so the
+  review cannot be talked into agreeing.
+- A **conformance** prompt carries the verified spec ALONE: never the implementation
+  diff, never the implementer's test files, never any completion message — a single
+  context that writes both code and tests can satisfy a bug with a test that matches
+  the bug.
 
 ## Dual-Engine Review (optional, F018/OVI-66)
 
