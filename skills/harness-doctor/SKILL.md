@@ -41,23 +41,26 @@ and points to `/harness-init` instead of running any checks.
 2. **Hook set**, each entry classified so a missing artifact is reported at the right
    severity:
    - **Hard-required** (missing or non-executable = error): `verify-task-quality.sh`,
-     `check-remaining-tasks.sh`, `enforce-scope.sh`, `verify-git-identity.sh`,
-     `statusline.sh`.
+     `enforce-scope.sh`, `verify-git-identity.sh`, `statusline.sh`.
    - **Optional-v5** (missing = "upgrade available", not an error): `harness_state.py`
-     (post-OVI-50) — `verify-task-quality.sh` and `check-remaining-tasks.sh` work
-     identically with or without it, so its absence is a suggestion, not a defect.
+     (post-OVI-50) — `verify-task-quality.sh` works identically with or without it,
+     so its absence is a suggestion, not a defect.
+   - **Stale Agent Teams artifacts** (present = flagged for removal, not an error): a
+     leftover `check-remaining-tasks.sh` hook or `.claude/teammate-scope.txt` file
+     from a project initialized before the v6 Agent Teams retirement. Nothing invokes
+     them anymore; the doctor flags them and `--fix` removes them.
    - **Not-yet-applicable**: a commit-content gate (post-S4/OVI-64). The doctor only
      checks for this once the running plugin version actually ships a commit-gate
      template; until then, a missing per-project copy produces no finding of any kind.
-3. **`.claude/settings.json`**: parses; carries `statusLine`, the
-   `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var, a non-empty `permissions.allow`, and
-   hook wiring for `PreToolUse` (enforce-scope.sh, verify-git-identity.sh),
-   `TaskCompleted` (verify-task-quality.sh), and `TeammateIdle`
-   (check-remaining-tasks.sh). The check is structural — it accepts either the
-   `"$CLAUDE_PROJECT_DIR"/...` form or a simpler relative path, since both are
-   functionally equivalent; it does not enforce one string form over the other. A
-   stale `PostCompact` hook block (superseded by the plugin's SessionStart `compact`
-   handling) is flagged for removal.
+3. **`.claude/settings.json`**: parses; carries `statusLine`, a non-empty
+   `permissions.allow`, and hook wiring for `PreToolUse` (enforce-scope.sh,
+   verify-git-identity.sh) and `TaskCompleted` (verify-task-quality.sh). The check is
+   structural — it accepts either the `"$CLAUDE_PROJECT_DIR"/...` form or a simpler
+   relative path, since both are functionally equivalent; it does not enforce one
+   string form over the other. Stale blocks are flagged for removal: a `PostCompact`
+   hook block (superseded by the plugin's SessionStart `compact` handling), a
+   `TeammateIdle` hook block, and the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var
+   (both dead since the v6 Agent Teams retirement).
 4. **`.gitignore`**: does not exclude `.claude/` without the `!.claude/hooks/` and
    `!.claude/settings.json` exceptions, and does include `.harness/SESSION_INCOMPLETE`.
 5. **`.harness/` state**: `harness.json` and `features.json` parse; `features.json`
@@ -110,6 +113,12 @@ and points to `/harness-init` instead of running any checks.
     markers (a TODO note, or the finding text pasted as a reminder) neither
     satisfies nor triggers the check. An `init.sh` with no `focused_test` support
     at all, or none present, produces no finding — there is nothing to check yet.
+11. **Workflow availability**: workflow mode (the parallel path since the v6 Agent
+    Teams retirement) needs Claude Code ≥ 2.1.154 and the `Workflow` tool not
+    org-disabled via `disableWorkflows`. Both are probed defensively and degrade to a
+    WARN/INFO message, never a hard failure — an older CLI or a disabled tool means
+    `/harness-continue` falls back to plain worktree-isolated subagents, which is a
+    working configuration, not a broken one.
 
 ## Finding classification
 
@@ -127,10 +136,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/harness-doctor/doctor.py" --fix .
 ```
 
 This applies only the mechanical actions from INSTALL.md's upgrade section: remove a
-stale `PostCompact` block; copy `statusline.sh` from the plugin; add the missing
-`statusLine`/`env`/`permissions`/hook wiring to `.claude/settings.json`; append
+stale `PostCompact` block; remove stale Agent Teams wiring — the `TeammateIdle` hook
+block and the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var — from
+`.claude/settings.json` (writing a `settings.json.bak` backup first) and delete a
+leftover `check-remaining-tasks.sh` or `.claude/teammate-scope.txt`; copy
+`statusline.sh` from the plugin; add the missing
+`statusLine`/`permissions`/hook wiring to `.claude/settings.json`; append
 `.harness/SESSION_INCOMPLETE` to `.gitignore`; copy `harness_state.py.template` (and
-re-copy `verify-task-quality.sh`/`check-remaining-tasks.sh`, since older per-project
+re-copy `verify-task-quality.sh`, since older per-project
 copies may carry pre-OVI-50 inline logic); write or update `.harness/harness.json`'s
 `plugin_version` to the currently installed plugin's version (F068) — this is how a
 project that predates F068, or has simply drifted, ever acquires or refreshes the

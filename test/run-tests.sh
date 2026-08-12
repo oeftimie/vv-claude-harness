@@ -2244,7 +2244,7 @@ else
   fail "z: the done-definition sentence appears $DONE_DEF_COUNT times across *.md, expected 1"
 fi
 
-for DOC_FILE in rules/agent-teams-protocol.md skills/harness-init/SKILL.md README.md; do
+for DOC_FILE in rules/parallel-work.md skills/harness-init/SKILL.md README.md; do
   if grep -q "schemas/feature.schema.json" "$REPO_ROOT/$DOC_FILE"; then
     pass "z: $DOC_FILE links to schemas/feature.schema.json"
   else
@@ -7816,55 +7816,50 @@ else
   fail "mnt: AGENTS.md is missing the retirement-condition rule"
 fi
 
-PROTOCOL_MD="$REPO_ROOT/rules/agent-teams-protocol.md"
-PROTOCOL_RETIREMENT_PATTERN="plan_approval_response.*[Rr]etirement condition"
-PROTOCOL_RETIREMENT_COUNT=$(grep -c "$PROTOCOL_RETIREMENT_PATTERN" "$PROTOCOL_MD")
-if [ "$PROTOCOL_RETIREMENT_COUNT" -eq 2 ]; then
-  pass "mnt: both plan_approval_response mentions have a retirement condition"
+# WP3.5 (OVI-144 Phase 3): Agent Teams is retired. rules/agent-teams-protocol.md
+# is deleted; rules/parallel-work.md is the surviving home of its
+# mechanism-agnostic content (dynamic overrides, model selection, lead-owned
+# state, feature schema, dual-engine review, cost considerations). Everything
+# Teams-mechanism-specific (SendMessage protocol, plan-approval workaround,
+# TeammateIdle reassignment, F061/F067/F069 limitation callouts) went with it.
+if [ ! -f "$REPO_ROOT/rules/agent-teams-protocol.md" ]; then
+  pass "wp35: rules/agent-teams-protocol.md is deleted"
 else
-  fail "mnt: expected 2 retirement conditions, found $PROTOCOL_RETIREMENT_COUNT"
+  fail "wp35: rules/agent-teams-protocol.md still exists"
 fi
-
-if grep -q "Correction (\`MAINTENANCE_LOG.md\` run #0" "$PROTOCOL_MD" \
-  && grep -q "could not confirm" "$PROTOCOL_MD" \
-  && grep -q "open follow-up" "$PROTOCOL_MD"; then
-  pass "mnt: the run-#0 correction is hedged, not a flat counter-claim"
+PARALLEL_MD="$REPO_ROOT/rules/parallel-work.md"
+if [ -f "$PARALLEL_MD" ] \
+  && grep -q "^## Dynamic overrides" "$PARALLEL_MD" \
+  && grep -q "^## Model Selection" "$PARALLEL_MD" \
+  && grep -q "^## Lead-owned state" "$PARALLEL_MD"; then
+  pass "wp35: rules/parallel-work.md exists with the Dynamic overrides / Model Selection / Lead-owned state sections"
 else
-  fail "mnt: the run-#0 correction is missing or reads as an unhedged counter-claim"
+  fail "wp35: rules/parallel-work.md is missing or lacks one of its three anchor sections"
 fi
-if ! grep -q "not accurate as of the current CLI" "$PROTOCOL_MD"; then
-  pass "mnt: the pre-fix overstated correction wording is gone"
+# The elevation criteria referenced by CLAUDE.md and harness-issue-prep live in
+# the Dynamic overrides section.
+if grep -q "10+ files" "$PARALLEL_MD" \
+  && grep -q "First feature in a new codebase" "$PARALLEL_MD"; then
+  pass "wp35: parallel-work.md carries the risk-elevation criteria"
 else
-  fail "mnt: the pre-fix overstated correction wording is still present"
+  fail "wp35: parallel-work.md is missing the risk-elevation criteria"
 fi
-
-PROTOCOL_POINTER_COUNT=$(grep -c \
-  "unverified as of \`MAINTENANCE_LOG.md\` run #0" "$PROTOCOL_MD")
-if [ "$PROTOCOL_POINTER_COUNT" -eq 3 ]; then
-  pass "mnt: all 3 still-instructional plan_approval_request sites carry a pointer"
-else
-  fail "mnt: expected 3 plan_approval_request pointer sites, found $PROTOCOL_POINTER_COUNT"
-fi
-
-# F059: rules/agent-teams-protocol.md previously documented only team-wide
-# shutdown (step 15, after step 10 synthesizes ALL teammates' work) -- no
-# per-teammate early release existed for a teammate that structurally cannot
-# claim any remaining work (e.g. a reviewer). Pin both the new lead-side rule
-# and its explicit carve-out for implementers (who must stay available for
-# TeammateIdle reassignment) so a future edit can't silently drop either half.
-if grep -q "Early release for role-limited teammates" "$PROTOCOL_MD" \
-  && grep -q "implementer between features is NOT" "$PROTOCOL_MD"; then
-  pass "mnt (F059): agent-teams-protocol.md documents per-teammate early release, with the implementer carve-out"
-else
-  fail "mnt (F059): agent-teams-protocol.md is missing the early-release rule or its implementer carve-out"
-fi
-
+# No Teams machinery vocabulary survives in the surviving rule file or the
+# harness-continue skill.
 HARNESS_CONTINUE_SKILL="$REPO_ROOT/skills/harness-continue/SKILL.md"
-if grep -q "Completion report from a role-limited teammate" "$HARNESS_CONTINUE_SKILL" \
-  && grep -q "an implementer between features -- it remains a legitimate" "$HARNESS_CONTINUE_SKILL"; then
-  pass "mnt (F059): harness-continue/SKILL.md's Phase 3 monitoring step covers early release"
+for WP35_FILE in "$PARALLEL_MD" "$HARNESS_CONTINUE_SKILL" \
+  "$REPO_ROOT/skills/harness-continue/launch-prompts.md"; do
+  WP35_NAME=$(basename "$WP35_FILE")
+  if ! grep -q "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS\|TeammateIdle\|teammate-scope.txt\|SendMessage" "$WP35_FILE"; then
+    pass "wp35: $WP35_NAME carries no Agent Teams machinery reference"
+  else
+    fail "wp35: $WP35_NAME still references Agent Teams machinery"
+  fi
+done
+if ! grep -q "Step 5c" "$HARNESS_CONTINUE_SKILL"; then
+  pass "wp35: harness-continue/SKILL.md's Step 5c legacy path is deleted"
 else
-  fail "mnt (F059): harness-continue/SKILL.md is missing the Phase 3 early-release guidance"
+  fail "wp35: harness-continue/SKILL.md still has a Step 5c reference"
 fi
 
 # F055's reviewer.md text ("the lead shuts teammates down at Phase 5 teardown...
@@ -7881,35 +7876,8 @@ else
   fail "mnt (F059): agents/reviewer.md still asserts the pre-F059 Phase-5-only shutdown timing"
 fi
 
-# F061: enforce-scope.sh has no documented way to distinguish the lead's own
-# session from a teammate's (confirmed via direct fetch of Claude Code's own
-# hooks and agent-teams docs), so while any teammate scope file exists the
-# lead's own actions are gated by the same LEAD_OWNED mechanism. Pin the
-# limitation callout and its retirement condition, matching the established
-# Known-bug/retirement-condition convention already used for
-# plan_approval_response in this same file.
-if grep -q "Known limitation (F061)" "$PROTOCOL_MD" \
-  && grep -q "this limitation retires" "$PROTOCOL_MD"; then
-  pass "mnt (F061): agent-teams-protocol.md documents the lead/teammate-blindness limitation and its own retirement condition"
-else
-  fail "mnt (F061): agent-teams-protocol.md is missing the F061 limitation callout or its retirement condition"
-fi
-if grep -q "NOT platform-documented for genuine Agent Teams" "$PROTOCOL_MD"; then
-  pass "mnt (F061): the limitation callout correctly declines worktree isolation as a fix"
-else
-  fail "mnt (F061): the limitation callout is missing the worktree-isolation caveat"
-fi
-
-# F061 round 2 (review of PR #95): the file's own plan_approval_response entry
-# uses a DUAL placement (an inline blockquote AND a ## Known Limitations
-# bullet) -- F061's original callout had only the inline form, so a reader who
-# goes straight to Known Limitations wouldn't find it. Pin the bullet
-# specifically, distinct from the inline callout checked above.
-if grep -q "Lead/teammate hook blindness (F061)" "$PROTOCOL_MD"; then
-  pass "mnt (F061): a Known Limitations bullet points to the inline callout"
-else
-  fail "mnt (F061): missing the Known Limitations bullet for F061"
-fi
+# F061's Teams-specific limitation callouts were deleted with the protocol
+# file (WP3.5); only the maintenance-runbook probe wiring remains asserted.
 
 # F061's retirement condition named a check (re-fetch the hooks docs for a new
 # discriminator field) that no existing maintenance probe performs -- probe
@@ -7925,27 +7893,8 @@ else
   fail "mnt (F061): the maintenance runbook has no probe for F061's retirement condition"
 fi
 
-# F067: check-remaining-tasks.sh's escape hatch was tool-inventory-only
-# (F055), so a general-purpose subagent given a scoped one-shot assignment
-# (Edit/Write by construction, but no open-ended implementation work) had no
-# way to signal "my assignment is done" short of an idle-nudge loop.
-if grep -q "Extension to scoped one-shot assignments (F067)" "$PROTOCOL_MD" \
-  && grep -q "is NOT role-limited by construction" "$PROTOCOL_MD"; then
-  pass "mnt (F067): agent-teams-protocol.md extends F059's early-release rule to scoped one-shot assignments"
-else
-  fail "mnt (F067): agent-teams-protocol.md is missing the F067 early-release extension"
-fi
-if grep -q "Known limitation (F067)" "$PROTOCOL_MD" \
-  && grep -q "ever documents a task-list field" "$PROTOCOL_MD"; then
-  pass "mnt (F067): agent-teams-protocol.md documents the TeammateIdle task-list-blindness limitation and its retirement condition"
-else
-  fail "mnt (F067): agent-teams-protocol.md is missing the F067 limitation callout or its retirement condition"
-fi
-if grep -q "TeammateIdle can't see task-list state (F067)" "$PROTOCOL_MD"; then
-  pass "mnt (F067): a Known Limitations bullet points to the inline F067 callout"
-else
-  fail "mnt (F067): missing the Known Limitations bullet for F067"
-fi
+# F067's Teams-specific limitation callouts were deleted with the protocol
+# file (WP3.5); only the maintenance-runbook probe wiring remains asserted.
 if grep -q "F067 here as FIXED" "$RUNBOOK_MD"; then
   pass "mnt (F067): the maintenance runbook has a probe wired to F067's retirement condition"
 else
@@ -8259,13 +8208,13 @@ else
   fail "f016: subtraction candidate table -- $SUBTRACTION_ERRORS"
 fi
 
-# AC4: protocol epoch sentence present.
-PROTOCOL_MD_F016="$REPO_ROOT/rules/agent-teams-protocol.md"
+# AC4: rule-file epoch sentence present (moved to parallel-work.md in WP3.5).
+PROTOCOL_MD_F016="$REPO_ROOT/rules/parallel-work.md"
 if grep -q "Metrics hygiene" "$PROTOCOL_MD_F016" && grep -q "worker epoch" "$PROTOCOL_MD_F016" \
   && grep -q "advisory only" "$PROTOCOL_MD_F016"; then
-  pass "f016: rules/agent-teams-protocol.md's metrics-hygiene epoch sentence is present (AC4)"
+  pass "f016: rules/parallel-work.md's metrics-hygiene epoch sentence is present (AC4)"
 else
-  fail "f016: the metrics-hygiene epoch sentence is missing from rules/agent-teams-protocol.md"
+  fail "f016: the metrics-hygiene epoch sentence is missing from rules/parallel-work.md"
 fi
 
 # AC5 (amendment): exactly one bindings table exists -- scanned repo-wide for any
@@ -10481,13 +10430,13 @@ fi
 # file -- the assertion message claims a specific section, so the check should too
 # (PR #102 round 2 review: relocating the line elsewhere in the file still passed
 # a whole-file grep).
-COST_SECTION_ERRORS=$(python3 - "$REPO_ROOT/rules/agent-teams-protocol.md" <<'PYEOF'
+COST_SECTION_ERRORS=$(python3 - "$REPO_ROOT/rules/parallel-work.md" <<'PYEOF'
 import re
 import sys
 
 path = sys.argv[1]
 text = open(path).read()
-match = re.search(r"## Cost Considerations\n(.*?)(?=\n## )", text, re.DOTALL)
+match = re.search(r"## Cost Considerations\n(.*?)(?=\n## |\Z)", text, re.DOTALL)
 if not match:
     print("could not find the Cost Considerations section")
     sys.exit(0)
@@ -10499,7 +10448,7 @@ if "one Sonnet pass" not in section:
 PYEOF
 )
 if [ -z "$COST_SECTION_ERRORS" ]; then
-  pass "f017: the token cost NFR is documented in rules/agent-teams-protocol.md's Cost Considerations"
+  pass "f017: the token cost NFR is documented in rules/parallel-work.md's Cost Considerations"
 else
   fail "f017: token cost NFR -- $COST_SECTION_ERRORS"
 fi
@@ -10507,8 +10456,8 @@ fi
 # AC4: harness-continue documents the trigger conditions and the spawn prompt
 # template -- anchored to the step 3.5 block itself, not the whole file. A whole-file
 # grep for "require_plan_approval: true" would pass even with that clause removed
-# from step 3.5, since the identical string already exists in an unrelated Phase 1
-# bullet elsewhere in this file (caught in PR #102 round 1 review, reproduced live).
+# from step 3.5, since the identical string can exist elsewhere in this file
+# (caught in PR #102 round 1 review, reproduced live).
 HC_SKILL_F017="$REPO_ROOT/skills/harness-continue/SKILL.md"
 STEP_3_5_ERRORS=$(python3 - "$HC_SKILL_F017" <<'PYEOF'
 import re
@@ -10549,7 +10498,7 @@ fi
 echo ""
 echo "== F018: dual-engine review =="
 
-PROTOCOL_MD_F018="$REPO_ROOT/rules/agent-teams-protocol.md"
+PROTOCOL_MD_F018="$REPO_ROOT/rules/parallel-work.md"
 DUAL_ENGINE_ERRORS=$(python3 - "$PROTOCOL_MD_F018" <<'PYEOF'
 import re
 import sys
@@ -10609,7 +10558,7 @@ if "agent-os" not in section or "nodera-studio" not in section or "MIT" not in s
 PYEOF
 )
 if [ -z "$DUAL_ENGINE_ERRORS" ]; then
-  pass "f018: rules/agent-teams-protocol.md's Dual-Engine Review section covers AC1/AC2 and spec items 4-5"
+  pass "f018: rules/parallel-work.md's Dual-Engine Review section covers AC1/AC2 and spec items 4-5"
 else
   fail "f018: Dual-Engine Review section -- $DUAL_ENGINE_ERRORS"
 fi
@@ -10905,12 +10854,12 @@ else
   fail "f064: $F064_STEP_ERRORS"
 fi
 
-# Phase 1 instructs the lead to write risk/require_plan_approval onto the feature
-# object, not just decide them in-session.
+# Step 5b step 1 instructs the lead to write risk/require_plan_approval onto the
+# feature object, not just decide them in-session.
 if grep -q "write them onto the feature object in \`features.json\` now (F064)" "$F064_CONTINUE_SKILL"; then
-  pass "f064: harness-continue/SKILL.md Phase 1 writes risk/require_plan_approval onto the feature object"
+  pass "f064: harness-continue/SKILL.md Step 5b step 1 writes risk/require_plan_approval onto the feature object"
 else
-  fail "f064: harness-continue/SKILL.md Phase 1 does not persist risk/require_plan_approval"
+  fail "f064: harness-continue/SKILL.md Step 5b step 1 does not persist risk/require_plan_approval"
 fi
 
 echo ""
@@ -10984,22 +10933,9 @@ else
   fail "f069: README.md missing the corrected TeammateIdle fact"
 fi
 
-# The design question F067 deliberately deferred: should check-remaining-tasks.sh
-# key its escape hatch off teammate_name mechanically? Investigated and declined
-# -- pin the decision, its three reasons, and the retirement condition, matching
-# how F061's Known Limitation callout is pinned.
-if grep -q "Considered and declined: a \`teammate_name\`-keyed mechanical carve-out (F069)" \
-  "$REPO_ROOT/rules/agent-teams-protocol.md"; then
-  pass "f069: rules/agent-teams-protocol.md documents the considered-and-declined design decision"
-else
-  fail "f069: rules/agent-teams-protocol.md missing the considered-and-declined section"
-fi
-F069_REASON_COUNT=$(grep -c "^[0-9]\. \*\*No enforced naming contract\|^[0-9]\. \*\*A wrong guess is asymmetric\|^[0-9]\. \*\*The correct remedy already exists" "$REPO_ROOT/rules/agent-teams-protocol.md")
-if [ "$F069_REASON_COUNT" -eq 3 ]; then
-  pass "f069: all three declined-design reasons are present"
-else
-  fail "f069: expected 3 declined-design reasons, found $F069_REASON_COUNT"
-fi
+# The considered-and-declined design section was Teams-mechanism-specific and
+# was deleted with the protocol file (WP3.5); the hook-comment and runbook
+# assertions below still pin the decision where it remains recorded.
 
 # check-remaining-tasks.sh's comment must no longer say the mechanical fix is
 # merely "tracked as a follow-up" (implying still-open/undecided) -- it was
@@ -13992,10 +13928,11 @@ echo "== F113: harness-continue workflow mode (OVI-143) =="
 
 # Phase 2 rewires the parallel path to orchestrate via the implement-features
 # workflow. These assertions pin the load-bearing decisions from the spec gate:
-# the three-way mode decision, mandatory feature_id-carrying task mirroring, the
+# the mode decision, mandatory feature_id-carrying task mirroring, the
 # integration ORDER (tests before merge before status-flip before task-complete
 # before commit), the fallback pointer, and that no step tells the lead to edit
-# features.json before tests pass. Teams text is demoted, not deleted.
+# features.json before tests pass. Phase 3 (WP3.5) retired the legacy Teams
+# path entirely: workflow mode plus the plain-subagent fallback are all there is.
 HC_SKILL_F113="$REPO_ROOT/skills/harness-continue/SKILL.md"
 HC_SKILL_SRC=$(cat "$HC_SKILL_F113")
 
@@ -14046,15 +13983,19 @@ assert_contains "$HC_SKILL_SRC" "remove the changed worktree before any repo-wid
   "f113: leftover-worktree hygiene step is present (Phase 0 Q4)"
 assert_contains "$HC_SKILL_SRC" "resumeFromRunId" \
   "f113: unfinished features are resumed/reconciled, not dropped (run-continuity)"
-# Legacy Teams text demoted but retained.
-assert_contains "$HC_SKILL_SRC" "Step 5c: Agent Teams Workflow (legacy)" \
-  "f113: Agent Teams flow is demoted to Step 5c (legacy), not deleted"
-assert_contains "$HC_SKILL_SRC" "no longer the default parallel mode" \
-  "f113: the fallback clause states Teams is no longer the default"
-# team-spawn-prompts.md gains the workflow launch templates + pre-launch checklist.
-TSP_SRC=$(cat "$REPO_ROOT/skills/harness-continue/team-spawn-prompts.md")
+# WP3.5: the legacy Teams path is retired, replaced by the plain-subagent fallback.
+assert_contains "$HC_SKILL_SRC" "Fallback — plain worktree-isolated subagents" \
+  "f113/wp35: the fallback is plain worktree-isolated subagents, no Teams path"
+# launch-prompts.md (renamed from team-spawn-prompts.md in WP3.5) carries the
+# workflow launch templates + pre-launch checklist.
+if [ ! -f "$REPO_ROOT/skills/harness-continue/team-spawn-prompts.md" ]; then
+  pass "wp35: team-spawn-prompts.md is renamed away"
+else
+  fail "wp35: team-spawn-prompts.md still exists alongside launch-prompts.md"
+fi
+TSP_SRC=$(cat "$REPO_ROOT/skills/harness-continue/launch-prompts.md")
 assert_contains "$TSP_SRC" "Workflow launch (primary" \
-  "f113: team-spawn-prompts.md carries the workflow launch template"
+  "f113: launch-prompts.md carries the workflow launch template"
 assert_contains "$TSP_SRC" "Pre-launch checklist" \
   "f113: the pre-launch checklist replaces the pre-spawn checklist for workflow mode"
 assert_contains "$TSP_SRC" "Tasks mirrored WITH \`feature_id\`" \

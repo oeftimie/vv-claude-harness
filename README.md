@@ -1,6 +1,6 @@
 # VV Claude Code Harness
 
-A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through five major versions into a native Claude Code plugin built on the platform's Agent Teams primitives.
+A harness system for Claude Code that solves multi-session continuity, parallel agent coordination, and automated quality enforcement. Built on Anthropic's research for long-running tasks, evolved through six major versions into a native Claude Code plugin that orchestrates parallel work through worktree-isolated workflow agents.
 
 See [CHANGELOG.md](./CHANGELOG.md) for the current version and history.
 
@@ -321,13 +321,13 @@ Installed via `/plugin`, updated atomically (each version gets its own cache dir
 vv-harness/                                            # Plugin root
 ├── skills/
 │   ├── harness-init/                                  # /harness-init skill + hook templates
-│   ├── harness-continue/                              # /harness-continue skill + team-spawn-prompts.md
+│   ├── harness-continue/                              # /harness-continue skill + launch-prompts.md
 │   ├── harness-issue-prep/                            # Spec gate: verify, normalize, stamp a spec
 │   ├── harness-issue-debug/                           # Repair loop for failed or runner-parked work
 │   ├── harness-doctor/                                # Report-first instance health check + --fix
 │   ├── harness-improve/                               # Observation-first improvement loop for one job
 │   └── harness-dashboard/                             # /harness-dashboard skill: launch F090's server + open F091's page
-├── agents/                                            # Declarative teammates (spawned as vv-harness:*)
+├── agents/                                            # Declarative agent definitions (spawned as vv-harness:*)
 │   ├── feature-implementer.md                         # Sonnet, scoped TDD on one feature
 │   ├── layer-implementer.md                           # Sonnet, owns one architectural layer
 │   ├── researcher.md                                  # Sonnet, retrieval-only (Write for findings file)
@@ -340,11 +340,11 @@ vv-harness/                                            # Plugin root
 │   ├── session-end.sh                                 # Session discipline audit
 │   └── statusline.sh                                  # Live feature progress (wired by /harness-init)
 ├── rules/
-│   ├── agent-teams-protocol.md                        # Agent Teams rules (harness projects only)
 │   ├── code-quality.md                                # Mechanical code quality limits
 │   ├── context-summary.md                             # context_summary.md template + update rules
 │   ├── debugging.md                                   # Four-phase systematic root-cause process
 │   ├── mld-review.md                                  # Cadence + disposition rules for .harness/mld/ entries
+│   ├── parallel-work.md                               # Parallel-work rules: feature schema, model selection, lead-owned state
 │   ├── task-completion.md                             # Completion checklist
 │   └── tdd.md                                         # 5-step TDD loop + coverage bar
 ├── schemas/
@@ -364,17 +364,16 @@ project-root/
 ├── CLAUDE.md
 ├── .claude/
 │   ├── settings.json                                  # Build + quality gate hooks, statusLine,
-│   │                                                  #   Agent Teams env flag, permissions allowlist
+│   │                                                  #   permissions allowlist
 │   └── hooks/
 │       ├── verify-task-quality.sh                     # TaskCompleted enforcement
-│       ├── check-remaining-tasks.sh                   # TeammateIdle prompted reassignment
 │       ├── enforce-scope.sh                           # PreToolUse scope enforcement (incl. lead-owned state)
 │       ├── verify-git-identity.sh                     # PreToolUse git identity verification
 │       ├── commit-gate.sh                             # PreToolUse commit-content gate (secret scan)
 │       ├── harness_state.py                           # Shared features.json read/write module
 │       └── statusline.sh                              # Project copy of the plugin status line
 └── .harness/
-    ├── harness.json                                   # Config, git identity, team structure, plugin_version
+    ├── harness.json                                   # Config, git identity, workflow config, plugin_version
     ├── features.json                                  # Feature tracking (with scope, dependencies)
     ├── context_summary.md                             # Decisions, patterns, gotchas, active context
     ├── claude-progress.txt                            # Session-boundary handoff
@@ -392,14 +391,13 @@ The real insight from iterating through these versions: there are three reliabil
 | Hook | Event | What it enforces |
 |------|-------|-----------------|
 | `verify-task-quality.sh` | TaskCompleted | Tests must pass before task completion is accepted |
-| `enforce-scope.sh` | PreToolUse (Edit/Write/MultiEdit) | Edits blocked outside teammate's assigned scope, and to the three lead-owned state files (`features.json`, `context_summary.md`, `claude-progress.txt`) regardless of scope |
+| `enforce-scope.sh` | PreToolUse (Edit/Write/MultiEdit) | Edits blocked outside the agent's assigned scope, and to the three lead-owned state files (`features.json`, `context_summary.md`, `claude-progress.txt`) regardless of scope |
 | `verify-git-identity.sh` | PreToolUse (Bash) | Git push/pull blocked if identity doesn't match harness.json |
 
-**Prompted (shell hooks with feedback)**: high reliability. The hook delivers a message to the agent, but the agent decides whether to follow it. `enforce-scope.sh`'s Bash coverage lives here rather than in the mechanical tier above: it does block the call, but the *detection* itself is pattern-based and evadable by construction (unlike Edit/Write, where the tool reports the real target unambiguously) — the goal is stopping accidental drift, not defeating an adversarial teammate.
+**Prompted (shell hooks with feedback)**: high reliability. The hook delivers a message to the agent, but the agent decides whether to follow it. `enforce-scope.sh`'s Bash coverage lives here rather than in the mechanical tier above: it does block the call, but the *detection* itself is pattern-based and evadable by construction (unlike Edit/Write, where the tool reports the real target unambiguously) — the goal is stopping accidental drift, not defeating an adversarial agent.
 
 | Hook | Event | What it does |
 |------|-------|-------------|
-| `check-remaining-tasks.sh` | TeammateIdle | Prompts teammate to pick up next pending feature |
 | `session-start.sh` (plugin) | SessionStart | Injects orientation at start; its `compact` matcher re-injects context after compaction |
 | `session-end.sh` (plugin) | SessionEnd | Audits discipline into `SESSION_INCOMPLETE`, surfaced at next session start |
 | `enforce-scope.sh` | PreToolUse (Bash) | Best-effort: denies Bash write commands (`>`, `>>`, `tee`, `cp`, `mv`, `sed -i`, `rm`) whose target is outside scope or is a lead-owned state file |
@@ -437,15 +435,11 @@ Use **single-session mode** for features touching fewer than 5 files. The harnes
 
 The plugin's SessionStart hook recovers your context automatically after compaction — its `compact` matcher re-injects feature status, Active Context, and the last handoff directly into model context.
 
-### Parallel work (Agent Teams)
+### Parallel work (workflow mode)
 
-Use Agent Teams when two or more independent features are ready. The lead operates in plan mode (Shift+Tab), spawns Sonnet teammates for implementation, and reserves Opus for itself and reviewers.
+Use workflow mode when two or more independent, spec-verified features are ready. The lead launches the `/vv-harness:implement-features` workflow: one Sonnet implementer per feature in an isolated worktree, then an Opus reviewer per feature, returning structured per-feature results the lead integrates. Each agent gets a physically separate copy of the repo — cleanest separation, no scope violations possible; the lead merges worktree branches during integration. When the Workflow tool is unavailable (older CLI, org-disabled), `/harness-continue` falls back to plain worktree-isolated subagents using the same `vv-harness:*` agent types.
 
-**For features with independent scopes**: spawn worktree-isolated subagents (`isolation: "worktree"`) — the same pattern the non-experimental fallback mode uses. Each gets a physically separate copy of the repo. Cleanest separation, no scope violations possible. The lead merges worktree branches during synthesis. Worktree isolation is platform-documented for subagents, not for Agent Teams teammates; keep teammates on disjoint scopes instead.
-
-**For shared-branch work**: the `enforce-scope.sh` PreToolUse hook blocks edits outside the teammate's assigned scope file (`.claude/teammate-scope.txt`). The lead creates this file before spawning each teammate.
-
-The `TaskCompleted` hook mechanically enforces passing tests before any task can be marked complete. The `TeammateIdle` hook prompts (but doesn't force) idle teammates to pick up the next pending feature.
+The `TaskCompleted` hook mechanically enforces passing tests before any mirrored task can be marked complete, and the commit gate fires in the lead session at integration.
 
 **Optional dual-engine review (F018/OVI-66)**: configure `.harness/harness.json`'s
 `review.second_engine: "codex"` to have the lead run a Codex CLI review in parallel
@@ -454,20 +448,19 @@ the `codex` CLI on `PATH`, behavior is unchanged (single-engine review); a missi
 skips with an explicit note rather than silently. Synthesis rules for combining both
 engines' findings (dedupe by defect, a single-engine CRITICAL always survives,
 cross-engine agreement raises confidence, provenance verified via `git show`) live in
-`rules/agent-teams-protocol.md`'s Dual-Engine Review section. The second engine costs
+`rules/parallel-work.md`'s Dual-Engine Review section. The second engine costs
 Codex-subscription usage, not Claude tokens; the two engines disagree often on style,
 so only correctness/security findings get the cross-engine consensus treatment.
 
 ### When NOT to use
 
-* **Don't use Agent Teams** for features touching fewer than 3 files each — sequential single-session mode is cheaper. The Opus lead runs for the entire session regardless of teammate count; coordination overhead adds up.
-* **Don't use worktree isolation** when agents share interfaces — they need to see each other's changes in real time. Use the scope enforcement hook instead.
-* **Don't treat TeammateIdle as automatic** — it prompts the teammate to pick up work, but the model decides whether to follow through. Monitor via `TaskList`.
+* **Don't parallelize** features touching fewer than 3 files each — sequential single-session mode is cheaper. The Opus lead runs for the entire session regardless of how many agents a run launches; orchestration overhead adds up.
+* **Don't use worktree isolation** when agents share interfaces — they need to see each other's changes in real time. Give one feature the shared interface and sequence the rest behind it.
 
 ### Token budget
 
 The harness's always-on overhead is `CLAUDE.md`: ~4.2K tokens (if you copied the template to `~/.claude/CLAUDE.md`). In v4 the rule files are NOT auto-loaded by globs — they cost tokens only when the model reads them, following the pointers in the SessionStart orientation:
-* `agent-teams-protocol.md`: ~4.5K, read before team coordination in harness projects
+* `parallel-work.md`: ~4K, read before parallel work in harness projects
 * `code-quality.md`: ~0.3K, read before writing code in harness projects
 
 This is down from ~14.7K always-on in v3.2.1 (before eliminating redundant `engineering-standards.md` and `non-harness-workflow.md` rule files).
@@ -478,7 +471,7 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The orientation hook stay
 
 **Solved in v3.2.2:**
 
-* **Scope enforcement**: Worktree isolation (`isolation: "worktree"`) provides physical separation for independent features. A PreToolUse hook (`enforce-scope.sh`) blocks edits outside the teammate's scope file for shared-branch work. Both are mechanical enforcement.
+* **Scope enforcement**: Worktree isolation (`isolation: "worktree"`) provides physical separation for independent features. A PreToolUse hook (`enforce-scope.sh`) blocks edits outside the assigned scope for shared-branch work. Both are mechanical enforcement.
 
 * **Git identity verification**: A PreToolUse hook (`verify-git-identity.sh`) checks git identity against `.harness/harness.json` before every push/pull/clone. Blocks the operation if identity doesn't match.
 
@@ -486,19 +479,17 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The orientation hook stay
 
 * **Cost modeling**: Per-model and main-vs-subagent cost in a team session is now measured, not estimated (per-agent names are redacted to "custom" for personal marketplaces). Opt-in OTel telemetry exports `claude_code.token.usage` and `claude_code.cost.usage` attributed by model and query source; the in-session `/usage` breakdown works with zero infrastructure. See [INSTALL.md](./INSTALL.md), "Optional: Cost Telemetry".
 
-* **Agent Teams fragility**: When Agent Teams is unavailable (flag off, or team coordination unavailable on a CLI version), `/harness-continue` falls back to worktree-isolated subagents using the same `vv-harness:*` agent types — a non-experimental, platform-documented path.
+* **Workflow-mode fragility**: When the Workflow tool is unavailable (older CLI, org-disabled), `/harness-continue` falls back to worktree-isolated subagents using the same `vv-harness:*` agent types — a non-experimental, platform-documented path.
+
+**Retired in v6:**
+
+* **Agent Teams**: The experimental Agent Teams coordination path (teammate spawning, message-based coordination, the experimental env flag) is retired; workflow mode is the parallel path. `/harness-doctor` flags stale Teams wiring in an existing project and `--fix` removes it — see [INSTALL.md](./INSTALL.md).
 
 **Still open:**
 
-* **Session resumption**: If the lead session dies, in-process teammates are lost. `features.json` helps reconstruct state, but the work in flight is gone. Since `teammateMode` defaults to `"in-process"`, setting it to `tmux` (or `auto`) helps — but it's a mitigation, not a solution.
-
-* **SendMessage reliability**: The `plan_approval_response` delivery bug suggests other message types might have similar issues. The harness works around the known bug, but systematic message delivery testing would build more confidence.
+* **Session resumption**: If the lead session dies mid-run, completed workflow agents' worktree branches survive, and a run can be resumed (`resumeFromRunId`) — but the lead's own in-flight integration state is reconstructed from `features.json` and `claude-progress.txt`, not recovered.
 
 * **SessionEnd can't block**: The session-end discipline audit records gaps and surfaces them at the next session start, but by platform design it cannot stop a session from ending with those gaps. Self-healing, not preventive.
-
-* **Teammate worktrees unverified**: Worktree isolation is platform-documented for subagents only. Whether it works for Agent Teams teammates is unverified; the harness doesn't build on it.
-
-* **Agent Teams is still experimental**: Gated behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and subject to change between CLI versions. The protocol reflects the implicit-team model from Claude Code v2.1.178+; the development baseline (v2.1.175) is documented in [INSTALL.md](./INSTALL.md).
 
 ## Getting started
 
@@ -526,18 +517,18 @@ claude
 | Component | Purpose |
 |-----------|---------|
 | `skills/harness-init/` | Project initialization with hooks and scaffolding |
-| `skills/harness-continue/` | Session continuation with team spawn prompts and the subagent fallback |
+| `skills/harness-continue/` | Session continuation with workflow launch prompts and the subagent fallback |
 | `skills/harness-issue-prep/` | Verify and normalize a spec (Linear issue, pasted text, or a feature), then mark it ready for implementation |
 | `skills/harness-issue-debug/` | Open a failed feature or a runner-parked Linear issue in a live repair session |
 | `skills/harness-doctor/` | Report-first, idempotent instance health check with an optional `--fix` upgrade mode |
 | `skills/harness-improve/` | Observation-first improvement loop: record a job contract, observe the baseline, one intervention, verify at the claim boundary |
 | `skills/harness-dashboard/` | Launch F090's dashboard server (if not already running) and open F091's live session view in a browser |
-| `agents/` | Declarative teammate definitions (feature-implementer, layer-implementer, researcher, reviewer, spec-verification, reverification-guard, conformance-tester) |
+| `agents/` | Declarative agent definitions (feature-implementer, layer-implementer, researcher, reviewer, spec-verification, reverification-guard, conformance-tester) |
 | `schemas/` | Data contracts published for external consumers (readiness stamp, park/resolution formats) |
 | `scripts/stamp.sh` | Deterministic file emitter for `/harness-init`, new + upgrade mode |
 | `scripts/validate-features.py` | Stdlib `features.json` validator, run by harness-doctor and CI |
 | `hooks/` | Plugin continuity hooks: session-start, session-end, statusline |
-| `rules/agent-teams-protocol.md` | Agent Teams coordination (harness projects only) |
+| `rules/parallel-work.md` | Parallel-work rules: feature schema, model selection, lead-owned state (harness projects only) |
 | `rules/code-quality.md` | Mechanical code quality limits |
 | `rules/context-summary.md` | `context_summary.md` template and update rules |
 | `rules/debugging.md` | Four-phase systematic root-cause debugging process |
@@ -564,7 +555,7 @@ The `features.json` envelope and the 16-field feature object have a single owner
 [schemas/feature.schema.json](./schemas/feature.schema.json) is the canonical definition;
 `scripts/validate-features.py` enforces it (stdlib only, no `jsonschema` dependency) and is
 wired into `test/run-tests.sh`. The worked example lives in the Feature Schema section of
-`rules/agent-teams-protocol.md` — this README and `skills/harness-init/SKILL.md` link there
+`rules/parallel-work.md` — this README and `skills/harness-init/SKILL.md` link there
 instead of restating the field list.
 
 ## Some screenshots from my sessions
