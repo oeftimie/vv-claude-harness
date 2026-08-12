@@ -219,11 +219,11 @@ elif [ -n "$RESULT" ]; then
   print_next_claimable_line "$RESULT"
 fi
 
-# F098: spec-drift, scope-armed, and test_file-existence each used to open and
-# json.load .harness/features.json in their own python3 process; one load here
-# feeds all three, each still in its OWN try/except (not one shared one) so a
-# crash in one check can't silently skip the other two the way a single shared
-# try/except would -- matching the original's per-block failure isolation.
+# F098: spec-drift and test_file-existence each used to open and json.load
+# .harness/features.json in their own python3 process; one load here feeds
+# both, each still in its OWN try/except (not one shared one) so a crash in
+# one check can't silently skip the other the way a single shared try/except
+# would -- matching the original's per-block failure isolation.
 python3 - "$ROOT" "$H/features.json" <<'PYEOF' 2>/dev/null || true
 import hashlib, json, os, sys
 
@@ -245,21 +245,6 @@ try:
         print("WARNING: spec drift: description changed after verification for "
               + ", ".join(drifted[:5]) + ".")
         print("Re-run the spec gate (harness-issue-prep) before implementing these.")
-except Exception:
-    pass
-
-try:
-    armed_needed = any(
-        f.get("status") == "in-progress" and f.get("assigned_to") is not None
-        for f in feats
-    )
-    if armed_needed:
-        hook_exists = os.path.isfile(os.path.join(root, ".claude", "hooks", "enforce-scope.sh"))
-        scope_file_exists = os.path.isfile(os.path.join(root, ".claude", "teammate-scope.txt"))
-        if hook_exists and not scope_file_exists:
-            print("")
-            print("WARNING: scope enforcement unarmed: .claude/teammate-scope.txt missing;")
-            print("write it before spawning teammates or use worktree isolation.")
 except Exception:
     pass
 
