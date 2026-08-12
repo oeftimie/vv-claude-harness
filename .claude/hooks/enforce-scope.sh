@@ -343,8 +343,8 @@ if [ "$FILE_PATH_RC" -eq 1 ]; then
     # (code.claude.com/docs/en/hooks) -- this legacy exit-2 site (unlike
     # deny_json()'s own JSON-on-stdout-at-exit-0 path used elsewhere in this
     # file) still wrote its message to stdout, silently discarding it on
-    # every real PreToolUse block (F053, the identical defect F046 fixed in
-    # check-remaining-tasks.sh.template).
+    # every real PreToolUse block (F053; F046 fixed the identical defect in
+    # a since-retired hook).
     echo "Edit blocked: file_path could not be safely extracted from tool input (refusing to check it against lead-owned state). $ANNOTATION" >&2
     _dashboard_log "block" "scope-violation:unsafe-extraction" || true
     exit 2

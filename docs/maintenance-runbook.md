@@ -1,9 +1,8 @@
 # Maintenance Runbook
 
-This repo rides on Claude Code's experimental Agent Teams surface (hook payload
-shapes, `SendMessage` semantics, the plan-approval flow) and ships weekly. Nothing
-in this repo notices platform drift on its own — this runbook is the loop that
-does.
+This repo rides on Claude Code platform surfaces (hook payload shapes, the
+Workflow tool, worktree-isolated subagents) and ships weekly. Nothing in this
+repo notices platform drift on its own — this runbook is the loop that does.
 
 HE's continuous-maintenance thesis: a viable maintenance loop answers five
 questions. Quiet no-op runs are healthy; a run that finds nothing wrong is a
@@ -12,10 +11,9 @@ successful run, not a skipped one.
 ## Condition
 
 The released plugin behaves correctly on the current stable Claude Code CLI: the
-five documented hooks fire with the payload shapes this repo expects, the
-implicit Agent Teams model (no `TeamCreate`/`TeamDelete`) still holds, the
-plugin's cache/update layout matches what `INSTALL.md` describes, and every
-documented workaround's retirement condition is still accurate.
+documented hooks fire with the payload shapes this repo expects, the plugin's
+cache/update layout matches what `INSTALL.md` describes, and every documented
+workaround's retirement condition is still accurate.
 
 ## Departure Signal
 
@@ -25,8 +23,8 @@ Two independent signals, either one enough to trigger a probe:
    `bash test/run-tests.sh` against the latest published
    `@anthropic-ai/claude-code` and records the probed CLI version.
 2. **Manual**: reviewing Anthropic's Claude Code release notes for changes to
-   Agent Teams, hooks, or `SendMessage` — this is a human judgment call, not
-   automated (see Out of scope in the tracking issue).
+   hooks, the Workflow tool, or worktree subagents — this is a human judgment
+   call, not automated (see Out of scope in the tracking issue).
 
 ## Restoration Evidence
 
@@ -72,31 +70,17 @@ requiring a live spawned teammate) are run by the monthly `claude -p` agent
 session instead, and their outcome is appended to `MAINTENANCE_LOG.md` the same
 way.
 
-1. **`plan_approval_response` delivery bug.** `rules/agent-teams-protocol.md`
-   documents: `SendMessage` with `type: "plan_approval_response"` reports
-   success but the message never reaches the recipient; use `type: "message"`
-   for all plan approvals instead.
+1. **`plan_approval_response` delivery bug.**
+   Retired 2026-08-12 as part of OVI-144 Phase 3 (approved by Ovidiu during
+   prep, with items 2 and 6). The workaround lived in the Agent Teams protocol
+   doc, deleted with the Teams machinery; no shipped file documents the
+   `type: "message"` fallback anymore, so there is no workaround left to
+   retire and nothing to probe.
 
-   **Reproduction**: spawn a teammate requiring plan approval. When it submits
-   a plan for approval, the lead responds with
-   `SendMessage({type: "plan_approval_response", ...})` — the exact type the
-   workaround currently avoids.
-
-   **FIXED** if the teammate demonstrably proceeds without needing a
-   `type: "message"` fallback. **BROKEN** if the teammate stalls, re-submits
-   the same plan request, or otherwise shows no evidence of having received
-   the response. Precondition: CLI >= 2.1.207, checked at retest time.
-
-   A FIXED result is recorded here; the removal of the workaround from
-   `rules/agent-teams-protocol.md`, `README.md`, and any other file that
-   documents it is a separate, explicit, approval-required follow-up — not
-   automatically performed as part of a probe run.
-
-2. **Implicit-team model assumptions** (no `TeamCreate`/`TeamDelete` tools;
-   teams form implicitly when the first teammate spawns). No workaround to
-   retire — this probe exists to catch the day the platform adds explicit team
-   lifecycle tools, at which point the harness's implicit-team documentation
-   needs updating.
+2. **Implicit-team model assumptions.**
+   Retired 2026-08-12 with item 1: the harness no longer documents or depends
+   on the implicit-team model, so a platform change to team lifecycle tools
+   can no longer contradict any shipped content.
 
 3. **Hook events fire with expected payloads**: `TaskCompleted`,
    `SessionStart` (all sources: `startup`, `resume`, `clear`,

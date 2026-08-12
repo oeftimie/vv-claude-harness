@@ -126,7 +126,6 @@ The realization that made v3.1 necessary: prose-based instructions are medium-re
 v3.1 added shell hooks that make quality gates mechanical:
 
 * **TaskCompleted hook**: when a teammate marks work done, a shell script runs the test suite. If tests fail, the completion is rejected with feedback. The teammate can't finish until tests pass. No exceptions. No "I'll fix it later."
-* **TeammateIdle hook**: when a teammate finishes and goes idle, a shell script checks `features.json` for remaining work. If pending features exist, the teammate is prompted to pick up next work. No wasted capacity.
 * **PostToolUse hook**: after every file edit, a stack-specific type/build check runs. TypeScript gets `tsc --noEmit`. Swift gets `swift build`. Python gets `py_compile`. Errors surfaced shortly after edits (async since v3.2.2), not at the commit.
 
 v3.1 also added plan-first workflows (the lead presents a decomposition plan before spending tokens on teammates), model mixing (Opus for leads and reviewers, Sonnet for implementers), and task dependency chains via `TaskCreate` with `blocked_by`.
@@ -169,7 +168,7 @@ v3.4 came from analyzing Claude Code's internal multi-agent implementation and c
 
 **Scope enforcement was broken.** Tool input provides absolute paths (`/Users/name/project/src/auth/login.ts`). Scope patterns are relative (`src/auth/`). The prefix match never matched. Every teammate could edit any file. Fixed by stripping the project root before comparison.
 
-**Dependency filtering was missing.** The TeammateIdle hook offered all pending/failed features regardless of `depends_on`. A teammate could be assigned F002 before F001 (its dependency) was done. Fixed by checking all dependencies have `status: "passing"` before offering a feature.
+**Dependency filtering was missing.** The idle-reassignment hook of that era offered all pending/failed features regardless of `depends_on`. A teammate could be assigned F002 before F001 (its dependency) was done. Fixed by checking all dependencies have `status: "passing"` before offering a feature.
 
 **Correction cycles hit wrong targets.** `verify-task-quality.sh` incremented `correction_cycles` for every in-progress feature on any rejection. In a 3-teammate session, one teammate's test failure corrupted metrics for all teammates. Fixed by extracting the feature ID from task metadata and targeting only that feature.
 
@@ -217,10 +216,9 @@ resuming the runner, routing back through prep, or marking the work failed. The 
 `schemas/` directory publishes the data contracts (stamp, canonical hashing, HMAC recipe,
 park and resolution formats) so an external issue-to-PR runner can consume them without
 importing any code. The SessionStart orientation now also warns when a verified feature's
-description drifts after verification, and the read-only reviewer teammate declines
-implementation features that the `TeammateIdle` hook offers it (the hook itself does
-not use the payload's `teammate_name` to decide whether to fire — a deliberate design
-decision, not a missing field — so the guard lives in the agent definition instead).
+description drifts after verification, and the read-only reviewer agent declines
+implementation features by construction — the guard lives in the agent definition, a
+deliberate design decision from the Agent Teams era that carried over unchanged.
 
 ### v4.2: Harness-prefixed skills (July 2026)
 
@@ -265,10 +263,9 @@ layer for non-Claude agents working on this repo. Full detail in the
 Dogfooding the upgrade on this repo's own harness surfaced 48 further defects beyond the
 21 planned — mostly hardening `enforce-scope.sh`/`commit-gate.sh` against parsing and
 evasion edge cases, plus a `harness-doctor` check that a feature's claimed `test_file`
-actually exists. That process also caught and corrected a claim shipped since v4.1.0: the
-`TeammateIdle` hook payload does carry a teammate's name — the original "no teammate
-identity" claim traced to a documentation fetch that silently answered from the wrong
-section of a long reference page.
+actually exists. That process also caught and corrected a hook-payload claim shipped
+since v4.1.0 — the original error traced to a documentation fetch that silently
+answered from the wrong section of a long reference page.
 
 A follow-up code review found three more correctness bugs, fixed in v5.0.1: `features.json`
 writes could race and silently lose `correction_cycles` increments under parallel

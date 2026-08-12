@@ -101,13 +101,13 @@ On success this writes, byte-verbatim or rendered from a template in
 are required vs. optional, the status enum) is defined once in
 `${CLAUDE_PLUGIN_ROOT}/schemas/feature.schema.json` and illustrated with the one worked
 example in the Feature Schema section of
-`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. `scripts/validate-features.py`
+`${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`. `scripts/validate-features.py`
 enforces it in the test suite.
 
 The done-definition (passing / done / shipped) and the optional claim-matched-proof
 fields (`qa_binding`, `proof`, `coverage_target`, `delivered`, `design_contract`) are
 defined once, in the Feature Schema section of
-`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md` — see that section rather than
+`${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md` — see that section rather than
 this one for the current definition.
 
 A feature may also carry a `spec` verification object; see the Feature Schema section of the Agent Teams protocol.
@@ -165,7 +165,7 @@ with open(".harness/harness.json", "w") as f:
 PYEOF
 ```
 
-The `models` values are the CURRENT row values from `rules/agent-teams-protocol.md`'s
+The `models` values are the CURRENT row values from `rules/parallel-work.md`'s
 Model Selection table (the single bindings table) at the time you run this -- if that
 table has since been requalified to different bindings, use those instead of the
 `opus`/`sonnet`/`opus` shown here. Schema: `schemas/feature.schema.json`'s
@@ -285,7 +285,7 @@ Tell the user:
 
 ```
 I've set up four hooks plus a status line:
-- PreToolUse (scope): blocks edits to files outside the teammate's assigned scope. Only active when .claude/teammate-scope.txt exists.
+- PreToolUse (scope): blocks writes to lead-owned state files (features.json, context_summary.md). Armed automatically inside workflow-agent worktrees; unrestricted in the main checkout.
 - PreToolUse (git identity): blocks git push/pull/clone if identity doesn't match .harness/harness.json.
 - PreToolUse (commit gate): blocks git commit if it stages-and-commits in one step, or if staged content looks like a secret.
 - TaskCompleted: runs tests when an agent marks work done. Rejects if tests fail.

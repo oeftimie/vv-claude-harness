@@ -329,8 +329,8 @@ echo ""
 # read (found by adversarial review of this feature's first round).
 FOOTER=$(
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-  echo "Agent Teams protocol: read $CLAUDE_PLUGIN_ROOT/rules/agent-teams-protocol.md" \
-    "before spawning teammates."
+  echo "Parallel work rules: read $CLAUDE_PLUGIN_ROOT/rules/parallel-work.md" \
+    "before launching workflow agents."
   echo "Code-quality limits: $CLAUDE_PLUGIN_ROOT/rules/code-quality.md (read before writing code)."
   echo "Context summary format: $CLAUDE_PLUGIN_ROOT/rules/context-summary.md" \
     "(read before editing context_summary.md)."

