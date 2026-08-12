@@ -45,6 +45,10 @@ and points to `/harness-init` instead of running any checks.
    - **Optional-v5** (missing = "upgrade available", not an error): `harness_state.py`
      (post-OVI-50) — `verify-task-quality.sh` works identically with or without it,
      so its absence is a suggestion, not a defect.
+   - **Stale Agent Teams artifacts** (present = flagged for removal, not an error): a
+     leftover `check-remaining-tasks.sh` hook or `.claude/teammate-scope.txt` file
+     from a project initialized before the v6 Agent Teams retirement. Nothing invokes
+     them anymore; the doctor flags them and `--fix` removes them.
    - **Not-yet-applicable**: a commit-content gate (post-S4/OVI-64). The doctor only
      checks for this once the running plugin version actually ships a commit-gate
      template; until then, a missing per-project copy produces no finding of any kind.
@@ -53,9 +57,11 @@ and points to `/harness-init` instead of running any checks.
    verify-git-identity.sh, commit-gate.sh) and `TaskCompleted`
    (verify-task-quality.sh). The check is structural — it accepts either the
    `"$CLAUDE_PROJECT_DIR"/...` form or a simpler relative path, since both are
-   functionally equivalent; it does not enforce one string form over the other. A
-   stale `PostCompact` hook block (superseded by the plugin's SessionStart `compact`
-   handling) is flagged for removal.
+   functionally equivalent; it does not enforce one string form over the other.
+   Stale blocks are flagged for removal: a `PostCompact` hook block (superseded by
+   the plugin's SessionStart `compact` handling), a `TeammateIdle` hook block, and
+   the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var (both dead since the v6 Agent
+   Teams retirement).
 4. **`.gitignore`**: does not exclude `.claude/` without the `!.claude/hooks/` and
    `!.claude/settings.json` exceptions, and does include `.harness/SESSION_INCOMPLETE`.
 5. **`.harness/` state**: `harness.json` and `features.json` parse; `features.json`
@@ -108,8 +114,9 @@ and points to `/harness-init` instead of running any checks.
     markers (a TODO note, or the finding text pasted as a reminder) neither
     satisfies nor triggers the check. An `init.sh` with no `focused_test` support
     at all, or none present, produces no finding — there is nothing to check yet.
-11. **Agent Teams migration** (OVI-144): Agent Teams was retired in v5.7.0, when
-    worktree-isolated workflows replaced it. A project initialized under v5.x still
+11. **Agent Teams migration** (OVI-144): Agent Teams was retired in v6, after
+    v5.7.0 made worktree-isolated workflows the primary parallel path. A project
+    initialized under v5.x still
     carries four artifacts of it, each reported as a migration step with a fixer:
     a `TeammateIdle` route to `check-remaining-tasks.sh`, the
     `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var, the orphaned
@@ -137,7 +144,8 @@ line and skip the check rather than failing anything. "Disabled in settings" mea
 settings explicitly turn the tool off — a `permissions.deny` entry naming `Workflow`,
 or the org-level `disableWorkflows` switch. Anything subtler than those two literal
 forms is left to the skill, which detects unavailability at runtime by the tool simply
-being absent.
+being absent. Without them `/harness-continue` falls back to plain worktree-isolated
+subagents, which is a working configuration, not a broken one.
 
 ## Finding classification
 
@@ -170,6 +178,7 @@ before the edit (overwriting any older `.bak`, so the backup always describes th
 state this run is about to change). Only the harness's own hook entry leaves the
 `TeammateIdle` array — a user-authored hook sitting alongside it is preserved, and the
 event key itself is removed only when nothing is left to run.
+
 Anything it cannot mechanically resolve —
 missing `python3`/`git`, a hard-required hook that was deleted outright, a JSON parse
 error, a `features.json` validation failure, a `context_summary.md` missing a required

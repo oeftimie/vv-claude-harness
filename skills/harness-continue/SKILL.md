@@ -1,6 +1,6 @@
 ---
 name: harness-continue
-description: Continue working on a harness-managed project (vv-harness plugin). Orients to current state, picks single-session or Agent Teams mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
+description: Continue working on a harness-managed project (vv-harness plugin). Orients to current state, picks single-session or workflow mode, and guides implementation with TDD, quality gate hooks, and compaction-aware context management. Use at the start of any session on a harness project.
 ---
 
 # Harness Continue
@@ -13,7 +13,7 @@ warning on mismatch, and any SESSION_INCOMPLETE gaps from the previous session. 
 that injected "## Harness orientation" block instead of re-reading the harness files.
 Resolve any SESSION_INCOMPLETE gaps it surfaces before starting new work.
 
-This skill covers what the hook does not: mode choice, the smoke test, and team
+This skill covers what the hook does not: mode choice, the smoke test, and workflow
 planning.
 
 Check for untracked files and inherited task quality:
@@ -95,7 +95,7 @@ pass; firing the prompt alone is not a reason to rewrite the block.
 
 Set effort based on the current phase:
 
-- Architecture decisions, debugging failing tests, reviewing teammate work: `/effort high`
+- Architecture decisions, debugging failing tests, reviewing returned agent work: `/effort high`
 - Feature implementation (TDD loop), file refactoring: `/effort medium` (default)
 - Formatting, linting fixes, boilerplate generation: `/effort low`
 
@@ -106,7 +106,6 @@ Adjust as you transition between phases during the session.
 **Choose Single-Session if:**
 - One feature is next and it touches fewer than 5 files
 - The feature is sequential (can't be parallelized)
-- `harness.json` team_structure is null
 - User explicitly asks for focused work
 
 When choosing single-session, explicitly declare it: "Running in single-session mode — I'm both lead and implementer." This makes the decision conscious and documented, preventing ambiguity between "I forgot plan mode" and "plan mode doesn't apply here."
@@ -120,37 +119,32 @@ When choosing single-session, explicitly declare it: "Running in single-session 
 - User explicitly asks for parallel work.
 
 Workflow mode orchestrates via the plugin's `/vv-harness:implement-features` workflow
-(Step 5b) instead of spawning teammates: one Sonnet implementer per feature in an
-isolated worktree, then a reviewer per feature, returning structured per-feature results
-the lead integrates. `agent()` returns are runtime-guaranteed and schema-validated (no
-`SendMessage` delivery protocol), worktree isolation is first-class, and a run is
-resumable in-session — the structural fixes for the Teams failure classes this project hit.
+(Step 5b): one Sonnet implementer per feature in an isolated worktree, then a reviewer
+per feature, returning structured per-feature results the lead integrates. `agent()`
+returns are runtime-guaranteed and schema-validated (no message-delivery protocol to
+babysit), worktree isolation is first-class, and a run is resumable in-session — the
+structural fixes for the coordination failure classes this project hit.
 
 **Availability probe.** Workflow mode needs Claude Code ≥ 2.1.154 and the `Workflow`
 tool present (not org-disabled via `disableWorkflows`). Probe by capability: parse
 `claude --version` and confirm the `Workflow` tool is available. **If unavailable**
 (older CLI, `disableWorkflows`, or a plan without it), fall back to the
-worktree-isolated plain-subagent path below — this is the same degradation path Agent
-Teams unavailability uses, repointed, not duplicated.
+worktree-isolated plain-subagent path below.
 
 **Peer-debate exception:** research or competing-hypothesis work that genuinely needs
 inter-agent discussion is *not* what the implement→review pipeline does. For that, spawn
-plain parallel subagents (or legacy Agent Teams while it still exists).
+plain parallel subagents.
 
-**Fallback / legacy — plain subagents or Agent Teams:**
+**Fallback — plain worktree-isolated subagents:**
 
 When workflow mode is unavailable, do NOT abort parallel work. Fall back to direct
 subagents spawned via the Agent tool using the same vv-harness agent types
 (`vv-harness:feature-implementer`, `vv-harness:layer-implementer`,
 `vv-harness:researcher`, `vv-harness:reviewer`), passing `isolation: "worktree"` at
 spawn time for independent feature scopes — worktree isolation is documented platform
-behavior for subagents. The lead merges the worktree branches at synthesis. Legacy Agent
-Teams (gated by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; the `SendMessage`/`TeammateIdle`
-coordination path) remains available until it is retired in a later migration phase, but
-is no longer the default parallel mode. Team-only machinery does not apply to the
-subagent fallback: no SendMessage interface negotiation, no TeammateIdle reassignment —
-sequencing falls back to the lead, which spawns dependent work only after its
-prerequisites are merged.
+behavior for subagents. Sequencing stays with the lead: it merges the worktree
+branches at synthesis and spawns dependent work only after its prerequisites are
+merged.
 
 Ask the user if it's ambiguous:
 
@@ -248,7 +242,7 @@ Active Context and the task list. Follow it — it's your recovery path.
    ## Desires
    - [something you wanted but didn't have — a tool, a piece of context, a missing check]
    ```
-   This file is distinct from the Retrospective above: the Retrospective is cumulative analysis appended to `context_summary.md` for future sessions to read; MLD is a raw, undigested per-session log that nothing in this harness reads back into model context — session-start.sh has a hard, tested guarantee never to read `.harness/mld/`. It exists for periodic human/lead review, not in-session consumption. Only the lead writes it; teammates never do. See `${CLAUDE_PLUGIN_ROOT}/rules/mld-review.md` for the review cadence and disposition. `.harness/mld/` is committed by default, the same as the rest of `.harness/`.
+   This file is distinct from the Retrospective above: the Retrospective is cumulative analysis appended to `context_summary.md` for future sessions to read; MLD is a raw, undigested per-session log that nothing in this harness reads back into model context — session-start.sh has a hard, tested guarantee never to read `.harness/mld/`. It exists for periodic human/lead review, not in-session consumption. Only the lead writes it; spawned agents never do. See `${CLAUDE_PLUGIN_ROOT}/rules/mld-review.md` for the review cadence and disposition. `.harness/mld/` is committed by default, the same as the rest of `.harness/`.
 5. Write handoff to `claude-progress.txt`:
    ```
    ## Session [N] - [DATE]
@@ -274,7 +268,12 @@ the `TaskCompleted` and commit gates fire in the lead session. Run these steps *
 
 1. **Verify specs.** Confirm every candidate feature has a verified spec (`spec.verdict:
    "PASS"`, or a fresh `harness-issue-prep` pass). Unverified features are **excluded**
-   from the batch, never silently included.
+   from the batch, never silently included. Whichever way `risk` and
+   `require_plan_approval` get decided (from a prior prep stamp, or by the lead fresh at
+   this step per the Dynamic overrides in `${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`),
+   write them onto the feature object in `features.json` now (F064): this is what makes
+   step 3.5's conformance-tester trigger below a durable lookup instead of something
+   only this pass remembers.
 2. **Mirror tasks — mandatory.** `TaskCreate` one task per feature, **each carrying
    `metadata.feature_id`** (dependencies via `addBlockedBy`). This is what arms the
    `TaskCompleted` gate's focused-test and coverage stages. The hook has a task-subject
@@ -287,192 +286,31 @@ the `TaskCompleted` and commit gates fire in the lead session. Run these steps *
    mergeBase } }, maxReviewRounds: 3 }`. Set `reviewModel: 'opus'` explicitly only if you
    need to force it; the reviewer already runs Opus by its agent definition. Size the
    batch under the platform concurrency cap (min(16, cores−2); guideline < 15) — chain
-   multiple runs rather than one oversized batch.
-4. **Integrate per feature, in this order** (only for features the workflow returned as
-   approved): **run the feature's focused test + smoke locally → merge its
-   `worktree_branch` → flip `features.json` status to passing → mark the mirrored task
-   complete (gate fires) → commit (commit gate fires; `git add` and `git commit` as
-   SEPARATE calls)**. Never flip status or mark a task complete before its tests pass on
-   the merged code. After merging, **remove the changed worktree before any repo-wide
-   suite run** (a leftover worktree gives duplicate copies of every file to repo-wide
-   assertions — verified in Phase 0).
-5. **Surface, never auto-merge, the rest.** A feature returned `status: blocked`, verdict
-   `REJECT`/`REVISE`, or in the workflow's `unfinished` list is reported to the user with
-   its structured findings. For `unfinished` features (an agent died — e.g. a session
-   rate limit), either resume the run (`Workflow({scriptPath, resumeFromRunId})`, which
-   replays completed agents from cache) after the reset, or reconcile from the committed
-   worktree branches; do not silently drop them.
-6. **Retrospective.** The Phase 5.5 retrospective/promotion/ablation passes and the MLD
-   telemetry below apply unchanged.
-
-The prompt and structured-output schema templates for this flow live in
-`team-spawn-prompts.md` (this skill's directory). The pre-launch checklist there is:
-specs verified, tasks mirrored **with `feature_id`**, branch state clean, `git fetch` +
-rebase done.
-
----
-
-## Step 5c: Agent Teams Workflow (legacy)
-
-Before any team coordination, Read the Agent Teams protocol at
-`${CLAUDE_PLUGIN_ROOT}/rules/agent-teams-protocol.md`. Agent Teams is experimental and
-gated by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; the team forms implicitly when the
-first teammate is spawned (no setup step) and is cleaned up automatically when the
-session ends. This workflow uses Claude Code's native primitives: the Agent tool for
-spawning, `TaskCreate`, `TaskUpdate`, `TaskList`, and `SendMessage`.
-
-### Phase 1: Plan (cheap, read-only)
-
-Before spending tokens on teammates, produce a decomposition plan:
-
-1. Analyze the pending features in `.harness/features.json`
-2. Use `scope` and `depends_on` from each feature to identify parallelism opportunities and dependency chains
-3. **Review historical operational metrics** from past features to calibrate the team:
-   - Features with `correction_cycles >= 3` in the same scope directories → upgrade implementer to Opus
-   - Features with `scope_expansions >= 3` → assign a broader initial scope to reduce mid-work expansion overhead
-   - Features with `discovered_via` depth > 1 → consider folding them into the parent feature's scope
-   - Scopes that needed frequent expansion in past sessions → note them as "expansion-prone" when scoping this team
-4. Design the team:
-   - Which teammates, what scope (from features.json `scope` field), what model (Sonnet default; Opus if historical metrics suggest high difficulty). The plugin agent definitions already default the model per role (implementers and researcher: Sonnet; reviewer: Opus); a spawn-time `model` parameter overrides the definition's frontmatter, so an Opus upgrade needs only the Agent tool call's model param.
-   - Which tasks depend on which (from features.json `depends_on` field, mapped to `TaskUpdate` `addBlockedBy` calls after task creation)
-   - Whether any teammate needs `require_plan_approval: true`. If a feature has already been through `harness-issue-prep` and stamped, its `risk` (`standard`/`elevated`) may already be set on the feature object — check `features.json` first rather than re-deriving it. Whichever way `risk` and `require_plan_approval` get decided here (from a prior prep, or fresh at this step), write them onto the feature object in `features.json` now (F064): this is what makes step 3.5's conformance-tester trigger below a durable lookup instead of something only this Phase 1 pass remembers.
-5. Present the plan to the user:
-
-```
-I propose this team structure:
-
-Lead (Opus, plan mode): coordination, synthesis, final review
-Teammate "api" (Sonnet): F001 - owns src/api/ and tests/api/
-Teammate "ui" (Sonnet): F002 - owns src/components/ and tests/components/
-  → blocked by "api" (F002 depends_on F001)
-Teammate "reviewer" (Opus): reviews both after completion
-
-Dependencies (from features.json):
-  Task 1 (F001 API) → unblocks Task 2 (F002 UI)
-  Tasks 1+2 → unblock Task 3 (review)
-
-Plan approval required: No (scopes are straightforward)
-Estimated: 3 teammates × Sonnet + 1 reviewer × Opus
-Note: Opus lead runs for the full session; total cost depends on session length, not just implementer tokens.
-
-Approve this plan?
-```
-
-Wait for user approval before proceeding to Phase 2. That approval is durable: it covers
-execution through to the approved goal's completion. Do not stop for further go-aheads at
-phase transitions; return to the user only when the goal is accomplished, the work is
-blocked, or the approved plan itself must change.
-
-### Phase 2: Execute
-
-1. Activate **plan mode** (Shift+Tab) to restrict yourself to coordination-only tools. Do not edit code directly.
-
-2. Update `features.json`: set `assigned_to` for each feature being worked on.
-
-3. Confirm `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set. There is no team-creation
-   step: the implicit team forms when the first teammate is spawned (Step 5) and is
-   cleaned up automatically when the session ends.
-
-4. Create tasks with feature metadata, then set dependency chains (derived from features.json `depends_on`):
-   ```
-   # Create all tasks first (they start as pending by default)
-   # Always include metadata.feature_id — hooks and TaskList use it for correlation
-   TaskCreate({ subject: "F001: Build API endpoint", description: "[detailed spec]", activeForm: "Building API endpoint", metadata: { feature_id: "F001", scope: "src/api/", model: "sonnet" } })
-   # → task id "1"
-   TaskCreate({ subject: "F002: Build UI consuming API", description: "[detailed spec]", activeForm: "Building UI layer", metadata: { feature_id: "F002", scope: "src/ui/", model: "sonnet" } })
-   # → task id "2"
-   TaskCreate({ subject: "Review F001 + F002", description: "[review criteria]", activeForm: "Reviewing implementation", metadata: { feature_id: "F001,F002", scope: "*", model: "opus" } })
-   # → task id "3"
-
-   # Then set dependencies via TaskUpdate
-   TaskUpdate({ taskId: "2", addBlockedBy: ["1"] })
-   TaskUpdate({ taskId: "3", addBlockedBy: ["1", "2"] })
-   ```
-
-5. Before each teammate spawn on the shared-branch path, write
-   `.claude/teammate-scope.txt` from that feature's `scope` array in `features.json`,
-   one pattern per line — this arms the `enforce-scope.sh` PreToolUse hook, which
-   otherwise fails open (no file = no enforcement). Rewrite the file whenever
-   `TeammateIdle` reassigns that teammate to a different feature; delete it during
-   Phase 5 teardown. Worktree-isolated fallback subagents do NOT need this file — their
-   isolation is physical, not hook-enforced.
-
-6. Spawn teammates as the vv-harness plugin agent types. Each definition bakes in the
-   role's reusable guardrails (TDD discipline, tool allowlist, scope rules, completion
-   protocol), so the spawn prompt carries only per-feature specifics — use the templates
-   from `team-spawn-prompts.md` in this skill's directory:
-   ```
-   Agent({
-     description: "Implement F001",
-     subagent_type: "vv-harness:feature-implementer",
-     name: "api",
-     model: "sonnet",
-     prompt: "[per-feature specifics: feature ID, scope from features.json, deliverable, git identity, plan-approval flag, task ID]"
-   })
-   ```
-   The `name` makes the teammate addressable via `SendMessage`; the team it joins is
-   implicit, so there is no `team_name` to pass (the parameter is accepted but ignored).
-   Agent types: `vv-harness:feature-implementer`, `vv-harness:layer-implementer`,
-   `vv-harness:researcher`, `vv-harness:reviewer`. The spawn-time `model` parameter
-   overrides the definition's frontmatter model, so the Phase 1 Opus-upgrade heuristic
-   applies unchanged. Include git identity from `harness.json` in each spawn prompt.
-   Do not re-paste guardrail prose into spawn prompts — it lives in the agent definitions.
-   The spawn tool is exposed as `Agent` (older CLIs called it `Task`); adapt to what your
-   CLI exposes.
-
-7. At team start, confirm plan-approval messaging uses type `"message"` (the
-   `plan_approval_response` delivery-bug workaround) — one SendMessage round-trip with a
-   teammate is the check; if it fails on a newer CLI, fall back to the worktree-subagent
-   mode (Step 4, graceful degradation).
-
-### Phase 3: Monitor
-
-1. Check `TaskList` for progress
-2. Respond to incoming `SendMessage` messages:
-   - **Task complete message**: review the work, verify tests passed (TaskCompleted hook handles mechanical check)
-   - **Blocked message**: unblock or reassign
-   - **Scope expansion request**: approve or deny, update scope in features.json
-   - **Plan approval request**: review plan, approve or reject with a direct `SendMessage` (type `"message"`, not `"plan_approval_response"` which has a delivery bug)
-   - **Completion report from a role-limited teammate** (e.g. a reviewer or a researcher,
-     structurally unable to claim any remaining feature work): if it reports its
-     assigned work is done and has nothing left it can claim, send it a
-     `shutdown_request` promptly instead of leaving it idle until Phase 5 (F059). Do NOT
-     do this for an implementer between features -- it remains a legitimate
-     `TeammateIdle` reassignment target for as long as the team is running.
-3. Resolve conflicts if teammates need overlapping files
-4. After 3 check-ins with no progress from a teammate, take over that scope or spawn a replacement
-
-The `TeammateIdle` hook prompts idle teammates to pick up remaining features, so you don't need to manually reassign after each task completes.
-
-### Phase 4: Synthesize
-
-When all teammates complete:
-1. Exit plan mode if needed for hands-on review
-2. Run the full test suite
-3. If integration issues arise, follow the Integration Failure Recovery protocol in the Agent Teams rules:
-   - Identify conflicting changes via `git diff`
-   - Revert cleanly rather than attempting broken merges
-   - Record conflict resolution in `context_summary.md`
-3.5. **Author-blind conformance check (optional, F017/OVI-65)**: for a feature whose
-   `spec.verdict` is `"PASS"` AND EITHER of the following holds, spawn the conformance
-   tester BEFORE marking the feature passing:
+   multiple runs rather than one oversized batch. Also read the optional
+   `workflow.size_guideline` key from `.harness/harness.json` when sizing the batch
+   ("small" caps a run at 5 agents, "medium" at 15, "large" sets no cap; absent means
+   no advice).
+3.5. **Author-blind conformance check (optional, F017/OVI-65)**: for a feature the
+   workflow returned as approved, whose `spec.verdict` is `"PASS"` AND EITHER of the
+   following holds, spawn the conformance tester BEFORE step 4 flips the feature to
+   passing:
    - `features.json`'s `risk` field on this feature is `"elevated"` (F064: a durable
      field, set by `harness-issue-prep` Step 7 at stamp time or by the lead directly
-     at Phase 1 above — read it straight from `features.json`, not from a Linear
+     at step 1 above — read it straight from `features.json`, not from a Linear
      comment or in-session memory).
    - `features.json` records `require_plan_approval: true` on this feature (F064: same
-     source and durability as `risk` — set at Phase 1 above, or carried over from an
+     source and durability as `risk` — set at step 1 above, or carried over from an
      earlier `harness-issue-prep` run).
 
    **Legacy fallback**: a feature prepped before F064 shipped may have neither field
    set even though it genuinely was elevated-risk or plan-approved. If `risk` and
    `require_plan_approval` are both absent/null AND you have independent reason to
    think the feature was elevated (a still-visible Linear stamp comment, or your own
-   Phase 1 notes in current context), treat the trigger as unknown rather than false —
+   step 1 notes in current context), treat the trigger as unknown rather than false —
    mention the ambiguity to the user (e.g. "this feature may have needed plan
    approval, but `features.json` doesn't record it; run a conformance check anyway?")
    and let them decide, same as before F064. Do not backfill the missing fields from a
-   guess; only Step 7 or a fresh Phase 1 pass should write them.
+   guess; only `harness-issue-prep` Step 7 or step 1 above should write them.
 
    Adapted from agent-os's `conformance-test-writer` pattern (nodera-studio, MIT): a
    single context that writes both the code and its tests can satisfy a bug with a
@@ -503,12 +341,33 @@ When all teammates complete:
 
    **Single-session mode**: this step is available but manual — run it only if the
    user asks for it; it is not a default part of the single-session TDD loop.
-4. Update `.harness/features.json` for each completed feature (status, test_file, coverage, clear assigned_to)
-5. Append decisions and patterns to `.harness/context_summary.md`
+4. **Integrate per feature, in this order** (only for features the workflow returned as
+   approved): **run the feature's focused test + smoke locally → merge its
+   `worktree_branch` → flip `features.json` status to passing → mark the mirrored task
+   complete (gate fires) → commit (commit gate fires; `git add` and `git commit` as
+   SEPARATE calls)**. Never flip status or mark a task complete before its tests pass on
+   the merged code. After merging, **remove the changed worktree before any repo-wide
+   suite run** (a leftover worktree gives duplicate copies of every file to repo-wide
+   assertions — verified in Phase 0).
+5. **Surface, never auto-merge, the rest.** A feature returned `status: blocked`, verdict
+   `REJECT`/`REVISE`, or in the workflow's `unfinished` list is reported to the user with
+   its structured findings. For `unfinished` features (an agent died — e.g. a session
+   rate limit), either resume the run (`Workflow({scriptPath, resumeFromRunId})`, which
+   replays completed agents from cache) after the reset, or reconcile from the committed
+   worktree branches; do not silently drop them.
+6. **Retrospective.** Run the retrospective, promotion, and ablation passes plus the
+   MLD telemetry — the Retrospective section below.
 
-### Phase 5.5: Retrospective (run before teardown when all features complete)
+The launch checklist, `args` shape, and structured-output schema templates for this
+flow live in `launch-prompts.md` (this skill's directory). The pre-launch checklist
+there is: specs verified, tasks mirrored **with `feature_id`**, branch state clean,
+`git fetch` + rebase done.
 
-When all features reach `status: "passing"`, run a metacognitive retrospective before teardown. This is the mechanism by which the harness improves its own coordination — not just the domain code.
+---
+
+## Retrospective (run when the batch completes)
+
+When all features reach `status: "passing"`, run a metacognitive retrospective before the session's final commit. This is the mechanism by which the harness improves its own coordination — not just the domain code.
 
 Review the operational metrics across all features completed this session:
 
@@ -544,11 +403,11 @@ Do NOT write domain-specific decisions here — those go in the Domain sections.
 
 | Rung | What it means | Example |
 |---|---|---|
-| spawn-prompt tweak | Fix the wording of a future teammate spawn prompt | A teammate forgot to verify git identity because the spawn prompt never said to; add the line |
-| rule file edit | Add or tighten a rule in `rules/*.md` | A commit-hygiene lesson gets folded into `agent-teams-protocol.md` |
+| spawn-prompt tweak | Fix the wording of a future agent spawn or launch prompt | An implementer skipped git identity because its launch prompt never said to; add the line |
+| rule file edit | Add or tighten a rule in `rules/*.md` | A commit-hygiene lesson gets folded into `parallel-work.md` |
 | hook change | A mechanical check catches this instead of relying on instructions | `enforce-scope.sh` gains a new denied pattern after a near-miss |
 | schema field | A schema (e.g. `feature.schema.json`) gains a field to track this going forward | `qa_binding` added to catch a claim/proof-type mismatch |
-| agent definition | A teammate or reviewer agent's own `.md` definition changes | `reviewer.md` gains a new review dimension |
+| agent definition | An implementer or reviewer agent's own `.md` definition changes | `reviewer.md` gains a new review dimension |
 | plugin skill | A whole skill's `SKILL.md` changes structurally | A skill's phase ordering is corrected after a self-contradiction is found |
 | not-yet | Not enough evidence yet to commit to a fix | A one-off oddity, not yet a repeated pattern |
 
@@ -566,7 +425,7 @@ Append a `retain` / `revise` / `remove` verdict with its reason as a row in `.ha
 ```markdown
 # Harness Backlog
 
-Candidates the Phase 5.5 promotion and ablation passes have surfaced. Not
+Candidates the retrospective's promotion and ablation passes have surfaced. Not
 auto-applied: a human or a dedicated session executes a row, then marks it
 promoted. Cross-project pattern aggregation is a future extension, not done
 here -- this file is per-project.
@@ -596,20 +455,13 @@ On a repeat occurrence of the SAME observation in a later session, bump that row
 
 **First session on a project**: no retrospective history exists yet -- both passes emit "no data, skipping" and stop; never fabricate a classification or an ablation verdict to fill the section.
 
-**MLD telemetry (lead-only, mandatory)**: the lead — never a teammate — writes `.harness/mld/YYYY-MM-DD-<session-id>.md` with `## Mistakes` / `## Learnings` / `## Desires` sections before Phase 5 teardown. Same format and rationale as Step 5a's Session End procedure; see `${CLAUDE_PLUGIN_ROOT}/rules/mld-review.md`.
+**MLD telemetry (lead-only, mandatory)**: the lead — never a spawned agent — writes `.harness/mld/YYYY-MM-DD-<session-id>.md` with `## Mistakes` / `## Learnings` / `## Desires` sections before the session's final commit. Same format and rationale as Step 5a's Session End procedure; see `${CLAUDE_PLUGIN_ROOT}/rules/mld-review.md`.
 
-### Phase 5: Teardown
+### Workflow session end
 
-1. Send `shutdown_request` to all REMAINING teammates via `SendMessage` (F059) --
-   any released early during Phase 3 for being role-limited are already down
-2. Wait for `shutdown_response` from each remaining teammate
-3. Delete `.claude/teammate-scope.txt` if it exists — it is per-teammate transient
-   state, not a harness-init artifact, and must not survive the team it armed.
-4. Write handoff to `claude-progress.txt`:
+1. Write handoff to `claude-progress.txt`:
    ```
-   ## Session [N] - [DATE] (Agent Teams: [N] teammates)
-   - Teammates: [name (model): scope] for each
-   - Tasks: [N completed, M blocked, P pending]
+   ## Session [N] - [DATE] (workflow run: [N] features)
    - Features completed: [list]
    - Features in-progress: [list]
    - Dependencies resolved: [any chains that unblocked]
@@ -618,7 +470,7 @@ On a repeat occurrence of the SAME observation in a later session, bump that row
    - Cost note: [models used, if relevant]
    - Next: [what the next session should do]
    ```
-5. Git commit
+2. Git commit
 
 ---
 
@@ -636,11 +488,13 @@ Fix them before starting new work. This is priority zero.
 **Context is getting heavy mid-session:**
 Compact at the next clean breakpoint. Task list should already be current (you're updating after every step). Ensure `context_summary.md` has any important context, then `/compact`.
 
-**Teammate crashes or stalls:**
-The 5-minute heartbeat timeout will notify the lead. Spawn a replacement teammate for the stalled scope, or take over the scope directly (exit plan mode). Update `assigned_to` in features.json.
+**Workflow agent dies mid-run:**
+The feature lands on the workflow's `unfinished` list. Resume the run
+(`Workflow({scriptPath, resumeFromRunId})`, which replays completed agents from cache)
+or reconcile from the committed worktree branches — Step 5b, step 5.
 
 **Lead session interrupted:**
-In-process teammates are lost if the lead dies. `teammateMode` defaults to `"in-process"`, so set it explicitly (`tmux` or `auto`) for long-running team sessions that might be interrupted. On restart, read `claude-progress.txt`, `features.json` (check `assigned_to` fields), and `context_summary.md` to reconstruct state. Features with `assigned_to` set but status still `in-progress` were likely interrupted mid-work.
+Completed workflow agents' worktree branches and their commits survive the lead. On restart, read `claude-progress.txt`, `features.json` (check `assigned_to` fields), and `context_summary.md` to reconstruct state; resume the workflow run if one was in flight. Features with `assigned_to` set but status still `in-progress` were likely interrupted mid-work.
 
-**Integration failure between teammates:**
-Follow the Integration Failure Recovery protocol in agent-teams-protocol.md. Prioritize getting back to green tests over preserving partial work.
+**Integration failure between merged features:**
+Follow the Integration failure recovery protocol in `${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`. Prioritize getting back to green tests over preserving partial work.

@@ -4,13 +4,13 @@ The VV Claude Code Harness is distributed as a native Claude Code plugin. The ol
 Python installer is retired as of v4.0.0 (the `install` script now only prints these
 instructions).
 
-**Compatibility:** developed against Claude Code v2.1.175; the Agent Teams
-documentation reflects the implicit-team model introduced in v2.1.178+ (teams form on
-the first teammate spawn — the `TeamCreate`/`TeamDelete` tools were removed). Agent
-Teams is experimental and may change between CLI versions; `plugin.json` has no
-version-pin field — the platform's model is graceful degradation (older CLIs ignore
-unknown manifest fields), and `/harness-continue` falls back to non-experimental
-worktree-isolated subagents when Agent Teams coordination is unavailable.
+**Compatibility:** workflow mode (the parallel path) needs Claude Code ≥ 2.1.154 with
+the `Workflow` tool available (not org-disabled via `disableWorkflows`).
+`plugin.json` has no version-pin field — the platform's model is graceful degradation
+(older CLIs ignore unknown manifest fields), and `/harness-continue` falls back to
+non-experimental worktree-isolated subagents when the Workflow tool is unavailable.
+The experimental Agent Teams path is retired as of v6 (see "What the plugin cannot
+do" below for the legacy env-flag note).
 
 ## Prerequisites
 
@@ -101,8 +101,8 @@ them by hand — **nothing is deleted silently; you run these commands yourself*
 rm -rf ~/.claude/skills/harness-init
 rm -rf ~/.claude/skills/harness-continue
 
-# Rule replaced by the plugin copy (the SessionStart orientation pointer and the
-# harness-continue instruction cover it)
+# Rule retired in v6 (its surviving mechanism-agnostic content ships as the
+# plugin's rules/parallel-work.md)
 rm -f ~/.claude/rules/agent-teams-protocol.md
 ```
 
@@ -164,18 +164,22 @@ section used to require.
 Under the hood, `--fix` applies exactly these mechanical steps (for projects
 initialized under v3, run without the plugin's install mechanism):
 
-1. Remove the PostCompact block from `.claude/settings.json` (the plugin's SessionStart
-   hook now covers post-compaction recovery, so it is redundant).
+1. Remove stale blocks from `.claude/settings.json` (writing a `settings.json.bak`
+   backup first): the PostCompact block (the plugin's SessionStart hook now covers
+   post-compaction recovery), and — for projects initialized before the v6 Agent Teams
+   retirement — the `TeammateIdle` hook block and the
+   `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var, plus the leftover
+   `check-remaining-tasks.sh` hook and `.claude/teammate-scope.txt` file if present.
 2. Copy the plugin statusline: `cp "${CLAUDE_PLUGIN_ROOT}/hooks/statusline.sh"
    .claude/hooks/` (ask Claude to run it — the plugin root path is visible in-session).
-3. Add the `statusLine`, `env`, and `permissions` wiring to `.claude/settings.json`: see
+3. Add the `statusLine` and `permissions` wiring to `.claude/settings.json`: see
    `skills/harness-init/templates/settings.json.tmpl` for the canonical wiring (it is a
    template, not pasteable JSON -- its `{{PLACEHOLDER}}` spots need substituting), or run
    `scripts/stamp.sh` with `mode=upgrade` to apply it mechanically.
 4. Append `.harness/SESSION_INCOMPLETE` to `.gitignore`.
 5. Copy the shared state module: `cp "${CLAUDE_PLUGIN_ROOT}/skills/harness-init/harness_state.py.template"
    .claude/hooks/harness_state.py && chmod +x .claude/hooks/harness_state.py` — `verify-task-quality.sh`
-   and `check-remaining-tasks.sh` consume it if present; re-copy the two templates from the
+   consumes it if present; re-copy that template from the
    current plugin version too, since older per-project copies still have the old inline logic.
 6. Update the recorded plugin version: set `.harness/harness.json`'s `plugin_version`
    field (F068) to the currently installed plugin's version, so the next `harness-doctor`
@@ -203,24 +207,17 @@ cp templates/CLAUDE.md ~/.claude/CLAUDE.md
 
 ## What the plugin cannot do (configure these yourself)
 
-Plugins cannot set environment variables or permission allowlists. Two pieces of
-setup the v3 installer used to handle now live in your own settings. In harness
-projects, `/harness-init` writes both into the project's `.claude/settings.json`
-for you; set them globally only if you want them outside harness projects:
+Plugins cannot set environment variables or permission allowlists.
+**Permission allowlists** live in your own settings: in harness projects,
+`/harness-init` writes them into the project's `.claude/settings.json` for you;
+configure them under `permissions` in `~/.claude/settings.json` only if you want
+them outside harness projects.
 
-1. **Agent Teams env var** — add to `~/.claude/settings.json` (or a project's
-   `.claude/settings.json`):
-
-   ```json
-   {
-     "env": {
-       "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-     }
-   }
-   ```
-
-2. **Permission allowlists** — configure under `permissions` in the same
-   user/project `settings.json` files.
+**Legacy note — Agent Teams env var**: earlier versions instructed setting
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` here. The flag is no longer used as of v6
+(Agent Teams is retired; workflow mode is the parallel path). If it is still present
+in an existing project's `.claude/settings.json`, `/harness-doctor` flags it as stale
+wiring and `--fix` removes it.
 
 ## Optional: Cost Telemetry
 
@@ -271,7 +268,7 @@ breakdown view is available on subscription plans (Pro/Max/Team/Enterprise).
 
 ## Optional: Live Session Dashboard
 
-An opt-in, local-only, animated view of a session's Agent Teams activity: a node for
+An opt-in, local-only, animated view of a session's agent activity: a node for
 the lead and one for each spoke, pulsing on tool use, badged for quality-gate
 verdicts, judge subagents, and permission prompts.
 
@@ -303,9 +300,9 @@ up `.harness/dashboard/` by hand when old session logs are no longer needed.
 **Known limitations**:
 
 - The graph is a flat hub-and-spoke layout — the hook payload set has no
-  parent-agent field, so spawn ancestry (which teammate spawned which) can't be
+  parent-agent field, so spawn ancestry (which agent spawned which) can't be
   reconstructed.
-- Teammate nodes are labeled by `agent_type` only, never a custom `teammate_name` —
+- Agent nodes are labeled by `agent_type` only, never a custom agent name —
   the two identities aren't correlated anywhere in the hook payloads.
 - The view is live-only: it replays one session's backlog on connect, then streams
   new events. There's no cross-session history or aggregation.
@@ -387,8 +384,8 @@ The initializer will:
 3. Create `.harness/` scaffolding (features.json, context_summary.md, init.sh, progress log)
 4. Install async PostToolUse build hooks in `.claude/settings.json`
 5. Install PreToolUse hooks (`enforce-scope.sh`, `verify-git-identity.sh`)
-6. Install quality gate hooks (`TaskCompleted`, `TeammateIdle`)
-7. Wire the status line, Agent Teams env flag, and permissions allowlist into
+6. Install the quality gate hook (`TaskCompleted`)
+7. Wire the status line and permissions allowlist into
    `.claude/settings.json`; gitignore `.harness/SESSION_INCOMPLETE`
 8. Verify hooks execute correctly
 9. Propose initial features with scope and dependencies
@@ -398,13 +395,10 @@ After initialization, verify per-project hooks by checking their exit codes:
 
 ```bash
 echo '{}' | bash .claude/hooks/verify-task-quality.sh; echo "verify-task-quality exit: $?"
-echo '{}' | bash .claude/hooks/check-remaining-tasks.sh; echo "check-remaining-tasks exit: $?"
 ```
 
 Expected exit codes:
 - `verify-task-quality.sh`: 0 when tests pass; 2 when tests fail
-- `check-remaining-tasks.sh`: 2 with pending features is healthy (it sends the next
-  assignment by design); 0 when no features remain
 
 ## Continuing Work
 
@@ -416,4 +410,4 @@ claude
 /harness-continue
 ```
 
-This orients to current state, verifies git identity, and picks single-session or Agent Teams mode.
+This orients to current state, verifies git identity, and picks single-session or workflow mode.
