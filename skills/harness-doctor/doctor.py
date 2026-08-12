@@ -232,7 +232,7 @@ def check_settings(project_dir):
 
 
 def check_teams_migration(project_dir):
-    """Agent Teams was retired in v5.7.0. A project initialized under v5.x
+    """Agent Teams was retired in v6. A project initialized under v5.x
     still carries its wiring -- a TeammateIdle route to a hook that no longer
     ships, the experimental env flag, the orphaned hook file, and whatever
     teammate-scope.txt the last team left behind. None of it does anything
@@ -244,7 +244,7 @@ def check_teams_migration(project_dir):
     if os.path.isfile(hook_path):
         findings.append(Finding(
             f".claude/hooks/{RETIRED_IDLE_HOOK} is left over from the retired "
-            "TeammateIdle nudge (Agent Teams, retired in v5.7.0)",
+            "TeammateIdle nudge (Agent Teams, retired in v6)",
             "nothing invokes it any more -- run doctor --fix to delete it",
             fix_id="remove_retired_idle_hook",
         ))
@@ -252,7 +252,7 @@ def check_teams_migration(project_dir):
     if os.path.isfile(scope_path):
         findings.append(Finding(
             f".claude/{RETIRED_SCOPE_FILE} is stale Agent Teams state "
-            "(retired in v5.7.0)",
+            "(retired in v6)",
             "workflow mode isolates each agent in its own worktree instead -- run "
             "doctor --fix to delete it",
             fix_id="remove_teammate_scope",
@@ -272,7 +272,7 @@ def _check_stale_teams_settings(project_dir):
     if _hook_wired(settings, "TeammateIdle", RETIRED_IDLE_HOOK):
         findings.append(_with_drift(project_dir, ".claude/settings.json", Finding(
             f".claude/settings.json still wires TeammateIdle to {RETIRED_IDLE_HOOK} "
-            "(Agent Teams, retired in v5.7.0)",
+            "(Agent Teams, retired in v6)",
             "run doctor --fix to drop that hook entry -- a user-authored TeammateIdle "
             "hook alongside it is preserved, and the event key is removed only if "
             "nothing is left",
@@ -281,7 +281,7 @@ def _check_stale_teams_settings(project_dir):
     if TEAMS_ENV_FLAG in settings.get("env", {}):
         findings.append(_with_drift(project_dir, ".claude/settings.json", Finding(
             f".claude/settings.json still sets env.{TEAMS_ENV_FLAG} "
-            "(Agent Teams, retired in v5.7.0)",
+            "(Agent Teams, retired in v6)",
             "run doctor --fix to remove it -- the flag gates nothing now",
             fix_id="remove_teams_settings",
         )))
