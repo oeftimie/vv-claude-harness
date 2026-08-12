@@ -14072,6 +14072,59 @@ fi
 assert_not_contains "$(cat "$GOV_LP")" "single source of truth is the script" \
   "gov: launch-prompts.md no longer claims to mirror the schemas as a source"
 
+
+echo "== OVI-145 Phase 4: Teams vocabulary sweep (agents/skills/rules/hooks) =="
+
+# AC2/AC7: the shipped agents are plain-subagent / workflow-`agentType` agents;
+# no Teams-era vocabulary survives in any of them, frontmatter included
+# (case-insensitive: a "Teammate" in a description points at the retired
+# machinery as much as a lowercase one in a body paragraph).
+for AGENT_MD_P4 in "$REPO_ROOT"/agents/*.md; do
+  AGENT_MD_P4_NAME=$(basename "$AGENT_MD_P4")
+  if grep -qi -e "teammate" -e "sendmessage" -e "taskupdate" "$AGENT_MD_P4"; then
+    fail "p4: agents/$AGENT_MD_P4_NAME still carries teammate/SendMessage/TaskUpdate vocabulary"
+  else
+    pass "p4: agents/$AGENT_MD_P4_NAME carries no teammate/SendMessage/TaskUpdate vocabulary"
+  fi
+done
+
+# AC6 grep contract: across the four shipped-content dirs, Teams vocabulary
+# survives ONLY under skills/harness-doctor/ (which must keep naming the
+# retired machinery to detect and migrate stale v5.x projects).
+# --exclude-dir=worktrees: a live workflow session checks agents out into
+# .claude/worktrees/<name>/ full repo copies (same guard as the z: counts);
+# fixture dirs live in $WORK (mktemp), never under these four dirs.
+P4_HITS=$(cd "$REPO_ROOT" && grep -ril --exclude-dir=worktrees \
+  -e "teammate" -e "sendmessage" -e "agent-teams-protocol" \
+  rules/ skills/ agents/ hooks/ 2>/dev/null | grep -v "^skills/harness-doctor/")
+assert_empty "$P4_HITS" \
+  "p4: teammate/SendMessage/agent-teams-protocol vocabulary survives only under skills/harness-doctor/"
+
+# The unhyphenated prose phrase too: no shipped rule/skill/agent/hook outside
+# harness-doctor may still cite "the Agent Teams protocol" as a live document.
+P4_PHRASE_HITS=$(cd "$REPO_ROOT" && grep -rl --exclude-dir=worktrees \
+  "Agent Teams protocol" rules/ skills/ agents/ hooks/ 2>/dev/null | grep -v "^skills/harness-doctor/")
+assert_empty "$P4_PHRASE_HITS" \
+  "p4: no live 'Agent Teams protocol' prose reference outside skills/harness-doctor/"
+
+# AC5: the orientation-recovery eval's captured transcript stays verbatim (it
+# names the retired protocol path -- that is what the eval actually recorded),
+# and a one-line annotation ABOVE the capture marks it as historical, pre-v6.
+EVAL_ORIENT_P4="$REPO_ROOT/evals/orientation-recovery.md"
+P4_ANNOT_LINE=$(grep -n "pre-v6" "$EVAL_ORIENT_P4" | head -1 | cut -d: -f1)
+P4_CAPTURE_LINE=$(grep -n "agent-teams-protocol.md before spawning" "$EVAL_ORIENT_P4" | head -1 | cut -d: -f1)
+if [ -n "$P4_CAPTURE_LINE" ]; then
+  pass "p4: orientation-recovery.md keeps the captured protocol-doc pointer verbatim"
+else
+  fail "p4: orientation-recovery.md lost the verbatim captured protocol-doc pointer"
+fi
+if [ -n "$P4_ANNOT_LINE" ] && [ -n "$P4_CAPTURE_LINE" ] \
+  && [ "$P4_ANNOT_LINE" -lt "$P4_CAPTURE_LINE" ]; then
+  pass "p4: orientation-recovery.md annotates the capture as historical pre-v6, above the capture"
+else
+  fail "p4: orientation-recovery.md is missing a pre-v6 annotation above the capture"
+fi
+
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 echo "Summary: $PASS_COUNT/$TOTAL assertions passed, $FAIL_COUNT failed"

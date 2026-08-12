@@ -47,8 +47,8 @@
 #      hook was wired onto the Bash matcher). harness.json is in
 #      enforce-scope.sh's own LEAD_OWNED set as of F058, the same as
 #      features.json/context_summary.md/claude-progress.txt -- denied for
-#      EVERY teammate regardless of their own assigned scope, not just a
-#      teammate scoped outside `.harness/` (F054 originally shipped a false
+#      EVERY agent regardless of its own assigned scope, not just an
+#      agent scoped outside `.harness/` (F054 originally shipped a false
 #      claim that this was already true; corrected, then closed for real by
 #      F058, filed separately since it's a genuine behavior change). Exempting
 #      a path wholesale still means a REAL secret that later lands in that
@@ -1322,13 +1322,13 @@ def secret_scan_exempt_paths(harness_config):
     # secret-SHAPED synthetic fixture data to test a scanner like this one
     # (F054). Mirrors style_gate_enabled()'s own read-harness.json-or-
     # default-off pattern. harness.json is in enforce-scope.sh's own
-    # LEAD_OWNED set as of F058 -- no teammate, regardless of its own assigned
+    # LEAD_OWNED set as of F058 -- no agent, regardless of its own assigned
     # scope, can edit this exemption list (F054 originally shipped a false
     # claim that this was already the case, found by adversarial review of
     # PR #87; corrected, then closed for real by F058). This exemption
     # remains a tuning knob for a project's own known, synthetic test
     # fixtures, not a defense against the LEAD itself adding an unwise
-    # exemption -- LEAD_OWNED protects against teammates, not against the
+    # exemption -- LEAD_OWNED protects against agents, not against the
     # lead's own mistakes.
     paths = harness_config.get("secret_scan_exempt_paths")
     if not isinstance(paths, list):

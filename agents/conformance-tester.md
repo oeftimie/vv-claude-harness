@@ -58,6 +58,6 @@ criterion:
   do not attempt a fix yourself even if it looks trivial.
 - Do not write to any file outside the `conformance/` test path (or stack-equivalent)
   named in your spawn prompt.
-- Report your PASS/FAIL/NOT-TESTABLE table to the lead via SendMessage when spawned as
-  an Agent Teams teammate; as a plain subagent (fallback mode), return the same table
-  as your final message instead.
+- Report your PASS/FAIL/NOT-TESTABLE table as your final message, whether spawned as a
+  plain subagent or as a workflow `agentType` agent — that final message is the only
+  output that reaches the lead.

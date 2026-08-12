@@ -169,9 +169,9 @@ configured to sign one).
 
 Ask the user two questions if they are not inferable from the spec or issue labels:
 `lane` (`code` or `non-code`) and `risk` (`standard` or `elevated`; offer the
-plan-approval trigger list from the Agent Teams protocol's Dynamic overrides table as the
-elevation heuristic: 10+ files, cross-cutting refactors, security-sensitive code, first
-feature in a new codebase).
+plan-approval trigger list from the Dynamic overrides table in
+`${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md` as the elevation heuristic: 10+ files,
+cross-cutting refactors, security-sensitive code, first feature in a new codebase).
 
 **Persist `risk` locally (F064)**: as soon as `risk` is determined, write it to the
 matching feature object in the local `.harness/features.json` (matched by

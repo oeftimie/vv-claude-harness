@@ -58,7 +58,7 @@ smallest vv-native owner:
 | Domain ownership | A `schemas/*.json` field |
 | Authority | A hook (`.claude/hooks/*.sh`) |
 | Proof | A `proof`/`qa_binding` field (`schemas/feature.schema.json`) |
-| Feedback/delivery | A teammate spawn prompt |
+| Feedback/delivery | An agent spawn prompt |
 | Worker limitation | Hold as an open candidate -- one failed run cannot establish this; needs corroboration across distinct sessions (F015/OVI-55's score>=3 promotion threshold) before acting |
 
 ## Step 4: One Intervention Hypothesis

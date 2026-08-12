@@ -20,7 +20,7 @@ HARD_REQUIRED_HOOKS = (
     "statusline.sh",
 )
 
-# Agent Teams was retired in v5.7.0, when worktree-isolated workflows replaced it.
+# Agent Teams was retired in v6 (v5.7.0 made worktree-isolated workflows primary).
 # These three artifacts are what a project initialized under v5.x still carries.
 TEAMS_ENV_FLAG = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
 RETIRED_IDLE_HOOK = "check-remaining-tasks.sh"

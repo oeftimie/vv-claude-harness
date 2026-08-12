@@ -110,7 +110,8 @@ defined once, in the Feature Schema section of
 `${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md` — see that section rather than
 this one for the current definition.
 
-A feature may also carry a `spec` verification object; see the Feature Schema section of the Agent Teams protocol.
+A feature may also carry a `spec` verification object; see the Feature Schema section of
+`${CLAUDE_PLUGIN_ROOT}/rules/parallel-work.md`.
 
 Then finish the pieces the stamp deliberately leaves to a decision:
 
