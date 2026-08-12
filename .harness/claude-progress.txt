@@ -1145,3 +1145,13 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
 - Next: PR + merge; then OVI-145 (Phase 4) onward. v6.0.0 bump waits for Phase 6 (OVI-147).
 - Blockers: none.
 2026-08-12: harness-issue-prep OVI-145 (remote): SV BLOCK -> RV x3 (ASK, ASK, PASS); 11 questions answered; normalized + written back; stamped (standard/code); harness-ready applied.
+
+## Session 2026-08-12 (continued: F115/OVI-145, Phase 4 -- rules & docs rewrite)
+- Feature: F115 (OVI-145, Phase 4 of OVI-140) -- 7 governance sections into
+  rules/parallel-work.md (single canonical source, skills cite it); last 4 agents
+  restructured (agents/ zero Teams tokens); residual vocabulary swept; doctor
+  strings name v6; evals capture annotated. AC6 grep exact; suite 2017/2017.
+- Status: complete on branch eovidiu/ovi-145-phase-4-rules-docs-rewrite-workflow-governance-rule-agent; PR pending.
+- Prep: SV BLOCK -> 3 RV cycles -> PASS; stamped standard/code vs 77f3300.
+- Next: PR + merge; then OVI-146 (Phase 5, dashboard) and OVI-147 (Phase 6, v6.0.0).
+- Blockers: none.
