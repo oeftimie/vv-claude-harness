@@ -7,7 +7,7 @@ to read it before declaring work complete. -->
 Before declaring ANY task complete:
 - [ ] All tests pass (including new tests written via TDD)
 - [ ] No uncommitted changes remain
-- [ ] Sub-agent/teammate work validated against lead context
+- [ ] Sub-agent and workflow-agent work validated against lead context
 - [ ] Documentation updated (existing docs only)
 - [ ] `context_summary.md` updated with decisions, patterns, or gotchas discovered
 - [ ] The user informed of what changed

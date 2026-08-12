@@ -39,6 +39,8 @@ The orientation text actually used in the recorded condition-A runs (captured by
 running the real hook directly against `fixture-a`, immediately before dispatch --
 `git status -s` on `fixture-a` confirmed clean, both before and after capture):
 
+*(Historical pre-v6 capture, preserved verbatim: the protocol-doc path it names was retired in v6.)*
+
 ```
 ## Harness orientation (auto-injected)
 
