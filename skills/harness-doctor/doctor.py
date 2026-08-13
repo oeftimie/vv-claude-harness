@@ -554,14 +554,22 @@ def check_focused_test_skip_contract(project_dir):
     # positively so a partially hand-applied repair (some arms upgraded, some
     # still 'treating as pass') is still flagged, not cleared by the first
     # upgraded arm's markers.
-    has_markers = "skipped (exit 3)" in non_comment and "run_focused" in non_comment
+    # run_focused is deliberately NOT required: a stack with no per-file runner
+    # skips every focused_test invocation with the exit-3 marker and has no
+    # runner exit code to remap (the v5.7.0 initializer generates exactly this
+    # always-skip shape for stdlib-unittest Python projects; requiring
+    # run_focused false-positived on it -- OVI-147 field validation). The
+    # trade-off: a runner-invoking init.sh missing only the remap goes
+    # undetected; both fake-green signatures (missing marker, 'treating as
+    # pass') remain fully detected.
+    has_marker = "skipped (exit 3)" in non_comment
     has_fake_green = "treating as pass" in non_comment
-    if has_markers and not has_fake_green:
+    if has_marker and not has_fake_green:
         return []
     return [Finding(
         "upgrade available: .harness/init.sh supports focused_test but is missing "
-        "the v5.5.0 exit-3 skip contract (F106) -- no 'skipped (exit 3)' marker, "
-        "no run_focused exit-3 remap, and/or a leftover pre-F106 'treating as "
+        "the v5.5.0 exit-3 skip contract (F106) -- no 'skipped (exit 3)' marker "
+        "on a non-comment line and/or a leftover pre-F106 'treating as "
         "pass' arm, so a skip can be reported as a fake green",
         "hand-apply: compare .harness/init.sh's focused_test block against "
         "skills/harness-init/init.sh.template's and add the missing skip markers "

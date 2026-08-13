@@ -13277,6 +13277,34 @@ OUT=$(run_doctor "$DIR_DOC_FOCUSED_OK")
 assert_not_contains "$OUT" "exit-3 skip contract" \
   "hd (F108): an init.sh already at the v5.5.0 focused_test contract produces no finding"
 
+# F117 field validation (OVI-147): a stack with no per-file runner at all skips
+# every focused_test invocation with the exit-3 marker and never defines
+# run_focused -- there is no runner exit code to remap. The v5.7.0 initializer
+# generates exactly this shape for stdlib-unittest Python projects, and the
+# original marker check (marker AND run_focused) false-positived on it.
+DIR_DOC_FOCUSED_ALWAYS_SKIP="$WORK/doctor-focused-always-skip"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_ALWAYS_SKIP"
+cat > "$DIR_DOC_FOCUSED_ALWAYS_SKIP/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+TARGET=${1:-full_test}
+FOCUS_FILE="${2:-}"
+if [ "$TARGET" = "focused_test" ]; then
+    if [ ! -f "$FOCUS_FILE" ]; then
+        echo "focused_test: test file '$FOCUS_FILE' does not exist -- skipped (exit 3)."
+        exit 3
+    fi
+    echo "focused_test: no per-file runner for stdlib unittest -- skipped (exit 3)."
+    exit 3
+fi
+echo "full test"
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_ALWAYS_SKIP/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_ALWAYS_SKIP" add -A
+git -C "$DIR_DOC_FOCUSED_ALWAYS_SKIP" commit -q -m "init.sh with always-skip focused_test (no per-file runner)"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_ALWAYS_SKIP")
+assert_not_contains "$OUT" "exit-3 skip contract" \
+  "hd (F108): an always-skip focused_test init.sh (marker present, no runner, no run_focused) produces no finding"
+
 DIR_DOC_FOCUSED_STALE="$WORK/doctor-focused-stale"
 make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_STALE"
 cat > "$DIR_DOC_FOCUSED_STALE/.harness/init.sh" <<'INITEOF'

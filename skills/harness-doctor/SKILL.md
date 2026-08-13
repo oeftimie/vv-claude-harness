@@ -107,9 +107,14 @@ and points to `/harness-init` instead of running any checks.
     skipped rather than faked green) never reaches a project that adopted
     `focused_test` before F106 shipped. If `init.sh` mentions `focused_test` outside
     a comment (the same support-detection heuristic `verify-task-quality.sh` uses)
-    but is missing the `skipped (exit 3)` marker or the `run_focused` exit-3 remap
-    — or still carries a pre-F106 `treating as pass` fake-green arm, which catches a
-    partially hand-applied repair — the doctor reports it as upgrade-available. All
+    but is missing the `skipped (exit 3)` marker on a non-comment line — or still
+    carries a pre-F106 `treating as pass` fake-green arm, which catches a
+    partially hand-applied repair — the doctor reports it as upgrade-available.
+    The `run_focused` exit-3 remap is not required: a stack with no per-file
+    runner legitimately skips every invocation with the marker and defines no
+    `run_focused` at all (the trade-off — a runner-invoking `init.sh` missing
+    only the remap goes undetected — was accepted in OVI-147's field validation
+    over false-positiving on every always-skip project). All
     of these are checked against non-comment lines only, so a comment quoting the
     markers (a TODO note, or the finding text pasted as a reminder) neither
     satisfies nor triggers the check. An `init.sh` with no `focused_test` support
