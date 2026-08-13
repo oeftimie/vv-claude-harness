@@ -3280,7 +3280,7 @@
     {
       "id": "F117",
       "priority": 117,
-      "status": "pending",
+      "status": "in-progress",
       "description": "Phase 6 (OVI-147): field validation, migration guide, and v6.0.0 release. Canonical normalized spec on Linear OVI-147 (stamped, hash below). QA binding: journey. AC1: end-to-end toy-project run (init -> prep x3 incl. one elevated -> harness-continue workflow mode -> implement-features -> lead integration; four gates observed firing; dashboard renders the run, screenshot saved). AC2: failure-path drills (tests-fail REVISE <=3 rounds; blocked surfaced not merged; TaskStop mid-run + resumeFromRunId with features.json byte-identical; disableWorkflows -> plain-subagent fallback engages). AC3: fallback outcome parity (same features passing, same tests green, equivalent features.json, same gates; wall-clock/tokens/rounds/diffs exempt). AC4: drill record shape in evals/workflow-migration-validation.md (date, mechanism, expected, observed, verbatim snippet/artifact, PASS/FAIL) + context_summary.md summaries. AC5: consumer migration guide in INSTALL.md + CHANGELOG (plugin update -> doctor --fix from clean git state; skip-doctor consequences; pre-v5/mid-run/rollback one-liners; doctor idempotency documented; portage-curator note, documentation only). AC6: v5.7.0-template fixture upgrades in one session (doctor zero failures, smoke_test passes, no TeammateIdle wiring, env flag gone, features.json byte-identical, second doctor --fix is a zero-finding no-op). AC7: release v6.0.0 (major bump in .claude-plugin/plugin.json only; CHANGELOG breaking entry; README orchestration language refresh; maintenance-runbook Teams-era workarounds delisted + Phase 0-5 workaround sweep with retirement conditions; PR flow, suite green, APPROVE, merge, tag). AC8: epic closure ordering (OVI-147 Done is the last act) + exit-review comment on OVI-140 with token/wall-clock comparison vs criterion-selected Teams-era baseline (most recent >=3-feature session in claude-progress.txt, comparable risk tier). Edge cases: Opus-escalation retry-once fallback recorded; Linear MCP down = retry once then manual, never blocks merge+tag. Full normalized text on Linear.",
       "scope": [
         ".claude-plugin/plugin.json",
@@ -3290,19 +3290,21 @@
         "docs/maintenance-runbook.md",
         "evals/",
         ".harness/",
-        "claude-progress.txt"
+        "claude-progress.txt",
+        "skills/harness-doctor/",
+        "test/run-tests.sh"
       ],
       "depends_on": [
         "F114",
         "F115",
         "F116"
       ],
-      "assigned_to": null,
+      "assigned_to": "single-session",
       "test_file": null,
       "coverage": null,
       "risk": "elevated",
       "qa_binding": "journey",
-      "notes": "Field-validation runs (AC1-AC3, AC6) happen in scratch toy projects outside this repo; only their records (evals doc, evidence, context_summary) land in-scope. Risk elevated: major release + cross-cutting docs sweep.",
+      "notes": "Field-validation runs (AC1-AC3, AC6) happen in scratch toy projects outside this repo; only their records (evals doc, evidence, context_summary) land in-scope. Risk elevated: major release + cross-cutting docs sweep. Scope expanded 2026-08-14 (+skills/harness-doctor/, +test/run-tests.sh): AC6 drill exposed doctor check-10 false-positiving on always-skip focused_test init.sh (marker present, no per-file runner, hence no run_focused); fixed via TDD rather than recording a permanent AC6 deviation.",
       "approaches_tried": [],
       "discovered_via": null,
       "linear": "OVI-147",
@@ -3313,7 +3315,8 @@
         "verified_at": "2026-08-13T20:20:55Z",
         "source": "linear:OVI-147"
       },
-      "correction_cycles": 0
+      "correction_cycles": 0,
+      "scope_expansions": 1
     }
   ]
 }
