@@ -1174,3 +1174,4 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
   hook only; limitations disclosed in EVIDENCE.md).
 - Next: PR + merge; then OVI-147 (Phase 6, v6.0.0 release).
 - Blockers: none.
+2026-08-13 (cont.): review-branch workflow on F116: 8 confirmed / 0 refuted. Real bug fixed: idle-exit only worked for never-watched servers (write-dependent disconnect detection); now select/EOF per pass + connected-client hold/deliver/reap tests. Plus flag validation, onerror surface, sentinel-spam fix, 4 test-gap closures. Suite 2028/2028. AC4 deviation disclosed (2028 > 2017 baseline; review coverage chosen over the numeric target -- Ovidiu accepts/rejects at merge).
