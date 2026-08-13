@@ -12,22 +12,37 @@ this environment's existing trust model for local dev tooling; see this
 repo's .harness/features.json F090 entry). --port overrides the port only.
 
 If the target port is already bound, this fails fast (stderr message, exit
-1) rather than silently falling back to another port. If .harness/dashboard/
-or the target log file does not exist yet, the /events handler waits/polls
-for it instead of erroring -- the rest of the server (static files) is not
-blocked by this wait, since each connection runs in its own thread.
+1) rather than silently falling back to another port. An /events connection
+naming an explicit session whose log file does not exist yet waits/polls for
+it; an /events connection with NO session named, when no *.jsonl exists
+under .harness/dashboard/ at all, gets an immediate 404 instead of a
+connection held open with no HTTP response (OVI-146). The rest of the server
+(static files, /sessions) is never blocked by a waiting stream, since each
+connection runs in its own thread.
+
+Replay bound (OVI-146, documented rather than engineered around): each
+/events (re)connect replays the selected session file in full -- there is no
+SSE id:/Last-Event-ID resume. Acceptable up to roughly 10 MB per file
+(sub-second on loopback); a session log is single-session and typically far
+smaller.
 
 Plain foreground script: SIGINT/SIGTERM terminate it via Python's default
-signal disposition. No daemon mode, no shutdown endpoint.
+signal disposition. No daemon mode, no shutdown endpoint. Idle-exit
+(OVI-146): after --idle-exit-seconds (default 600) with no connected /events
+client -- measured from process start when no client ever connects -- the
+server shuts down and exits 0 on its own, so a detached (nohup'd) server
+never squats its port indefinitely after its viewers are gone.
 """
 import argparse
 import json
 import mimetypes
 import os
 import re
+import select
 import socketserver
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -126,15 +141,13 @@ def list_sessions(dashboard_dir):
 def resolve_target_path(dashboard_dir, session_id):
     """The absolute path to tail. An explicit session_id maps directly (the
     file itself may not exist yet -- stream_events()'s own loop waits for
-    it). Omitted session_id polls until at least one *.jsonl exists, then
-    picks the most-recently-modified one."""
+    it). Omitted session_id picks the most-recently-modified *.jsonl, or
+    returns None when no log exists yet -- the caller answers None with an
+    immediate 404 instead of holding the request open with no HTTP response
+    (OVI-146)."""
     if session_id:
         return os.path.join(dashboard_dir, session_id + ".jsonl")
-    while True:
-        path = pick_most_recent_jsonl(dashboard_dir)
-        if path is not None:
-            return path
-        time.sleep(POLL_INTERVAL)
+    return pick_most_recent_jsonl(dashboard_dir)
 
 
 def read_increment(path, offset):
@@ -185,18 +198,31 @@ def emit_sse_line(wfile, raw_line):
     wfile.flush()
 
 
-def stream_events(wfile, target_path):
+def stream_events(wfile, connection, target_path):
     """Backlog-then-tail loop: the first pass (offset 0) naturally replays
     the full existing file as the backlog burst; every later pass is an
-    incremental tail at the same 200ms cadence. Runs until the connection
-    dies (BrokenPipeError propagates to the caller) or the process exits."""
+    incremental tail at the same 200ms cadence. Between passes, select()
+    watches the client socket for readable-EOF instead of sleeping blind
+    (OVI-146 review): a viewer closing a QUIESCENT stream would otherwise
+    only be noticed on the next write -- which never comes for a finished
+    session -- leaving note_client(-1) unreached and the idle-exit watchdog
+    pinned at zero idle forever. Stray client bytes (an SSE client sends
+    none) are drained and ignored; EOF returns, so the handler's finally
+    always releases the client count. Runs until the connection dies
+    (BrokenPipeError propagates to the caller) or EOF is seen."""
     offset = 0
     while True:
         new_offset, lines = read_increment(target_path, offset)
         offset = 0 if new_offset is None else new_offset
         for raw_line in lines:
             emit_sse_line(wfile, raw_line)
-        time.sleep(POLL_INTERVAL)
+        readable, _, _ = select.select([connection], [], [], POLL_INTERVAL)
+        if readable:
+            try:
+                if not connection.recv(4096):
+                    return
+            except OSError:
+                return
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -218,14 +244,25 @@ class Handler(BaseHTTPRequestHandler):
         override = urllib.parse.parse_qs(query).get("session", [None])[0]
         session_id = sanitize_session_id(override) if override else self.server.session_id
         target = resolve_target_path(self.server.dashboard_dir, session_id)
+        self.server.note_client(1)
         try:
+            if target is None:
+                body = b"no session logs under .harness/dashboard/\n"
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            stream_events(self.wfile, target)
+            stream_events(self.wfile, self.connection, target)
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
+        finally:
+            self.server.note_client(-1)
 
     def handle_sessions(self):
         """GET /sessions: every session log currently under dashboard_dir,
@@ -272,6 +309,59 @@ class Handler(BaseHTTPRequestHandler):
 class DashboardServer(socketserver.ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
+    def __init__(self, addr, handler, idle_exit_seconds):
+        super().__init__(addr, handler)
+        self.idle_exit_seconds = idle_exit_seconds
+        self._clients_lock = threading.Lock()
+        self._events_clients = 0
+        self._last_client_activity = time.time()
+
+    def note_client(self, delta):
+        """Track connected /events clients; any connect/disconnect also
+        restamps the idle clock, so the idle window always measures time
+        since the LAST client left (or since process start, if none ever
+        connected)."""
+        with self._clients_lock:
+            self._events_clients += delta
+            self._last_client_activity = time.time()
+
+    def idle_seconds(self):
+        """0.0 while any /events client is connected; otherwise seconds
+        since the idle clock was last stamped."""
+        with self._clients_lock:
+            if self._events_clients > 0:
+                return 0.0
+            return time.time() - self._last_client_activity
+
+
+def start_idle_watchdog(server):
+    """Daemon thread that shuts the server down (a clean serve_forever()
+    unblock, so main() exits 0) once no /events client has been connected
+    for idle_exit_seconds. Static/api requests deliberately don't count: a
+    page left open without Watch clicked holds no stream, and the page
+    itself re-fetches on demand."""
+    def watch():
+        while True:
+            time.sleep(max(0.05, min(1.0, server.idle_exit_seconds / 4.0)))
+            if server.idle_seconds() >= server.idle_exit_seconds:
+                server.shutdown()
+                return
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
+def positive_seconds(value):
+    """argparse type for --idle-exit-seconds: rejects zero and negative
+    values at startup (usage error) -- a negative window would crash the
+    watchdog thread mid-flight (time.sleep raises ValueError) and silently
+    leave the server running with idle-exit disabled for its whole life."""
+    seconds = float(value)
+    if seconds <= 0:
+        raise argparse.ArgumentTypeError(
+            f"must be a positive number of seconds, got {value!r}"
+        )
+    return seconds
+
 
 def build_arg_parser():
     parser = argparse.ArgumentParser(
@@ -291,13 +381,21 @@ def build_arg_parser():
         default=DEFAULT_PORT,
         help="TCP port to bind on 127.0.0.1 (default: %(default)s)",
     )
+    parser.add_argument(
+        "--idle-exit-seconds",
+        type=positive_seconds,
+        default=600,
+        help="exit 0 after this many seconds with no connected /events "
+        "client, measured from process start when none ever connects "
+        "(default: %(default)s)",
+    )
     return parser
 
 
 def main(argv=None):
     args = build_arg_parser().parse_args(argv)
     try:
-        server = DashboardServer(("127.0.0.1", args.port), Handler)
+        server = DashboardServer(("127.0.0.1", args.port), Handler, args.idle_exit_seconds)
     except OSError as exc:
         sys.stderr.write(
             f"ERROR: cannot bind 127.0.0.1:{args.port} ({exc}); "
@@ -307,6 +405,7 @@ def main(argv=None):
     server.project_root = find_project_root()
     server.dashboard_dir = os.path.join(server.project_root, ".harness", "dashboard")
     server.session_id = sanitize_session_id(args.session_id)
+    start_idle_watchdog(server)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

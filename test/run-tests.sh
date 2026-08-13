@@ -1193,77 +1193,24 @@ else
   fail "dl: absent session_id writes no dashboard directory -- it exists"
 fi
 
-# PreToolUse / Bash: summary is tool_input.description, never the raw command.
+# PreToolUse / Bash: the line carries only the allowlist fields -- nothing
+# from tool_input (command, description, or anything else) reaches the log.
 OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/should-not-appear-in-log","description":"Clean up temp directory"}}' '1')
 RC=$?
 assert_rc0 "$RC" "dl: PreToolUse/Bash exits 0"
 LINE=$(cat "$DL_LOG" 2>/dev/null)
 assert_contains "$LINE" '"hook_event_name": "PreToolUse"' "dl: PreToolUse/Bash logs hook_event_name"
 assert_contains "$LINE" '"session_id": "sess1"' "dl: PreToolUse/Bash logs session_id"
-assert_contains "$LINE" '"tool_name": "Bash"' "dl: PreToolUse/Bash logs tool_name"
-assert_contains "$LINE" '"summary": "Clean up temp directory"' "dl: PreToolUse/Bash summary is tool_input.description"
 assert_not_contains "$LINE" "should-not-appear-in-log" "dl: PreToolUse/Bash never logs the raw command"
+assert_not_contains "$LINE" "Clean up temp directory" "dl: PreToolUse/Bash never logs the description either (no summary field)"
 
-# Bash with no description falls back to the documented placeholder.
-> "$DL_LOG"
-OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"echo unlogged-command-text"}}' '1')
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"summary": "(no description)"' "dl: Bash with no description falls back to the placeholder"
-assert_not_contains "$LINE" "unlogged-command-text" "dl: Bash fallback never logs the raw command"
-
-# PostToolUse / Edit: summary is file_path only, never old_string/new_string content.
+# PostToolUse / Edit: same allowlist; edit content never leaks.
 > "$DL_LOG"
 OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PostToolUse","session_id":"sess1","tool_name":"Edit","tool_input":{"file_path":"src/foo.py","old_string":"leaked-old-secret","new_string":"leaked-new-secret"}}' '1')
 LINE=$(cat "$DL_LOG" 2>/dev/null)
 assert_contains "$LINE" '"hook_event_name": "PostToolUse"' "dl: PostToolUse/Edit logs hook_event_name"
-assert_contains "$LINE" '"summary": "src/foo.py"' "dl: PostToolUse/Edit summary is file_path"
 assert_not_contains "$LINE" "leaked-old-secret" "dl: PostToolUse/Edit never logs old_string"
 assert_not_contains "$LINE" "leaked-new-secret" "dl: PostToolUse/Edit never logs new_string"
-
-# Write: same file_path-only rule.
-> "$DL_LOG"
-OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PostToolUse","session_id":"sess1","tool_name":"Write","tool_input":{"file_path":"out.txt","content":"leaked-write-content"}}' '1')
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"summary": "out.txt"' "dl: Write summary is file_path"
-assert_not_contains "$LINE" "leaked-write-content" "dl: Write never logs content"
-
-# Read/Glob/Grep: file_path, pattern, or path -- whichever is present.
-> "$DL_LOG"
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Read","tool_input":{"file_path":"src/bar.py"}}' '1' >/dev/null
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"summary": "src/bar.py"' "dl: Read summary is file_path"
-
-> "$DL_LOG"
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Grep","tool_input":{"pattern":"needle","path":"src/"}}' '1' >/dev/null
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"summary": "needle"' "dl: Grep summary prefers pattern"
-
-# WebFetch/WebSearch: url or query.
-> "$DL_LOG"
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"WebFetch","tool_input":{"url":"https://example.com/page"}}' '1' >/dev/null
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"summary": "https://example.com/page"' "dl: WebFetch summary is url"
-
-> "$DL_LOG"
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"WebSearch","tool_input":{"query":"vv harness dashboard"}}' '1' >/dev/null
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"summary": "vv harness dashboard"' "dl: WebSearch summary is query"
-
-# A WebFetch url with an embedded key=value-shaped credential (the concrete
-# shape commit-gate.sh's own SECRET_PATTERN already recognizes) must not
-# reach the log verbatim -- redact() builds the summary from raw tool_input,
-# unlike the field-allowlist redaction the rest of this hook otherwise relies
-# on (found by adversarial review: a real secret value can ride through the
-# "url" field's own allowlisted-but-unscrubbed content).
-> "$DL_LOG"
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"WebFetch","tool_input":{"url":"https://api.example.com/v1/data?api_key=sk-live-1234567890abcdef"}}' '1' >/dev/null
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_not_contains "$LINE" "sk-live-1234567890abcdef" \
-  "dl: a key=value-shaped secret in a WebFetch url summary is redacted"
-assert_contains "$LINE" "[redacted]" \
-  "dl: a redacted summary field carries the [redacted] marker"
-assert_contains "$LINE" "https://api.example.com/v1/data?" \
-  "dl: redaction preserves the non-secret part of the url"
 
 # ARG_MAX regression (F089 round 2): this hook's python3 invocation used to
 # put the ENTIRE stdin JSON payload on argv (`python3 - ... "$STDIN_JSON"
@@ -1294,28 +1241,14 @@ DL_BIG_LOG="$DIR_DL/.harness/dashboard/argmaxsess.jsonl"
 LINE=$(cat "$DL_BIG_LOG" 2>/dev/null)
 assert_contains "$LINE" '"session_id": "argmaxsess"' \
   "dl: an oversized payload still produces a logged event (not silently dropped)"
-assert_contains "$LINE" '"tool_name": "Write"' \
-  "dl: an oversized payload's logged event still carries tool_name"
+assert_contains "$LINE" '"hook_event_name": "PostToolUse"' \
+  "dl: an oversized payload's logged event still carries hook_event_name"
 
-# Agent: subagent_type/description, never the full prompt.
+# Agent: the spawn prompt never leaks (nothing from tool_input is logged).
 > "$DL_LOG"
 run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Agent","tool_input":{"subagent_type":"Explore","prompt":"leaked-full-prompt-text"}}' '1' >/dev/null
 LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"summary": "Explore"' "dl: Agent summary is subagent_type"
 assert_not_contains "$LINE" "leaked-full-prompt-text" "dl: Agent never logs the full prompt"
-
-# Summary is capped at 200 chars with a truncate-and-point marker (F071/F079 convention).
-> "$DL_LOG"
-LONG_PATH="src/$(python3 -c 'print("x" * 250)').py"
-run_dashboard_log "$DIR_DL" "$(python3 -c "import json; print(json.dumps({'hook_event_name':'PostToolUse','session_id':'sess1','tool_name':'Edit','tool_input':{'file_path':'$LONG_PATH'}}))")" '1' >/dev/null
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" "chars total" "dl: an oversized summary is truncated with a chars-total marker"
-SUMMARY_LEN=$(python3 -c "import json; print(len(json.loads('''$LINE''')['summary']))" 2>/dev/null || echo 0)
-if [ "$SUMMARY_LEN" -le 260 ] && [ "$SUMMARY_LEN" -gt 0 ]; then
-  pass "dl: truncated summary stays close to the 200-char cap"
-else
-  fail "dl: truncated summary length out of bounds -- got $SUMMARY_LEN"
-fi
 
 # SubagentStart: agent_id/agent_type, no summary field.
 > "$DL_LOG"
@@ -1333,43 +1266,29 @@ assert_contains "$LINE" '"hook_event_name": "SubagentStop"' "dl: SubagentStop lo
 assert_contains "$LINE" '"agent_id": "agent-42"' "dl: SubagentStop logs agent_id"
 assert_not_contains "$LINE" "leaked-subagent-transcript" "dl: SubagentStop never logs last_assistant_message"
 
-# PermissionRequest: tool_name + redacted summary, per its own tool_input/tool_name shape.
+# PermissionRequest: allowlist fields only; file content never leaks.
 > "$DL_LOG"
 run_dashboard_log "$DIR_DL" '{"hook_event_name":"PermissionRequest","session_id":"sess1","tool_name":"Write","tool_input":{"file_path":"out.txt","content":"leaked-permission-content"}}' '1' >/dev/null
 LINE=$(cat "$DL_LOG" 2>/dev/null)
 assert_contains "$LINE" '"hook_event_name": "PermissionRequest"' "dl: PermissionRequest logs hook_event_name"
-assert_contains "$LINE" '"summary": "out.txt"' "dl: PermissionRequest summary follows the Write rule"
 assert_not_contains "$LINE" "leaked-permission-content" "dl: PermissionRequest never logs file content"
 
-# PermissionDenied: tool_name + redacted summary, never the denial reason.
+# PermissionDenied: allowlist fields only; never the denial reason or command.
 > "$DL_LOG"
 run_dashboard_log "$DIR_DL" '{"hook_event_name":"PermissionDenied","session_id":"sess1","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/nope","description":"cleanup"},"reason":"leaked-denial-reason"}' '1' >/dev/null
 LINE=$(cat "$DL_LOG" 2>/dev/null)
 assert_contains "$LINE" '"hook_event_name": "PermissionDenied"' "dl: PermissionDenied logs hook_event_name"
-assert_contains "$LINE" '"summary": "cleanup"' "dl: PermissionDenied summary follows the Bash rule"
 assert_not_contains "$LINE" "leaked-denial-reason" "dl: PermissionDenied never logs the denial reason"
 assert_not_contains "$LINE" "/tmp/nope" "dl: PermissionDenied never logs the raw command"
 
-# TaskCreated / TaskCompleted: only the common fields -- no task subject/metadata.
-> "$DL_LOG"
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1' >/dev/null
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"hook_event_name": "TaskCreated"' "dl: TaskCreated logs hook_event_name"
-assert_contains "$LINE" '"session_id": "sess1"' "dl: TaskCreated logs session_id"
-
-> "$DL_LOG"
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCompleted","session_id":"sess1","task":{"subject":"leaked-task-subject","metadata":{"feature_id":"F999"}}}' '1' >/dev/null
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"hook_event_name": "TaskCompleted"' "dl: TaskCompleted logs hook_event_name"
-assert_not_contains "$LINE" "leaked-task-subject" "dl: TaskCompleted does not log the task subject (not in the field list)"
-
 # The retired TeammateIdle route and its two teammate-only fields are covered
-# by absence assertions in the OVI-144 section at the end of this file.
+# by absence assertions in the OVI-144 section at the end of this file; the
+# F116 route-set assertion below pins TaskCreated/TaskCompleted's removal.
 
 # Multiple events for the same session append, one JSON line each (single write() per line).
 > "$DL_LOG"
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1' >/dev/null
-run_dashboard_log "$DIR_DL" '{"hook_event_name":"TaskCompleted","session_id":"sess1"}' '1' >/dev/null
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"Read","tool_input":{"file_path":"a.py"}}' '1' >/dev/null
+run_dashboard_log "$DIR_DL" '{"hook_event_name":"PostToolUse","session_id":"sess1","tool_name":"Read","tool_input":{"file_path":"a.py"}}' '1' >/dev/null
 LINE_COUNT=$(wc -l < "$DL_LOG" | tr -d ' ')
 if [ "$LINE_COUNT" = "2" ]; then
   pass "dl: repeated events append one JSON line each to the same session file"
@@ -1385,22 +1304,12 @@ for L in 1 2; do
   fi
 done
 
-# Unrecognized tool: no summary field, no crash, still exits 0 and logs common fields.
-> "$DL_LOG"
-OUT=$(run_dashboard_log "$DIR_DL" '{"hook_event_name":"PreToolUse","session_id":"sess1","tool_name":"SomeFutureTool","tool_input":{"whatever":"leaked-unrecognized-tool-data"}}' '1')
-RC=$?
-assert_rc0 "$RC" "dl: unrecognized tool_name still exits 0"
-LINE=$(cat "$DL_LOG" 2>/dev/null)
-assert_contains "$LINE" '"tool_name": "SomeFutureTool"' "dl: unrecognized tool still logs tool_name"
-assert_not_contains "$LINE" "leaked-unrecognized-tool-data" "dl: unrecognized tool never logs raw tool_input"
-assert_not_contains "$LINE" '"summary"' "dl: unrecognized tool has no summary field"
-
 # A write failure (unwritable dashboard dir) never blocks the tool call.
 DIR_DL_RO="$WORK/dl-readonly"
 make_fixture "$DIR_DL_RO"
 mkdir -p "$DIR_DL_RO/.harness/dashboard"
 chmod 555 "$DIR_DL_RO/.harness/dashboard"
-OUT=$(run_dashboard_log "$DIR_DL_RO" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1')
+OUT=$(run_dashboard_log "$DIR_DL_RO" '{"hook_event_name":"PreToolUse","session_id":"sess1"}' '1')
 RC=$?
 assert_rc0 "$RC" "dl: unwritable dashboard dir still exits 0"
 assert_empty "$OUT" "dl: unwritable dashboard dir prints nothing to stdout"
@@ -1411,7 +1320,7 @@ chmod 755 "$DIR_DL_RO/.harness/dashboard"
 DIR_DL_RO2="$WORK/dl-readonly2"
 make_fixture "$DIR_DL_RO2"
 chmod 555 "$DIR_DL_RO2/.harness"
-OUT=$(run_dashboard_log "$DIR_DL_RO2" '{"hook_event_name":"TaskCreated","session_id":"sess1"}' '1')
+OUT=$(run_dashboard_log "$DIR_DL_RO2" '{"hook_event_name":"PreToolUse","session_id":"sess1"}' '1')
 RC=$?
 assert_rc0 "$RC" "dl: unwritable .harness/ (mkdir -p fails) still exits 0"
 chmod 755 "$DIR_DL_RO2/.harness"
@@ -1425,6 +1334,98 @@ fi
 OUT=$(run_dashboard_log "$DIR_DL" 'not json' '1')
 RC=$?
 assert_rc0 "$RC" "dl: garbage stdin exits 0"
+
+# == F116 (OVI-146): trim + resilience ==
+
+# F116/AC3: the log line is a fixed allowlist (ts, hook_event_name, session_id,
+# agent_id, agent_type) -- no summary, no tool_name, no field derived from
+# tool_input at all. The four audit secret shapes (basic-auth URL,
+# X-Amz-Signature presigned URL, Slack webhook URL, bare AKIA key id) ride in
+# the exact tool_input fields the old summary path used verbatim; none may
+# reach the log. The AKIA fixture (AWS's own documented example key) and the
+# Slack webhook fixture are assembled at runtime so neither literal shape
+# ever appears in this source -- content scanners (git-guard, GitHub push
+# protection; the latter flagged the joined Slack shape even with all-zero
+# IDs) would block every commit touching these lines forever.
+> "$DL_LOG"
+F116_AKIA="AKIA"'IOSFODNN7EXAMPLE'
+F116_SLACK="https://hooks.slack.com/services/"'T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX'
+F116_SECRET_DESC="https://user:hunter2secretpass@internal.example.com/api then https://bucket.s3.amazonaws.com/backup.tgz?X-Amz-Signature=deadbeef12345678 via $F116_SLACK with $F116_AKIA"
+run_dashboard_log "$DIR_DL" "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"sess1\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"curl about-to-fetch\",\"description\":\"$F116_SECRET_DESC\"}}" '1' >/dev/null
+LINE=$(cat "$DL_LOG" 2>/dev/null)
+assert_contains "$LINE" '"hook_event_name": "PreToolUse"' "f116: allowlist line still logs hook_event_name"
+assert_contains "$LINE" '"session_id": "sess1"' "f116: allowlist line still logs session_id"
+assert_not_contains "$LINE" "hunter2secretpass" "f116: a basic-auth URL credential never reaches the log"
+assert_not_contains "$LINE" "X-Amz-Signature" "f116: an X-Amz-Signature presigned URL never reaches the log"
+assert_not_contains "$LINE" "hooks.slack.com" "f116: a Slack webhook URL never reaches the log"
+assert_not_contains "$LINE" "$F116_AKIA" "f116: a bare AKIA-style key id never reaches the log"
+F116_KEYS=$(python3 -c "import json,sys; print(','.join(sorted(json.loads(sys.argv[1]).keys())))" "$LINE" 2>/dev/null)
+if [ "$F116_KEYS" = "hook_event_name,session_id,ts" ]; then
+  pass "f116: the logged line carries exactly the allowlist fields present in the payload"
+else
+  fail "f116: the logged line carries exactly the allowlist fields present in the payload -- got: $F116_KEYS"
+fi
+
+# F116/WP5.2: TaskCreated/TaskCompleted are no longer routed to
+# dashboard-log.sh (the hook stays event-agnostic; routing lives in
+# hooks/hooks.json), while the six rendered events stay routed.
+F116_ROUTES=$(python3 - "$REPO_ROOT/hooks/hooks.json" <<'PYEOF'
+import json
+import sys
+
+hooks = json.load(open(sys.argv[1]))["hooks"]
+errors = []
+for gone in ("TaskCreated", "TaskCompleted"):
+    if gone in hooks:
+        errors.append(gone + " still routed")
+for kept in ("PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop",
+             "PermissionRequest", "PermissionDenied"):
+    if kept not in hooks:
+        errors.append(kept + " no longer routed")
+print(";".join(errors))
+PYEOF
+)
+if [ -z "$F116_ROUTES" ]; then
+  pass "f116: hooks.json drops TaskCreated/TaskCompleted and keeps the six rendered events"
+else
+  fail "f116: hooks.json routing -- $F116_ROUTES"
+fi
+
+# F116/WP5.3: python3 absent -> a one-time per-project stderr diagnostic gated
+# by the .harness/dashboard/.python3-missing sentinel, then silence. The PATH
+# below holds every external tool the hook's enabled path needs EXCEPT python3;
+# bash itself is invoked by absolute path so the lookup can't leak outside it.
+DIR_DL_NOPY="$WORK/dl-nopy"
+make_fixture "$DIR_DL_NOPY"
+NOPY_BIN="$WORK/nopy-bin"
+mkdir -p "$NOPY_BIN"
+for NOPY_TOOL in cat tr cut mkdir dirname touch; do
+  NOPY_SRC=$(command -v "$NOPY_TOOL") && ln -s "$NOPY_SRC" "$NOPY_BIN/$NOPY_TOOL"
+done
+F116_BASH=$(command -v bash)
+F116_NOPY_ERR=$( { printf '%s' '{"hook_event_name":"PreToolUse","session_id":"sess1"}' | CLAUDE_PROJECT_DIR="$DIR_DL_NOPY" VV_HARNESS_DASHBOARD=1 PATH="$NOPY_BIN" "$F116_BASH" "$HOOKS_DIR/dashboard-log.sh" 1>/dev/null; } 2>&1 )
+RC=$?
+assert_rc0 "$RC" "f116: python3-absent invocation still exits 0"
+assert_contains "$F116_NOPY_ERR" "python3" "f116: python3-absent emits a stderr diagnostic naming the missing dependency"
+if [ -e "$DIR_DL_NOPY/.harness/dashboard/.python3-missing" ]; then
+  pass "f116: the diagnostic drops the per-project sentinel file"
+else
+  fail "f116: the diagnostic drops the per-project sentinel file -- not found"
+fi
+F116_NOPY_ERR2=$( { printf '%s' '{"hook_event_name":"PreToolUse","session_id":"sess1"}' | CLAUDE_PROJECT_DIR="$DIR_DL_NOPY" VV_HARNESS_DASHBOARD=1 PATH="$NOPY_BIN" "$F116_BASH" "$HOOKS_DIR/dashboard-log.sh" 1>/dev/null; } 2>&1 )
+assert_empty "$F116_NOPY_ERR2" "f116: the second python3-absent invocation is silent (sentinel present)"
+
+# Review round (OVI-146): when the sentinel cannot be created (read-only
+# .harness/), the diagnostic is suppressed entirely -- at-most-once, never
+# once-per-tool-call spam from a guard that can never close.
+DIR_DL_NOPY_RO="$WORK/dl-nopy-ro"
+make_fixture "$DIR_DL_NOPY_RO"
+chmod 555 "$DIR_DL_NOPY_RO/.harness"
+F116_NOPY_RO_ERR=$( { printf '%s' '{"hook_event_name":"PreToolUse","session_id":"sess1"}' | CLAUDE_PROJECT_DIR="$DIR_DL_NOPY_RO" VV_HARNESS_DASHBOARD=1 PATH="$NOPY_BIN" "$F116_BASH" "$HOOKS_DIR/dashboard-log.sh" 1>/dev/null; } 2>&1 )
+RC=$?
+chmod 755 "$DIR_DL_NOPY_RO/.harness"
+assert_rc0 "$RC" "f116r: python3-absent with an unwritable .harness/ still exits 0"
+assert_empty "$F116_NOPY_RO_ERR" "f116r: python3-absent with an unwritable .harness/ stays silent (no per-call spam)"
 
 # Regression guard: the disabled path (first-operation env check) stays well under
 # a generous 50ms bound -- not a benchmarked SLA, just a structural no-file-I/O check.
@@ -10783,8 +10784,10 @@ def main():
             chunks.append(data)
     raw = b"".join(chunks)
     header, _, body = raw.partition(b"\r\n\r\n")
-    status_line = header.split(b"\r\n", 1)[0].decode("utf-8", "replace")
-    sys.stdout.write(status_line + "\n\n")
+    # The full header block (status line + response headers), not just the
+    # status line -- F116's 404 contract pins Content-Type, which was
+    # previously discarded here and therefore unassertable (OVI-146 review).
+    sys.stdout.write(header.decode("utf-8", "replace") + "\n\n")
     sys.stdout.buffer.write(body)
 
 
@@ -11294,6 +11297,132 @@ assert_contains "$EMPTY_SESSIONS_OUT" "\"sessions\": []" \
 
 kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
 
+echo "--- group 10 (F116): omitted-session /events with no logs fails visibly; clientless idle-exit ---"
+
+# WP5.3.1: with no session specified and no *.jsonl anywhere, /events must
+# complete with a 404 (text/plain, naming the condition) instead of polling
+# forever with no HTTP response. raw_get.py's 5s socket timeout is the
+# distinguishing bound: the old behavior produces no status line at all
+# before that timeout. An explicit ?session= target for a not-yet-existing
+# file keeps the documented wait-for-file behavior -- pinned by group 6 above.
+DIR10="$WORK/dash-10"
+make_fixture "$DIR10"
+PORT10=$(free_port)
+start_dashboard_server "$DIR10" "" "$PORT10" "$WORK/server-10.out"
+wait_for_port 127.0.0.1 "$PORT10"
+assert_rc0 "$?" "f116: group10 server accepts connections on its bound port"
+F116_404=$(raw_get "$PORT10" "/events" 2>/dev/null || true)
+assert_contains "$F116_404" "404" "f116: /events with no session and no logs completes with HTTP 404 within the socket timeout"
+assert_contains "$F116_404" "no session logs" "f116: the 404 body names the no-session-logs condition"
+assert_contains "$F116_404" "Content-Type: text/plain" \
+  "f116r: the 404 carries Content-Type text/plain, not an SSE header"
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
+
+# WP5.3.4: a server with no /events client for a full idle window exits 0 on
+# its own (the timer runs from process start, so a server pointed at nothing
+# also reaps itself). Time-compressed via --idle-exit-seconds; the production
+# default is 600s, far beyond any other group's server lifetime here.
+DIR10B="$WORK/dash-10b"
+make_fixture "$DIR10B"
+mkdir -p "$DIR10B/.harness/dashboard"
+printf '{"marker":"F116-MARK-IDLE"}\n' > "$DIR10B/.harness/dashboard/idlesess.jsonl"
+PORT10B=$(free_port)
+(cd "$DIR10B" && CLAUDE_PROJECT_DIR="$DIR10B" exec python3 "$DASHBOARD_PY" idlesess --port "$PORT10B" --idle-exit-seconds 1) >"$WORK/server-10b.out" 2>&1 &
+F116_IDLE_PID=$!
+track_pid "$F116_IDLE_PID"
+F116_IDLE_GONE=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if ! kill -0 "$F116_IDLE_PID" 2>/dev/null; then
+    F116_IDLE_GONE=1
+    break
+  fi
+  sleep 0.5
+done
+if [ -n "$F116_IDLE_GONE" ]; then
+  pass "f116: a clientless server exits on its own within the idle window"
+  wait "$F116_IDLE_PID" 2>/dev/null
+  F116_IDLE_RC=$?
+  if [ "$F116_IDLE_RC" = "0" ]; then
+    pass "f116: the idle-exit is a clean exit 0"
+  else
+    fail "f116: the idle-exit is a clean exit 0 -- got exit $F116_IDLE_RC"
+  fi
+else
+  fail "f116: a clientless server exits on its own within the idle window -- still alive after 5s"
+  fail "f116: the idle-exit is a clean exit 0 -- server never exited"
+  kill "$F116_IDLE_PID" 2>/dev/null
+fi
+
+# Review round (OVI-146): a CONNECTED /events client must hold the server
+# open past its idle window (the _events_clients guard is load-bearing --
+# dropping it cuts a live viewer's stream at exactly the window), and the
+# client's disconnect must be detected WITHOUT any further log growth
+# (select/EOF in stream_events; before the fix, a viewer leaving a
+# quiescent session pinned the client count above zero forever and the
+# server never reaped itself -- the exact case SKILL.md calls normal).
+DIR10C="$WORK/dash-10c"
+make_fixture "$DIR10C"
+mkdir -p "$DIR10C/.harness/dashboard"
+LOG10C="$DIR10C/.harness/dashboard/idlesess.jsonl"
+printf '{"marker":"F116-MARK-HOLD-1"}\n' > "$LOG10C"
+PORT10C=$(free_port)
+(cd "$DIR10C" && CLAUDE_PROJECT_DIR="$DIR10C" exec python3 "$DASHBOARD_PY" idlesess --port "$PORT10C" --idle-exit-seconds 1) >"$WORK/server-10c.out" 2>&1 &
+F116_HOLD_PID=$!
+track_pid "$F116_HOLD_PID"
+wait_for_port 127.0.0.1 "$PORT10C"
+assert_rc0 "$?" "f116r: group10c server accepts connections on its bound port"
+CAPTURE10C="$WORK/capture-10c.txt"
+: > "$CAPTURE10C"
+start_sse_reader "$PORT10C" "/events?session=idlesess" "$CAPTURE10C"
+READER10C="$READER_PID"
+sleep 3
+kill -0 "$F116_HOLD_PID" 2>/dev/null
+assert_rc0 "$?" "f116r: a connected /events client holds the server past a 1s idle window"
+printf '{"marker":"F116-MARK-HOLD-2"}\n' >> "$LOG10C"
+sleep 0.6
+assert_contains "$(cat "$CAPTURE10C")" "F116-MARK-HOLD-2" \
+  "f116r: the held-open server still delivers newly appended lines"
+kill "$READER10C" 2>/dev/null; wait "$READER10C" 2>/dev/null
+F116_REAP_GONE=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if ! kill -0 "$F116_HOLD_PID" 2>/dev/null; then
+    F116_REAP_GONE=1
+    break
+  fi
+  sleep 0.5
+done
+if [ -n "$F116_REAP_GONE" ]; then
+  pass "f116r: after the last client disconnects (quiescent log, no writes), the server exits within the idle window"
+  wait "$F116_HOLD_PID" 2>/dev/null
+  F116_REAP_RC=$?
+  if [ "$F116_REAP_RC" = "0" ]; then
+    pass "f116r: the post-disconnect idle-exit is a clean exit 0"
+  else
+    fail "f116r: the post-disconnect idle-exit is a clean exit 0 -- got exit $F116_REAP_RC"
+  fi
+else
+  fail "f116r: after the last client disconnects (quiescent log, no writes), the server exits within the idle window -- still alive after 5s"
+  fail "f116r: the post-disconnect idle-exit is a clean exit 0 -- server never exited"
+  kill "$F116_HOLD_PID" 2>/dev/null
+fi
+
+# Review round (OVI-146): the 600s default is pinned via argparse itself
+# (the source-text grep at the F092 section matches the docstring too), and
+# a non-positive window is a startup usage error rather than a ValueError
+# that kills the watchdog thread mid-flight and silently disables idle-exit.
+F116_HELP=$(python3 "$DASHBOARD_PY" --help 2>&1)
+assert_contains "$F116_HELP" "default: 600" \
+  "f116r: --idle-exit-seconds defaults to 600 (pinned via argparse help output)"
+F116_NEG_OUT=$(python3 "$DASHBOARD_PY" idlesess --idle-exit-seconds -5 2>&1)
+F116_NEG_RC=$?
+if [ "$F116_NEG_RC" != "0" ]; then
+  pass "f116r: a non-positive --idle-exit-seconds is rejected at startup"
+else
+  fail "f116r: a non-positive --idle-exit-seconds is rejected at startup -- exit 0"
+fi
+assert_contains "$F116_NEG_OUT" "positive" \
+  "f116r: the rejection names the positive-seconds requirement"
+
 echo ""
 echo "== F091: dashboard frontend =="
 
@@ -11347,6 +11476,12 @@ assert_contains "$DASHBOARD_HTML_SRC" "-judge" \
   "dash-fe: page source classifies agent_type values ending in -judge"
 assert_contains "$DASHBOARD_HTML_SRC" "agent_id" \
   "dash-fe: page source reads agent_id to classify lead vs. spoke"
+assert_contains "$DASHBOARD_HTML_SRC" "payload.hook_event_name" \
+  "f116: page source reads hook_event_name (AC2 field coverage)"
+assert_contains "$DASHBOARD_HTML_SRC" "payload.agent_type" \
+  "f116: page source reads agent_type (AC2 field coverage)"
+assert_contains "$DASHBOARD_HTML_SRC" "currentSource.onerror" \
+  "f116r: the page surfaces a dead /events connection instead of freezing silently"
 assert_contains "$DASHBOARD_HTML_SRC" "(unknown agent)" \
   "dash-fe: page source labels a missing agent_type as (unknown agent)"
 assert_not_contains "$DASHBOARD_HTML_SRC" ".teammate_name" \
@@ -11479,6 +11614,23 @@ assert_contains "$DASH_SKILL_SRC" "no server restart" \
   "f099: SKILL.md states that switching sessions in the same project needs no restart"
 assert_contains "$DASH_SKILL_SRC" "bound to a *different project*" \
   "f099: SKILL.md's Accepted limitation note describes the cross-project reuse gap, not only same-project staleness"
+
+# F116 (OVI-146): the dashboard describes workflow/subagent sessions (Agent
+# Teams is retired), and the new lifecycle/replay behavior is documented in
+# both SKILL.md and serve.py's own docstring.
+assert_contains "$DASH_SKILL_SRC" "workflow" \
+  "f116: SKILL.md describes workflow/subagent sessions"
+assert_not_contains "$DASH_SKILL_SRC" "Agent Teams" \
+  "f116: SKILL.md no longer markets the retired Agent Teams mode"
+assert_contains "$DASH_SKILL_SRC" "idle-exit" \
+  "f116: SKILL.md documents the idle-exit server lifecycle"
+assert_contains "$DASH_SKILL_SRC" "replays the selected session" \
+  "f116: SKILL.md documents the full-file replay-on-reconnect bound"
+DASH_SERVE_SRC=$(cat "$DASHBOARD_PY" 2>/dev/null)
+assert_contains "$DASH_SERVE_SRC" "idle-exit-seconds" \
+  "f116: serve.py exposes the --idle-exit-seconds override (default 600)"
+assert_contains "$DASH_SERVE_SRC" "10 MB" \
+  "f116: serve.py's docstring documents the full-file replay bound"
 
 README_SRC=$(cat "$REPO_ROOT/README.md" 2>/dev/null)
 assert_contains "$README_SRC" "skills/harness-dashboard/" \
@@ -13570,8 +13722,8 @@ assert_not_contains "$(cat "$HOOKS_DIR/dashboard-log.py")" "teammate_name" \
   "ovi144: dashboard-log.py's field list drops teammate_name"
 assert_not_contains "$(cat "$HOOKS_DIR/dashboard-log.sh")" "TeammateIdle" \
   "ovi144: dashboard-log.sh's header no longer documents a TeammateIdle route"
-assert_contains "$(cat "$HOOKS_DIR/dashboard-log.sh")" "eight wired event names" \
-  "ovi144: dashboard-log.sh's header states the corrected wired-event count"
+assert_contains "$(cat "$HOOKS_DIR/dashboard-log.sh")" "six wired event names" \
+  "ovi144: dashboard-log.sh's header states the corrected wired-event count (six since F116 dropped TaskCreated/TaskCompleted)"
 
 # AC6: stamp.sh no longer templates the env flag, and team_mode is neither
 # required nor consumed -- an answers file that still carries it (written

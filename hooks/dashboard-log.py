@@ -17,50 +17,21 @@ the four gate scripts' own copies of this same schema), so it CAN reach a
 sibling file -- this sidesteps the whole heredoc-quoting hazard rather than
 working around it.
 
+The logged line is a fixed field allowlist -- ts, hook_event_name,
+session_id, and (when present) agent_id/agent_type. No field is ever derived
+from tool_input or any other free-text payload content, so no secret riding
+in a command, URL, or file path can reach the log (OVI-146): there is
+nothing to redact because nothing free-form is written.
+
 Invoked as: dashboard-log.py <log_path> <session_id>, with the raw hook
 stdin JSON piped to this process's own stdin.
 """
 import json
-import re
 import sys
 import time
 
 log_path, session_id = sys.argv[1], sys.argv[2]
 stdin_json = sys.stdin.read()
-SUMMARY_LIMIT = 200
-
-# Reused verbatim from commit-gate.sh's own SECRET_PATTERN (~line 446-449):
-# a redacted summary is still built from raw tool_input (url, description,
-# etc.), unlike the field-allowlist redaction this hook otherwise relies on,
-# so a real secret riding along in one of those fields -- e.g. a WebFetch url
-# with an embedded `?api_key=...` query param -- reached the log verbatim.
-# This closes the concrete key=value-shaped case the pattern already
-# recognizes, applied to this new surface; it is not a general secret
-# scanner (a bare token or unlabeled bearer string in free text still isn't
-# caught, the same documented residual as commit-gate.sh's own copy).
-SECRET_KEYWORDS = "key|secret|password|passwd|pwd|token"
-SECRET_PATTERN = re.compile(
-    r"(?i)(?:" + SECRET_KEYWORDS + r")[A-Za-z0-9_.\-]*['\"]?\s*[:=]\s*"
-    r"['\"]?([A-Za-z0-9+/_.\-]{16,})"
-)
-
-
-def redact(tool_name, tool_input):
-    if not isinstance(tool_input, dict):
-        tool_input = {}
-    if tool_name == "Bash":
-        return tool_input.get("description") or "(no description)"
-    if tool_name in ("Edit", "Write"):
-        return tool_input.get("file_path", "")
-    if tool_name in ("Read", "Glob", "Grep"):
-        return (tool_input.get("file_path") or tool_input.get("pattern")
-                 or tool_input.get("path") or "")
-    if tool_name in ("WebFetch", "WebSearch"):
-        return tool_input.get("url") or tool_input.get("query") or ""
-    if tool_name == "Agent":
-        return tool_input.get("subagent_type") or tool_input.get("description") or ""
-    return None
-
 
 try:
     try:
@@ -75,19 +46,10 @@ try:
         "hook_event_name": data.get("hook_event_name", ""),
         "session_id": session_id,
     }
-    for key in ("agent_id", "agent_type", "tool_name"):
+    for key in ("agent_id", "agent_type"):
         value = data.get(key)
         if value:
             line[key] = value
-
-    tool_name = data.get("tool_name")
-    if tool_name:
-        summary = redact(tool_name, data.get("tool_input"))
-        if summary is not None:
-            summary = SECRET_PATTERN.sub("[redacted]", summary)
-            if len(summary) > SUMMARY_LIMIT:
-                summary = summary[:SUMMARY_LIMIT] + f"... ({len(summary)} chars total)"
-            line["summary"] = summary
 
     with open(log_path, "a") as fh:
         fh.write(json.dumps(line) + "\n")
