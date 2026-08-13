@@ -1155,3 +1155,22 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
 - Prep: SV BLOCK -> 3 RV cycles -> PASS; stamped standard/code vs 77f3300.
 - Next: PR + merge; then OVI-146 (Phase 5, dashboard) and OVI-147 (Phase 6, v6.0.0).
 - Blockers: none.
+2026-08-13: harness-issue-prep OVI-146 (remote): SV ASK (18 questions) -> RV x1 PASS; Q1 answered by Ovidiu, Q2-Q18 resolved by lead recommendation under delegation (all trim branch; WP5.4 dropped as already-repaired); normalized + written back; stamped (standard/code vs 854daba); harness-ready applied.
+
+## Session 2026-08-13 (F116/OVI-146, Phase 5 -- dashboard alignment and trim)
+- Feature: F116 (OVI-146, Phase 5 of OVI-140) -- dashboard trim + resilience.
+  dashboard-log.py reduced to fixed allowlist (summary/tool_name/redaction path
+  deleted); Task* unrouted from hooks.json; sess1.jsonl sample regenerated
+  (72->51 lines); serve.py gained no-logs 404, 600s clientless idle-exit
+  (--idle-exit-seconds), documented ~10MB replay bound; dashboard-log.sh gained
+  one-time-per-project python3-absent sentinel diagnostic; SKILL.md reworded to
+  workflow/subagent sessions. WP5.4 dropped (drift already repaired).
+- Status: complete on branch eovidiu/ovi-146-phase-5-dashboard-alignment-and-trim-workflow-run-rendering; PR pending.
+- Prep: SV ASK (18 q) -> Ovidiu answered Q1, delegated rest -> RV PASS cycle 1;
+  stamped standard/code vs 854daba; harness-ready applied.
+- Tests: 2016/2016 passing (baseline 2017 at branch start; AC4 net shrink:
+  +19 f116, -20 legacy, -2 subsumed).
+- AC1 evidence: .harness/evidence/ovi-146/ (live headless runs through the new
+  hook only; limitations disclosed in EVIDENCE.md).
+- Next: PR + merge; then OVI-147 (Phase 6, v6.0.0 release).
+- Blockers: none.

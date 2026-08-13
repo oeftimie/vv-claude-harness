@@ -1,0 +1,20 @@
+{"ts": "2026-08-13T04:37:46Z", "hook_event_name": "PreToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406"}
+{"ts": "2026-08-13T04:37:47Z", "hook_event_name": "PreToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406"}
+{"ts": "2026-08-13T04:37:48Z", "hook_event_name": "SubagentStart", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "a7f7a3df48289034f", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:48Z", "hook_event_name": "PostToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406"}
+{"ts": "2026-08-13T04:37:49Z", "hook_event_name": "SubagentStart", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "aca26edd7d30a98d1", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:49Z", "hook_event_name": "PostToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406"}
+{"ts": "2026-08-13T04:37:53Z", "hook_event_name": "PreToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "a7f7a3df48289034f", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:53Z", "hook_event_name": "PostToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "a7f7a3df48289034f", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:55Z", "hook_event_name": "PreToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "a7f7a3df48289034f", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:55Z", "hook_event_name": "PostToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "a7f7a3df48289034f", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:56Z", "hook_event_name": "PreToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "aca26edd7d30a98d1", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:56Z", "hook_event_name": "PostToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "aca26edd7d30a98d1", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:58Z", "hook_event_name": "PreToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "aca26edd7d30a98d1", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:58Z", "hook_event_name": "PostToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "aca26edd7d30a98d1", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:58Z", "hook_event_name": "PreToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "a7f7a3df48289034f", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:37:58Z", "hook_event_name": "PostToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "a7f7a3df48289034f", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:38:03Z", "hook_event_name": "PreToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "aca26edd7d30a98d1", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:38:03Z", "hook_event_name": "PostToolUse", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "aca26edd7d30a98d1", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:38:07Z", "hook_event_name": "SubagentStop", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "a7f7a3df48289034f", "agent_type": "Explore"}
+{"ts": "2026-08-13T04:38:08Z", "hook_event_name": "SubagentStop", "session_id": "27ef3608-0cc7-42e7-b4ca-38552cf04406", "agent_id": "aca26edd7d30a98d1", "agent_type": "Explore"}
