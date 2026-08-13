@@ -51,6 +51,59 @@ update mechanics themselves.
   5902b727aa9028821979c424fd177a7b862b8577ae879b4b71913bad15c31764`.
 - **Verdict**: PASS.
 
+## AC1 — end-to-end workflow-mode run (2026-08-14)
+
+- **Mechanism**: detached headless Opus lead in toy-fresh
+  (`VV_HARNESS_DASHBOARD=1`, `--plugin-dir` checkout) running the
+  `harness-continue` Step 5b flow: mirror tasks → `implement-features` workflow
+  (`maxReviewRounds: 3`) → per-feature integration in the pinned order.
+- **Expected**: 3 features implemented/reviewed/merged/passing; four gates
+  observed; dashboard renders the run.
+- **Observed**: F001 APPROVE round 1 (18 tests), F002 APPROVE round 1 (21),
+  F003 REVISE→APPROVE round 2 of 3 (14 + 15 author-blind conformance). Final
+  suite 69/69 — re-verified independently outside the toy session. Elevated
+  handling on F003: high-effort Opus review + conformance pass both ran.
+  Integration commits show the pinned order (merge → status flip → separate
+  add/commit). Gates: SessionStart (incl. a real SESSION_INCOMPLETE catch),
+  TaskCompleted ×3 (coverage stage self-skipped: no `coverage.py` — see
+  findings), commit gate, enforce-scope, git-identity, dashboard hooks (538+
+  events, 8 SubagentStart/Stop pairs).
+- **Dashboard**: served by this branch's `serve.py`; only console entry the
+  pre-existing favicon-404 resource line. Terminal-state screenshot at
+  `.harness/evidence/ovi-147/ac1-dashboard-render.png`; per-agent spokes
+  evidenced by the 8 SubagentStart/Stop pairs in
+  `.harness/evidence/ovi-147/ac1-session.jsonl` (replay of a completed session
+  animates faster than a capture round-trip — same disclosed limitation as
+  F116). Full lead report: `.harness/evidence/ovi-147/ac1-lead-report.txt`.
+- **Verdict**: PASS.
+- **Findings routed to backlog**: (1) `implement-features.js` hardcodes the
+  implementer to Sonnet — the elevated-risk lane's "upgrade implementer to
+  Opus" heuristic has no per-feature override hook; (2) following
+  `harness-continue` Step 3.5 (conformance proof on elevated features)
+  guarantees a `qa_binding`/`proof.evidence_type` mismatch warning from
+  `verify-task-quality.sh` — the two shipped rules contradict; (3) the
+  coverage stage self-skips silently when no coverage tool exists for the
+  stack; (4) deliberately batching dependent same-scope features (drill
+  design, disclosed) reproduced exactly the failures `parallel-work.md`
+  predicts — duplicated helpers, wholesale reimplementation, every
+  post-first merge conflicting — independently caught by both reviewers; a
+  strong negative result validating the rule's independence definition.
+
+## AC2(a) — failing-tests REVISE drill (2026-08-14, organic)
+
+- **Mechanism**: not injected — F003's round-1 implementation carried two
+  mutation-verified test gaps (local-time timestamp with literal `Z`;
+  tombstone written on the `KeyError` branch); the Opus reviewer returned
+  REVISE.
+- **Expected**: REVISE loop engages and terminates at ≤ 3 rounds.
+- **Observed**: REVISE at round 1 → fixes applied and mutation-re-verified
+  (including a reviewer-caught `TZ=UTC` mutant the first fix missed) →
+  APPROVE at round 2 of 3. Loop bounded, no override needed.
+- **Snippet**: `F003 delete | Sonnet, worktree 3 | 2 of 3 | REVISE → APPROVE`.
+- **Verdict**: PASS (organic occurrence disclosed in place of an injected
+  failure; the loop's engagement and bound are the assertion, and both were
+  exercised for real).
+
 ## AC6 — v5.x fixture upgrade drill (2026-08-14)
 
 - **Mechanism**: toy-v5 at a clean git state; stand-in for `/plugin` update
