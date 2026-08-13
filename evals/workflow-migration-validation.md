@@ -104,6 +104,29 @@ update mechanics themselves.
   failure; the loop's engagement and bound are the assertion, and both were
   exercised for real).
 
+## AC2(b) — blocked-feature drill (2026-08-14)
+
+- **Mechanism**: toy-blocked clone (pre-implementation state) given an F004
+  whose spec requires an API credential in an uncommitted `.env.notescloud`
+  and forbids stubbing it — genuinely unbuildable by design; Sonnet lead ran
+  the workflow for F004 alone.
+- **Expected**: the workflow returns `status: blocked` with structured
+  findings; the lead surfaces it, never merges; `features.json` unchanged for
+  F004.
+- **Observed**: `outcome: "blocked"` with a precise blocker naming the missing
+  credential and the spec clause forbidding fakes; `review: null` (a blocked
+  implementer short-circuits its review stage); pre-existing 69-test suite
+  confirmed green before the block; no merge commit on the integration branch
+  (verified independently: `F004 status: pending`, worktree branch unmerged);
+  no credential fabricated, no stub written.
+- **Snippet**: `"status": "blocked", "blocker": "Spec AC/edge case requires
+  reading a real NotesCloud API key from .env.notescloud …"`.
+- **Verdict**: PASS.
+- Fixture artifact (not a defect): the worktree branch based itself on the
+  clone's `origin/main` (toy-fresh, which already has F001–F003 merged) rather
+  than the local drill branch — a divergence created by the clone-based drill
+  setup, disclosed by the toy lead unprompted.
+
 ## AC6 — v5.x fixture upgrade drill (2026-08-14)
 
 - **Mechanism**: toy-v5 at a clean git state; stand-in for `/plugin` update
