@@ -1,13 +1,14 @@
 ---
 name: harness-dashboard
-description: Launch (or reuse) the live dashboard for the current harness session and open it in a browser. Checks .harness/dashboard/ for at least one session log, starts F090's SSE server (hooks/dashboard/serve.py) detached at the OS level if one isn't already running on 127.0.0.1:8765, then opens F091's node-graph view. Use when you want to visually watch an active Agent Teams session, or review the final state of one that already ended.
+description: Launch (or reuse) the live dashboard for the current harness session and open it in a browser. Checks .harness/dashboard/ for at least one session log, starts F090's SSE server (hooks/dashboard/serve.py) detached at the OS level if one isn't already running on 127.0.0.1:8765, then opens F091's node-graph view. Use when you want to visually watch an active workflow/subagent session, or review the final state of one that already ended.
 ---
 
 # Harness Dashboard
 
-Opens a live, animated view of one harness session's Agent Teams activity: nodes
-for the lead and each spoke, pulsing on tool use, badged for quality-gate verdicts,
-judge subagents, and permission prompts. This skill only launches the viewer --
+Opens a live, animated view of one harness session's workflow/subagent activity:
+nodes for the lead and each spoke agent (workflow agents, plain subagents --
+anything that fires SubagentStart/SubagentStop), pulsing on tool use, badged for
+quality-gate verdicts, judge subagents, and permission prompts. This skill only launches the viewer --
 the actual event log is written by `hooks/dashboard-log.sh` (F088), and only when
 the session that produced it was started with `VV_HARNESS_DASHBOARD=1` set.
 
@@ -39,8 +40,10 @@ Setting the variable after the session has already started has no effect.
    to watch, then run /harness-dashboard again once it's running.
    ```
 
-   Do not start a server pointed at nothing -- F090's server will happily wait/poll
-   for a log file that will never appear, which just leaves a useless process running.
+   Do not start a server pointed at nothing -- /events answers 404 when no log
+   exists yet, and a server nobody connects to idle-exits on its own after 10
+   minutes (see "Stopping / restarting the server" below), but a pointless
+   launch still churns a process for no reason.
 
 2. **Check whether a server is already serving.** Probe `127.0.0.1:8765` (e.g. a
    plain `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/` with a
@@ -111,10 +114,24 @@ frozen -- no more events will arrive. This is expected, not a failure: F090's
 server has no cross-session aggregation or historical replay beyond
 backlog-replay-on-connect for whichever one file a connection is tailing.
 
+If your connection drops (laptop sleep, server hiccup), the browser's
+EventSource auto-reconnects and replays the selected session's log file in
+full -- there is no incremental resume. That replay is bounded by the file's
+size (fine up to ~10 MB; session logs are typically far smaller), so a
+reconnect costs a sub-second burst, not lost data.
+
 ## Stopping / restarting the server
 
-There is no shutdown endpoint and no Claude-Code-internal stop command -- the
-server is a plain OS process, stopped like any other:
+The server reaps itself: after 10 minutes with no connected viewer (600
+seconds, `--idle-exit-seconds`; the timer runs from process start, so a server
+that never gets a viewer also exits), it shuts down cleanly and frees the
+port -- an orphaned server no longer squats 8765 across projects
+indefinitely. Note that only a connected /events stream counts as a viewer: a
+page left open on the picker without clicking Watch does not hold the server
+up.
+
+To stop it sooner, there is no shutdown endpoint and no Claude-Code-internal
+stop command -- the server is a plain OS process, stopped like any other:
 
 ```bash
 lsof -i :8765          # find the PID listening on the dashboard port
