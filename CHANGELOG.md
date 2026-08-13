@@ -2,6 +2,35 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v6.0.0 (unreleased)
+
+**Breaking: Agent Teams machinery removed. Dynamic workflows are the orchestration
+backbone (OVI-140, Phases 3–6).**
+
+- **Breaking (F114/OVI-144)**: the Agent Teams coordination path is gone —
+  `TeammateIdle` wiring, the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env flag,
+  `check-remaining-tasks.sh`, and `teammate-scope.txt` are no longer installed;
+  `harness-doctor` gained the migration check that reports and (with `--fix`) removes
+  all four from existing projects.
+- **Rules & docs rewrite (F115/OVI-145)**: `rules/parallel-work.md` is the single
+  canonical orchestration rule (script authoring constraints, structured-output
+  contracts, task mirroring, the pinned test→merge→status-flip→task-complete→commit
+  integration order, author blindness, worktree hygiene, escalation, model policy);
+  agent definitions are plain-subagent/workflow shaped with zero teammate/SendMessage
+  vocabulary.
+- **Dashboard alignment and trim (F116/OVI-146)**: capture is a fixed field allowlist
+  (`ts`, `hook_event_name`, `session_id`, `agent_id`, `agent_type`) closing the
+  redaction gap structurally; `serve.py` 404s unknown sessions before SSE headers,
+  exits idle after 600 s clientless (`--idle-exit-seconds`), and detects viewer
+  disconnect without log traffic; workflow/subagent runs render as agent spokes.
+
+**Migration (v5.x → v6)**: `/plugin` update → `/harness-doctor --fix` from a clean git
+state. No data migration — `features.json` is unchanged. A repeat `--fix` is a
+zero-finding no-op. Skipping doctor breaks nothing loudly (the stale `TeammateIdle`
+hook never fires; the env flag is dead weight) but skips the workflow-availability
+check. Rollback: reinstall v5.7.0 via `/plugin`; no data migration in either
+direction. Full guide: INSTALL.md → "Migrating a v5.x project to v6".
+
 ### v5.7.0 (2026-08-10)
 
 **Agent Teams → Dynamic Workflows migration, Phases 0–2 (OVI-140).** Workflow mode
