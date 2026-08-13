@@ -3316,7 +3316,9 @@
         "source": "linear:OVI-147"
       },
       "correction_cycles": 0,
-      "scope_expansions": 1
+      "scope_expansions": [
+        "2026-08-14: +skills/harness-doctor/ +test/run-tests.sh -- AC6 drill exposed doctor check-10 false positive on always-skip focused_test init.sh; fixed via TDD in-branch"
+      ]
     }
   ]
 }

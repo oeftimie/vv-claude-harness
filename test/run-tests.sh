@@ -7267,18 +7267,27 @@ if [ -f "$RUNBOOK" ]; then
       fail "mnt: maintenance-runbook.md is missing a '## $HEADER' section"
     fi
   done
-  # OVI-144 Phase 3 retired probe item 1 (the plan_approval_response delivery
-  # bug) together with item 2: the workaround it tracked lived in the Agent
-  # Teams protocol doc, deleted with the Teams machinery, so there is no
-  # FIXED/BROKEN criterion left to state. Pin the dated retirement record
-  # instead -- the same shape probe item 6's retirement is pinned with below,
-  # so a silently deleted probe still fails this suite.
+  # OVI-147 (v6.0.0) delisted the Teams-era tombstones (the
+  # plan_approval_response delivery bug, implicit-team assumptions, and the
+  # F061/F067/F069 cluster) from the checklist per the AC7 sweep; a single
+  # dated pointer note replaces them. Pin the note so the delisting stays a
+  # readable record rather than a silent deletion.
   if grep -q "plan_approval_response" "$RUNBOOK" \
-    && grep -q "Retired 2026-08-12" "$RUNBOOK" \
-    && grep -q "no workaround left to" "$RUNBOOK"; then
-    pass "mnt: the runbook records probe item 1's retirement (OVI-144 Phase 3)"
+    && grep -q "retired 2026-08-12" "$RUNBOOK" \
+    && grep -q "delisted" "$RUNBOOK" \
+    && grep -q "MAINTENANCE_LOG.md" "$RUNBOOK"; then
+    pass "mnt: the runbook's delist note records the Teams-era retirements (OVI-147)"
   else
-    fail "mnt: the runbook is missing probe item 1's retirement record"
+    fail "mnt: the runbook is missing the Teams-era retirement delist note"
+  fi
+  # AC7's sweep registered the two workflow-era workarounds with retirement
+  # conditions (AGENTS.md policy: never a workaround without a removal event).
+  if grep -q "parseArgs" "$RUNBOOK" \
+    && grep -q "CLAUDE_PROJECT_DIR" "$RUNBOOK" \
+    && [ "$(grep -c "Retires when" "$RUNBOOK")" -ge 2 ]; then
+    pass "mnt: both workflow-era workarounds are registered with retirement conditions"
+  else
+    fail "mnt: a workflow-era workaround is missing its retirement condition in the runbook"
   fi
 else
   fail "mnt: docs/maintenance-runbook.md does not exist"
@@ -7468,17 +7477,16 @@ fi
 # F061's Teams-specific limitation callouts were deleted with the protocol
 # file (WP3.5); only the maintenance-runbook probe wiring remains asserted.
 
-# OVI-144 Phase 3 retired the runbook's probe item 6 (F061/F067/F069): the
-# Agent Teams machinery it probed is gone. Pin the dated retirement record so
-# the item stays a readable record rather than a silently deleted probe, and
-# pin that the runbook's remaining probes no longer name the retired
-# TeammateIdle hook.
+# OVI-144 Phase 3 retired the runbook's probe item covering F061/F067/F069;
+# OVI-147 (v6.0.0) delisted its tombstone into the pointer note. Pin the
+# cluster's mention in that note, and pin that the runbook's remaining probes
+# no longer name the retired TeammateIdle hook.
 RUNBOOK_MD="$REPO_ROOT/docs/maintenance-runbook.md"
-if grep -q "Retired 2026-08-12 as part of OVI-144 Phase 3" "$RUNBOOK_MD" \
-  && grep -q "structural worktree detection" "$RUNBOOK_MD"; then
-  pass "mnt: the maintenance runbook records probe item 6's retirement (OVI-144 Phase 3)"
+if grep -q "F061/F067/F069" "$RUNBOOK_MD" \
+  && grep -q "delisted" "$RUNBOOK_MD"; then
+  pass "mnt: the runbook's delist note covers the F061/F067/F069 cluster"
 else
-  fail "mnt: the maintenance runbook is missing probe item 6's retirement record"
+  fail "mnt: the runbook's delist note is missing the F061/F067/F069 cluster"
 fi
 if grep -q '`TeammateIdle`' "$RUNBOOK_MD"; then
   fail "mnt: the runbook's hook-payload probe still lists the retired TeammateIdle hook"
