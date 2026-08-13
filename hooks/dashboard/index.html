@@ -489,6 +489,18 @@
     resetGraph();
     var url = sessionId ? "/events?session=" + encodeURIComponent(sessionId) : "/events";
     currentSource = new EventSource(url);
+    // The server can legitimately go away mid-watch (idle-exit after the
+    // last viewer left, a manual kill) -- without this the page just
+    // freezes at its last rendered state with no signal (OVI-146 review).
+    // EventSource auto-retries, so a recovered server clears the notice
+    // via onopen; a permanently gone one keeps the notice up.
+    currentSource.onerror = function () {
+      pickerProjectEl.textContent =
+        "Server unreachable (it may have idle-exited) -- re-run /harness-dashboard to restart it.";
+    };
+    currentSource.onopen = function () {
+      loadSessions();
+    };
     currentSource.onmessage = function (evt) {
       var payload;
       try {

@@ -1415,6 +1415,18 @@ fi
 F116_NOPY_ERR2=$( { printf '%s' '{"hook_event_name":"PreToolUse","session_id":"sess1"}' | CLAUDE_PROJECT_DIR="$DIR_DL_NOPY" VV_HARNESS_DASHBOARD=1 PATH="$NOPY_BIN" "$F116_BASH" "$HOOKS_DIR/dashboard-log.sh" 1>/dev/null; } 2>&1 )
 assert_empty "$F116_NOPY_ERR2" "f116: the second python3-absent invocation is silent (sentinel present)"
 
+# Review round (OVI-146): when the sentinel cannot be created (read-only
+# .harness/), the diagnostic is suppressed entirely -- at-most-once, never
+# once-per-tool-call spam from a guard that can never close.
+DIR_DL_NOPY_RO="$WORK/dl-nopy-ro"
+make_fixture "$DIR_DL_NOPY_RO"
+chmod 555 "$DIR_DL_NOPY_RO/.harness"
+F116_NOPY_RO_ERR=$( { printf '%s' '{"hook_event_name":"PreToolUse","session_id":"sess1"}' | CLAUDE_PROJECT_DIR="$DIR_DL_NOPY_RO" VV_HARNESS_DASHBOARD=1 PATH="$NOPY_BIN" "$F116_BASH" "$HOOKS_DIR/dashboard-log.sh" 1>/dev/null; } 2>&1 )
+RC=$?
+chmod 755 "$DIR_DL_NOPY_RO/.harness"
+assert_rc0 "$RC" "f116r: python3-absent with an unwritable .harness/ still exits 0"
+assert_empty "$F116_NOPY_RO_ERR" "f116r: python3-absent with an unwritable .harness/ stays silent (no per-call spam)"
+
 # Regression guard: the disabled path (first-operation env check) stays well under
 # a generous 50ms bound -- not a benchmarked SLA, just a structural no-file-I/O check.
 DL_ELAPSED_MS=$(python3 -c "
@@ -10772,8 +10784,10 @@ def main():
             chunks.append(data)
     raw = b"".join(chunks)
     header, _, body = raw.partition(b"\r\n\r\n")
-    status_line = header.split(b"\r\n", 1)[0].decode("utf-8", "replace")
-    sys.stdout.write(status_line + "\n\n")
+    # The full header block (status line + response headers), not just the
+    # status line -- F116's 404 contract pins Content-Type, which was
+    # previously discarded here and therefore unassertable (OVI-146 review).
+    sys.stdout.write(header.decode("utf-8", "replace") + "\n\n")
     sys.stdout.buffer.write(body)
 
 
@@ -11300,6 +11314,8 @@ assert_rc0 "$?" "f116: group10 server accepts connections on its bound port"
 F116_404=$(raw_get "$PORT10" "/events" 2>/dev/null || true)
 assert_contains "$F116_404" "404" "f116: /events with no session and no logs completes with HTTP 404 within the socket timeout"
 assert_contains "$F116_404" "no session logs" "f116: the 404 body names the no-session-logs condition"
+assert_contains "$F116_404" "Content-Type: text/plain" \
+  "f116r: the 404 carries Content-Type text/plain, not an SSE header"
 kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null
 
 # WP5.3.4: a server with no /events client for a full idle window exits 0 on
@@ -11336,6 +11352,76 @@ else
   fail "f116: the idle-exit is a clean exit 0 -- server never exited"
   kill "$F116_IDLE_PID" 2>/dev/null
 fi
+
+# Review round (OVI-146): a CONNECTED /events client must hold the server
+# open past its idle window (the _events_clients guard is load-bearing --
+# dropping it cuts a live viewer's stream at exactly the window), and the
+# client's disconnect must be detected WITHOUT any further log growth
+# (select/EOF in stream_events; before the fix, a viewer leaving a
+# quiescent session pinned the client count above zero forever and the
+# server never reaped itself -- the exact case SKILL.md calls normal).
+DIR10C="$WORK/dash-10c"
+make_fixture "$DIR10C"
+mkdir -p "$DIR10C/.harness/dashboard"
+LOG10C="$DIR10C/.harness/dashboard/idlesess.jsonl"
+printf '{"marker":"F116-MARK-HOLD-1"}\n' > "$LOG10C"
+PORT10C=$(free_port)
+(cd "$DIR10C" && CLAUDE_PROJECT_DIR="$DIR10C" exec python3 "$DASHBOARD_PY" idlesess --port "$PORT10C" --idle-exit-seconds 1) >"$WORK/server-10c.out" 2>&1 &
+F116_HOLD_PID=$!
+track_pid "$F116_HOLD_PID"
+wait_for_port 127.0.0.1 "$PORT10C"
+assert_rc0 "$?" "f116r: group10c server accepts connections on its bound port"
+CAPTURE10C="$WORK/capture-10c.txt"
+: > "$CAPTURE10C"
+start_sse_reader "$PORT10C" "/events?session=idlesess" "$CAPTURE10C"
+READER10C="$READER_PID"
+sleep 3
+kill -0 "$F116_HOLD_PID" 2>/dev/null
+assert_rc0 "$?" "f116r: a connected /events client holds the server past a 1s idle window"
+printf '{"marker":"F116-MARK-HOLD-2"}\n' >> "$LOG10C"
+sleep 0.6
+assert_contains "$(cat "$CAPTURE10C")" "F116-MARK-HOLD-2" \
+  "f116r: the held-open server still delivers newly appended lines"
+kill "$READER10C" 2>/dev/null; wait "$READER10C" 2>/dev/null
+F116_REAP_GONE=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if ! kill -0 "$F116_HOLD_PID" 2>/dev/null; then
+    F116_REAP_GONE=1
+    break
+  fi
+  sleep 0.5
+done
+if [ -n "$F116_REAP_GONE" ]; then
+  pass "f116r: after the last client disconnects (quiescent log, no writes), the server exits within the idle window"
+  wait "$F116_HOLD_PID" 2>/dev/null
+  F116_REAP_RC=$?
+  if [ "$F116_REAP_RC" = "0" ]; then
+    pass "f116r: the post-disconnect idle-exit is a clean exit 0"
+  else
+    fail "f116r: the post-disconnect idle-exit is a clean exit 0 -- got exit $F116_REAP_RC"
+  fi
+else
+  fail "f116r: after the last client disconnects (quiescent log, no writes), the server exits within the idle window -- still alive after 5s"
+  fail "f116r: the post-disconnect idle-exit is a clean exit 0 -- server never exited"
+  kill "$F116_HOLD_PID" 2>/dev/null
+fi
+
+# Review round (OVI-146): the 600s default is pinned via argparse itself
+# (the source-text grep at the F092 section matches the docstring too), and
+# a non-positive window is a startup usage error rather than a ValueError
+# that kills the watchdog thread mid-flight and silently disables idle-exit.
+F116_HELP=$(python3 "$DASHBOARD_PY" --help 2>&1)
+assert_contains "$F116_HELP" "default: 600" \
+  "f116r: --idle-exit-seconds defaults to 600 (pinned via argparse help output)"
+F116_NEG_OUT=$(python3 "$DASHBOARD_PY" idlesess --idle-exit-seconds -5 2>&1)
+F116_NEG_RC=$?
+if [ "$F116_NEG_RC" != "0" ]; then
+  pass "f116r: a non-positive --idle-exit-seconds is rejected at startup"
+else
+  fail "f116r: a non-positive --idle-exit-seconds is rejected at startup -- exit 0"
+fi
+assert_contains "$F116_NEG_OUT" "positive" \
+  "f116r: the rejection names the positive-seconds requirement"
 
 echo ""
 echo "== F091: dashboard frontend =="
@@ -11394,6 +11480,8 @@ assert_contains "$DASHBOARD_HTML_SRC" "payload.hook_event_name" \
   "f116: page source reads hook_event_name (AC2 field coverage)"
 assert_contains "$DASHBOARD_HTML_SRC" "payload.agent_type" \
   "f116: page source reads agent_type (AC2 field coverage)"
+assert_contains "$DASHBOARD_HTML_SRC" "currentSource.onerror" \
+  "f116r: the page surfaces a dead /events connection instead of freezing silently"
 assert_contains "$DASHBOARD_HTML_SRC" "(unknown agent)" \
   "dash-fe: page source labels a missing agent_type as (unknown agent)"
 assert_not_contains "$DASHBOARD_HTML_SRC" ".teammate_name" \

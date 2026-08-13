@@ -38,6 +38,7 @@ import json
 import mimetypes
 import os
 import re
+import select
 import socketserver
 import subprocess
 import sys
@@ -197,18 +198,31 @@ def emit_sse_line(wfile, raw_line):
     wfile.flush()
 
 
-def stream_events(wfile, target_path):
+def stream_events(wfile, connection, target_path):
     """Backlog-then-tail loop: the first pass (offset 0) naturally replays
     the full existing file as the backlog burst; every later pass is an
-    incremental tail at the same 200ms cadence. Runs until the connection
-    dies (BrokenPipeError propagates to the caller) or the process exits."""
+    incremental tail at the same 200ms cadence. Between passes, select()
+    watches the client socket for readable-EOF instead of sleeping blind
+    (OVI-146 review): a viewer closing a QUIESCENT stream would otherwise
+    only be noticed on the next write -- which never comes for a finished
+    session -- leaving note_client(-1) unreached and the idle-exit watchdog
+    pinned at zero idle forever. Stray client bytes (an SSE client sends
+    none) are drained and ignored; EOF returns, so the handler's finally
+    always releases the client count. Runs until the connection dies
+    (BrokenPipeError propagates to the caller) or EOF is seen."""
     offset = 0
     while True:
         new_offset, lines = read_increment(target_path, offset)
         offset = 0 if new_offset is None else new_offset
         for raw_line in lines:
             emit_sse_line(wfile, raw_line)
-        time.sleep(POLL_INTERVAL)
+        readable, _, _ = select.select([connection], [], [], POLL_INTERVAL)
+        if readable:
+            try:
+                if not connection.recv(4096):
+                    return
+            except OSError:
+                return
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -244,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            stream_events(self.wfile, target)
+            stream_events(self.wfile, self.connection, target)
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
         finally:
@@ -328,12 +342,25 @@ def start_idle_watchdog(server):
     itself re-fetches on demand."""
     def watch():
         while True:
-            time.sleep(min(1.0, server.idle_exit_seconds / 4.0))
+            time.sleep(max(0.05, min(1.0, server.idle_exit_seconds / 4.0)))
             if server.idle_seconds() >= server.idle_exit_seconds:
                 server.shutdown()
                 return
 
     threading.Thread(target=watch, daemon=True).start()
+
+
+def positive_seconds(value):
+    """argparse type for --idle-exit-seconds: rejects zero and negative
+    values at startup (usage error) -- a negative window would crash the
+    watchdog thread mid-flight (time.sleep raises ValueError) and silently
+    leave the server running with idle-exit disabled for its whole life."""
+    seconds = float(value)
+    if seconds <= 0:
+        raise argparse.ArgumentTypeError(
+            f"must be a positive number of seconds, got {value!r}"
+        )
+    return seconds
 
 
 def build_arg_parser():
@@ -356,7 +383,7 @@ def build_arg_parser():
     )
     parser.add_argument(
         "--idle-exit-seconds",
-        type=float,
+        type=positive_seconds,
         default=600,
         help="exit 0 after this many seconds with no connected /events "
         "client, measured from process start when none ever connects "

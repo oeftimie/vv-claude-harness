@@ -42,8 +42,10 @@
 # A log write failure (unwritable directory, disk full, a malformed stdin
 # payload, or anything else) NEVER blocks the tool call or alters gate
 # behavior -- this hook always exits 0 regardless of write outcome. A missing
-# python3 is the one failure that gets a diagnostic: one stderr line, once
-# per project (gated by the .harness/dashboard/.python3-missing sentinel),
+# python3 is the one failure that gets a diagnostic: one stderr line, at most
+# once per project (gated by the .harness/dashboard/.python3-missing
+# sentinel; if the sentinel itself cannot be written -- read-only .harness/ --
+# the hook stays silent rather than repeating the line every tool call),
 # then silence -- see below.
 set -uo pipefail
 
@@ -70,8 +72,13 @@ H="$ROOT/.harness"
 if ! command -v python3 >/dev/null 2>&1; then
   SENTINEL="$H/dashboard/.python3-missing"
   if [ ! -e "$SENTINEL" ]; then
-    echo "vv-harness dashboard-log: python3 not found; dashboard logging disabled" >&2
-    mkdir -p "$H/dashboard" 2>/dev/null && touch "$SENTINEL" 2>/dev/null
+    # The diagnostic fires only when the sentinel is actually created: on an
+    # unwritable .harness/ the guard could never close, and at-most-once
+    # (here: zero) beats repeating the line on every tool call (OVI-146
+    # review).
+    if mkdir -p "$H/dashboard" 2>/dev/null && touch "$SENTINEL" 2>/dev/null; then
+      echo "vv-harness dashboard-log: python3 not found; dashboard logging disabled" >&2
+    fi
   fi
   exit 0
 fi
