@@ -1496,6 +1496,49 @@ for MANIFEST in .claude-plugin/plugin.json .claude-plugin/marketplace.json; do
   fi
 done
 
+echo "== distribution descriptions =="
+
+# A skill's and an agent's frontmatter `description` is what Claude Code shows in
+# its own listing -- the most user-visible string this repo ships, and the one a
+# model reads when deciding whether to invoke the skill at all. The manifest sweep
+# above pinned the same class for the two .claude-plugin/ files, but nothing
+# covered frontmatter, which is how harness-init kept advertising "optional Agent
+# Teams structure" for the whole v6 line that removed the machinery.
+#
+# Scoped to the frontmatter block ONLY, deliberately. A skill BODY may legitimately
+# name retired machinery -- harness-doctor documents migration checks that detect
+# and remove exactly these artifacts -- so sweeping whole files would force a choice
+# between a false positive and deleting real migration documentation.
+DESC_DRIFT=$(python3 - "$REPO_ROOT" <<'PYEOF'
+import glob, os, re, sys
+
+root = sys.argv[1]
+# Retired with the Agent Teams machinery (OVI-144, v6.0.0). A description naming
+# any of these advertises a capability the shipped plugin no longer has.
+retired = re.compile(r"agent[ -]teams|teammate|TeammateIdle|SendMessage", re.IGNORECASE)
+targets = sorted(glob.glob(os.path.join(root, "skills", "*", "SKILL.md"))
+                 + glob.glob(os.path.join(root, "agents", "*.md")))
+for path in targets:
+    with open(path) as fh:
+        text = fh.read()
+    if not text.startswith("---"):
+        continue
+    end = text.find("\n---", 3)
+    if end == -1:
+        continue
+    hit = retired.search(text[3:end])
+    if hit:
+        print(f"{os.path.relpath(path, root)}:{hit.group(0)}")
+PYEOF
+)
+if [ -n "$DESC_DRIFT" ]; then
+    while IFS= read -r DRIFT_LINE; do
+        fail "dd: frontmatter advertises retired machinery -- $DRIFT_LINE"
+    done <<< "$DESC_DRIFT"
+else
+    pass "dd: no skill or agent frontmatter advertises retired Agent Teams machinery"
+fi
+
 HOOK_REF_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import json
 import os
