@@ -3292,7 +3292,10 @@
         ".harness/",
         "claude-progress.txt",
         "skills/harness-doctor/",
-        "test/run-tests.sh"
+        "test/run-tests.sh",
+        "skills/harness-continue/",
+        ".claude-plugin/marketplace.json",
+        "MAINTENANCE_LOG.md"
       ],
       "depends_on": [
         "F114",
@@ -3317,7 +3320,9 @@
       },
       "correction_cycles": 0,
       "scope_expansions": [
-        "2026-08-14: +skills/harness-doctor/ +test/run-tests.sh -- AC6 drill exposed doctor check-10 false positive on always-skip focused_test init.sh; fixed via TDD in-branch"
+        "2026-08-14: +skills/harness-doctor/ +test/run-tests.sh -- AC6 drill exposed doctor check-10 false positive on always-skip focused_test init.sh; fixed via TDD in-branch",
+        "2026-08-14: +skills/harness-continue/ -- AC2c drill exposed the resume contract omitting the resend-args requirement; SKILL.md fixed in-branch (review round flagged the unrecorded expansion)",
+        "2026-08-14: +.claude-plugin/marketplace.json +MAINTENANCE_LOG.md -- review round: marketplace listing still advertised Agent Teams; runbook delist note pointed at a log with no retirement record"
       ]
     }
   ]

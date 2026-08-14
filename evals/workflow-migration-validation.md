@@ -21,6 +21,23 @@ stood in for by loading this checkout via `--plugin-dir` with the installed
 5.7.0 disabled — functionally the post-update state, not the marketplace
 update mechanics themselves.
 
+## Release review round (2026-08-14)
+
+The `review-branch` workflow over the release branch (13 raw findings → 13
+deduped → adversarial verify; 2 verifiers lost to API 529s, their findings
+treated as unverified-but-actioned): 7 confirmed (3 major). All fixed or
+dispositioned in one commit: stale "Agent Teams coordination" in both release
+manifests (+ a manifest vocabulary-sweep assertion); the runbook delist note's
+MAINTENANCE_LOG.md pointer dangling against a log that said "NOT retired"
+(retirement record appended, assertion now follows the pointer); doctor
+check 10's marker conjunct unpinned (marker-less/no-fake-green fixture added);
+the workaround retirement-condition assertion counted file-wide (now
+per-entry); unrecorded scope expansions on F117 (recorded); the resume
+resend-`args` fix unpinned (asserted in both passages). One minor accepted as
+the documented trade-off: dropping the `run_focused` requirement stops
+detecting a runner-invoking `init.sh` missing only the remap. Suite
+2036/2036 after the round.
+
 ## Fresh-init template check (2026-08-13)
 
 - **Mechanism**: headless `claude -p --plugin-dir <checkout>` running
