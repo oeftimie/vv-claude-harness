@@ -3,6 +3,12 @@ name: release-consistency
 on:
   push:
     branches: [main]
+    tags: ['v*']
+  # Catches the genuine "manifest bumped, tag never cut" case (v5.2.0 shipped that
+  # way and went unnoticed for months) without the push-to-main run having to
+  # assert a tag that cannot exist yet.
+  schedule:
+    - cron: '17 6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -24,14 +30,31 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           GAPS=""
 
+          # A release commit bumps the manifest BEFORE its tag exists, so asserting
+          # the tag on push-to-main reported drift on every single release: nine
+          # false positives (v5.2.0 through v6.0.1) were hand-closed on 2026-08-14,
+          # and one genuine finding (v5.2.0 was never tagged at all) sat buried
+          # among them for months. The assertion now runs only where a tag can
+          # legitimately already exist -- the tag push itself, the daily schedule,
+          # and manual dispatch -- so a firing means real drift.
+          CHECK_TAG=1
+          if [ "${GITHUB_EVENT_NAME:-}" = "push" ] && [ "${GITHUB_REF_TYPE:-}" != "tag" ]; then
+            CHECK_TAG=0
+          fi
+          echo "checked_tag=$CHECK_TAG" >> "$GITHUB_OUTPUT"
+
           if ! grep -qE "^### v${VERSION//./\\.}( |\$)" CHANGELOG.md; then
             GAPS="$GAPS
           - .claude-plugin/plugin.json's version ($VERSION) has no matching '### v$VERSION' heading in CHANGELOG.md"
           fi
 
-          if ! git rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then
-            GAPS="$GAPS
+          if [ "$CHECK_TAG" = "1" ]; then
+            if ! git rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then
+              GAPS="$GAPS
           - no git tag v$VERSION exists for the current plugin.json version"
+            fi
+          else
+            echo "Tag assertion skipped: push-to-main runs before the release tag exists." >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # marketplace.json carries no independent version by design (AGENTS.md: the
@@ -105,13 +128,56 @@ jobs:
               'published state and main have drifted apart. Fix by completing whichever',
               'release step was skipped (CHANGELOG entry, git tag, or GitHub release).',
               '',
-              'Note: nothing in this workflow closes issues, so once the missing',
-              'release step is completed this issue will not close itself -- close',
-              'it by hand.',
+              'Once that step is completed this issue closes itself: the next run that',
+              'performs the full check (the tag push, the daily schedule, or a manual',
+              'dispatch) and finds no gaps will close it with a comment.',
             ].join('\n')
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title,
               body,
+            })
+
+      # Self-healing: a full check that finds no gaps closes the drift issue it
+      # (or an earlier run) opened. Gated on checked_tag so a clean push-to-main
+      # run -- which deliberately skipped the tag assertion -- can never close an
+      # issue reporting a missing tag it did not look for.
+      - name: Close a cleared drift issue
+        if: success() && steps.verify.outputs.checked_tag == '1'
+        uses: actions/github-script@v7
+        env:
+          version: ${{ steps.verify.outputs.version }}
+        with:
+          script: |
+            const version = process.env.version || 'unknown'
+            const title = `Release consistency drift on v${version}`
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            })
+            const match = existing.data
+              .filter((issue) => !issue.pull_request)
+              .find((issue) => issue.title === title)
+            if (!match) {
+              console.log(`No open issue titled "${title}" -- nothing to close.`)
+              return
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: match.number,
+              body: [
+                `Closed automatically: the full release-consistency check passed for v${version}`,
+                `(run ${context.runId}, event \`${context.eventName}\`), so the gap this issue`,
+                'reported has cleared.',
+              ].join('\n'),
+            })
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: match.number,
+              state: 'closed',
             })

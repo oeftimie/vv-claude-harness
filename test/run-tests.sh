@@ -10706,13 +10706,24 @@ try:
         push = on.get("push") if isinstance(on, dict) else None
         if not isinstance(push, dict) or "main" not in (push.get("branches") or []):
             errors.append("'on.push.branches' does not include main")
+        # The tag assertion moved off the push-to-main run (it can never pass
+        # there), so the workflow needs the triggers where a tag CAN exist.
+        if not isinstance(push, dict) or "v*" not in (push.get("tags") or []):
+            errors.append("'on.push.tags' does not include v*")
+        if not isinstance(on, dict) or "schedule" not in on:
+            errors.append("'on.schedule' is missing (the bumped-but-never-tagged catch)")
         if not isinstance(on, dict) or "workflow_dispatch" not in on:
             errors.append("'on.workflow_dispatch' is missing")
         jobs = data.get("jobs") if isinstance(data, dict) else None
         if not isinstance(jobs, dict) or not jobs:
             errors.append("'jobs' is missing or empty")
         else:
-            issue_step_found = False
+            # Two github-script steps now: the opener (gated on failure()) and the
+            # self-healing closer (gated on success() AND checked_tag, so a clean
+            # push-to-main run -- which skipped the tag assertion -- can never close
+            # an issue reporting a missing tag it never looked for).
+            opener_found = False
+            closer_found = False
             for job in jobs.values():
                 perms = job.get("permissions") if isinstance(job, dict) else None
                 if not isinstance(perms, dict) or perms.get("issues") != "write":
@@ -10720,14 +10731,27 @@ try:
                 for step in (job.get("steps") or []) if isinstance(job, dict) else []:
                     if not isinstance(step, dict):
                         continue
-                    if "github-script" in (step.get("uses") or ""):
-                        issue_step_found = True
-                        if step.get("if") != "failure()":
+                    if "github-script" not in (step.get("uses") or ""):
+                        continue
+                    cond = str(step.get("if") or "")
+                    if cond == "failure()":
+                        opener_found = True
+                    elif "success()" in cond:
+                        closer_found = True
+                        if "checked_tag" not in cond:
                             errors.append(
-                                "the github-script step is not gated on if: failure()"
+                                "the success()-gated github-script step is not also "
+                                "gated on steps.verify.outputs.checked_tag"
                             )
-            if not issue_step_found:
-                errors.append("no github-script step found")
+                    else:
+                        errors.append(
+                            "a github-script step has an unexpected if: " + repr(cond)
+                            + " (expected failure() for the opener, success() for the closer)"
+                        )
+            if not opener_found:
+                errors.append("no failure()-gated github-script step found (the opener)")
+            if not closer_found:
+                errors.append("no success()-gated github-script step found (the closer)")
 except ImportError:
     if "workflow_dispatch" not in text:
         errors.append("no 'workflow_dispatch' key found (structural check)")
@@ -10735,6 +10759,13 @@ except ImportError:
         errors.append("no 'jobs' key found (structural check)")
     if "issues: write" not in text:
         errors.append("no 'issues: write' permission found (structural check)")
+    # pyyaml-free fallback for the same contract the parsed branch asserts.
+    if "tags: ['v*']" not in text:
+        errors.append("no push tag trigger found (structural check)")
+    if "schedule:" not in text:
+        errors.append("no schedule trigger found (structural check)")
+    if "checked_tag" not in text:
+        errors.append("no checked_tag gate found (structural check)")
 
 for e in errors:
     print(e)
@@ -10765,6 +10796,44 @@ PYEOF
   else
     fail "rc: release-consistency.yml does not open an issue on drift"
   fi
+  # v6.0.1 backlog (score 5): the tag assertion ran on push-to-main, where a
+  # release commit has bumped the manifest but its tag does not exist yet -- so it
+  # reported drift on EVERY release (nine false positives hand-closed 2026-08-14)
+  # and buried one genuine finding (v5.2.0 was never tagged) among them.
+  if grep -q 'GITHUB_REF_TYPE' "$RC_YML" && grep -q 'CHECK_TAG=0' "$RC_YML"; then
+    pass "rc: the tag assertion is skipped on push-to-main (where a tag cannot exist yet)"
+  else
+    fail "rc: the tag assertion still runs unconditionally on push-to-main"
+  fi
+  if grep -q 'if \[ "\$CHECK_TAG" = "1" \]' "$RC_YML"; then
+    pass "rc: the git-tag check is gated on CHECK_TAG"
+  else
+    fail "rc: the git-tag check is not gated on CHECK_TAG"
+  fi
+  # The genuine bumped-but-never-tagged case still gets caught, just not by the
+  # run that structurally cannot see the tag.
+  if grep -q "schedule:" "$RC_YML" && grep -qE "tags: \['v\*'\]" "$RC_YML"; then
+    pass "rc: the full check still runs where a tag can exist (tag push + schedule)"
+  else
+    fail "rc: no tag-push or schedule trigger to carry the tag assertion"
+  fi
+  # Self-healing: nine issues were closed by hand on 2026-08-14 because nothing
+  # in this workflow ever closed one.
+  if grep -q "issues.update" "$RC_YML" && grep -q "state: 'closed'" "$RC_YML"; then
+    pass "rc: a cleared drift issue is closed automatically"
+  else
+    fail "rc: nothing closes a drift issue once the gap clears"
+  fi
+  if grep -q "checked_tag == '1'" "$RC_YML"; then
+    pass "rc: the closer is gated on the full check having run (never closes on a skipped tag assertion)"
+  else
+    fail "rc: the closer is not gated on checked_tag"
+  fi
+  if grep -q "close it by hand" "$RC_YML"; then
+    fail "rc: the drift issue body still tells the reader to close it by hand"
+  else
+    pass "rc: the drift issue body no longer instructs a manual close"
+  fi
   # F086: repeated pushes to main while drift persists (release mid-flight, tag
   # not yet created) must not open one issue per push -- guard that the script
   # checks for an existing open issue with the same title before creating one.
@@ -10784,10 +10853,14 @@ PYEOF
   else
     fail "rc: release-consistency.yml's dedupe check doesn't guard against pagination/PR noise"
   fi
-  if grep -q "nothing in this workflow closes issues" "$RC_YML"; then
-    pass "rc: release-consistency.yml's issue body notes it must be closed by hand"
+  # Contract inverted deliberately (v6.0.1 backlog, score 5): the workflow now
+  # closes a cleared drift issue itself, so the body must say so rather than
+  # instructing a manual close. The old assertion pinned "nothing in this workflow
+  # closes issues", which was true until the closer step existed.
+  if grep -q "closes itself" "$RC_YML"; then
+    pass "rc: release-consistency.yml's issue body states it closes itself once the gap clears"
   else
-    fail "rc: release-consistency.yml's issue body does not explain the issue won't auto-close"
+    fail "rc: release-consistency.yml's issue body does not explain the self-closing behavior"
   fi
 else
   fail "rc: .github/workflows/release-consistency.yml does not exist"
