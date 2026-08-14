@@ -152,6 +152,11 @@ const specs = featureIds.map((id) => {
     scope: fs.scope || [],
     risk: fs.risk === 'elevated' ? 'elevated' : 'standard',
     mergeBase: fs.mergeBase || parsed.mergeBase || 'HEAD',
+    // Optional per-feature implementer model. Risk elevation escalates the REVIEW
+    // stage, never the implementer (rules/parallel-work.md, "Dynamic overrides"), so
+    // this is the lead's only lever — it exists for that rule's historical-signals
+    // case (`correction_cycles >= 3` in the same scope), not for risk.
+    implementModel: fs.implementModel,
   }
 })
 
@@ -168,7 +173,7 @@ const results = await pipeline(
     schema: IMPLEMENT_SCHEMA,
     isolation: 'worktree',
     agentType: 'vv-harness:feature-implementer',
-    model: 'sonnet',
+    model: spec.implementModel || 'sonnet',
   }),
   (impl, spec) => {
     // A blocked implementer short-circuits its own review — nothing to review.

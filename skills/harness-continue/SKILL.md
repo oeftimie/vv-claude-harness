@@ -359,7 +359,10 @@ the `TaskCompleted` and commit gates fire in the lead session. Run these steps *
    `Workflow({scriptPath, resumeFromRunId, args})` — completed agents replay from
    cache; the ORIGINAL `args` must be resent or the resume fails fast (OVI-147
    field validation) — or reconcile from the committed worktree branches; do not
-   silently drop them.
+   silently drop them. Before merging any branch produced by a run you did not watch
+   to completion, scope-diff it (`git diff --name-only <mergeBase>...<branch>`) and
+   account for every file outside that feature's declared `scope` — see
+   `rules/parallel-work.md`, "Worktree hygiene".
 6. **Retrospective.** Run the retrospective, promotion, and ablation passes plus the
    MLD telemetry — the Retrospective section below.
 
