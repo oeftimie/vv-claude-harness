@@ -130,7 +130,12 @@ The `QA binding` line is mandatory: it declares, up front, which kind of evidenc
 (`proof.evidence_type` in `schemas/feature.schema.json`) this spec will eventually be
 proven with, so Pass 1 is never improvised at close time. It is written into the
 feature's `qa_binding` field at write-back time (Step 6); `verify-task-quality.sh`
-compares it against the recorded `proof.evidence_type` and warns on a mismatch.
+compares it against the recorded `proof.evidence_type` and warns on a mismatch. One
+pair is exempt (v6.0.1): a `conformance` proof on an `elevated`-risk feature, because
+`harness-continue` Step 5b's author-blind conformance check mandates exactly that
+combination — warning there would flag the harness's own documented path as a defect.
+So an elevated feature may declare any binding and still be proven by conformance
+without a warning; every other mismatch still warns.
 
 Fill each section from the verified spec content and the human loop's answers; do not
 invent requirements that were not established during verification. Populate the

@@ -101,8 +101,14 @@ in `skills/harness-init/SKILL.md` — link here instead of repeating it.
 the `evidence_type` it promises to be proven with. At completion time the lead records
 a `proof` object; `verify-task-quality.sh` warns (never blocks) when a feature accepts
 with no `proof`, or with `proof.evidence_type` not matching its declared `qa_binding`.
+One pair is exempt: a `conformance` proof on an `elevated`-risk feature, which Step 5b's
+author-blind conformance check mandates — warning there would flag the harness's own
+documented path as a defect. A `conformance` proof on a standard-risk feature still
+warns, since nothing mandated it.
 `coverage_target` (integer 1-100) overrides the 95% default; overrides should be
-justified in `notes`, advisory only, never machine-enforced. `delivered.merged_at` must
+justified in `notes`, advisory only, never machine-enforced. A feature that declares a
+numeric `coverage_target` and records no `coverage` gets a visible (non-blocking) note
+at completion: the gate did not run on a feature that asked for it. `delivered.merged_at` must
 be valid ISO8601. `design_contract` optionally points at a locked design artifact
 (mock, redline, screenshot set) that journey/manual proof is compared against.
 
