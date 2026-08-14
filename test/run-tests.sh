@@ -54,6 +54,20 @@ assert_rc_nonzero() {
   if [ "$1" -ne 0 ]; then pass "$2"; else fail "$2 -- expected a nonzero exit code"; fi
 }
 
+# Strip harness-doctor's workflow-support notices (SKILL.md: "printed as notice
+# lines beside the report and never change its exit code"). They depend on the
+# environment the suite runs in -- CI has no `claude` CLI, so the version probe
+# legitimately prints its INFO line there and not on a developer machine. Health
+# assertions must compare the REPORT, not the notices: comparing raw output to
+# "healthy" made two assertions environment-dependent and kept CI red from
+# 2026-08-12 (when OVI-144 shipped the notices) until OVI-147's release caught it.
+# Defined with the top-level helpers, not beside run_doctor: bash resolves
+# functions at call time in source order, and the first caller (f013) runs well
+# before the doctor section.
+doctor_report_only() {
+  printf '%s\n' "$1" | grep -vE '^(INFO|WARN): (claude CLI|Workflow tool)'
+}
+
 # Copies the fixture into $1 and turns it into a committed git repo with a quiet identity.
 make_fixture() {
   mkdir -p "$1"
@@ -6207,7 +6221,7 @@ git -C "$STAMP_DOCTOR_PROJECT" add -A
 git -C "$STAMP_DOCTOR_PROJECT" commit -q -m "stamped fixture"
 STAMP_DOCTOR_OUT=$(CLAUDE_PLUGIN_ROOT="$REPO_ROOT" python3 "$STAMP_DOCTOR_PY" "$STAMP_DOCTOR_PROJECT")
 STAMP_DOCTOR_RC=$?
-if [ "$STAMP_DOCTOR_RC" -eq 0 ] && [ "$STAMP_DOCTOR_OUT" = "healthy" ]; then
+if [ "$STAMP_DOCTOR_RC" -eq 0 ] && [ "$(doctor_report_only "$STAMP_DOCTOR_OUT")" = "healthy" ]; then
   pass "f013: a stamped project passes harness-doctor clean (AC3)"
 else
   fail "f013: a stamped project should pass harness-doctor clean, got rc=$STAMP_DOCTOR_RC out=$STAMP_DOCTOR_OUT"
@@ -6366,10 +6380,29 @@ make_healthy_doctor_fixture "$DIR_DOC_HEALTHY"
 OUT=$(run_doctor "$DIR_DOC_HEALTHY")
 RC=$?
 assert_rc0 "$RC" "hd: a fully healthy fixture exits 0"
-if [ "$OUT" = "healthy" ]; then
+if [ "$(doctor_report_only "$OUT")" = "healthy" ]; then
   pass "hd: a fully healthy fixture prints a single 'healthy' line"
 else
   fail "hd: a fully healthy fixture prints a single 'healthy' line -- got: $OUT"
+fi
+
+# Pin the filter itself, deterministically in both environments: a healthy report
+# preceded by each documented notice shape still reads as healthy, and a real
+# finding is never filtered away.
+for NOTICE in \
+  "INFO: claude CLI version undetectable -- skipping workflow-support check" \
+  "WARN: claude CLI 2.1.100 < 2.1.154 -- workflow mode unavailable, single-session fallback applies" \
+  "WARN: Workflow tool disabled in settings -- workflow mode unavailable"; do
+  if [ "$(doctor_report_only "$(printf '%s\nhealthy' "$NOTICE")")" = "healthy" ]; then
+    pass "hd: workflow-support notice is not mistaken for a finding (${NOTICE%% *} ${NOTICE#*: })"
+  else
+    fail "hd: workflow-support notice leaked into the health report: $NOTICE"
+  fi
+done
+if [ "$(doctor_report_only "$(printf 'FINDING: something real\nhealthy')")" != "healthy" ]; then
+  pass "hd: the notice filter never swallows a real FINDING line"
+else
+  fail "hd: the notice filter swallowed a real FINDING line"
 fi
 
 # AC1: seeded breakages -- non-executable hook, missing settings wiring, invalid
