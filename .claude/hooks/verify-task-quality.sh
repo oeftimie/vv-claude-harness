@@ -326,6 +326,18 @@ if match is not None:
         if not isinstance(target, int) or isinstance(target, bool):
             target = 95
         coverage_result = "pass" if coverage >= target else f"{coverage}|{target}"
+    elif coverage is None and isinstance(match.get("coverage_target"), int) \
+            and not isinstance(match.get("coverage_target"), bool):
+        # Declared a numeric target, recorded nothing: an omission, not a
+        # convention -- the gate silently didn't run on a feature that asked for
+        # it. Deliberately narrow. A project with no coverage tooling at all sets
+        # no target, and a descriptive string (this repo's own convention) is a
+        # choice, not an omission; both stay silent, or the note would fire on
+        # every task completion for whole classes of projects and be pure
+        # friction. The broader "nobody machine-checked the 95% bar" gap that
+        # OVI-147's field sessions reported is lead-discipline at close-out, not
+        # something this per-task hook can carry without becoming noise.
+        coverage_result = "unrecorded"
 print(coverage_result)
 
 # Claim-matched proof: warn (never block) when this feature accepts with no
@@ -336,8 +348,18 @@ proof_warning = ""
 if match is not None:
     proof = match.get("proof")
     qa_binding = match.get("qa_binding")
+    evidence_type = proof.get("evidence_type") if proof else None
+    # An elevated feature's author-blind conformance pass is mandated by the harness
+    # itself (harness-continue Step 5b, step 3.5: "record proof.evidence_type:
+    # 'conformance'"), so warning about it flags the documented path as a defect --
+    # observed on every elevated feature in OVI-147's field validation. Exempt exactly
+    # that pair; every other binding/evidence mismatch still warns, including a
+    # conformance proof on a NON-elevated feature (nothing mandated it there).
+    mandated_conformance = evidence_type == "conformance" and match.get("risk") == "elevated"
     if not proof:
         proof_warning = f"WARN: {feature_id} accepted with no proof recorded."
+    elif mandated_conformance:
+        pass
     elif qa_binding and proof.get("evidence_type") != qa_binding:
         proof_warning = (
             f"WARN: {feature_id}'s proof.evidence_type "
@@ -447,8 +469,15 @@ COVERAGE_BASELINE_ARG=""
 if [ -n "$FEATURE_ID" ]; then
     COVERAGE_BASELINE_ARG="coverage:$FEATURE_ID=drop"
 fi
+COVERAGE_NOTE=""
 if [ "$COVERAGE_RESULT" = "pass" ]; then
     COVERAGE_BASELINE_ARG="coverage:$FEATURE_ID=pass"
+elif [ "$COVERAGE_RESULT" = "unrecorded" ]; then
+    # Visible, never blocking: the gate did not run, and silence would read as
+    # "checked and fine". Keeps the =drop baseline of any other unevaluated case;
+    # MUST stay above the generic non-empty branch below, which would otherwise
+    # parse this marker as an achieved|target miss and reject the task.
+    COVERAGE_NOTE="NOTE: $FEATURE_ID records no coverage, so the coverage gate did not run -- the target was not checked."
 elif [ -n "$COVERAGE_RESULT" ]; then
     ACHIEVED="${COVERAGE_RESULT%%|*}"
     TARGET="${COVERAGE_RESULT##*|}"
@@ -493,14 +522,18 @@ fi
 # no-op here. Both warnings are combined into ONE systemMessage (not two
 # separate echoes) since only a single JSON object can be emitted per hook
 # invocation.
+# Built by appending every non-empty note, so a third one (v6.0.1's unrecorded-
+# coverage note) can't silently displace the other two the way a fixed if/elif
+# ladder over two variables would.
 SYSTEM_MESSAGE=""
-if [ -n "$PROOF_WARNING" ] && [ -n "$IN_PROGRESS_NOTE" ]; then
-    SYSTEM_MESSAGE="$PROOF_WARNING"$'\n'"$IN_PROGRESS_NOTE"
-elif [ -n "$PROOF_WARNING" ]; then
-    SYSTEM_MESSAGE="$PROOF_WARNING"
-elif [ -n "$IN_PROGRESS_NOTE" ]; then
-    SYSTEM_MESSAGE="$IN_PROGRESS_NOTE"
-fi
+for _NOTE in "$PROOF_WARNING" "$COVERAGE_NOTE" "$IN_PROGRESS_NOTE"; do
+    [ -n "$_NOTE" ] || continue
+    if [ -n "$SYSTEM_MESSAGE" ]; then
+        SYSTEM_MESSAGE="$SYSTEM_MESSAGE"$'\n'"$_NOTE"
+    else
+        SYSTEM_MESSAGE="$_NOTE"
+    fi
+done
 
 if [ -n "$SYSTEM_MESSAGE" ]; then
     python3 -c "

@@ -5379,6 +5379,89 @@ assert_rc0 "$RC" "ht: acceptance with mismatched proof/qa_binding still exits 0"
 assert_contains "$OUT" "unit" "ht: mismatch warning names the declared qa_binding"
 assert_contains "$OUT" "journey" "ht: mismatch warning names the actual evidence_type"
 
+# v6.0.1: harness-continue Step 5b step 3.5 MANDATES proof.evidence_type
+# "conformance" on an elevated feature, so warning about it flagged the harness's
+# own documented path as a defect -- it fired on every elevated feature in
+# OVI-147's field validation. The exemption is exactly that pair.
+DIR_HQ9B="$WORK/ht-quality-elevated-conformance"
+make_fixture "$DIR_HQ9B"
+install_hooks "$DIR_HQ9B"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ9B/.harness/init.sh"
+set_f003_fields "$DIR_HQ9B" 'feature["qa_binding"] = "unit"
+        feature["risk"] = "elevated"
+        feature["proof"] = {"claim": "x", "evidence_type": "conformance",
+        "artifact": "y", "not_established": "z"}'
+OUT=$(run_hook "$DIR_HQ9B" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "ht: an elevated feature's mandated conformance proof exits 0"
+assert_not_contains "$OUT" "does not match" \
+  "ht (v6.0.1): the harness-mandated conformance proof on an elevated feature does not warn"
+
+# The exemption is narrow: a conformance proof on a NON-elevated feature was never
+# mandated by anything, so the mismatch still warns.
+DIR_HQ9C="$WORK/ht-quality-standard-conformance"
+make_fixture "$DIR_HQ9C"
+install_hooks "$DIR_HQ9C"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ9C/.harness/init.sh"
+set_f003_fields "$DIR_HQ9C" 'feature["qa_binding"] = "unit"
+        feature["risk"] = "standard"
+        feature["proof"] = {"claim": "x", "evidence_type": "conformance",
+        "artifact": "y", "not_established": "z"}'
+OUT=$(run_hook "$DIR_HQ9C" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+assert_contains "$OUT" "does not match" \
+  "ht (v6.0.1): a conformance proof on a standard-risk feature still warns (exemption stays narrow)"
+
+# v6.0.1 (F120): a feature that DECLARED a numeric coverage_target but recorded no
+# coverage gets a visible, non-blocking note -- the gate silently didn't run on a
+# feature that asked for it. The marker must never be parsed as an achieved|target
+# miss (that would reject the task).
+DIR_HQ9D="$WORK/ht-quality-coverage-unrecorded"
+make_fixture "$DIR_HQ9D"
+install_hooks "$DIR_HQ9D"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ9D/.harness/init.sh"
+set_f003_fields "$DIR_HQ9D" 'feature["coverage"] = None
+        feature["coverage_target"] = 95
+        feature["qa_binding"] = "unit"
+        feature["proof"] = {"claim": "x", "evidence_type": "unit",
+        "artifact": "y", "not_established": "z"}'
+OUT=$(run_hook "$DIR_HQ9D" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+RC=$?
+assert_rc0 "$RC" "ht (F120): a declared-but-unrecorded coverage target accepts (never blocks)"
+assert_contains "$OUT" "records no coverage" \
+  "ht (F120): a declared-but-unrecorded coverage target surfaces a visible note"
+assert_not_contains "$OUT" "Task rejected" \
+  "ht (F120): the unrecorded marker is never parsed as a coverage miss"
+
+# Deliberately narrow. A project with no coverage tooling declares no target, and a
+# descriptive coverage string (this repo's own convention) is a choice, not an
+# omission -- both stay silent. Without this, the note fired on every task
+# completion for whole classes of projects; the existing F057 "a fully clean accept
+# has no stdout at all" assertion caught exactly that.
+DIR_HQ9E="$WORK/ht-quality-coverage-descriptive"
+make_fixture "$DIR_HQ9E"
+install_hooks "$DIR_HQ9E"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ9E/.harness/init.sh"
+set_f003_fields "$DIR_HQ9E" 'feature["coverage"] = "2036/2036 suite assertions"
+        feature["coverage_target"] = 95
+        feature["qa_binding"] = "unit"
+        feature["proof"] = {"claim": "x", "evidence_type": "unit",
+        "artifact": "y", "not_established": "z"}'
+OUT=$(run_hook "$DIR_HQ9E" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+assert_not_contains "$OUT" "records no coverage" \
+  "ht (F120): a deliberate descriptive coverage string stays silent"
+
+DIR_HQ9F="$WORK/ht-quality-coverage-no-target"
+make_fixture "$DIR_HQ9F"
+install_hooks "$DIR_HQ9F"
+printf '#!/bin/bash\nexit 0\n' > "$DIR_HQ9F/.harness/init.sh"
+set_f003_fields "$DIR_HQ9F" 'feature["coverage"] = None
+        feature["qa_binding"] = "unit"
+        feature["proof"] = {"claim": "x", "evidence_type": "unit",
+        "artifact": "y", "not_established": "z"}'
+OUT=$(run_hook "$DIR_HQ9F" verify-task-quality.sh '{"task":{"metadata":{"feature_id":"F003"}}}' 2>&1)
+assert_not_contains "$OUT" "records no coverage" \
+  "ht (F120): a project that declares no coverage target stays silent (no per-task friction)"
+
 DIR_HQ10="$WORK/ht-quality-legacy-no-binding"
 make_fixture "$DIR_HQ10"
 install_hooks "$DIR_HQ10"
@@ -13685,7 +13768,7 @@ done
 # implement-features specifics.
 IF_SRC=$(cat "$REPO_ROOT/workflows/implement-features.js" 2>/dev/null)
 # Every agent() spawn in the implement path carries an explicit model or agentType.
-assert_contains "$IF_SRC" "model: 'sonnet'" "wf (impl): implementer runs Sonnet"
+assert_contains "$IF_SRC" "'sonnet'" "wf (impl): implementer defaults to Sonnet"
 assert_contains "$IF_SRC" "agentType: 'vv-harness:feature-implementer'" "wf (impl): implementer uses the plugin agent type"
 assert_contains "$IF_SRC" "agentType: 'vv-harness:reviewer'" "wf (impl): reviewer uses the plugin agent type (Opus by definition)"
 assert_contains "$IF_SRC" "isolation: 'worktree'" "wf (impl): implementers run in isolated worktrees"
@@ -13704,6 +13787,14 @@ assert_not_contains "$IF_SRC" "git diff <mergeBase>" "wf (impl): reviewer prompt
 assert_contains "$IF_SRC" "spec.mergeBase + '...' + branch" "wf (impl): reviewer prompt interpolates the real merge base"
 # risk is live, not a dead arg: an elevated feature escalates the review effort.
 assert_contains "$IF_SRC" "spec.risk === 'elevated') reviewOpts.effort" "wf (impl): elevated risk escalates the review pass"
+# v6.0.1: risk escalates the REVIEW stage only -- the implementer stays on its default
+# model. rules/parallel-work.md said twice to upgrade the implementer to Opus while the
+# script (correctly, per OVI-140's model policy) never did; the rule was swept to match.
+# The lead keeps a per-feature lever for the historical-signals table's correction_cycles
+# case, mirroring reviewModel.
+assert_not_contains "$IF_SRC" "spec.risk === 'elevated' ? 'opus'" "wf (impl): elevated risk does NOT silently escalate the implementer's model"
+assert_contains "$IF_SRC" "spec.implementModel || 'sonnet'" "wf (impl): implementer model is per-feature overridable, defaulting to Sonnet"
+assert_contains "$IF_SRC" "implementModel: fs.implementModel" "wf (impl): implementModel is carried from featureSpecs onto the spec"
 
 # review-branch specifics.
 RB_SRC=$(cat "$REPO_ROOT/workflows/review-branch.js" 2>/dev/null)
@@ -14283,7 +14374,11 @@ need("Author blindness",
 #    worktrees are removed after merge, before any repo-wide suite run.
 need("Worktree hygiene",
      ["never merge", "the lead integrates",
-      "remove the changed worktree before any repo-wide suite run"])
+      "remove the changed worktree before any repo-wide suite run",
+      # v6.0.1 (F121): a branch from an unwatched run must be scope-diffed before
+      # merge -- OVI-147's fallback drill recovered one carrying an unauthorized
+      # settings edit, caught only because a human read the diff.
+      "git diff --name-only", "declared `scope`"])
 # f. Escalation: Opus review routing, and the single-session fallback triggers
 #    (blocked results, review rounds exhausted).
 need("Escalation",

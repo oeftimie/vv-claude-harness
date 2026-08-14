@@ -2,6 +2,38 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v6.0.1 (2026-08-14)
+
+Four fixes from v6.0.0's own field validation, plus the CI repair it uncovered.
+
+1. **Elevation escalates the review stage, not the implementer (F118)** —
+   `rules/parallel-work.md` told the lead twice to "upgrade its implementer to Opus"
+   for elevated features, while the same section, OVI-140's model policy, and
+   `implement-features.js` all scope escalation to the review pass. The rule carried
+   Teams-era residue; the script was right. Swept the rule to match, and added an
+   optional per-feature `featureSpecs[ID].implementModel` so the historical-signals
+   table's `correction_cycles >= 3` case has an actual lever (default unchanged:
+   Sonnet).
+2. **The mandated conformance proof no longer warns (F119)** — `harness-continue`
+   Step 5b step 3.5 requires `proof.evidence_type: "conformance"` on an elevated
+   feature, and `verify-task-quality.sh` then warned that it didn't match the
+   declared `qa_binding`: following the documented path guaranteed a warning. Exempts
+   exactly that pair (conformance + elevated); a conformance proof on a standard-risk
+   feature still warns.
+3. **A declared-but-unmeasured coverage target is surfaced (F120)** — a feature that
+   sets a numeric `coverage_target` and records no `coverage` now gets a visible,
+   non-blocking note instead of silence. Deliberately narrow: projects that declare no
+   target, and this repo's own descriptive coverage strings, stay silent.
+4. **Scope-diff recovered worktree branches before merging (F121)** — an interrupted
+   run leaves a branch nobody reviewed, and the PreToolUse scope gate reports per call,
+   not per branch. OVI-147's fallback drill recovered one carrying an unrelated edit
+   that removed the project's own `permissions.deny: ["Workflow"]`, caught only because
+   a human read the diff. Now a documented step in the rule and the skill.
+5. **CI repair** — two harness-doctor health assertions compared the tool's whole
+   output to the literal `healthy`, so v6.0.0's own workflow-support notices failed the
+   suite in any environment without a `claude` CLI. `main` had been red since
+   2026-08-12 and two releases merged over it.
+
 ### v6.0.0 (2026-08-14)
 
 **Breaking: Agent Teams machinery removed. Dynamic workflows are the orchestration

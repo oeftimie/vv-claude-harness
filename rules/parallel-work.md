@@ -142,9 +142,9 @@ NAME fills each tier is a binding, held in the Model Selection table above.
 
 ## Dynamic overrides
 
-**Static elevation criteria**: a feature is elevated risk — upgrade its implementer to
-Opus and record `risk: "elevated"` plus `require_plan_approval: true` on the feature —
-when any of these holds, regardless of history:
+**Static elevation criteria**: a feature is elevated risk — record `risk: "elevated"`
+plus `require_plan_approval: true` on the feature — when any of these holds, regardless
+of history:
 - Touches 10+ files or spans multiple modules
 - Cross-cutting concerns (changing a shared interface)
 - Security-sensitive code (authentication, authorization, crypto)
@@ -156,17 +156,26 @@ implement-features script raises the reviewer's effort when `featureSpecs[ID].ri
 `"elevated"`) and, optionally, the author-blind conformance check (`/harness-continue`
 Step 5b, step 3.5).
 
+**Elevation escalates the review stage, not the implementer.** Executors default to
+Sonnet (Model Selection above); risk buys a deeper review pass and, optionally, a
+spec-derived conformance pass — both of which judge the work rather than produce it.
+This is deliberate: two mechanisms describing one model policy drift apart, so the
+script owns the automatic part and there is exactly one place it happens. The lead can
+still override a single feature's implementer — the historical-signals table below is
+the reason to — by passing `featureSpecs[ID].implementModel` at launch; absent it,
+implementers run on their agent definition's model.
+
 **Historical signals** (based on operational metrics from past sessions): before
 assigning models, the lead reviews `features.json` for patterns in the same scope
 directories:
 
 | Historical signal | Action |
 |-------------------|--------|
-| `correction_cycles >= 3` on a past feature in the same scope | Upgrade this feature's implementer to Opus |
+| `correction_cycles >= 3` on a past feature in the same scope | Upgrade this feature's implementer to Opus, via `featureSpecs[ID].implementModel` |
 | `scope_expansions >= 3` on a past feature | Assign a broader initial scope; note it as expansion-prone in the feature's spec |
 | `failure_reason` mentions "approach mismatch" or "misunderstood interface" | Set `require_plan_approval: true` |
 | `discovered_via` depth > 1 (discovered features spawning discovered features) | Fold into parent scope rather than running it as a separate feature |
-| Stamp or prep marked risk: "elevated" | Set require_plan_approval: true and upgrade the implementer to Opus |
+| Stamp or prep marked risk: "elevated" | Set require_plan_approval: true; escalation is automatic and review-side (below) — the implementer stays Sonnet |
 
 These are judgment calls for the lead, not mechanical rules. If no historical data
 exists (first session, new scope), default to Sonnet.
@@ -231,6 +240,22 @@ branch is its durable deliverable: work survives a dead agent because it is comm
 on that branch, not because the agent reported it. After merging a feature's branch,
 remove the changed worktree before any repo-wide suite run — a leftover worktree
 hands repo-wide assertions a duplicate copy of every file (verified in Phase 0).
+
+**Scope-diff every branch you did not watch produced.** Before merging a worktree
+branch recovered from an interrupted or dead run, diff the files it touched against
+that feature's declared `scope` and account for every file outside it:
+
+```bash
+git diff --name-only <mergeBase>...<worktree_branch>
+```
+
+An agent that dies mid-run leaves a branch nobody reviewed, and the enforcement that
+normally bounds it (the PreToolUse scope gate) reports per call, not per branch — so
+an out-of-scope edit on that branch reaches the merge unannounced. In OVI-147's
+fallback drill a recovered branch carried an edit removing the project's own
+`permissions.deny: ["Workflow"]` — unrelated to the feature, caught only because the
+recovering lead happened to read the diff. Exclude what doesn't belong; merging is
+the point of no return.
 
 ## Integration failure recovery
 
