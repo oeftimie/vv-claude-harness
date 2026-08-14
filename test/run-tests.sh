@@ -1471,6 +1471,17 @@ else
   fail "l: plugin.json name is '$PLUGIN_NAME', expected vv-harness"
 fi
 
+# v6 vocabulary sweep, manifest edition (review round: the marketplace listing
+# still advertised "Agent Teams coordination" in the release that removed it —
+# F114's sweep pattern "agent-teams-protocol" never matched the bare keyword).
+for MANIFEST in .claude-plugin/plugin.json .claude-plugin/marketplace.json; do
+  if grep -qiE "agent[ -]teams" "$REPO_ROOT/$MANIFEST"; then
+    fail "l: $MANIFEST still advertises the retired Agent Teams machinery"
+  else
+    pass "l: $MANIFEST carries no Agent Teams vocabulary"
+  fi
+done
+
 HOOK_REF_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import json
 import os
@@ -7280,14 +7291,30 @@ if [ -f "$RUNBOOK" ]; then
   else
     fail "mnt: the runbook is missing the Teams-era retirement delist note"
   fi
+  # The delist note's pointer must actually resolve: MAINTENANCE_LOG.md has to
+  # carry the retirement record it points at, naming the retired items (review
+  # round: the pointer shipped dangling while the log still said NOT retired).
+  MAINT_LOG_FILE="$REPO_ROOT/MAINTENANCE_LOG.md"
+  if grep -q "RETIRED 2026-08-12" "$MAINT_LOG_FILE" \
+    && grep -q "F061/F067/F069" "$MAINT_LOG_FILE" \
+    && grep -q "plan_approval_response" "$MAINT_LOG_FILE"; then
+    pass "mnt: MAINTENANCE_LOG.md carries the Teams-era retirement record the delist note points at"
+  else
+    fail "mnt: the delist note's MAINTENANCE_LOG.md pointer is dangling (no retirement record in the log)"
+  fi
   # AC7's sweep registered the two workflow-era workarounds with retirement
   # conditions (AGENTS.md policy: never a workaround without a removal event).
-  if grep -q "parseArgs" "$RUNBOOK" \
-    && grep -q "CLAUDE_PROJECT_DIR" "$RUNBOOK" \
-    && [ "$(grep -c "Retires when" "$RUNBOOK")" -ge 2 ]; then
-    pass "mnt: both workflow-era workarounds are registered with retirement conditions"
+  # Checked PER ENTRY, not file-wide (review round: a file-wide count of 2
+  # passes even when one workaround has no condition and another has two).
+  if grep -A 8 'Workflow `args` arrives' "$RUNBOOK" | grep -q "Retires when"; then
+    pass "mnt: the args-marshaling workaround entry carries its own retirement condition"
   else
-    fail "mnt: a workflow-era workaround is missing its retirement condition in the runbook"
+    fail "mnt: the args-marshaling workaround entry lacks a 'Retires when' condition"
+  fi
+  if grep -A 9 'CLAUDE_PROJECT_DIR` unset in worktree' "$RUNBOOK" | grep -q "Retires when"; then
+    pass "mnt: the CLAUDE_PROJECT_DIR-fallback workaround entry carries its own retirement condition"
+  else
+    fail "mnt: the CLAUDE_PROJECT_DIR-fallback workaround entry lacks a 'Retires when' condition"
   fi
 else
   fail "mnt: docs/maintenance-runbook.md does not exist"
@@ -7468,6 +7495,17 @@ if ! grep -q "Step 5c" "$HARNESS_CONTINUE_SKILL"; then
   pass "wp35: harness-continue/SKILL.md's Step 5c legacy path is deleted"
 else
   fail "wp35: harness-continue/SKILL.md still has a Step 5c reference"
+fi
+
+# OVI-147 field validation: a resume without the original args fails fast, so
+# the skill's resume contract must name the resend-args requirement in BOTH
+# passages that cite resumeFromRunId (Step 5b step 5, and the edge-case entry).
+HC_RESUME_MENTIONS=$(grep -c "resumeFromRunId, args" "$HARNESS_CONTINUE_SKILL")
+if [ "$HC_RESUME_MENTIONS" -ge 2 ] \
+  && [ "$(grep -c "ORIGINAL \`args\` must be resent" "$HARNESS_CONTINUE_SKILL")" -ge 2 ]; then
+  pass "ovi147: both resume-contract passages require resending the original args"
+else
+  fail "ovi147: a resume-contract passage omits the resend-args requirement (found $HC_RESUME_MENTIONS)"
 fi
 
 # OVI-144 Phase 3 removed agents/reviewer.md's release-timing passage entirely
@@ -13312,6 +13350,30 @@ git -C "$DIR_DOC_FOCUSED_ALWAYS_SKIP" commit -q -m "init.sh with always-skip foc
 OUT=$(run_doctor "$DIR_DOC_FOCUSED_ALWAYS_SKIP")
 assert_not_contains "$OUT" "exit-3 skip contract" \
   "hd (F108): an always-skip focused_test init.sh (marker present, no runner, no run_focused) produces no finding"
+
+# Review round (OVI-147): every finding-expecting fixture above also carries the
+# pre-F106 'treating as pass' wording, so the marker conjunct alone was
+# unpinned — a mutant dropping the marker requirement survived. This fixture
+# has focused_test support, NO 'skipped (exit 3)' marker, and NO fake-green
+# wording: only the marker check can flag it.
+DIR_DOC_FOCUSED_NOMARK="$WORK/doctor-focused-no-marker"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_NOMARK"
+cat > "$DIR_DOC_FOCUSED_NOMARK/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+TARGET=${1:-full_test}
+FOCUS_FILE="${2:-}"
+if [ "$TARGET" = "focused_test" ]; then
+    pytest --tb=short "$FOCUS_FILE" || exit 0
+    exit 0
+fi
+echo "full test"
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_NOMARK/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_NOMARK" add -A
+git -C "$DIR_DOC_FOCUSED_NOMARK" commit -q -m "init.sh with focused_test support but no skip marker and no fake-green wording"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_NOMARK")
+assert_contains "$OUT" "exit-3 skip contract (F106)" \
+  "hd (F108): a marker-less focused_test init.sh is flagged even without 'treating as pass' wording"
 
 DIR_DOC_FOCUSED_STALE="$WORK/doctor-focused-stale"
 make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_STALE"

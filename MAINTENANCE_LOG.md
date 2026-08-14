@@ -3,6 +3,29 @@
 Newest entry first. One entry per run, including no-op runs — a run that finds
 nothing wrong is still logged, never skipped.
 
+## Retirement record — 2026-08-12 (OVI-144 Phase 3), delisted at v6.0.0 (OVI-147)
+
+Not a probe run: the approval-required retirement record for the three Teams-era
+probe items, recorded here because the runbook's delist note points at this log
+as their durable home.
+
+- **`plan_approval_response` delivery bug — RETIRED 2026-08-12** (approved by
+  Ovidiu during OVI-144 prep). The workaround lived in the Agent Teams protocol
+  doc, deleted with the Teams machinery; no shipped file documents the
+  `type: "message"` fallback anymore, so nothing remains to probe. This
+  supersedes Run #0's "Workaround NOT retired" status below — that finding
+  predates the machinery's removal.
+- **Implicit-team model assumptions — RETIRED 2026-08-12** (with the item
+  above): the harness no longer documents or depends on the implicit-team
+  model.
+- **F061/F067/F069 teammate-blindness cluster — RETIRED 2026-08-12**: F067's
+  TeammateIdle wiring and F069's check-remaining-tasks.sh are deleted; F061's
+  lead-vs-teammate discriminator gap is superseded by enforce-scope.sh's
+  structural worktree detection (git-dir vs git-common-dir).
+
+All three were delisted from the runbook's Probe Checklist at the v6.0.0
+release (OVI-147 AC7 sweep); per-item history stays in that file's git log.
+
 ## Run #0 — 2026-07-24
 
 - **CLI version probed**: 2.1.218 (from `claude --version`; live interactive
