@@ -2272,21 +2272,33 @@ else
   fail "z: transcript-secrets rule missing in templates/CLAUDE.md"
 fi
 
-# --exclude-dir=worktrees on both repo-wide counts below: a live workflow
-# session checks its agents out into .claude/worktrees/<name>/, each a full
-# second copy of every *.md in the repo, which otherwise inflates these
-# single-occurrence counts and fails the suite for a reason that has nothing
-# to do with the content being counted.
-FULL_EXAMPLE_COUNT=$(grep -r '"correction_cycles": 0' "$REPO_ROOT" --include="*.md" \
-  --exclude-dir=worktrees | wc -l | tr -d ' ')
+# Count only product documentation and distribution content. Operational
+# .harness records are evidence/data, not owners of these contracts; scanning
+# the whole checkout made an MLD or handoff note capable of breaking CI.
+SHIPPED_MARKDOWN_PATHS="
+$REPO_ROOT/AGENTS.md
+$REPO_ROOT/CHANGELOG.md
+$REPO_ROOT/INSTALL.md
+$REPO_ROOT/MAINTENANCE_LOG.md
+$REPO_ROOT/README.md
+$REPO_ROOT/agents
+$REPO_ROOT/docs
+$REPO_ROOT/evals
+$REPO_ROOT/rules
+$REPO_ROOT/schemas
+$REPO_ROOT/skills
+$REPO_ROOT/templates
+"
+FULL_EXAMPLE_COUNT=$(grep -r '"correction_cycles": 0' $SHIPPED_MARKDOWN_PATHS \
+  --include="*.md" | wc -l | tr -d ' ')
 if [ "$FULL_EXAMPLE_COUNT" -eq 1 ]; then
   pass "z: the full 16-field feature JSON example appears exactly once across *.md"
 else
   fail "z: the full feature JSON example appears $FULL_EXAMPLE_COUNT times across *.md, expected 1"
 fi
 
-DONE_DEF_COUNT=$(grep -r "Feature is not done until" "$REPO_ROOT" --include="*.md" \
-  --exclude-dir=worktrees | wc -l | tr -d ' ')
+DONE_DEF_COUNT=$(grep -r "Feature is not done until" $SHIPPED_MARKDOWN_PATHS \
+  --include="*.md" | wc -l | tr -d ' ')
 if [ "$DONE_DEF_COUNT" -eq 1 ]; then
   pass "z: the done-definition sentence appears exactly once across *.md"
 else
@@ -10745,6 +10757,140 @@ assert_contains "$(cat "$TDD_RULE" 2>/dev/null)" "report that as a blocker rathe
   "rt (OVI-81): unmeasurable coverage must be reported as a blocker, not silently skipped"
 
 echo ""
+echo "== OVI-148: selective CI classification and workflow controls =="
+
+CI_CLASSIFIER="$REPO_ROOT/scripts/classify-ci.py"
+if [ -f "$CI_CLASSIFIER" ]; then
+  assert_contains "$(python3 "$CI_CLASSIFIER" --path .harness/claude-progress.txt)" \
+    "metadata" "ci: progress-only changes select metadata mode"
+  assert_contains "$(python3 "$CI_CLASSIFIER" --path .harness/HARNESS_BACKLOG.md)" \
+    "metadata" "ci: backlog-only changes select metadata mode"
+  assert_contains "$(python3 "$CI_CLASSIFIER" --path .harness/evidence/ovi-148/result.txt)" \
+    "metadata" "ci: evidence-only changes select metadata mode"
+  assert_contains "$(python3 "$CI_CLASSIFIER" --path .harness/mld/2026-08-14-session.md)" \
+    "metadata" "ci: MLD-only changes select metadata mode"
+  assert_contains "$(python3 "$CI_CLASSIFIER" --path clips/demo.mp4)" \
+    "metadata" "ci: clip-only changes select metadata mode"
+  assert_contains "$(python3 "$CI_CLASSIFIER" --path .harness/features.json)" \
+    "state" "ci: features.json-only changes select state mode"
+  assert_contains "$(python3 "$CI_CLASSIFIER" --path .harness/features.json \
+    --path .harness/context_summary.md)" \
+    "state" "ci: features.json plus operational metadata selects state mode"
+  assert_contains "$(python3 "$CI_CLASSIFIER" --path .harness/features.json \
+    --path README.md)" \
+    "full" "ci: a distribution file upgrades state mode to the full suite"
+  assert_contains "$(python3 "$CI_CLASSIFIER" --path new-top-level-file.txt)" \
+    "full" "ci: an unknown path fails safe to the full suite"
+  assert_contains "$(python3 "$CI_CLASSIFIER")" \
+    "full" "ci: no discoverable change list fails safe to the full suite"
+
+  DIR_CI_CLASSIFIER="$WORK/ci-classifier"
+  make_fixture "$DIR_CI_CLASSIFIER"
+  CI_BASE=$(git -C "$DIR_CI_CLASSIFIER" rev-parse HEAD)
+  printf '\nmetadata update\n' >> "$DIR_CI_CLASSIFIER/.harness/context_summary.md"
+  git -C "$DIR_CI_CLASSIFIER" add .harness/context_summary.md
+  git -C "$DIR_CI_CLASSIFIER" commit -q -m "metadata update"
+  CI_HEAD=$(git -C "$DIR_CI_CLASSIFIER" rev-parse HEAD)
+  assert_contains "$(python3 "$CI_CLASSIFIER" --repo "$DIR_CI_CLASSIFIER" \
+    --base "$CI_BASE" --head "$CI_HEAD")" \
+    "metadata" "ci: git-diff mode classifies a real metadata-only commit"
+
+  ZERO_SHA=0000000000000000000000000000000000000000
+  assert_contains "$(python3 "$CI_CLASSIFIER" --repo "$DIR_CI_CLASSIFIER" \
+    --base "$ZERO_SHA" --head "$CI_HEAD")" \
+    "full" "ci: an all-zero push base fails safe to the full suite"
+
+  CI_DELETE_BASE=$CI_HEAD
+  rm "$DIR_CI_CLASSIFIER/.harness/context_summary.md"
+  git -C "$DIR_CI_CLASSIFIER" add .harness/context_summary.md
+  git -C "$DIR_CI_CLASSIFIER" commit -q -m "delete metadata"
+  CI_DELETE_HEAD=$(git -C "$DIR_CI_CLASSIFIER" rev-parse HEAD)
+  assert_contains "$(python3 "$CI_CLASSIFIER" --repo "$DIR_CI_CLASSIFIER" \
+    --base "$CI_DELETE_BASE" --head "$CI_DELETE_HEAD")" \
+    "full" "ci: a deleted metadata file fails safe to the full suite"
+
+  DIR_CI_PR="$WORK/ci-pr-classifier"
+  make_fixture "$DIR_CI_PR"
+  CI_PR_FORK=$(git -C "$DIR_CI_PR" rev-parse HEAD)
+  git -C "$DIR_CI_PR" checkout -q -b metadata-pr
+  printf '\nPR metadata update\n' >> "$DIR_CI_PR/.harness/context_summary.md"
+  git -C "$DIR_CI_PR" add .harness/context_summary.md
+  git -C "$DIR_CI_PR" commit -q -m "PR metadata update"
+  CI_PR_HEAD=$(git -C "$DIR_CI_PR" rev-parse HEAD)
+  git -C "$DIR_CI_PR" checkout -q "$CI_PR_FORK"
+  printf '\nUnrelated base documentation update\n' >> "$DIR_CI_PR/README.md"
+  git -C "$DIR_CI_PR" add README.md
+  git -C "$DIR_CI_PR" commit -q -m "advance base"
+  CI_PR_BASE=$(git -C "$DIR_CI_PR" rev-parse HEAD)
+  assert_contains "$(python3 "$CI_CLASSIFIER" --repo "$DIR_CI_PR" --merge-base \
+    --base "$CI_PR_BASE" --head "$CI_PR_HEAD")" \
+    "metadata" "ci: PR mode ignores unrelated changes added to the base branch"
+else
+  fail "ci: scripts/classify-ci.py does not exist"
+fi
+
+TEST_YML="$REPO_ROOT/.github/workflows/test.yml"
+TEST_YML_CI_ERRORS=$(python3 - "$TEST_YML" 2>&1 <<'PYEOF'
+import re
+import sys
+
+text = open(sys.argv[1]).read()
+errors = []
+
+if "\t" in text:
+    errors.append("contains a literal tab character")
+
+on_match = re.search(r"(?ms)^on:\n(.*?)^concurrency:", text)
+if not on_match:
+    errors.append("cannot isolate the on: trigger block")
+    on_block = ""
+else:
+    on_block = on_match.group(1)
+if not re.search(r"(?m)^  push:\n    branches: \[main\]$", on_block):
+    errors.append("push is not restricted to main")
+if not re.search(r"(?m)^  pull_request:$", on_block):
+    errors.append("pull_request trigger is missing")
+if not re.search(r"(?m)^  workflow_dispatch:$", on_block):
+    errors.append("workflow_dispatch trigger is missing")
+if re.search(r"(?m)^\s+tags:", on_block):
+    errors.append("test workflow still has a tag trigger")
+
+concurrency_match = re.search(r"(?ms)^concurrency:\n(.*?)^jobs:", text)
+if not concurrency_match:
+    errors.append("cannot isolate the concurrency block")
+    concurrency_block = ""
+else:
+    concurrency_block = concurrency_match.group(1)
+if "github.event.pull_request.number || github.run_id" not in concurrency_block:
+    errors.append("non-PR concurrency does not use a unique run_id fallback")
+if "github.event_name == 'pull_request'" not in concurrency_block:
+    errors.append("cancel-in-progress is not restricted to pull requests")
+
+if not re.search(r"(?m)^  test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 20$", text):
+    errors.append("the preserved test job is missing its 20-minute timeout")
+for required in (
+    "id: changes",
+    "python3 scripts/classify-ci.py --merge-base --base",
+    "steps.changes.outputs.mode == 'state'",
+    "python3 scripts/validate-features.py .harness/features.json",
+    "steps.changes.outputs.mode == 'full'",
+    "bash test/run-tests.sh",
+    "steps.changes.outputs.mode == 'metadata'",
+):
+    if required not in text:
+        errors.append("missing selective-CI contract: " + required)
+
+for error in errors:
+    print(error)
+PYEOF
+)
+if [ -z "$TEST_YML_CI_ERRORS" ]; then
+  pass "ci: test.yml preserves one required check with deduplicated triggers and three internal modes"
+else
+  fail "ci: test.yml selective workflow contract -- $TEST_YML_CI_ERRORS"
+fi
+
+echo ""
 echo "== OVI-103: release-consistency CI check =="
 
 RC_YML="$REPO_ROOT/.github/workflows/release-consistency.yml"
@@ -10775,6 +10921,14 @@ try:
         # there), so the workflow needs the triggers where a tag CAN exist.
         if not isinstance(push, dict) or "v*" not in (push.get("tags") or []):
             errors.append("'on.push.tags' does not include v*")
+        required_paths = {
+            ".claude-plugin/plugin.json",
+            ".claude-plugin/marketplace.json",
+            "CHANGELOG.md",
+            ".github/workflows/release-consistency.yml",
+        }
+        if not isinstance(push, dict) or not required_paths.issubset(set(push.get("paths") or [])):
+            errors.append("'on.push.paths' does not cover every release-consistency input")
         if not isinstance(on, dict) or "schedule" not in on:
             errors.append("'on.schedule' is missing (the bumped-but-never-tagged catch)")
         if not isinstance(on, dict) or "workflow_dispatch" not in on:
@@ -10827,6 +10981,14 @@ except ImportError:
     # pyyaml-free fallback for the same contract the parsed branch asserts.
     if "tags: ['v*']" not in text:
         errors.append("no push tag trigger found (structural check)")
+    for required_path in (
+        ".claude-plugin/plugin.json",
+        ".claude-plugin/marketplace.json",
+        "CHANGELOG.md",
+        ".github/workflows/release-consistency.yml",
+    ):
+        if f"- '{required_path}'" not in text:
+            errors.append(f"push path filter is missing {required_path} (structural check)")
     if "schedule:" not in text:
         errors.append("no schedule trigger found (structural check)")
     if "checked_tag" not in text:
@@ -13178,11 +13340,17 @@ print(json.dumps({
     'tool_input': {'command': cmd},
 }))
 ")
-OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh "$F096_ES_CRASH_PAYLOAD")
+F096_ES_CRASH_STDERR="$WORK/f096-es-analysis-failure.stderr"
+OUT=$(run_hook "$DIR_HS_F042" enforce-scope.sh "$F096_ES_CRASH_PAYLOAD" \
+  2>"$F096_ES_CRASH_STDERR")
 RC=$?
 assert_rc0 "$RC" "f096-es: an oversized analysis-failure command still exits 0"
 assert_deny_json "$OUT" \
   "f096-es: an oversized analysis-failure command still emits deny JSON (not a silent allow)"
+F096_ES_CRASH_STDERR_PREFIX=$(head -c 128 "$F096_ES_CRASH_STDERR")
+assert_contains "$F096_ES_CRASH_STDERR_PREFIX" \
+  "enforce-scope: segment analysis failed, denying:" \
+  "f096-es: the captured analysis-failure diagnostic still names the failure"
 REASON_LEN=$(python3 -c "
 import json, sys
 data = json.loads(sys.argv[1])

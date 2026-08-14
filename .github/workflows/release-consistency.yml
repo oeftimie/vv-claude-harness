@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # GitHub does not evaluate path filters for tag pushes. Tags therefore keep
+    # running the full check, while ordinary main pushes run it only when one
+    # of the release-consistency inputs or the workflow itself changed.
+    paths:
+      - '.claude-plugin/plugin.json'
+      - '.claude-plugin/marketplace.json'
+      - 'CHANGELOG.md'
+      - '.github/workflows/release-consistency.yml'
   # Catches the genuine "manifest bumped, tag never cut" case (v5.2.0 shipped that
   # way and went unnoticed for months) without the push-to-main run having to
   # assert a tag that cannot exist yet.

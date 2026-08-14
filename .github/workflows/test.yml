@@ -2,11 +2,21 @@ name: tests
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A newer revision makes an older PR run irrelevant, but main pushes must each
+# finish: canceling one could leave its changes untested if the next push is
+# metadata-only and therefore selects the lightweight path.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       # F078/OVI-103: actions/checkout@v4 defaults to a shallow, tag-less
       # clone (depth 1). The new release-consistency check's own regression
@@ -19,4 +29,34 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: bash test/run-tests.sh
+
+      - name: Classify changed files
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          MODE=full
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            MODE=$(python3 scripts/classify-ci.py --merge-base --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA")
+          elif [ "$EVENT_NAME" = "push" ]; then
+            MODE=$(python3 scripts/classify-ci.py --base "$PUSH_BEFORE_SHA" --head "$CURRENT_SHA")
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "### CI mode: $MODE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate harness feature state
+        if: steps.changes.outputs.mode == 'state'
+        run: python3 scripts/validate-features.py .harness/features.json
+
+      - name: Run full test suite
+        if: steps.changes.outputs.mode == 'full'
+        run: bash test/run-tests.sh
+
+      - name: Record metadata-only skip
+        if: steps.changes.outputs.mode == 'metadata'
+        run: echo "Only operational metadata changed; the full suite is not affected." >> "$GITHUB_STEP_SUMMARY"
