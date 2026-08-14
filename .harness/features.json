@@ -1,8 +1,8 @@
 {
   "project": "vv-claude-harness",
   "created": "2026-07-22",
-  "total_features": 117,
-  "passing": 100,
+  "total_features": 121,
+  "passing": 121,
   "features": [
     {
       "id": "F001",
@@ -3335,6 +3335,149 @@
         "evidence_type": "journey",
         "artifact": "evals/workflow-migration-validation.md",
         "not_established": "Per-agent cache-replay breakdown on resume (the resumed session completed the run but its report omitted which agents replayed vs re-ran; journal-level forensics not performed). AC7 merge+tag and AC8 epic closure pending Ovidiu's PR approval."
+      }
+    },
+    {
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "discovered_via": "F117",
+      "correction_cycles": 0,
+      "qa_binding": "unit",
+      "risk": "standard",
+      "status": "passing",
+      "id": "F118",
+      "priority": 118,
+      "description": "Elevation escalates the review stage, not the implementer. rules/parallel-work.md told the lead twice to \"upgrade its implementer to Opus\" for elevated features, while the same section, OVI-140's decided model policy, and workflows/implement-features.js all scope escalation to the review pass -- Teams-era residue Phase 4's rewrite missed, i.e. the drift the epic itself predicted. AC: (1) neither prescription survives in rules/parallel-work.md; (2) the rule states plainly that elevation escalates review, with the reason; (3) an optional per-feature featureSpecs[ID].implementModel exists (mirroring reviewModel) so the historical-signals table's correction_cycles>=3 case has a lever; (4) the implementer default is unchanged (Sonnet); (5) elevated risk never silently escalates the implementer's model.",
+      "scope": [
+        "rules/parallel-work.md",
+        "workflows/implement-features.js",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "coverage": "2051/2051 suite (3 new assertions: no silent opus escalation, implementModel default, implementModel carried from featureSpecs)",
+      "notes": "Ovidiu chose option A (sweep the rule) over option B (change the script) -- the script matched the epic's policy and was left alone. Grep-based assertions mutation-checked directly: reverting both script edits makes them fail.",
+      "approaches_tried": [
+        "First diagnosis was wrong -- reported as a missing script feature; reading rules/parallel-work.md against OVI-140's model policy showed the script was correct and the RULE carried the residue. Backlog row corrected rather than 'fixing' working code.",
+        "The red-first run raced the implementation (the suite cats the script mid-run, after the edit landed) and came back green -- discarded as invalid evidence; mutation-checked the greps instead"
+      ],
+      "proof": {
+        "claim": "The rule no longer prescribes an implementer upgrade, and the lead has a real per-feature lever for the historical-signals case",
+        "evidence_type": "unit",
+        "artifact": "test/run-tests.sh (wf (impl) assertions)",
+        "not_established": "No live workflow run exercised implementModel end-to-end; the assertions are structural over the script source, same as the surrounding wf (impl) cluster."
+      },
+      "spec": {
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-08-14T12:10:00Z",
+        "source": "conversation"
+      }
+    },
+    {
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "discovered_via": "F117",
+      "correction_cycles": 0,
+      "qa_binding": "unit",
+      "risk": "standard",
+      "status": "passing",
+      "id": "F119",
+      "priority": 119,
+      "description": "The harness no longer warns about the proof it mandates. harness-continue Step 5b step 3.5 requires proof.evidence_type 'conformance' on an elevated feature; verify-task-quality.sh then warned that it did not match the declared qa_binding, so following the documented path guaranteed a warning -- observed on every elevated feature in OVI-147's field validation. AC: (1) an elevated feature with a conformance proof and a differing qa_binding produces no mismatch warning and exits 0; (2) a conformance proof on a standard-risk feature still warns (the exemption stays narrow); (3) every other binding/evidence mismatch still warns; (4) both hook copies stay in sync.",
+      "scope": [
+        ".claude/hooks/verify-task-quality.sh",
+        "skills/harness-init/verify-task-quality.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "coverage": "2051/2051 suite (2 new behavioral assertions through the real hook: elevated+conformance silent, standard+conformance still warns)",
+      "notes": "Exemption is the exact pair the harness mandates (conformance AND elevated), not a blanket acceptance of conformance -- a journey binding satisfied by spec-derived tests would be a real downgrade.",
+      "approaches_tried": [
+        "Considered blanket-accepting conformance for any qa_binding and rejected it: conformance is not strictly stronger than journey evidence",
+        "Considered rewriting the feature's qa_binding at close-out and rejected it: qa_binding comes from the verified spec and should not be mutated post-hoc"
+      ],
+      "proof": {
+        "claim": "Following harness-continue Step 3.5 on an elevated feature no longer self-warns, and the exemption does not widen",
+        "evidence_type": "unit",
+        "artifact": "test/run-tests.sh (ht (v6.0.1) assertions)",
+        "not_established": "The exemption keys on the feature's recorded `risk` field, so a legacy feature that was genuinely elevated but predates F064's risk persistence (risk absent/null) still warns on a conformance proof; not covered by a test."
+      },
+      "spec": {
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-08-14T12:10:00Z",
+        "source": "conversation"
+      }
+    },
+    {
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "discovered_via": "F117",
+      "correction_cycles": 0,
+      "qa_binding": "unit",
+      "risk": "standard",
+      "status": "passing",
+      "id": "F120",
+      "priority": 120,
+      "description": "A declared-but-unmeasured coverage target is surfaced. A feature that sets a numeric coverage_target and records no coverage now emits a visible, non-blocking note instead of silence. AC: (1) declared target + no coverage produces a visible note and still accepts (exit 0); (2) the marker is never parsed as an achieved|target miss (which would reject the task with exit 2); (3) a project declaring no coverage_target stays silent; (4) a descriptive non-numeric coverage string stays silent; (5) a third note cannot displace the existing two in the systemMessage.",
+      "scope": [
+        ".claude/hooks/verify-task-quality.sh",
+        "skills/harness-init/verify-task-quality.sh.template",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "coverage": "2051/2051 suite (4 new behavioral assertions incl. the two silence cases)",
+      "notes": "Deliberately narrow, and narrowed DURING implementation: the first version keyed on coverage being absent, which fired on every task completion for any project without coverage tooling. The suite's pre-existing 'ht (F057): a fully clean accept has no stdout at all' assertion caught it. This does NOT address the broader 'nobody machine-checked the 95% bar' complaint from OVI-147's field sessions -- that stays lead discipline at close-out, and the code comment says so.",
+      "approaches_tried": [
+        "v1 keyed on `coverage is None` alone -- rejected after F057's clean-accept assertion failed; a control that fires on every task is one the ablation pass removes next session",
+        "Two traps found by reading the consumer: the new marker fell into the generic `elif [ -n \"$COVERAGE_RESULT\" ]` branch (would have rejected tasks with exit 2), and the two-variable if/elif SYSTEM_MESSAGE ladder silently dropped a third note -- rewritten as a loop"
+      ],
+      "proof": {
+        "claim": "A feature that declared a coverage target but measured nothing is surfaced, without adding per-task friction to projects that never declared one",
+        "evidence_type": "unit",
+        "artifact": "test/run-tests.sh (ht (F120) assertions)",
+        "not_established": "The broader no-coverage-tooling gap is explicitly out of scope; nothing here machine-checks a 95% bar that no tool produces."
+      },
+      "spec": {
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-08-14T12:10:00Z",
+        "source": "conversation"
+      }
+    },
+    {
+      "assigned_to": null,
+      "test_file": "test/run-tests.sh",
+      "discovered_via": "F117",
+      "correction_cycles": 0,
+      "qa_binding": "unit",
+      "risk": "standard",
+      "status": "passing",
+      "id": "F121",
+      "priority": 121,
+      "description": "Scope-diff recovered worktree branches before merging. An interrupted or dead run leaves a committed branch nobody reviewed, and the PreToolUse scope gate reports per call, not per branch, so an out-of-scope edit on that branch reaches the merge unannounced. AC: (1) rules/parallel-work.md's Worktree hygiene section documents the scope-diff step with the concrete git command; (2) it names the declared scope as the comparison basis; (3) harness-continue's unfinished-feature path cites it; (4) the section's existing pins (never merge, lead integrates, worktree removal) survive.",
+      "scope": [
+        "rules/parallel-work.md",
+        "skills/harness-continue/SKILL.md",
+        "test/run-tests.sh"
+      ],
+      "depends_on": [],
+      "coverage": "2051/2051 suite (Worktree hygiene extract-and-compare pin extended with the git command and declared-scope terms)",
+      "notes": "Grounded in a real incident: OVI-147's AC2d/AC3 fallback drill recovered a branch carrying an edit that removed the project's own permissions.deny [\"Workflow\"], unrelated to any feature, caught only because the recovering lead read the diff.",
+      "approaches_tried": [
+        "Documented in both the rule (canonical) and the skill (citation) per Phase 4's de-duplication convention, rather than duplicating the prose"
+      ],
+      "proof": {
+        "claim": "The recovery path documents a mechanical check for the out-of-scope-edit class the fallback drill hit",
+        "evidence_type": "unit",
+        "artifact": "test/run-tests.sh (Worktree hygiene need() pin)",
+        "not_established": "Documentation only -- no hook mechanically enforces the scope-diff at merge time; that would be a larger change and is left as a backlog candidate."
+      },
+      "spec": {
+        "verdict": "PASS",
+        "sv_version": "1.0",
+        "verified_at": "2026-08-14T12:10:00Z",
+        "source": "conversation"
       }
     }
   ]
