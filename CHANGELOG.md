@@ -2,7 +2,7 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
-### v6.0.0 (unreleased)
+### v6.0.0 (2026-08-14)
 
 **Breaking: Agent Teams machinery removed. Dynamic workflows are the orchestration
 backbone (OVI-140, Phases 3–6).**
@@ -23,6 +23,17 @@ backbone (OVI-140, Phases 3–6).**
   redaction gap structurally; `serve.py` 404s unknown sessions before SSE headers,
   exits idle after 600 s clientless (`--idle-exit-seconds`), and detects viewer
   disconnect without log traffic; workflow/subagent runs render as agent spokes.
+
+- **Field validation (F117/OVI-147)**: the release was proven end to end before
+  tagging — a fresh toy project through init → spec gate → workflow mode →
+  integration with all four gates observed; failure-path drills (REVISE loop bounded
+  at ≤3, blocked feature surfaced-not-merged, kill + `resumeFromRunId` resume with
+  `features.json` untouched, `disableWorkflows` degradation to plain worktree
+  subagents with outcome parity); a v5.7.0 fixture upgraded via the documented
+  doctor path (idempotent, byte-identical data). Records:
+  `evals/workflow-migration-validation.md`. Drill-caught fixes shipped in this
+  release: doctor check 10 no longer false-positives on always-skip `focused_test`
+  scripts, and the resume contract text now names the resend-`args` requirement.
 
 **Migration (v5.x → v6)**: `/plugin` update → `/harness-doctor --fix` from a clean git
 state. No data migration — `features.json` is unchanged. A repeat `--fix` is a
