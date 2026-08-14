@@ -121,7 +121,7 @@
         "qa_binding": {
           "type": ["string", "null"],
           "enum": ["unit", "integration", "journey", "manual", "corpus", "conformance", null],
-          "description": "Optional, for backward compatibility. Declared at prep time (harness-issue-prep Step 5's mandatory 'QA binding' line): the evidence_type this feature promises to be proven with. verify-task-quality.sh compares it against proof.evidence_type to warn on a mismatch. Absent/null for legacy features."
+          "description": "Optional, for backward compatibility. Declared at prep time (harness-issue-prep Step 5's mandatory 'QA binding' line): the evidence_type this feature promises to be proven with. verify-task-quality.sh compares it against proof.evidence_type to warn on a mismatch, except for a 'conformance' proof on an 'elevated'-risk feature, which harness-continue Step 5b mandates and which therefore never warns. Absent/null for legacy features."
         },
         "proof": {
           "type": ["object", "null"],
@@ -142,7 +142,7 @@
           "type": ["integer", "null"],
           "minimum": 1,
           "maximum": 100,
-          "description": "Optional, for backward compatibility. Overrides the 95% default coverage gate; integer 1-100. Overrides should be justified in notes -- advisory only, never machine-enforced."
+          "description": "Optional, for backward compatibility. Overrides the 95% default coverage gate; integer 1-100. Overrides should be justified in notes -- advisory only, never machine-enforced. Declaring a target and recording no coverage produces a visible, non-blocking note at task completion."
         },
         "delivered": {
           "type": ["object", "null"],

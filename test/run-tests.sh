@@ -5411,6 +5411,20 @@ OUT=$(run_hook "$DIR_HQ9C" verify-task-quality.sh '{"task":{"metadata":{"feature
 assert_contains "$OUT" "does not match" \
   "ht (v6.0.1): a conformance proof on a standard-risk feature still warns (exemption stays narrow)"
 
+# v6.0.2 doc-drift pin: three separate files described the pre-F119 behavior
+# ("warns on a mismatch", full stop) at the same time -- the canonical rule, the
+# schema's own field description, and the prep skill. The hook's behavior is pinned
+# above; this pins that the documents describing it stay truthful.
+for BINDING_DOC in rules/parallel-work.md schemas/feature.schema.json \
+  skills/harness-issue-prep/SKILL.md; do
+  if grep -qi "conformance" "$REPO_ROOT/$BINDING_DOC" \
+    && grep -qi "elevated" "$REPO_ROOT/$BINDING_DOC"; then
+    pass "ht (v6.0.2): $BINDING_DOC documents the conformance/elevated exemption"
+  else
+    fail "ht (v6.0.2): $BINDING_DOC describes the qa_binding warning without its exemption"
+  fi
+done
+
 # v6.0.1 (F120): a feature that DECLARED a numeric coverage_target but recorded no
 # coverage gets a visible, non-blocking note -- the gate silently didn't run on a
 # feature that asked for it. The marker must never be parsed as an achieved|target
