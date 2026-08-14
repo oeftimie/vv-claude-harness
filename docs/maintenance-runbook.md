@@ -70,41 +70,41 @@ requiring a live spawned teammate) are run by the monthly `claude -p` agent
 session instead, and their outcome is appended to `MAINTENANCE_LOG.md` the same
 way.
 
-1. **`plan_approval_response` delivery bug.**
-   Retired 2026-08-12 as part of OVI-144 Phase 3 (approved by Ovidiu during
-   prep, with items 2 and 6). The workaround lived in the Agent Teams protocol
-   doc, deleted with the Teams machinery; no shipped file documents the
-   `type: "message"` fallback anymore, so there is no workaround left to
-   retire and nothing to probe.
-
-2. **Implicit-team model assumptions.**
-   Retired 2026-08-12 with item 1: the harness no longer documents or depends
-   on the implicit-team model, so a platform change to team lifecycle tools
-   can no longer contradict any shipped content.
-
-3. **Hook events fire with expected payloads**: `TaskCompleted`,
+1. **Hook events fire with expected payloads**: `TaskCompleted`,
    `SessionStart` (all sources: `startup`, `resume`, `clear`,
    `compact`), `SessionEnd`. No workaround to retire — this probe exists to
    catch a payload-shape change before a hook silently stops firing or starts
    misparsing.
 
-4. **Plugin cache/update layout** matches `INSTALL.md`'s description
+2. **Plugin cache/update layout** matches `INSTALL.md`'s description
    (`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`, old versions
    retained side by side, no stale-file mixing between versions). No
    workaround to retire — this probe exists to catch an installer layout
    change before `INSTALL.md`'s instructions silently go stale.
 
-5. **`fable` entry in `test/run-tests.sh`'s agent-frontmatter model
+3. **`fable` entry in `test/run-tests.sh`'s agent-frontmatter model
    allowlist.** No workaround — this probe exists to periodically confirm the
    entry still reflects a real, current Claude model choice (rather than a
    stale name kept out of inertia) and to remove it if it stops being one.
 
-6. **Lead/teammate hook-blindness (F061), TeammateIdle task-list blindness
-   (F067), and the declined teammate-role carve-out (F069).**
-   Retired 2026-08-12 as part of OVI-144 Phase 3 (approved by Ovidiu during
-   prep). F067 probed the TeammateIdle hook's input for a task-list field;
-   that hook's wiring is deleted. F069 concerned check-remaining-tasks.sh's
-   pattern-matching; that file is deleted. F061's lead-vs-teammate
-   discriminator gap is superseded by enforce-scope.sh's
-   structural worktree detection (git-dir vs git-common-dir).
-   Nothing remains to probe.
+4. **Workflow `args` arrives as a JSON-encoded string** (Phase 0 / OVI-141
+   Q7). Both workflow scripts route `args` through a defensive `parseArgs`
+   that tolerates either marshaling (string parsed, bare object passed
+   through). Retires when the earliest CLI this plugin supports delivers
+   `args` as a parsed object — probe by running any workflow with an object
+   `args` and logging `typeof args`; on FIXED, drop `parseArgs`'s string
+   branch (approval-required, as all retirements are).
+
+5. **`CLAUDE_PROJECT_DIR` unset in worktree workflow agents** (Phase 0 /
+   OVI-141). PreToolUse gate scripts fall back to git-toplevel resolution so
+   scope and secret gates still fire inside workflow worktrees; flagged
+   fragile at Phase 0. Retires when the platform sets `CLAUDE_PROJECT_DIR`
+   for hook invocations inside worktree subagents — probe by logging the env
+   var from a hook during a worktree workflow run; on FIXED, the fallback can
+   be simplified away.
+
+Teams-era items formerly listed here (the `plan_approval_response` delivery
+bug, implicit-team model assumptions, and the F061/F067/F069 teammate
+blindness cluster) were retired 2026-08-12 with OVI-144 Phase 3 and delisted
+at the v6.0.0 release; their retirement records live in `MAINTENANCE_LOG.md`
+and this file's git history.

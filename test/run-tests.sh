@@ -1471,6 +1471,17 @@ else
   fail "l: plugin.json name is '$PLUGIN_NAME', expected vv-harness"
 fi
 
+# v6 vocabulary sweep, manifest edition (review round: the marketplace listing
+# still advertised "Agent Teams coordination" in the release that removed it —
+# F114's sweep pattern "agent-teams-protocol" never matched the bare keyword).
+for MANIFEST in .claude-plugin/plugin.json .claude-plugin/marketplace.json; do
+  if grep -qiE "agent[ -]teams" "$REPO_ROOT/$MANIFEST"; then
+    fail "l: $MANIFEST still advertises the retired Agent Teams machinery"
+  else
+    pass "l: $MANIFEST carries no Agent Teams vocabulary"
+  fi
+done
+
 HOOK_REF_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import json
 import os
@@ -7267,18 +7278,43 @@ if [ -f "$RUNBOOK" ]; then
       fail "mnt: maintenance-runbook.md is missing a '## $HEADER' section"
     fi
   done
-  # OVI-144 Phase 3 retired probe item 1 (the plan_approval_response delivery
-  # bug) together with item 2: the workaround it tracked lived in the Agent
-  # Teams protocol doc, deleted with the Teams machinery, so there is no
-  # FIXED/BROKEN criterion left to state. Pin the dated retirement record
-  # instead -- the same shape probe item 6's retirement is pinned with below,
-  # so a silently deleted probe still fails this suite.
+  # OVI-147 (v6.0.0) delisted the Teams-era tombstones (the
+  # plan_approval_response delivery bug, implicit-team assumptions, and the
+  # F061/F067/F069 cluster) from the checklist per the AC7 sweep; a single
+  # dated pointer note replaces them. Pin the note so the delisting stays a
+  # readable record rather than a silent deletion.
   if grep -q "plan_approval_response" "$RUNBOOK" \
-    && grep -q "Retired 2026-08-12" "$RUNBOOK" \
-    && grep -q "no workaround left to" "$RUNBOOK"; then
-    pass "mnt: the runbook records probe item 1's retirement (OVI-144 Phase 3)"
+    && grep -q "retired 2026-08-12" "$RUNBOOK" \
+    && grep -q "delisted" "$RUNBOOK" \
+    && grep -q "MAINTENANCE_LOG.md" "$RUNBOOK"; then
+    pass "mnt: the runbook's delist note records the Teams-era retirements (OVI-147)"
   else
-    fail "mnt: the runbook is missing probe item 1's retirement record"
+    fail "mnt: the runbook is missing the Teams-era retirement delist note"
+  fi
+  # The delist note's pointer must actually resolve: MAINTENANCE_LOG.md has to
+  # carry the retirement record it points at, naming the retired items (review
+  # round: the pointer shipped dangling while the log still said NOT retired).
+  MAINT_LOG_FILE="$REPO_ROOT/MAINTENANCE_LOG.md"
+  if grep -q "RETIRED 2026-08-12" "$MAINT_LOG_FILE" \
+    && grep -q "F061/F067/F069" "$MAINT_LOG_FILE" \
+    && grep -q "plan_approval_response" "$MAINT_LOG_FILE"; then
+    pass "mnt: MAINTENANCE_LOG.md carries the Teams-era retirement record the delist note points at"
+  else
+    fail "mnt: the delist note's MAINTENANCE_LOG.md pointer is dangling (no retirement record in the log)"
+  fi
+  # AC7's sweep registered the two workflow-era workarounds with retirement
+  # conditions (AGENTS.md policy: never a workaround without a removal event).
+  # Checked PER ENTRY, not file-wide (review round: a file-wide count of 2
+  # passes even when one workaround has no condition and another has two).
+  if grep -A 8 'Workflow `args` arrives' "$RUNBOOK" | grep -q "Retires when"; then
+    pass "mnt: the args-marshaling workaround entry carries its own retirement condition"
+  else
+    fail "mnt: the args-marshaling workaround entry lacks a 'Retires when' condition"
+  fi
+  if grep -A 9 'CLAUDE_PROJECT_DIR` unset in worktree' "$RUNBOOK" | grep -q "Retires when"; then
+    pass "mnt: the CLAUDE_PROJECT_DIR-fallback workaround entry carries its own retirement condition"
+  else
+    fail "mnt: the CLAUDE_PROJECT_DIR-fallback workaround entry lacks a 'Retires when' condition"
   fi
 else
   fail "mnt: docs/maintenance-runbook.md does not exist"
@@ -7461,6 +7497,17 @@ else
   fail "wp35: harness-continue/SKILL.md still has a Step 5c reference"
 fi
 
+# OVI-147 field validation: a resume without the original args fails fast, so
+# the skill's resume contract must name the resend-args requirement in BOTH
+# passages that cite resumeFromRunId (Step 5b step 5, and the edge-case entry).
+HC_RESUME_MENTIONS=$(grep -c "resumeFromRunId, args" "$HARNESS_CONTINUE_SKILL")
+if [ "$HC_RESUME_MENTIONS" -ge 2 ] \
+  && [ "$(grep -c "ORIGINAL \`args\` must be resent" "$HARNESS_CONTINUE_SKILL")" -ge 2 ]; then
+  pass "ovi147: both resume-contract passages require resending the original args"
+else
+  fail "ovi147: a resume-contract passage omits the resend-args requirement (found $HC_RESUME_MENTIONS)"
+fi
+
 # OVI-144 Phase 3 removed agents/reviewer.md's release-timing passage entirely
 # (F055/F059 governed teammate shutdown, which no longer exists in workflow
 # mode); the absence is pinned by the hs2 agent sweep above.
@@ -7468,17 +7515,16 @@ fi
 # F061's Teams-specific limitation callouts were deleted with the protocol
 # file (WP3.5); only the maintenance-runbook probe wiring remains asserted.
 
-# OVI-144 Phase 3 retired the runbook's probe item 6 (F061/F067/F069): the
-# Agent Teams machinery it probed is gone. Pin the dated retirement record so
-# the item stays a readable record rather than a silently deleted probe, and
-# pin that the runbook's remaining probes no longer name the retired
-# TeammateIdle hook.
+# OVI-144 Phase 3 retired the runbook's probe item covering F061/F067/F069;
+# OVI-147 (v6.0.0) delisted its tombstone into the pointer note. Pin the
+# cluster's mention in that note, and pin that the runbook's remaining probes
+# no longer name the retired TeammateIdle hook.
 RUNBOOK_MD="$REPO_ROOT/docs/maintenance-runbook.md"
-if grep -q "Retired 2026-08-12 as part of OVI-144 Phase 3" "$RUNBOOK_MD" \
-  && grep -q "structural worktree detection" "$RUNBOOK_MD"; then
-  pass "mnt: the maintenance runbook records probe item 6's retirement (OVI-144 Phase 3)"
+if grep -q "F061/F067/F069" "$RUNBOOK_MD" \
+  && grep -q "delisted" "$RUNBOOK_MD"; then
+  pass "mnt: the runbook's delist note covers the F061/F067/F069 cluster"
 else
-  fail "mnt: the maintenance runbook is missing probe item 6's retirement record"
+  fail "mnt: the runbook's delist note is missing the F061/F067/F069 cluster"
 fi
 if grep -q '`TeammateIdle`' "$RUNBOOK_MD"; then
   fail "mnt: the runbook's hook-payload probe still lists the retired TeammateIdle hook"
@@ -13276,6 +13322,58 @@ git -C "$DIR_DOC_FOCUSED_OK" commit -q -m "init.sh at v5.5.0 focused_test contra
 OUT=$(run_doctor "$DIR_DOC_FOCUSED_OK")
 assert_not_contains "$OUT" "exit-3 skip contract" \
   "hd (F108): an init.sh already at the v5.5.0 focused_test contract produces no finding"
+
+# F117 field validation (OVI-147): a stack with no per-file runner at all skips
+# every focused_test invocation with the exit-3 marker and never defines
+# run_focused -- there is no runner exit code to remap. The v5.7.0 initializer
+# generates exactly this shape for stdlib-unittest Python projects, and the
+# original marker check (marker AND run_focused) false-positived on it.
+DIR_DOC_FOCUSED_ALWAYS_SKIP="$WORK/doctor-focused-always-skip"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_ALWAYS_SKIP"
+cat > "$DIR_DOC_FOCUSED_ALWAYS_SKIP/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+TARGET=${1:-full_test}
+FOCUS_FILE="${2:-}"
+if [ "$TARGET" = "focused_test" ]; then
+    if [ ! -f "$FOCUS_FILE" ]; then
+        echo "focused_test: test file '$FOCUS_FILE' does not exist -- skipped (exit 3)."
+        exit 3
+    fi
+    echo "focused_test: no per-file runner for stdlib unittest -- skipped (exit 3)."
+    exit 3
+fi
+echo "full test"
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_ALWAYS_SKIP/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_ALWAYS_SKIP" add -A
+git -C "$DIR_DOC_FOCUSED_ALWAYS_SKIP" commit -q -m "init.sh with always-skip focused_test (no per-file runner)"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_ALWAYS_SKIP")
+assert_not_contains "$OUT" "exit-3 skip contract" \
+  "hd (F108): an always-skip focused_test init.sh (marker present, no runner, no run_focused) produces no finding"
+
+# Review round (OVI-147): every finding-expecting fixture above also carries the
+# pre-F106 'treating as pass' wording, so the marker conjunct alone was
+# unpinned — a mutant dropping the marker requirement survived. This fixture
+# has focused_test support, NO 'skipped (exit 3)' marker, and NO fake-green
+# wording: only the marker check can flag it.
+DIR_DOC_FOCUSED_NOMARK="$WORK/doctor-focused-no-marker"
+make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_NOMARK"
+cat > "$DIR_DOC_FOCUSED_NOMARK/.harness/init.sh" <<'INITEOF'
+#!/bin/bash
+TARGET=${1:-full_test}
+FOCUS_FILE="${2:-}"
+if [ "$TARGET" = "focused_test" ]; then
+    pytest --tb=short "$FOCUS_FILE" || exit 0
+    exit 0
+fi
+echo "full test"
+INITEOF
+chmod +x "$DIR_DOC_FOCUSED_NOMARK/.harness/init.sh"
+git -C "$DIR_DOC_FOCUSED_NOMARK" add -A
+git -C "$DIR_DOC_FOCUSED_NOMARK" commit -q -m "init.sh with focused_test support but no skip marker and no fake-green wording"
+OUT=$(run_doctor "$DIR_DOC_FOCUSED_NOMARK")
+assert_contains "$OUT" "exit-3 skip contract (F106)" \
+  "hd (F108): a marker-less focused_test init.sh is flagged even without 'treating as pass' wording"
 
 DIR_DOC_FOCUSED_STALE="$WORK/doctor-focused-stale"
 make_healthy_doctor_fixture "$DIR_DOC_FOCUSED_STALE"

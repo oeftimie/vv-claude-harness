@@ -1,0 +1,939 @@
+{"ts": "2026-08-13T21:09:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:09:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:09:33Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:34Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:34Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:34Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:39Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:39Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:41Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:41Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:09:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:09:55Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:09:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:09:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:09:57Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:06Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:07Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:10:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:10:09Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:13Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:10:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:10:47Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:51Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:57Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:10:57Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:10:57Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:11:05Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:11:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:11:10Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:11:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:11:15Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:11:36Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:42Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:43Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:46Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:46Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:49Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:49Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:49Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:49Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:11:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:11:54Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:11:54Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:12:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:12:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:12:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:12:02Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:12:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:12:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:12:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:12:07Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:14Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:16Z", "hook_event_name": "SubagentStart", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:16Z", "hook_event_name": "SubagentStart", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:16Z", "hook_event_name": "SubagentStart", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:19Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:20Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:21Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:23Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:24Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:24Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:25Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:14:26Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:27Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:27Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:29Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:14:30Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:32Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:32Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:32Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:14:35Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:35Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:36Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:36Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:37Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:41Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:14:42Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:14:43Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:46Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:14:46Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:14:47Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:14:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:50Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:55Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:56Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:14:58Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:02Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:09Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:12Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:15Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:17Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:17Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:17Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:21Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:25Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:27Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:27Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:27Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:29Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:31Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:33Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:35Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:39Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:40Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:40Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:42Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:44Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:46Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:46Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:46Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:48Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:50Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:51Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:51Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:54Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:55Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:55Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:57Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:57Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:15:57Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:00Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:00Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:04Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:04Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:04Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:05Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:06Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:07Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:09Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:10Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:11Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:11Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:11Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:13Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:14Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:14Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:14Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:16Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:16Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:20Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:21Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:22Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:22Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:25Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:28Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:28Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:31Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:34Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:35Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:37Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:37Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:39Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:39Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:39Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:41Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:41Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:41Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:42Z", "hook_event_name": "SubagentStop", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a1f6277d7f361bd86", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:45Z", "hook_event_name": "SubagentStart", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:16:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:48Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:48Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:48Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:50Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:16:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:16:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:16:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:51Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:16:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:51Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:52Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:16:52Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:16:52Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:16:52Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:16:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:53Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:53Z", "hook_event_name": "SubagentStop", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a77e9c2784998703c", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:16:57Z", "hook_event_name": "SubagentStart", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:01Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:01Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:01Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:01Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:03Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:03Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:17:07Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:17:07Z", "hook_event_name": "SubagentStop", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a7d2fe4e9b0ab9527", "agent_type": "vv-harness:feature-implementer"}
+{"ts": "2026-08-13T21:17:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:08Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:09Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:10Z", "hook_event_name": "SubagentStart", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:16Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:20Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:20Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:22Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:25Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:27Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:27Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:27Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:29Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:32Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:33Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:37Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:54Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:56Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:17:58Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:01Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:01Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:01Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:02Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:03Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:05Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:07Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:08Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:09Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:09Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:17Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:17Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:17Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:19Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:26Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:32Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:35Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:41Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:18:55Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:14Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:14Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:18Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:22Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:22Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:22Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:22Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:28Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:29Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:44Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:46Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:53Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:19:55Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:09Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:09Z", "hook_event_name": "SubagentStop", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a5d3ec801f9367ed6", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:22Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:23Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:20:24Z", "hook_event_name": "SubagentStop", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9d089c1a5f68ebf9", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:21:03Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:21:03Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:21:03Z", "hook_event_name": "SubagentStop", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "aa7017188673fde2c", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:21:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:21:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:21:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:21:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:21:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:21:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:21:22Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:21:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:21:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:21:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:21:31Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:10Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:10Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:22:10Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:22:10Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:22:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:22:16Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:22:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:22:21Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:22:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:22:30Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:22:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:54Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:54Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:22:54Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:58Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:22:58Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:22:58Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:23:00Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:03Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:03Z", "hook_event_name": "TaskCompleted", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "verify-task-quality", "verdict": "allow"}
+{"ts": "2026-08-13T21:23:03Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:23:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:23:05Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:23:09Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:23:11Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:23:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:23:17Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:24Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:23:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:23:28Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:23:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:23:39Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:23:44Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:49Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:49Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:23:49Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:23:51Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:23:53Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:23:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:23:56Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:23:57Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:24:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:24:02Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:24:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:24:08Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:10Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:10Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:24:10Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:24:12Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:24:15Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:24:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:24:26Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:28Z", "hook_event_name": "TaskCompleted", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "verify-task-quality", "verdict": "allow"}
+{"ts": "2026-08-13T21:24:28Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:24:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:30Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:24:32Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:24:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:24:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:24:38Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:02Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:04Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:04Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:25:04Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:25:04Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:25:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:25:07Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:25:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:25:38Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:42Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:42Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:25:42Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:25:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:25:50Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:04Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:04Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:26:04Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:26:15Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:26:23Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:27Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:27Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:26:27Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:26:35Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:26:37Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:26:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:26:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:26:46Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:59Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:26:59Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:26:59Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:27:01Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:27:07Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:27:10Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:27:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:27:17Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:27:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:27:23Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:27:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:27:27Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:27:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:27:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:27:38Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:28:18Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:28:20Z", "hook_event_name": "SubagentStart", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:20Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:28:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:24Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:24Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:26Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:26Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:28Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:28Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:33Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:33Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:28:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:28:35Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:28:35Z", "hook_event_name": "SubagentStart", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:39Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:39Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:40Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:40Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:28:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:28:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:28:44Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:44Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:28:46Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:46Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:47Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:28:58Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:28:58Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:28:58Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:29:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:02Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:04Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:08Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:38Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:40Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:40Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:40Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:43Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:45Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:47Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:49Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:49Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:49Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:29:50Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:29:51Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:30:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:01Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:30:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:30:06Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:30:11Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:11Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:11Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:11Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:15Z", "hook_event_name": "SubagentStop", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "a9a24f3ab1266088e", "agent_type": "vv-harness:conformance-tester"}
+{"ts": "2026-08-13T21:30:17Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:17Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:30:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:30:25Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:30:25Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:30:38Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:38Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:38Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:30:40Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:31:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:31:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:31:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:31:03Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:31:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:31:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:31:19Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:31:21Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:32:12Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:32:12Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:32:13Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:32:13Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:32:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:32:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:32:15Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:32:16Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:33:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:33:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:33:02Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:33:04Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:33:34Z", "hook_event_name": "SubagentStop", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "agent_id": "ad382b5fa7663c506", "agent_type": "vv-harness:reviewer"}
+{"ts": "2026-08-13T21:34:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:34:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:06Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:17Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:17Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:34:17Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:34:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:34:23Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:34:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:34:31Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:34:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:34:37Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:34:43Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:34:45Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:34:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:34:52Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:34:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:34:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:34:57Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:35:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:35:02Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:35:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:35:18Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:20Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:20Z", "hook_event_name": "TaskCompleted", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "verify-task-quality", "verdict": "allow"}
+{"ts": "2026-08-13T21:35:20Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:35:23Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:35:23Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:35:29Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:35:31Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:35:35Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:35:37Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:35:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:35:41Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:35:43Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:36:06Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:36:06Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:21Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:21Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:31Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:36:31Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:36Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:36:36Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:36:55Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:36:55Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:16Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:37:16Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:37:34Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:34Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:37:47Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:37:47Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:37:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:50Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:37:52Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:54Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:37:54Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:37:54Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:37:56Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:38:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:38:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:38:00Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:38:01Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:38:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}
+{"ts": "2026-08-13T21:38:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "enforce-scope", "verdict": "skipped"}
+{"ts": "2026-08-13T21:38:05Z", "hook_event_name": "PreToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349", "gate": "commit-gate", "verdict": "allow"}
+{"ts": "2026-08-13T21:38:07Z", "hook_event_name": "PostToolUse", "session_id": "40283954-cee5-4178-801c-45f364bc0349"}

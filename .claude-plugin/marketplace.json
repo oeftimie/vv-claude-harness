@@ -8,7 +8,7 @@
     {
       "name": "vv-harness",
       "source": "./",
-      "description": "VV Claude Code Harness — multi-session continuity, Agent Teams coordination, mechanical quality enforcement."
+      "description": "VV Claude Code Harness — multi-session continuity, worktree-isolated parallel workflows, mechanical quality enforcement."
     }
   ]
 }

@@ -1175,3 +1175,15 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
 - Next: PR + merge; then OVI-147 (Phase 6, v6.0.0 release).
 - Blockers: none.
 2026-08-13 (cont.): review-branch workflow on F116: 8 confirmed / 0 refuted. Real bug fixed: idle-exit only worked for never-watched servers (write-dependent disconnect detection); now select/EOF per pass + connected-client hold/deliver/reap tests. Plus flag validation, onerror surface, sentinel-spam fix, 4 test-gap closures. Suite 2028/2028. AC4 deviation disclosed (2028 > 2017 baseline; review coverage chosen over the numeric target -- Ovidiu accepts/rejects at merge).
+2026-08-13: OVI-147 prep: SV ASK (16 q) -> Ovidiu delegated all to lead rec -> RV cycle 1 ASK (3 residual q) -> delegated -> RV cycle 2 PASS. Normalized spec written back to Linear; stamped elevated/code vs d7835cc (spec_hash a583f5f5...); harness-ready applied; F117 created in features.json (risk persisted per F064).
+
+## Session 2026-08-14 - F117/OVI-147 (Phase 6: field validation, migration guide, v6.0.0 release)
+- Feature: F117 - all 8 ACs executed; WP6.1 drills ALL PASS (records: evals/workflow-migration-validation.md; evidence: .harness/evidence/ovi-147/).
+- Status: passing on branch eovidiu/ovi-147-phase-6-field-validation-migration-guide-and-v600-release; PR pending Ovidiu's review/merge, then tag v6.0.0 + AC8 epic closure.
+- Tests: 2036/2036 (6 new pins from the release review round; branch started at 2028).
+- Drills: AC1 workflow-mode toy run green (69/69, 4 gates, dashboard render); AC2a organic REVISE at 2-of-3; AC2b blocked surfaced-not-merged; AC2c scripted kill+resume PASS (LOAD-BEARING: resume needs original args resent -- SKILL fixed); AC2d+AC3 deny-Workflow fallback parity PASS (+integrity catch: unauthorized worktree settings edit excluded); AC6 doctor upgrade drill PASS (caught+fixed doctor check-10 false positive).
+- Review round: review-branch workflow, 7 confirmed (3 major: stale Teams manifests, dangling MAINTENANCE_LOG pointer, unpinned marker conjunct) -- all fixed; 2 verifiers lost to 529s, findings actioned.
+- Failure classes absorbed: account usage limit killed 2 runs (recovered by relaunch after reset); 10-min background cap killed the AC6 drill session (stages re-run mechanically).
+- Decisions: details in context_summary.md Active Context + Meta-Session 2026-08-14; 5 new backlog rows + 1 score bump.
+- Next: Ovidiu reviews/merges PR -> tag v6.0.0 -> AC8 (exit-review comment on OVI-140 with Teams-era baseline comparison, sibling sub-issues Done, OVI-147 Done last, epic closed).
+- Blockers: none (merge/tag are Ovidiu-gated by design).

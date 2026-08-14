@@ -161,6 +161,43 @@ hooks, stale settings blocks, gitignore rules, `.harness/` validity) and, on req
 fixes them with `/harness-doctor --fix`. It replaces the manual upgrade steps this
 section used to require.
 
+### Migrating a v5.x project to v6
+
+v6.0.0 removed the Agent Teams machinery; dynamic workflows are the orchestration
+backbone. Upgrading a v5.x-initialized project is two steps and no data migration:
+
+1. Update the plugin: `/plugin` → update `vv-harness` (the marketplace update path in
+   the Update section above).
+2. In the project, from a **clean git state** (commit or stash first — doctor is
+   report-first and never writes without approval, and a clean state makes every
+   `--fix` edit reviewable and revertible via git), run `/harness-doctor`, review the
+   report, then `/harness-doctor --fix`.
+
+`--fix` removes the four v5.x Teams-era artifacts (the `TeammateIdle` hook route, the
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var, the orphaned
+`check-remaining-tasks.sh`, and a leftover `.claude/teammate-scope.txt`), writing
+`.claude/settings.json.bak` before touching settings and preserving any user-authored
+`TeammateIdle` hooks. It also verifies workflow availability (CLI ≥ 2.1.154, the
+`Workflow` tool enabled) and prints a notice — not an error — if workflow mode is
+unavailable. There is no data migration: `features.json` is unchanged; specs, statuses,
+and history carry over as-is.
+
+Doctor is idempotent here: a second `--fix` against an already-migrated project
+reports zero findings and proposes zero edits.
+
+If you skip doctor, nothing breaks loudly — the stale `TeammateIdle` hook simply never
+fires again (the event died with the machinery) and the env flag is harmless dead
+weight — but you also skip the workflow-availability check, so run it. Consumer
+projects each need their own in-project `/plugin` update + doctor pass
+(portage-curator included — its pass is a standing obligation, now with the v6
+target).
+
+Other starting states, in one line each: a pre-v5 project upgrades to the latest v5.x
+first (the mechanics below), then follows this path; upgrading mid-run is unsupported
+— finish or close in-flight sessions first; rollback is reinstalling v5.7.0 via
+`/plugin` (see "Installing a specific version"), with no data migration in either
+direction.
+
 Under the hood, `--fix` applies exactly these mechanical steps (for projects
 initialized under v3, run without the plugin's install mechanism):
 

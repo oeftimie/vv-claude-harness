@@ -1,0 +1,61 @@
+All three features are integrated and the suite is green. Final report.
+
+## What I did
+
+Ran the harness-continue workflow-mode flow end to end on noteskeep. All three features — `add`, `list_notes`, `delete` — are implemented, reviewed, merged to `main`, and marked `passing`. **69 tests pass, 0 fail.**
+
+Before starting I cleared the two gaps the previous session left behind: the missing `2026-08-13` retrospective and the uncommitted `.harness/` metadata (committed with a `docs:` prefix).
+
+| Feature | Implementer | Review rounds | Verdict | Tests |
+|---|---|---|---|---|
+| F001 `add` | Sonnet, worktree 1 | 1 | APPROVE | 18 |
+| F002 `list_notes` | Sonnet, worktree 2 | 1 | APPROVE | 21 |
+| F003 `delete` | Sonnet, worktree 3 | 2 of 3 | REVISE → APPROVE | 14 + 15 conformance |
+
+Final suite: 1 smoke + 18 + 21 + 14 + 15 author-blind conformance = **69**.
+
+## Where I'm blocked
+
+Nothing is blocked. Three things you should know rather than discover later:
+
+**The elevated-risk handling is only two-thirds applied.** F003's high-effort review and author-blind conformance pass both ran. The third part — "upgrade the implementer to Opus" — did not, because `workflows/implement-features.js` hardcodes `model: 'sonnet'` on the implementer call with no per-feature override. F003 was implemented on Sonnet and was the only feature to burn a correction cycle. I did not edit the plugin (different repo). Filed in `HARNESS_BACKLOG.md`.
+
+**Coverage was never machine-checked.** `coverage.py` isn't installed and `init.sh` runs plain `unittest`, so the `TaskCompleted` coverage stage self-skipped by design. I left `coverage: null` on all three rather than invent a number. The only real measurement is the round-2 reviewer's stdlib-`trace` run (100% of `notes/delete.py` and `notes/store.py`). F001's and F002's 95% bar is unverified.
+
+**I committed to `main` locally.** Preflight flagged "on 'main' — branch before committing"; the pinned integration order commits directly, and there's no remote here. Nothing was pushed.
+
+## What I recommend
+
+1. Fix the implementer-model gap in the workflow script — the elevated-risk lane promises something it can't deliver today.
+2. Install `coverage.py` and teach `init.sh full_test` to report it. It's the one gate that never actually ran.
+3. Don't batch dependent features again (below).
+
+---
+
+### The batching problem
+
+I flagged before launching that F002/F003 declare `depends_on` and all three share `scope: ["notes/", "tests/"]`, so the batch wasn't independent under `parallel-work.md`'s definition. I ran it as instructed. Every predicted failure occurred: F002 shipped a private `_load_store` duplicating F001's (violating its own NFR), F003 reimplemented F001's helpers wholesale, and every merge after the first conflicted. Both reviewers caught it independently.
+
+I resolved it at integration: `notes/store.py` is now the single on-disk access point, with `add`, `list_notes`, and `delete` as thin modules over it. One scope expansion — `save_store` gained temp-file cleanup on write failure, which F003's tests pin and F001's own review had flagged as needed once another feature routed through it. Disclosed on the feature and in the handoff.
+
+### F003's fix loop
+
+Round 1's REVISE carried two mutation-verified test gaps. I fixed both on the branch and re-verified with the same probes: a local-time stamp with a literal `Z` (now fails by 3h) and a tombstone written on the `KeyError` branch (now fails). Also asserted AC6 through `list_notes` rather than by reading the file, and made `delete(True)` raise `TypeError` instead of deleting note 1.
+
+Round 2 caught two things worth the high-effort pass:
+
+- The conformance tests were **untracked** and would have been silently lost at merge. They're now committed.
+- My own UTC fix only worked because this box is UTC+3 — under `TZ=UTC` the mutant survived. I replaced it with a patched clock and verified the mutant now dies under `TZ=UTC`. I'd asserted that fix was mutation-verified before it fully was; the earlier gotcha I'd written to `context_summary.md` has been corrected.
+
+### Gates that fired
+
+- **SessionStart `SESSION_INCOMPLETE`** — caught the missing retrospective and uncommitted metadata. Real catch.
+- **`smoke_test`** — ran as the pre-work gate and after every integration; green throughout.
+- **`TaskCompleted`** (3×) — smoke stage passed each time; coverage stage self-skipped (non-numeric coverage).
+- **Proof/`qa_binding` warning** — fired on F003. `harness-continue` Step 3.5 mandates `evidence_type: "conformance"`, but the hook warns when that doesn't equal the declared `qa_binding` (`unit`). Following the skill guarantees the warning. Filed as a backlog row; I didn't paper over it by downgrading the proof.
+- **`enforce-scope`, `verify-git-identity`, `commit-gate`** — fired on every relevant call, blocked nothing.
+
+`git add` and `git commit` were kept as separate calls throughout; worktrees were removed before any repo-wide run.
+
+One loose end I left alone: `.claude/settings.json.pre-harness-init.bak` is untracked (harness-init's own backup), as are `__pycache__` dirs, which aren't gitignored. I didn't touch `.gitignore` — that's a scope call for you.
+EXIT:0

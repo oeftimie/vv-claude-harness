@@ -99,7 +99,7 @@ Three reasons:
 * **Transparency**: When an agent goes off the rails, you can open `task_plan.md` and see exactly what it thinks it's doing. You can't really debug a vector database when an agent starts hallucinating. Files are inspectable, editable, and version-controlled.
 * **Structure**: Anthropic specifically chose JSON for their features file because, [as they noted](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), "the model is less likely to inappropriately change or overwrite JSON files compared to Markdown files." Structured formats create implicit contracts. The agent knows that `passes: false` means work remains. It knows not to delete entries. The file format itself enforces discipline.
 
-## The evolution: v2.0 to v5.0
+## The evolution: v2.0 to v6.0
 
 ### v2.0: The foundation (January 2026)
 
@@ -152,7 +152,7 @@ Two bugs discovered in real Agent Teams sessions:
 
 **PostToolUse hook schema.** The hooks were generated with `postToolUse` (wrong casing) and a flat structure that Claude Code silently ignores. Fixed to `PostToolUse` with proper nested `matcher` + `hooks` array. The kind of bug you only catch by actually running the system.
 
-**plan_approval_response delivery bug.** `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Discovered when a lead agent kept sending approvals that teammates never received. The workaround (confirmed in production): use `type: "message"` for all plan approvals. The harness now documents this as a known Claude Code bug and routes all approvals through direct messages. Retirement condition and current status tracked in `docs/maintenance-runbook.md` and `MAINTENANCE_LOG.md`.
+**plan_approval_response delivery bug.** `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Discovered when a lead agent kept sending approvals that teammates never received. The workaround (confirmed in production): use `type: "message"` for all plan approvals. The harness documented this as a known Claude Code bug and routed all approvals through direct messages until the Teams machinery — workaround included — was retired in v6 (retirement recorded in `MAINTENANCE_LOG.md`).
 
 ### v3.3: Metacognitive self-improvement (March 2026)
 
@@ -298,7 +298,7 @@ permanent flock error was treated identically to ordinary lock contention.
 
 v5.2.0 adds an opt-in live dashboard: set `VV_HARNESS_DASHBOARD=1` before starting the
 session you want to watch, then run `/harness-dashboard` to open an animated
-hub-and-spoke node graph of that session's Agent Teams activity — the lead, each
+hub-and-spoke node graph of that session's agent activity — the lead, each
 spoke, quality-gate verdicts, and judge subagents — served locally with no external
 dependencies. See [INSTALL.md](./INSTALL.md), "Optional: Live Session Dashboard", for
 setup and its known limitations.
@@ -307,6 +307,26 @@ v5.3.0-alpha marks the dashboard as alpha quality for broader testing before it'
 folded into a stable release — pin a single project to it via `extraKnownMarketplaces`
 without touching any other project's plugin version (see INSTALL.md, "Installing a
 specific version").
+
+### v6.0: The workflow backbone (August 2026)
+
+The migration Agent Teams had been heading toward since v5.7.0 completed: the
+experimental Teams machinery (teammate spawning, message-based coordination, the
+idle-reassignment nudge, the env flag) is removed, and dynamic workflows are the
+orchestration backbone. One implementer per feature in an isolated worktree, one
+reviewer per feature over the branch diff, structured per-feature results the lead
+integrates in a pinned order — with runtime-guaranteed returns instead of a message
+delivery protocol, and resumable runs instead of lost teammates.
+
+The release was field-validated end to end before tagging: a fresh toy project driven
+through init → spec gate → workflow mode → integration with every gate observed
+firing; failure-path drills for a REVISE loop, a blocked feature, a killed-and-resumed
+run, and workflow-unavailability degradation to plain worktree subagents; and a
+v5.x-initialized fixture upgraded through the documented migration path
+(`/plugin` update → `harness-doctor --fix`, no data migration). The drills are
+recorded in `evals/workflow-migration-validation.md` — including the defects they
+caught and fixed before release. Upgrading: INSTALL.md, "Migrating a v5.x project
+to v6".
 
 ## Architecture
 
