@@ -127,6 +127,43 @@ update mechanics themselves.
   than the local drill branch — a divergence created by the clone-based drill
   setup, disclosed by the toy lead unprompted.
 
+## AC2(c) — kill/resume drill, attempt 1 (2026-08-14): kill-side PASS, resume leg confounded
+
+- **Mechanism**: toy-resume clone; Sonnet lead launched the workflow; monitor
+  on the dashboard log's first `SubagentStop`; `kill -9` on the lead process
+  at that point (21:51 UTC). First kill hit the shell wrapper, not the CLI —
+  the surviving `claude` child was identified by cwd and killed separately
+  (drill note: kill the CLI pid, not its wrapper).
+- **Kill-side observations (all hold)**: `.harness/features.json` sha256
+  byte-identical to the pre-launch baseline (`a6a7ddc5…`); no integration on
+  the branch; one in-flight worktree branch left behind. The corruption
+  invariant is proven.
+- **Resume-leg confound (drill-design error, disclosed)**: toy-resume was
+  cloned from toy-fresh AFTER AC1 completed, so the clone's `origin/main`
+  already contained implemented F001–F003. The resumed session consulted the
+  run's `journal.jsonl`, discovered the finished work, verified it
+  independently (ancestor check, `spec.hash` match, its own 69/69 suite run,
+  source read), and integrated by fast-forward instead of exercising
+  `resumeFromRunId` — explicitly disclosing that it had not run the pipeline
+  itself. The cache-replay observable was therefore NOT demonstrated in this
+  attempt.
+- **Conduct finding (positive)**: the resumed session treated the operator
+  prompt's "machine crash" framing as an unverified narrative, declined to
+  parrot the prescribed report claims, and grounded itself in the journal —
+  exactly the injected-instruction skepticism the integrity rules ask for.
+- **Verdict**: kill-side PASS; resume leg re-run in attempt 2 (below) on an
+  uncontaminated fixture (no origin remote, `main` at the pre-implementation
+  commit).
+
+## Observed failure class — account usage limit mid-run (2026-08-14)
+
+Not a drill: the first AC3 fallback run (~85 min in, F001 still unintegrated)
+and the first attempt-2 AC2(c) launch were both killed by the account session
+limit ("resets 2:40am"). Recovery used the same machinery the drills
+validate: state re-read from `features.json`/`claude-progress.txt`, runs
+relaunched after the reset window. Recorded for the OVI-140 exit review as a
+real failure class the workflow-era harness must absorb (and did).
+
 ## AC6 — v5.x fixture upgrade drill (2026-08-14)
 
 - **Mechanism**: toy-v5 at a clean git state; stand-in for `/plugin` update
