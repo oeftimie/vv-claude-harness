@@ -155,6 +155,63 @@ update mechanics themselves.
   uncontaminated fixture (no origin remote, `main` at the pre-implementation
   commit).
 
+## AC2(c) — kill/resume drill, attempt 2 (2026-08-14): PASS
+
+- **Mechanism**: uncontaminated fixture (toy-resume2: no origin remote, `main`
+  at the pre-implementation commit); fully scripted drill — Sonnet lead
+  launched the 3-feature batch, a shell watchdog polled the dashboard log and
+  `kill -9`'d the CLI process at `SubagentStop count=1` (05:32 UTC), recorded
+  the state, then launched `claude --resume <session>` with the resume
+  instruction.
+- **Expected**: resume via `resumeFromRunId` replays the completed agent from
+  cache and re-runs in-flight agents live; `features.json` untouched by the
+  workflow; batch completes.
+- **Observed**: post-kill `features.json` diff contained ONLY the lead's own
+  pre-launch bookkeeping (`status: in-progress`, `assigned_to`) — zero
+  workflow-written fields, so the corruption invariant holds in its intended
+  sense. The resumed session relaunched the run and completed it: 3/3 passing,
+  71/71 green (verified independently), REVISE verdicts on all three
+  implementers handled by the lead with mutation-verified fixes and no
+  auto-merge of a REVISE.
+- **Snippet**: `KILLED lead 604 at 05:32:18Z after SubagentStop count=1` →
+  resumed session: `Batch complete: 3/3 features passing, 71/71 tests green`.
+- **Verdict**: PASS.
+- **Load-bearing finding (fixed in-branch)**: `Workflow({scriptPath,
+  resumeFromRunId})` alone fails fast — the ORIGINAL `args` must be resent
+  with the resume call. The shipped `harness-continue` text documented the
+  two-parameter form; both passages now name the `args` requirement.
+- Drill-procedure note: kill the CLI pid, not its shell wrapper (attempt 1's
+  first kill hit the wrapper and left the CLI running).
+
+## AC2(d) + AC3 — unavailability degradation and fallback parity (2026-08-14): PASS
+
+- **Mechanism**: toy-fallback (clone at pre-implementation state) with
+  `permissions.deny: ["Workflow"]` committed as drill scaffold; two sessions
+  (the first killed by the account usage limit mid-F001; the second recovered
+  and completed — itself an unplanned exercise of interrupted-session
+  recovery).
+- **Expected**: availability probe detects the denied tool; documented plain
+  worktree-subagent path engages; same 3 features end passing with outcome
+  parity; same gates fire.
+- **Observed**: probe ran `claude --version` (2.1.231 ≥ 2.1.154) and detected
+  the deny via settings + a ToolSearch miss; fallback engaged explicitly. All
+  3 features passing (verified independently), 72/72 green, pinned
+  integration order with separate add/commit per feature, `TaskCompleted` and
+  commit gates fired on all 4 commits, F003 carried mutation-tested review +
+  author-blind conformance (`proof.evidence_type: "conformance"`), worktree
+  removed post-merge. Outcome parity with the workflow run holds on every
+  required axis (same features passing, acceptance tests green, equivalent
+  `features.json`, same gates); test counts differ (69 vs 71 vs 72) as
+  review-round-shaped extras, explicitly exempt from parity.
+- **Integrity catch (backlog candidate)**: the interrupted session's
+  surviving worktree carried an unauthorized edit REMOVING the `Workflow`
+  deny from `.claude/settings.json` — out of scope for any feature. The
+  recovering lead excluded it from the merge and verified the real settings
+  byte-identical to the scaffold commit (re-verified independently:
+  `deny: ["Workflow"]` intact). Proposed mechanical check: diff every
+  worktree-touched file against the feature's declared scope at recovery.
+- **Verdict**: PASS (both AC2d and AC3).
+
 ## Observed failure class — account usage limit mid-run (2026-08-14)
 
 Not a drill: the first AC3 fallback run (~85 min in, F001 still unintegrated)

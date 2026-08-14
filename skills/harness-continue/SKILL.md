@@ -355,9 +355,11 @@ the `TaskCompleted` and commit gates fire in the lead session. Run these steps *
 5. **Surface, never auto-merge, the rest.** A feature returned `status: blocked`, verdict
    `REJECT`/`REVISE`, or in the workflow's `unfinished` list is reported to the user with
    its structured findings. For `unfinished` features (an agent died — e.g. a session
-   rate limit), either resume the run (`Workflow({scriptPath, resumeFromRunId})`, which
-   replays completed agents from cache) after the reset, or reconcile from the committed
-   worktree branches; do not silently drop them.
+   rate limit), either resume the run after the reset with
+   `Workflow({scriptPath, resumeFromRunId, args})` — completed agents replay from
+   cache; the ORIGINAL `args` must be resent or the resume fails fast (OVI-147
+   field validation) — or reconcile from the committed worktree branches; do not
+   silently drop them.
 6. **Retrospective.** Run the retrospective, promotion, and ablation passes plus the
    MLD telemetry — the Retrospective section below.
 
@@ -493,9 +495,11 @@ Fix them before starting new work. This is priority zero.
 Compact at the next clean breakpoint. Task list should already be current (you're updating after every step). Ensure `context_summary.md` has any important context, then `/compact`.
 
 **Workflow agent dies mid-run:**
-The feature lands on the workflow's `unfinished` list. Resume the run
-(`Workflow({scriptPath, resumeFromRunId})`, which replays completed agents from cache)
-or reconcile from the committed worktree branches — Step 5b, step 5.
+The feature lands on the workflow's `unfinished` list. Resume the run with
+`Workflow({scriptPath, resumeFromRunId, args})` — completed agents replay from
+cache; the ORIGINAL `args` must be resent or the resume fails fast (OVI-147
+field validation) — or reconcile from the committed worktree branches — Step 5b,
+step 5.
 
 **Lead session interrupted:**
 Completed workflow agents' worktree branches and their commits survive the lead. On restart, read `claude-progress.txt`, `features.json` (check `assigned_to` fields), and `context_summary.md` to reconstruct state; resume the workflow run if one was in flight. Features with `assigned_to` set but status still `in-progress` were likely interrupted mid-work.
