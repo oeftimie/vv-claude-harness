@@ -1,6 +1,6 @@
 ---
 name: harness-init
-description: Initialize a new project with the Long-Running Agent Harness (vv-harness plugin). Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and optional Agent Teams structure. Use when starting a new multi-session project.
+description: Initialize a new project with the Long-Running Agent Harness (vv-harness plugin). Sets up feature tracking, git identity capture, context summary, build hooks, quality gate hooks, and an optional workflow size guideline. Use when starting a new multi-session project.
 ---
 
 # Harness Initializer
