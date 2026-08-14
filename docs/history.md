@@ -1,0 +1,284 @@
+# History and design origins
+
+Background material moved out of the README so that file describes only the harness
+as it is today. Nothing here is a statement of current behavior: version sections
+describe what shipped when, including machinery that has since been retired. For
+current behavior see [README.md](../README.md); for the release record see
+[CHANGELOG.md](../CHANGELOG.md).
+
+## Origins
+
+### Two solutions, one insight
+
+Two independent approaches emerged to solve the memory problem, and they converged on the same fundamental insight.
+
+Anthropic's research proposed a two-phase architecture:
+1. An initializer agent that runs in the first session and sets up scaffolding, followed by
+2. Coding agents that make incremental progress in subsequent sessions.
+
+The key innovation was externalizing state into files that persist between sessions:
+* A `features.json` file tracks what needs to be built (and what's done).
+* A `claude-progress.txt` file logs what each session accomplished.
+
+The coding agent reads these files at the start of every session, orients itself, picks up where the last session left off.
+
+Almost at the same time, the Manus team (before their acquisition) discovered the same principle through production experience. They distilled it into what the community now calls the "planning-with-files" pattern. Their insight: the context window is RAM; the filesystem is disk. Anything important gets written to disk.
+
+Manus uses three files for every complex task: `task_plan.md` (phases and progress), `notes.md` (research and discoveries), and `context_summary.md` (persistent learnings). The agent re-reads the plan before major decisions. It writes findings immediately rather than holding them in context. It logs errors so it doesn't repeat them.
+
+Same problem. Same solution. Different vocabulary.
+
+### Why files, not memory systems?
+
+You might wonder: why markdown files? Why not Jira, GitHub issues, vector databases, RAG pipelines, or proper memory systems?
+
+Three reasons:
+* **Simplicity**: Files require no infrastructure and no assumptions. The agent writes. The agent reads. Done.
+* **Transparency**: When an agent goes off the rails, you can open `task_plan.md` and see exactly what it thinks it's doing. You can't really debug a vector database when an agent starts hallucinating. Files are inspectable, editable, and version-controlled.
+* **Structure**: Anthropic specifically chose JSON for their features file because, [as they noted](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), "the model is less likely to inappropriately change or overwrite JSON files compared to Markdown files." Structured formats create implicit contracts. The agent knows that `passes: false` means work remains. It knows not to delete entries. The file format itself enforces discipline.
+
+
+## How the enforcement tiers came to be
+
+v2.1 addressed a third failure: parallel agents stepping on each other. v3.0 replaced the custom coordination layer entirely with Claude Code's native Agent Teams. And v3.2 added mechanical enforcement (shell hooks that physically prevent completion without passing tests), v3.3 added metacognitive self-improvement (the harness learns from its own coordination patterns), v3.4 fixed four hooks that were silently broken on real systems, v3.5 tightened session discipline based on real-world violation analysis, and v4.0 packaged the whole harness as a Claude Code plugin — moving session orientation, post-compaction recovery, and discipline auditing from prose into platform hooks.
+
+The progression from v2.0 to v3.4 is the story of promoting critical rules from
+instructional to mechanical enforcement. TDD went from "please use TDD" to a shell hook
+that rejects non-passing code. Scope enforcement went from "don't touch files outside
+your scope" to a PreToolUse hook that blocks the edit. Git identity verification went
+from "check before pushing" to a PreToolUse hook that blocks the push. The rules that
+matter most should be the ones agents can't skip.
+
+v4.0 extended the same promotion to the harness itself: session orientation,
+post-compaction recovery, session-end discipline auditing, progress visibility (the
+statusLine), and reviewer/researcher tool posture all moved from prose instructions to
+plugin hooks and declarative agent definitions.
+
+## The evolution: v2.0 to v6.0
+
+### v2.0: The foundation (January 2026)
+
+The first version combined both approaches: Anthropic's two-phase architecture with Manus's planning-with-files pattern. An initializer created the scaffolding. Coding agents followed the structure. Four files bridged sessions. It worked, but only for sequential work: one agent, one feature at a time.
+
+### v2.1: Module locking (February 2026)
+
+The second version added parallel safety. A `.context/modules.yaml` file defined code boundaries. Before an agent touched code, it claimed the modules it needed. If another agent held a lock, the requesting agent waited. One agent per module at a time. Conflicts prevented, not resolved.
+
+It worked, but the coordination was custom. The orchestrator rules were prose-based ("always orchestrate, never implement directly"). The module locking was a skill that agents had to remember to call. And "remember to call" is exactly the kind of instruction that drifts over long contexts.
+
+### v3.0: Native Agent Teams (February 2026)
+
+Claude Code shipped Agent Teams as an experimental feature: native primitives for creating teams, assigning tasks, messaging between agents, and managing shared task lists. This was the coordination layer I'd been building by hand, but implemented at the platform level.
+
+v3.0 threw away the custom module locking, the orchestrator rules, the `.context/` directory, and the slash commands. Everything was replaced with native primitives for spawning teammates, assigning tasks, messaging between agents, and managing shared task lists. (Claude Code later removed the explicit `TeamCreate`/`TeamDelete` lifecycle tools in v2.1.178 — teams are now implicit, one per session; see v4.0 below.) The 4-file pattern was replaced with compaction-aware context management using task persistence (originally `TodoWrite`, now `TaskCreate`/`TaskUpdate`).
+
+The lead agent operates in plan mode (Shift+Tab), restricting itself to coordination tools. No code editing. It spawns teammates, assigns scoped tasks, monitors progress, and synthesizes results. Teammates work independently, each in their own context window, communicating through `SendMessage`.
+
+### v3.1: Mechanical enforcement (February 2026)
+
+The realization that made v3.1 necessary: prose-based instructions are medium-reliability enforcement. An agent told "use TDD" will use TDD most of the time. An agent told "don't touch files outside your scope" will comply most of the time. But "most of the time" isn't good enough when you have three teammates running in parallel.
+
+v3.1 added shell hooks that make quality gates mechanical:
+
+* **TaskCompleted hook**: when a teammate marks work done, a shell script runs the test suite. If tests fail, the completion is rejected with feedback. The teammate can't finish until tests pass. No exceptions. No "I'll fix it later."
+* **PostToolUse hook**: after every file edit, a stack-specific type/build check runs. TypeScript gets `tsc --noEmit`. Swift gets `swift build`. Python gets `py_compile`. Errors surfaced shortly after edits (async since v3.2.2), not at the commit.
+
+v3.1 also added plan-first workflows (the lead presents a decomposition plan before spending tokens on teammates), model mixing (Opus for leads and reviewers, Sonnet for implementers), and task dependency chains via `TaskCreate` with `blocked_by`.
+
+### v3.2: Schema, recovery, and honesty (February 2026)
+
+v3.2 addressed gaps discovered during real Agent Teams sessions:
+
+**Extended feature schema.** The original `features.json` had `id`, `description`, `priority`, `status`. That's not enough for team coordination. v3.2 added `scope` (which directories the feature owns), `depends_on` (which features must complete first), and `assigned_to` (which teammate claimed it). The lead can now reconstruct team state from `features.json` alone if a session dies.
+
+**Unified context file.** Harness projects used `decisions.md`. Non-harness projects used `context_summary.md`. Same concept, different names. v3.2 unified on `context_summary.md` everywhere: decisions, patterns, gotchas, and active context in one file.
+
+**Integration failure recovery.** When teammates' work conflicts during synthesis, the protocol is: identify via `git diff`, run tests to pinpoint which side broke, revert cleanly rather than attempting a broken merge, document in `context_summary.md`. A clean revert is always better than a broken merge.
+
+**Delegation framework.** The old "always orchestrate, never implement directly" rule conflicted with single-session harness mode. v3.2 replaced it with clear criteria: delegate when subtasks are parallelizable or research-heavy; implement directly when coordination overhead exceeds the work itself.
+
+**Cost recalibration.** The README used to claim "5x cost reduction" from model mixing. That's 5x per implementer token, not 5x overall. The Opus lead running for the full session, SendMessage round-trips, and Phase 1 planning overhead all add up. v3.2 is honest: Agent Teams becomes cost-effective when total work exceeds ~30 minutes of single-session effort.
+
+**TodoWrite discipline.** Changed from "update before compaction" to "update after every TDD step." Todos are the crash-recovery journal. If automatic compaction hits mid-TDD-cycle with stale todos, you lose your place.
+
+### v3.2.1: Bug fixes from production (February 2026)
+
+Two bugs discovered in real Agent Teams sessions:
+
+**PostToolUse hook schema.** The hooks were generated with `postToolUse` (wrong casing) and a flat structure that Claude Code silently ignores. Fixed to `PostToolUse` with proper nested `matcher` + `hooks` array. The kind of bug you only catch by actually running the system.
+
+**plan_approval_response delivery bug.** `SendMessage` with `type: "plan_approval_response"` reports success but the message never reaches the recipient. Discovered when a lead agent kept sending approvals that teammates never received. The workaround (confirmed in production): use `type: "message"` for all plan approvals. The harness documented this as a known Claude Code bug and routed all approvals through direct messages until the Teams machinery — workaround included — was retired in v6 (retirement recorded in `MAINTENANCE_LOG.md`).
+
+### v3.3: Metacognitive self-improvement (March 2026)
+
+Inspired by [Facebook Research's HyperAgents framework](https://arxiv.org/abs/2603.19461), v3.3 added the ability for the harness to learn from its own coordination patterns. Five operational metrics in `features.json` (`correction_cycles`, `scope_expansions`, `approaches_tried`, `failure_reason`, `discovered_via`) feed a structured retrospective (Phase 5.5) that runs after all features pass. The retrospective writes findings to `context_summary.md` under `Meta-Session` and `Meta-Patterns` sections.
+
+The practical effect: after 3-4 Agent Teams sessions, the harness knows which scopes are tricky (upgrade to Opus), which features need plan approval (past interface misunderstandings), and where to probe for hidden features at init time. Dynamic model selection uses these signals — `correction_cycles >= 3` in the same scope upgrades the next implementer from Sonnet to Opus.
+
+v3.3 also split `init.sh` test runs into two stages: a fast `smoke_test` (compile/syntax only, <15s) and `full_test` (complete suite). The TaskCompleted hook ran smoke first, then the full suite on every completion (superseded in v5.4.0: the per-task stages are now smoke plus the targeted feature's own focused test, with the full suite enforced at the commit that flips a feature to passing).
+
+### v3.4: Hook reliability fixes (April 2026)
+
+v3.4 came from analyzing Claude Code's internal multi-agent implementation and comparing it against the harness's external hook protocol. Four hooks were silently broken or producing wrong results on real systems:
+
+**Scope enforcement was broken.** Tool input provides absolute paths (`/Users/name/project/src/auth/login.ts`). Scope patterns are relative (`src/auth/`). The prefix match never matched. Every teammate could edit any file. Fixed by stripping the project root before comparison.
+
+**Dependency filtering was missing.** The idle-reassignment hook of that era offered all pending/failed features regardless of `depends_on`. A teammate could be assigned F002 before F001 (its dependency) was done. Fixed by checking all dependencies have `status: "passing"` before offering a feature.
+
+**Correction cycles hit wrong targets.** `verify-task-quality.sh` incremented `correction_cycles` for every in-progress feature on any rejection. In a 3-teammate session, one teammate's test failure corrupted metrics for all teammates. Fixed by extracting the feature ID from task metadata and targeting only that feature.
+
+**JSON parsing was fragile.** `init.sh` used a `grep`/`sed` chain to read `stack` from `harness.json` — the only script in the harness not using `python3` for JSON. Fixed for consistency and robustness.
+
+v3.4 also added context management conventions (proactive compaction between features), a PostCompact circuit breaker (escalate after repeated compaction context collapse), TaskCreate metadata for task-to-feature correlation, and completion message deduplication guidance.
+
+### v4.0: Native plugin (June 2026)
+
+v4.0 makes the harness itself a Claude Code plugin (`/plugin install vv-harness`), handing the platform what prose and a custom installer used to carry. The same instructional-to-mechanical promotion that shaped v3.1–v3.4 now applies to the harness's own machinery:
+
+* **Distribution and updates** move to the `/plugin` flow — atomic, each version in its own cache directory. The v3 installer is retired to a shim that only prints instructions.
+* **Session orientation and post-compaction recovery** become a `SessionStart` hook; its `compact` source re-injects feature status, Active Context, and the last handoff after compaction.
+* **Session-end discipline auditing** becomes a `SessionEnd` hook that records gaps to `SESSION_INCOMPLETE`, surfaced loudly at the next session start.
+* **Progress visibility** becomes a statusLine (wired per-project, since plugins cannot set `statusLine` globally).
+* **Teammate tool posture** becomes declarative `agents/*.md` definitions: the reviewer cannot edit files by construction (no Edit/Write tools), and the researcher is retrieval-only.
+
+Agent Teams also tracked a platform change: Claude Code removed the explicit `TeamCreate`/`TeamDelete` lifecycle tools in v2.1.178, so teams are now implicit — one per session, formed on the first teammate spawn and cleaned up on session exit. The `team_name` argument is accepted but ignored, and `teammateMode` now defaults to `"in-process"` (set it to `tmux` or `auto` for split panes). The protocol and skills document this model.
+
+Two housekeeping patches followed: v4.0.1 trimmed `templates/CLAUDE.md` and extracted the
+`context-summary.md` and `task-completion.md` rule files so the SessionStart orientation can
+point at them directly; v4.0.2 corrected the changelog's rationale for the post-compaction
+recovery mechanism.
+
+### v4.1: The spec gate (July 2026)
+
+The cheapest defect is the one never written. Through v4.0, features entered
+`.harness/features.json` on bare user confirmation: nothing checked that a feature was
+testable, unambiguous, edge-covered, or internally consistent before implementers burned
+tokens on it. v4.1 closes that intake gap. `/harness-init` Step 5.1 spawns the new
+read-only `spec-verification` agent over the entire confirmed proposal; it runs six checks
+(testability, ambiguity, edge and error coverage, non-functional requirements,
+dependencies, cross-feature consistency) and returns `PASS`, `ASK`, or `BLOCK` with
+numbered questions a human can actually answer. Nothing is written until the gate passes
+or the user explicitly waives it. A second agent, `reverification-guard`, re-verifies
+every human-amended revision from scratch and refuses to advance on pressure or
+reassurance alone; only new spec content clears a prior finding.
+
+Two skills operate the gate day to day. `harness-issue-prep` drives a spec (a Linear
+issue via the Linear MCP, a pasted spec, or an existing feature) through verification,
+normalizes it into a canonical template on `PASS`, and records proof: a `spec` field on
+the feature locally, or a signed readiness stamp posted to the Linear issue. `harness-issue-debug`
+opens a failed feature or a runner-parked issue in a live repair session and exits by
+resuming the runner, routing back through prep, or marking the work failed. The new
+`schemas/` directory publishes the data contracts (stamp, canonical hashing, HMAC recipe,
+park and resolution formats) so an external issue-to-PR runner can consume them without
+importing any code. The SessionStart orientation now also warns when a verified feature's
+description drifts after verification, and the read-only reviewer agent declines
+implementation features by construction — the guard lives in the agent definition, a
+deliberate design decision from the Agent Teams era that carried over unchanged.
+
+### v4.2: Harness-prefixed skills (July 2026)
+
+The v4.1 skills were renamed `harness-issue-prep` and `harness-issue-debug` so every
+harness skill shares the `harness-` prefix and typing `/h` surfaces the whole toolkit
+(`harness-init`, `harness-continue`, `harness-issue-prep`, `harness-issue-debug`) without
+memorizing names. No alias for the old names: replace, don't deprecate. v4.2.1 fixed the
+spec-gate content to reference the schema via `${CLAUDE_PLUGIN_ROOT}` so plugin-internal
+paths resolve for installed users, not just inside this repo.
+
+### v5.0: The evidence and meta loops (August 2026)
+
+A comparative analysis against lopopolo/harness-engineering (CC BY 4.0) — a methodology
+corpus rather than an execution harness — found vv-harness strong on mechanical
+enforcement and distribution but missing three things: feedback that never flowed back
+into the harness itself, proof that stopped at coverage percentage, and no maintenance
+loop against weekly platform drift. v5.0 closes all three, adapting the applicable ideas
+rather than copying file layouts or policies, plus mechanisms adapted from two further
+harnesses: [AlexCiortan/setlist](https://github.com/alexciortan/setlist) (CC BY 4.0),
+whose two-phase bootstrap doctrine — "never hand-write what a stamp can emit" — shaped
+`harness-doctor`, `scripts/stamp.sh`, the hostile-gate tests, and the commit-content
+gate; and [nodera-studio/agent-os](https://github.com/nodera-studio/agent-os) (MIT),
+whose author-blind conformance-test-writer and independent-engines review doctrine
+shaped the conformance tester and the optional dual-engine review below. Both are worth
+reading directly if you're building your own harness.
+
+New capabilities: `harness-doctor` (a report-first health check with a `--fix` upgrade
+mode, now including plugin-version drift detection); `scripts/stamp.sh` (a deterministic
+file emitter behind `/harness-init` — never hand-write what a stamp can emit); a
+commit-content gate denying compound stage-and-commit forms and staged secret-shaped
+content; `.harness/mld/` builder-only telemetry with a hard, tested non-injection
+guarantee; a promotion-and-ablation pass in the Phase 5.5 retrospective that routes
+observed patterns to their smallest durable owner instead of letting them evaporate in
+prose; a platform-drift maintenance loop (`docs/maintenance-runbook.md`) with weekly CI
+probes and explicit retirement conditions on every documented workaround; a `worker`
+epoch record with a requalification checklist (including a mandatory subtraction pass);
+an author-blind conformance tester that derives tests from a verified spec alone, never
+the implementation diff; an optional dual-engine review; and a root `AGENTS.md` routing
+layer for non-Claude agents working on this repo. Full detail in the
+[v5.0.0 changelog entry](./CHANGELOG.md).
+
+Dogfooding the upgrade on this repo's own harness surfaced 48 further defects beyond the
+21 planned — mostly hardening `enforce-scope.sh`/`commit-gate.sh` against parsing and
+evasion edge cases, plus a `harness-doctor` check that a feature's claimed `test_file`
+actually exists. That process also caught and corrected a hook-payload claim shipped
+since v4.1.0 — the original error traced to a documentation fetch that silently
+answered from the wrong section of a long reference page.
+
+A follow-up code review found three more correctness bugs, fixed in v5.0.1: `features.json`
+writes could race and silently lose `correction_cycles` increments under parallel
+`TaskCompleted` hooks (now a single-process lock-and-atomic-write cycle in
+`harness_state.py`, stress-tested to 120-way concurrency); `session-start.sh`'s orientation
+could exceed the platform's 10,000-char output cap on a long feature description (now
+truncated to 200 chars with a pointer to the full text); and `/harness-continue`'s
+documented "smoke test" actually ran the full suite (both call sites now pass
+`smoke_test` explicitly).
+
+The same review's additive follow-ups shipped in v5.1.0: `harness-doctor --fix` can now
+restore a missing `commit-gate.sh` and repair a project's `.gitignore` on upgrade even
+when it already carries an older required line (the fixer previously early-returned on
+the first line's presence, making a newer required line permanently unreachable for any
+already-initialized project); doctor's report now names the checks it silently skips
+when `CLAUDE_PLUGIN_ROOT` is unset, in one consolidated finding, instead of staying
+quiet about each one individually; and two new rule files, `rules/debugging.md` (a
+four-phase systematic root-cause process) and `rules/tdd.md` (the 5-step TDD loop and
+coverage bar), join the SessionStart rule-pointer block.
+
+Adversarial review of v5.0.1/v5.1.0's own fixes surfaced four more issues, closed in
+v5.1.1: `session-start.sh`'s orientation could still exceed the 10,000-char platform cap
+via three line-count-only-capped sections (SESSION_INCOMPLETE, `claude-progress.txt`,
+Active Context), now truncated the same way feature descriptions already were; a
+`CLAUDE_PLUGIN_ROOT`-unset finding named a check that was never going to run anyway;
+`harness_state.py`'s top-level `import fcntl` made read-only verbs Unix-only when only
+the write path needs it; a shell wrapper buried `harness_state.py`'s diagnostics on
+stdout, which Claude Code discards on the TaskCompleted hook's rejection path; and a
+permanent flock error was treated identically to ordinary lock contention.
+
+v5.2.0 adds an opt-in live dashboard: set `VV_HARNESS_DASHBOARD=1` before starting the
+session you want to watch, then run `/harness-dashboard` to open an animated
+hub-and-spoke node graph of that session's agent activity — the lead, each
+spoke, quality-gate verdicts, and judge subagents — served locally with no external
+dependencies. See [INSTALL.md](./INSTALL.md), "Optional: Live Session Dashboard", for
+setup and its known limitations.
+
+v5.3.0-alpha marks the dashboard as alpha quality for broader testing before it's
+folded into a stable release — pin a single project to it via `extraKnownMarketplaces`
+without touching any other project's plugin version (see INSTALL.md, "Installing a
+specific version").
+
+### v6.0: The workflow backbone (August 2026)
+
+The migration Agent Teams had been heading toward since v5.7.0 completed: the
+experimental Teams machinery (teammate spawning, message-based coordination, the
+idle-reassignment nudge, the env flag) is removed, and dynamic workflows are the
+orchestration backbone. One implementer per feature in an isolated worktree, one
+reviewer per feature over the branch diff, structured per-feature results the lead
+integrates in a pinned order — with runtime-guaranteed returns instead of a message
+delivery protocol, and resumable runs instead of lost teammates.
+
+The release was field-validated end to end before tagging: a fresh toy project driven
+through init → spec gate → workflow mode → integration with every gate observed
+firing; failure-path drills for a REVISE loop, a blocked feature, a killed-and-resumed
+run, and workflow-unavailability degradation to plain worktree subagents; and a
+v5.x-initialized fixture upgraded through the documented migration path
+(`/plugin` update → `harness-doctor --fix`, no data migration). The drills are
+recorded in `evals/workflow-migration-validation.md` — including the defects they
+caught and fixed before release. Upgrading: INSTALL.md, "Migrating a v5.x project
+to v6".

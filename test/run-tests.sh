@@ -7658,10 +7658,18 @@ fi
 # check-remaining-tasks.sh matches its template") already asserts exactly this
 # for all 5 hooks including this one -- no separate F067 assertion needed here.
 
-if grep -q "[Rr]etirement condition" "$REPO_ROOT/README.md"; then
-  pass "mnt: README.md's plan_approval_response mention carries a retirement condition"
+# v6.0.2: the README now describes only current state, so the version narrative
+# that carried this mention moved to docs/history.md. The contract is unchanged --
+# a documented workaround must state what retires it, wherever it is written down.
+if grep -q "[Rr]etirement condition" "$REPO_ROOT/docs/history.md"; then
+  pass "mnt: the version history's plan_approval_response mention carries a retirement condition"
 else
-  fail "mnt: README.md's plan_approval_response mention is missing a retirement condition"
+  fail "mnt: the version history's plan_approval_response mention is missing a retirement condition"
+fi
+if grep -q "plan_approval_response" "$REPO_ROOT/README.md"; then
+  fail "mnt: README.md still carries the retired plan_approval_response workaround narrative"
+else
+  pass "mnt: README.md carries no retired-workaround narrative (moved to docs/history.md)"
 fi
 
 echo ""

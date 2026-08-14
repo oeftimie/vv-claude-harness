@@ -2,6 +2,25 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v6.0.2 (2026-08-14)
+
+Documentation restructure plus the release-consistency repair.
+
+1. **README describes only the current harness** — it opens with what the plugin is,
+   the problem it solves, how to install it, and how to use it. The v2.0 → v6.0
+   evolution narrative, the Anthropic/Manus origin story, and the
+   instructional-to-mechanical progression moved verbatim to
+   [docs/history.md](./docs/history.md), which states up front that nothing in it
+   describes current behavior. Half the old README described machinery that no longer
+   exists, which is the wrong first impression for someone evaluating the plugin.
+   "Known challenges" is now "Known limitations" and lists only what is still true.
+2. **release-consistency no longer reports drift it cannot avoid** — the tag assertion
+   ran on push-to-main, where a release commit has bumped the manifest before its tag
+   exists, so it opened an issue on every release (nine were hand-closed on
+   2026-08-14) and buried one genuine finding: `v5.2.0` was never tagged at all. The
+   assertion now runs on the tag push, a daily schedule, and manual dispatch; the
+   workflow closes a cleared drift issue itself.
+
 ### v6.0.1 (2026-08-14)
 
 Four fixes from v6.0.0's own field validation, plus the CI repair it uncovered.
