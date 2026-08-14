@@ -1187,3 +1187,12 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
 - Decisions: details in context_summary.md Active Context + Meta-Session 2026-08-14; 5 new backlog rows + 1 score bump.
 - Next: Ovidiu reviews/merges PR -> tag v6.0.0 -> AC8 (exit-review comment on OVI-140 with Teams-era baseline comparison, sibling sub-issues Done, OVI-147 Done last, epic closed).
 - Blockers: none (merge/tag are Ovidiu-gated by design).
+
+## Session 2026-08-14 (cont.) - CI repair + v6.0.1 (F118-F121)
+- Post-v6.0.0 CI check found main RED since 2026-08-12: two harness-doctor health assertions compared the tool's whole output to the literal "healthy", which OVI-144's workflow-support notices break wherever no claude CLI exists (every CI runner). OVI-146 and OVI-147 both merged over it -- nothing requires the tests check before merge and I did not look at Actions before merging either. Fixed test-only via doctor_report_only() + 4 pins (PR #170, merged).
+- v6.0.1 (PR #171, merged, tagged 716c7c5): F118 rule/script model-policy sweep (Ovidiu chose option A -- the script was correct, rules/parallel-work.md carried Teams-era residue; added optional featureSpecs[ID].implementModel lever, default unchanged); F119 mandated-conformance warning exemption (conformance AND elevated only); F120 declared-but-unmeasured coverage target note (narrowed mid-implementation after F057's clean-accept assertion caught v1 firing on every task for any project without coverage tooling; two traps handled -- marker parsed as a coverage miss would have rejected tasks, and the if/elif systemMessage ladder dropped a third note); F121 worktree scope-diff before merging a branch from an unwatched run (grounded in the AC3 drill's unauthorized settings edit).
+- Tests: 2051/2051 with the claude CLI present, 2036/2036 with PATH stripped (CI-equivalent). Both hook copies in sync.
+- Release-consistency drift issues #169 and #172 closed by hand after verifying tag/manifest/CHANGELOG agree -- SIXTH consecutive false positive of the same tag-timing gap (#157,#159,#161,#164,#169,#172); backlog row scored 5.
+- Process gap owned and closed here: F118-F121 shipped before their features.json entries existed (this commit adds them). Task metadata carried the IDs but the tracker did not.
+- Next: no pending features. Open backlog candidates worth a session: release-consistency tag-timing (score 5), requiring the tests check on main via branch protection, and the qa_binding/coverage items already recorded.
+- Blockers: none.
