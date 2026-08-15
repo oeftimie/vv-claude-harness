@@ -14811,6 +14811,10 @@ fi
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
+
+# THROWAWAY: deliberately failing assertion for OVI-150 AC6. Never merge this branch.
+assert_contains "ovi-150-ac6-probe" "this-substring-is-absent" "ovi-150 ac6: deliberately failing probe"
+
 echo "Summary: $PASS_COUNT/$TOTAL assertions passed, $FAIL_COUNT failed"
 if [ "$FAIL_COUNT" -gt 0 ]; then
   exit 1
