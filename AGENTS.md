@@ -42,7 +42,7 @@ on this repo.
 - Git identity: Ovidiu Eftimie <eovidiu@gmail.com> (GitHub account `eovidiu`), HTTPS
   with the gh credential helper, no SSH in this environment. Verify before any
   push/pull/clone. Never push directly to main — PR-based flow only.
-- `main` carries a classic branch protection rule: required status check `test` (the
+- `main` must carry a classic branch protection rule: required status check `test` (the
   job in `.github/workflows/test.yml`), `strict` on so a branch must be up to date
   with `main` before merging, and `enforce_admins` on so the rule binds every actor
   including the owner. Deliberately no required review (solo repo) and no
