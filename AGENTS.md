@@ -46,7 +46,8 @@ on this repo.
   job in `.github/workflows/test.yml`), `strict` on so a branch must be up to date
   with `main` before merging, and `enforce_admins` on so the rule binds every actor
   including the owner. Deliberately no required review (solo repo) and no
-  linear-history requirement (every PR lands as a merge commit). That job's identity
+  linear-history requirement: the repo uses both merge commits and squash merges, so
+  requiring linear history would forbid the merge-commit path still in use. That job's identity
   is load-bearing: rename the job key or add a job-level `name:` and the required
   context stops matching, which blocks every merge — change the protection rule in the
   same commit. Only checks that run on `pull_request` may ever be required;
