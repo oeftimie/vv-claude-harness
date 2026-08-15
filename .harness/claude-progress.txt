@@ -1198,3 +1198,4 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
 - Blockers: none.
 - Prep 2026-08-15: OVI-150 (linear, remote) SV=ASK(6q) -> RV=PASS(cycle 1) -> normalized, stamped (spec_hash b00244bb, lane non-code, risk standard), harness-ready applied.
 - Prep 2026-08-15 (corrected): OVI-150 restamped after execution found a defect in the normalized spec. RV cycles 2-5 all found real issues; final PASS. spec_hash c75cc3d4 (supersedes b00244bb). PR #178 open with ACs 9-10; ACs 1-5 await Ovidiu applying the protection rule (still 404).
+- AC8 evidence probe 2026-08-15: metadata-only PR to measure the classifier fast path (OVI-150).
