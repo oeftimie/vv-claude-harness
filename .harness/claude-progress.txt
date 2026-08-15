@@ -1196,3 +1196,4 @@ Session 2026-08-08 (F100-F104, v5.4.0 release):
 - Process gap owned and closed here: F118-F121 shipped before their features.json entries existed (this commit adds them). Task metadata carried the IDs but the tracker did not.
 - Next: no pending features. Open backlog candidates worth a session: release-consistency tag-timing (score 5), requiring the tests check on main via branch protection, and the qa_binding/coverage items already recorded.
 - Blockers: none.
+- Prep 2026-08-15: OVI-150 (linear, remote) SV=ASK(6q) -> RV=PASS(cycle 1) -> normalized, stamped (spec_hash b00244bb, lane non-code, risk standard), harness-ready applied.
