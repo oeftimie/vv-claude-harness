@@ -42,6 +42,23 @@ on this repo.
 - Git identity: Ovidiu Eftimie <eovidiu@gmail.com> (GitHub account `eovidiu`), HTTPS
   with the gh credential helper, no SSH in this environment. Verify before any
   push/pull/clone. Never push directly to main — PR-based flow only.
+- `main` is protected by a repository ruleset, NOT a classic branch protection rule.
+  `gh api repos/oeftimie/vv-claude-harness/branches/main/protection` returns 404 even
+  though protection is active and enforcing — rulesets do not surface on that endpoint.
+  Read `gh api repos/oeftimie/vv-claude-harness/rulesets` instead; a 404 on the classic
+  endpoint is not evidence that `main` is unprotected. The ruleset requires the `test`
+  status check (the job in `.github/workflows/test.yml`), requires a branch to be up to
+  date with `main` before merging, blocks deletion and non-fast-forward pushes, and
+  lists no bypass actors, so it binds every actor including the owner. Deliberately no
+  required review (solo repo) and no linear-history requirement: the repo uses both
+  merge commits and squash merges, so requiring linear history would forbid the
+  merge-commit path still in use. That job's identity is load-bearing: rename the job
+  key or add a job-level `name:` and the required context stops matching, which blocks
+  every merge — update the ruleset in the same change. Only checks that run on
+  `pull_request` may ever be required; `release-consistency`'s `check` job does not, so
+  requiring it would block all merges permanently. Editing the ruleset needs admin,
+  which only the owner account `oeftimie` has; the `eovidiu` collaborator account used
+  here has write, so protection changes are made by Ovidiu in the GitHub UI.
 - A documented workaround (a pattern adopted to route around a platform bug or gap, as
   opposed to a permanent design limitation) MUST name the version or event that removes
   it — never leave one pinned to "confirmed as of vX.Y+" with no condition for
