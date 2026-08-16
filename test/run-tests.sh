@@ -2200,6 +2200,51 @@ for SKILL_FILE in harness-issue-prep harness-issue-debug; do
   fi
 done
 
+# OVI-155 WP3: the prep record must be written at EVERY terminal exit, not only the
+# success path. The revision-cap stop says "nothing in Step 5 onward runs", so a
+# Step-9-only write is unreachable on exactly the ASK/BLOCK trails worth keeping --
+# and that question text survives nowhere else today (Linear gets it only on the cap
+# path, features.json stores only a terminal PASS). Each exit is region-sliced rather
+# than grepped file-wide, so a single mention elsewhere cannot satisfy all three.
+PREP_REC_ERRORS=$(python3 - "$REPO_ROOT/skills/harness-issue-prep/SKILL.md" <<'PYEOF'
+import re
+import sys
+
+text = open(sys.argv[1]).read()
+errors = []
+
+if ".harness/prep-records/" not in text:
+    errors.append("never names the .harness/prep-records/ path")
+
+for needle, label in [
+    ("credential", "redaction requirement"),
+    ("never overwritten", "append-not-overwrite rule"),
+    ("never fails the prep run", "non-fatal write-failure rule"),
+]:
+    if needle not in text:
+        errors.append("does not state the " + label)
+
+regions = [
+    ("revision-cap stop", r"Cap the loop at 5 revision cycles(.*?)## Step 5"),
+    ("declined-diff stop", r"Show the user a before/after diff(.*?)## Step 6"),
+    ("Step 9 report", r"## Step 9: Report(.*?)\n## "),
+]
+for label, pattern in regions:
+    m = re.search(pattern, text, re.DOTALL)
+    if not m:
+        errors.append("could not locate the " + label + " region")
+    elif "prep record" not in m.group(1).lower():
+        errors.append("the " + label + " does not write the prep record")
+
+print("; ".join(errors))
+PYEOF
+)
+if [ -z "$PREP_REC_ERRORS" ]; then
+  pass "wp3: prep record defined, redacted, and written at all three terminal exits"
+else
+  fail "wp3: prep record -- $PREP_REC_ERRORS"
+fi
+
 SKILL_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import os
 import sys
