@@ -10,7 +10,37 @@ set -uo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 H="$ROOT/.harness"
-[ -d "$H" ] || exit 0
+if [ ! -d "$H" ]; then
+  # A session launched one level ABOVE a harness repo gets no orientation from the
+  # exit below and, until this block, no signal that anything was wrong -- whole
+  # sessions have been spent in a wrapper directory. Silence in a genuine
+  # non-harness project is the gate on this and is preserved: the notice fires only
+  # when an immediate child is itself a harness project. One level, never a tree walk.
+  # A child name is externally supplied and echoed into model context, so control
+  # characters are stripped first -- deliberately NOT with the session_id charset
+  # filter below, which would delete spaces and non-ASCII and name a directory the
+  # user cannot cd into.
+  WRAP_NAMES=""
+  WRAP_COUNT=0
+  for CHILD in "$ROOT"/*/; do
+    CHILD=${CHILD%/}
+    # A symlink is skipped: following one leaves the "immediate child" contract.
+    [ -L "$CHILD" ] && continue
+    [ -d "$CHILD/.harness" ] || continue
+    WRAP_COUNT=$((WRAP_COUNT + 1))
+    if [ "$WRAP_COUNT" -le 5 ]; then
+      WRAP_NAME=$(printf '%s' "$(basename "$CHILD")" | tr -d '\000-\037' | cut -c1-64)
+      WRAP_NAMES="${WRAP_NAMES:+$WRAP_NAMES, }$WRAP_NAME"
+    fi
+  done
+  if [ "$WRAP_COUNT" -gt 0 ]; then
+    if [ "$WRAP_COUNT" -gt 5 ]; then
+      WRAP_NAMES="$WRAP_NAMES, +$((WRAP_COUNT - 5)) more"
+    fi
+    printf '%s\n' "harness: no .harness/ here, but these immediate subdirectories are harness projects: ${WRAP_NAMES}. Relaunch the session from one of them." | cut -c1-300
+  fi
+  exit 0
+fi
 
 STDIN_JSON=$(cat 2>/dev/null || true)
 # One parse of STDIN_JSON for both fields, separated by an ASCII Record

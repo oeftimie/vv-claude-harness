@@ -204,6 +204,58 @@ RC=$?
 assert_rc0 "$RC" "b: exits 0 in a plain directory"
 assert_empty "$OUT" "b: prints nothing in a plain directory"
 
+# OVI-155 WP1: wrapper-directory diagnostic. A session launched one level ABOVE a
+# harness repo gets no orientation -- the hook exits at the `[ -d "$H" ] || exit 0`
+# guard -- and got no diagnostic either, so the lead had no signal anything was wrong.
+# The silence in a genuine non-harness project (fixture b above) is the gate on this:
+# the notice fires only when an immediate child is itself a harness project.
+WRAP_NOTICE="harness: no .harness/ here"
+
+DIR_W1="$WORK/w1"
+make_fixture "$DIR_W1"
+OUT=$(run_session_start "$DIR_W1" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w1: harness-at-root exits 0"
+assert_not_contains "$OUT" "$WRAP_NOTICE" "w1: no wrapper notice when the root IS a harness project"
+
+DIR_W2="$WORK/w2"
+mkdir -p "$DIR_W2/not-a-project"
+OUT=$(run_session_start "$DIR_W2" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w2: plain wrapper exits 0"
+assert_empty "$OUT" "w2: silent when no immediate child is a harness project"
+
+DIR_W3="$WORK/w3"
+mkdir -p "$DIR_W3"
+make_fixture "$DIR_W3/proj-one"
+OUT=$(run_session_start "$DIR_W3" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w3: wrapper with one harness child exits 0"
+assert_contains "$OUT" "$WRAP_NOTICE" "w3: emits the wrapper notice"
+assert_contains "$OUT" "proj-one" "w3: names the qualifying child"
+W3_LINES=$(printf '%s\n' "$OUT" | grep -c .)
+if [ "$W3_LINES" = "1" ]; then
+  pass "w3: notice is exactly one line"
+else
+  fail "w3: notice must be exactly one line, got $W3_LINES"
+fi
+
+DIR_W4="$WORK/w4"
+mkdir -p "$DIR_W4"
+make_fixture "$DIR_W4/alpha"
+make_fixture "$DIR_W4/beta"
+OUT=$(run_session_start "$DIR_W4" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w4: wrapper with two harness children exits 0"
+assert_contains "$OUT" "alpha" "w4: names the first qualifying child"
+assert_contains "$OUT" "beta" "w4: names the second qualifying child"
+W4_LINES=$(printf '%s\n' "$OUT" | grep -c .)
+if [ "$W4_LINES" = "1" ]; then
+  pass "w4: two children still produce exactly one line"
+else
+  fail "w4: expected exactly one line, got $W4_LINES"
+fi
+
 DIR_C="$WORK/c"
 make_fixture "$DIR_C"
 OUT=$(run_session_start "$DIR_C" '{"source":"compact"}')
@@ -2147,6 +2199,51 @@ for SKILL_FILE in harness-issue-prep harness-issue-debug; do
     pass "f012: $SKILL_FILE/SKILL.md has no code path printing/writing the raw key"
   fi
 done
+
+# OVI-155 WP3: the prep record must be written at EVERY terminal exit, not only the
+# success path. The revision-cap stop says "nothing in Step 5 onward runs", so a
+# Step-9-only write is unreachable on exactly the ASK/BLOCK trails worth keeping --
+# and that question text survives nowhere else today (Linear gets it only on the cap
+# path, features.json stores only a terminal PASS). Each exit is region-sliced rather
+# than grepped file-wide, so a single mention elsewhere cannot satisfy all three.
+PREP_REC_ERRORS=$(python3 - "$REPO_ROOT/skills/harness-issue-prep/SKILL.md" <<'PYEOF'
+import re
+import sys
+
+text = open(sys.argv[1]).read()
+errors = []
+
+if ".harness/prep-records/" not in text:
+    errors.append("never names the .harness/prep-records/ path")
+
+for needle, label in [
+    ("credential", "redaction requirement"),
+    ("never overwritten", "append-not-overwrite rule"),
+    ("never fails the prep run", "non-fatal write-failure rule"),
+]:
+    if needle not in text:
+        errors.append("does not state the " + label)
+
+regions = [
+    ("revision-cap stop", r"Cap the loop at 5 revision cycles(.*?)## Step 5"),
+    ("declined-diff stop", r"Show the user a before/after diff(.*?)## Step 6"),
+    ("Step 9 report", r"## Step 9: Report(.*?)\n## "),
+]
+for label, pattern in regions:
+    m = re.search(pattern, text, re.DOTALL)
+    if not m:
+        errors.append("could not locate the " + label + " region")
+    elif "prep record" not in m.group(1).lower():
+        errors.append("the " + label + " does not write the prep record")
+
+print("; ".join(errors))
+PYEOF
+)
+if [ -z "$PREP_REC_ERRORS" ]; then
+  pass "wp3: prep record defined, redacted, and written at all three terminal exits"
+else
+  fail "wp3: prep record -- $PREP_REC_ERRORS"
+fi
 
 SKILL_ERRORS=$(python3 - "$REPO_ROOT" <<'PYEOF'
 import os
@@ -14121,6 +14218,12 @@ assert_contains "$RB_SRC" "phase: 'Verify', schema: VERDICT_SCHEMA, agentType: '
 assert_contains "$RB_SRC" "conformance requires \`featureSpecs\`" "wf (review): conformance throws when featureSpecs is missing"
 # Custom dimensions are validated, not silently degraded to 'dimension: undefined'.
 assert_contains "$RB_SRC" "must be an object with a non-empty" "wf (review): custom dimensions are validated"
+# OVI-155 WP2: the nested featureSpecs[<id>].spec read had no coverage anywhere in the
+# suite. A featureSpecs entry lacking `spec` must be SURFACED as an explicit skip, not
+# silently dropped from a safety pass the caller asked for. The :14121 assertion above
+# pins only the top-level featureSpecs requirement, never this nested read.
+assert_contains "$RB_SRC" "if (!fs.spec)" "wf (review): guards the nested featureSpecs[id].spec read"
+assert_contains "$RB_SRC" "no spec supplied in featureSpecs" "wf (review): a feature with no spec is surfaced as an explicit skip"
 
 # Executable coverage of the pure helpers (node-guarded; SKIP visibly when node is
 # absent, like the suite's other optional-tool checks). Slices the helper prefix (above
@@ -14755,6 +14858,69 @@ else
 fi
 assert_not_contains "$(cat "$GOV_LP")" "single source of truth is the script" \
   "gov: launch-prompts.md no longer claims to mirror the schemas as a source"
+
+# OVI-155 WP2: the re-review workflow's args shape is documented in launch-prompts.md
+# (which already owns Step 5b's args shape) and pinned against the keys the script
+# actually parses. Compared as SETS IN BOTH DIRECTIONS: a key the script gains without
+# documentation fails, and so does a documented key the script never reads. A short
+# extraction on either side is an extractor failure, not a pass -- comparing two empty
+# sets would otherwise succeed forever.
+RB_ARGS_ERRORS=$(python3 - "$REPO_ROOT/workflows/review-branch.js" "$GOV_LP" <<'PYEOF'
+import re
+import sys
+
+script = open(sys.argv[1]).read()
+doc = open(sys.argv[2]).read()
+errors = []
+
+script_keys = set(re.findall(r"parsed\.([A-Za-z_][A-Za-z0-9_]*)", script))
+m = re.search(r"## Re-review launch(.*?)(?=\n## |\Z)", doc, re.DOTALL)
+if not m:
+    print("launch-prompts.md has no '## Re-review launch' section")
+    sys.exit(0)
+# Only a backticked key opening its own list item counts, so the nested
+# featureSpecs[<id>].spec documented as prose cannot leak into the top-level set.
+doc_keys = set(re.findall(r"^\s*[-*]\s+`([A-Za-z][A-Za-z0-9_]*)`", m.group(1), re.M))
+
+if len(script_keys) < 7:
+    errors.append("script extraction yielded %d keys %s, expected >= 7 -- the extractor "
+                  "is broken, not the code" % (len(script_keys), sorted(script_keys)))
+if len(doc_keys) < 7:
+    errors.append("doc extraction yielded %d keys %s, expected >= 7"
+                  % (len(doc_keys), sorted(doc_keys)))
+if not errors and script_keys != doc_keys:
+    errors.append("key sets differ: parsed-but-undocumented=%s documented-but-unparsed=%s"
+                  % (sorted(script_keys - doc_keys), sorted(doc_keys - script_keys)))
+print("; ".join(errors))
+PYEOF
+)
+if [ -z "$RB_ARGS_ERRORS" ]; then
+  pass "wp2: review-branch args match between launch-prompts.md and the script, both ways"
+else
+  fail "wp2: review-branch args -- $RB_ARGS_ERRORS"
+fi
+
+# The re-review path is named where a non-APPROVE verdict actually lands: inside
+# Step 5b, and cross-referenced from the rule's Escalation section.
+SKILL_5B=$(python3 - "$REPO_ROOT/skills/harness-continue/SKILL.md" <<'PYEOF'
+import re
+import sys
+text = open(sys.argv[1]).read()
+m = re.search(r"## Step 5b: Workflow Orchestration(.*?)\n## ", text, re.DOTALL)
+print(m.group(1) if m else "")
+PYEOF
+)
+assert_contains "$SKILL_5B" "review-branch" "wp2: Step 5b names the re-review workflow"
+assert_contains "$SKILL_5B" "launch-prompts.md" "wp2: Step 5b cites launch-prompts.md for the shape"
+GOV_ESC=$(python3 - "$GOV_MD" <<'PYEOF'
+import re
+import sys
+text = open(sys.argv[1]).read()
+m = re.search(r"## Escalation(.*?)\n## ", text, re.DOTALL)
+print(m.group(1) if m else "")
+PYEOF
+)
+assert_contains "$GOV_ESC" "review-branch" "wp2: Escalation routes to the re-review workflow"
 
 
 echo "== OVI-145 Phase 4: Teams vocabulary sweep (agents/skills/rules/hooks) =="

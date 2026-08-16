@@ -363,6 +363,13 @@ the `TaskCompleted` and commit gates fire in the lead session. Run these steps *
    to completion, scope-diff it (`git diff --name-only <mergeBase>...<branch>`) and
    account for every file outside that feature's declared `scope` — see
    `rules/parallel-work.md`, "Worktree hygiene".
+5.5. **Re-review a branch, when a fresh verdict is what you need (optional).** For a
+   feature surfaced at step 5, or a branch recovered from an interrupted run, launch
+   `/vv-harness:review-branch` over that diff scope instead of re-running the whole
+   batch: it fans reviewers over named dimensions, deduplicates their findings, then
+   sends an adversarial skeptic at each survivor. It is read-only — it never edits,
+   merges, or commits — so it produces a verdict, not a fix. Its `args` shape lives in
+   `launch-prompts.md` (this skill's directory); do not restate it here.
 6. **Retrospective.** Run the retrospective, promotion, and ablation passes plus the
    MLD telemetry — the Retrospective section below.
 

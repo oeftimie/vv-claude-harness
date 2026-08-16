@@ -107,6 +107,9 @@ the cap:
   stamp).
 - Local mode: write them into the feature's `notes` field.
 - Apply the `needs_prep_label` if `prep.linear.needs_prep_label` is configured.
+- Write the prep record (**Prep record** below). This is the most valuable exit to
+  capture: the still-open questions and the reasoning that produced them exist nowhere
+  else once the run ends.
 - Stop. The spec stays unnormalized and unstamped; nothing in Step 5 onward runs.
 
 ## Step 5: Normalize
@@ -143,7 +146,8 @@ Assumptions ledger with every decision made during prep, each dated.
 
 Show the user a before/after diff of the full spec text. Require explicit confirmation
 before any write-back happens (D14): no silent rewrite of someone's ticket or feature.
-If the user declines at this point, stop; nothing is written, nothing is stamped.
+If the user declines at this point, write the prep record (**Prep record** below) and
+stop; nothing else is written, nothing is stamped.
 
 ## Step 6: Write back and record
 
@@ -338,7 +342,39 @@ and why not if applicable); whether a label was applied; the kickstart result if
 attempted.
 
 If run inside a harness project (a `.harness/` directory exists), append one line to
-`claude-progress.txt` summarizing the prep outcome (source, verdict, stamped or not).
+`claude-progress.txt` summarizing the prep outcome (source, verdict, stamped or not),
+then write the prep record (**Prep record** below).
+
+## Prep record
+
+Every terminal exit of this skill writes a prep record: the Step 4 revision-cap stop,
+the Step 5 declined-diff stop, and Step 9. The exits that never reach Step 9 are the
+ones worth capturing most — a capped `ASK` or `BLOCK` carries the still-open questions
+and the reasoning behind them, and that text survives nowhere else. Linear receives it
+only on the cap path, `features.json` records only a terminal `PASS` and never an
+intermediate `ASK`, and `claude-progress.txt` gets a single summary line.
+
+Skip this entirely when there is no `.harness/` directory; the run still completes.
+
+Write to `.harness/prep-records/<ISSUE>.md`, where `<ISSUE>` is the issue key in remote
+mode, the feature id (`F0NN`) in local mode, or `paste-<first 8 characters of the spec
+hash>` in paste mode. Record, in this order:
+
+- the source and destination mode, and which exit terminated the run
+- the terminal verdict
+- every SV and RV report verbatim, in cycle order
+- every open question, and the answer given to it
+- the final spec hash, or a note that none was computed
+
+**Redaction is mandatory.** `.harness/` is tracked by git, and a human's typed answer is
+exactly where a credential, token, or personal detail gets pasted. Omit any such value
+and record that an omission was made in its place; never transcribe one to prove it was
+there.
+
+An existing record for the same issue is appended to under a new dated heading and is
+never overwritten — a re-prep is a second data point, not a correction of the first.
+If the write fails, report it in the final summary and continue: a failed record
+never fails the prep run.
 
 ## Degradation table
 
@@ -348,5 +384,5 @@ If run inside a harness project (a `.harness/` directory exists), append one lin
 | No `prep` key in `harness.json` | Local-only mode: `features.json` gets the normalized description and `spec` object; no stamp, no label, no kickstart |
 | No key resolved from any source at Step 7 (exit 2) | Spec is normalized and written back; setup guidance for all three key sources is printed; run ends unstamped. `risk` is still persisted locally (F064) -- it was written as soon as it was determined, before key resolution. |
 | Key file has wrong permissions at Step 7 (exit 1) | Stamping aborted with the exact `chmod` fix reported; spec stays normalized but unstamped until re-run. `risk` is still persisted locally (F064), same reason as above. |
-| RV loop cap (5 cycles) hit | Spec stays unnormalized; still-open questions posted as a plain comment (remote) or written to `notes` (local); `needs_prep_label` applied if configured; unstamped |
-| User declines the Step 5 diff confirmation | Nothing is written back; no normalization, no stamp, no label; the run ends where the human stopped it |
+| RV loop cap (5 cycles) hit | Spec stays unnormalized; still-open questions posted as a plain comment (remote) or written to `notes` (local); `needs_prep_label` applied if configured; unstamped. The prep record IS written -- this exit is why it exists |
+| User declines the Step 5 diff confirmation | Nothing is written back; no normalization, no stamp, no label; the run ends where the human stopped it. The prep record IS written |

@@ -45,3 +45,32 @@ approved|blocked|needs-lead|died }], unfinished: [ids], complete: bool }`.
 
 The lead integrates approved features per Step 5b's ordered flow; `blocked` / non-APPROVE
 / `unfinished` features are surfaced to the user, never auto-merged.
+
+---
+
+## Re-review launch (`/vv-harness:review-branch`)
+
+Re-reviews an existing branch or diff scope: reviewers fan out over named dimensions,
+findings are deduplicated before an adversarial verify pass, and a verifier that dies
+leaves its finding `unverified` rather than counting it refuted. Read-only — it never
+edits, merges, or commits.
+
+### `args` shape
+
+One of the three scope keys is required; everything else is optional.
+
+- `scope` — what to review, as a branch name or a diff range.
+- `branch` — alias for `scope`.
+- `diffScope` — alias for `scope`.
+- `dimensions` — array of `{key, prompt}`. Defaults to a correctness pass and a
+  test-quality pass. Every entry needs a non-empty `prompt` and a `key`, or the run
+  throws rather than prompting a reviewer with `dimension: undefined`.
+- `conformance` — truthy to add the author-blind conformance pass. Requires the two
+  keys below; supplying it without them is a hard error, not a silent skip.
+- `features` — non-empty array of feature IDs for that pass.
+- `featureSpecs` — maps each feature ID to its verified spec.
+
+A `featureSpecs` entry that omits its nested `spec` field does not fail the run: that
+feature returns `skipped: 'no spec supplied in featureSpecs'` and is never
+conformance-tested. The gap is reported rather than hidden, but it is only visible if
+you read the skipped list — so supply the spec.
