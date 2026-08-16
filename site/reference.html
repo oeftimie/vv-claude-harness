@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference — VV Claude Code Harness</title>
+<meta name="description" content="Commands, the feature object, status values, test targets, the completion checklist, common misconceptions, and a glossary.">
+<link rel="stylesheet" href="./assets/site.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%23b8482a'/></svg>">
+<script type="module" src="./assets/anim.js"></script>
+</head>
+<body>
+<div id="progress"></div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="./index.html"><span class="dot"></span>Harness field guide</a>
+    <a class="nav-link" href="./index.html">Why</a>
+    <a class="nav-link" href="./quickstart.html">Quickstart</a>
+    <a class="nav-link" href="./lifecycle.html">Session loop</a>
+    <a class="nav-link" href="./gates.html">Gates</a>
+    <a class="nav-link" href="./parallel.html">Parallel work</a>
+    <a class="nav-link" href="./reference.html" aria-current="page">Reference</a>
+  </div>
+</nav>
+
+<main>
+
+<section style="border: 0;">
+  <div class="prose">
+    <p class="eyebrow">Stop 6 of 6</p>
+    <h1>Reference</h1>
+    <p class="lede">Built for the second visit, not the first.</p>
+  </div>
+</section>
+
+<section id="commands">
+  <div class="prose"><h2>Commands</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>When</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>/harness-init</code></td><td>Once per project</td><td>Scaffolds <code>.harness/</code>, installs the hooks, proposes initial features</td></tr>
+        <tr><td><code>/harness-continue</code></td><td>Start of every session</td><td>Mode choice, smoke test, workflow planning — on top of the auto-injected orientation</td></tr>
+        <tr><td><code>/harness-issue-prep</code></td><td>Before implementing</td><td>Verifies a spec until buildable, normalizes it, records proof of verification</td></tr>
+        <tr><td><code>/harness-issue-debug</code></td><td>After something broke</td><td>Live repair session on a failed feature or a parked issue</td></tr>
+        <tr><td><code>/harness-doctor</code></td><td>On upgrade or odd failure</td><td>Report-first health check; <code>--fix</code> applies the mechanical upgrade steps</td></tr>
+        <tr><td><code>/harness-improve</code></td><td>After a bad run</td><td>Observation-first improvement loop: one intervention, verified at the claim boundary</td></tr>
+        <tr><td><code>/harness-dashboard</code></td><td>Watching a run</td><td>Opens the live session view (the session must have opted in beforehand)</td></tr>
+        <tr><td><code>/plugin update vv-harness</code></td><td>Periodically</td><td>Updates the plugin — remember to run <code>/harness-doctor</code> per project after</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="targets">
+  <div class="prose">
+    <h2>Test targets</h2>
+    <pre><code>.harness/init.sh smoke_test                  <span class="tok-c"># fast compile/syntax check, &lt;15s</span>
+.harness/init.sh focused_test &lt;test_file&gt;    <span class="tok-c"># exactly one test file</span>
+.harness/init.sh full_test                   <span class="tok-c"># complete suite with coverage</span>
+.harness/init.sh                             <span class="tok-c"># ⚠ defaults to full_test</span></code></pre>
+    <p>
+      <code>focused_test</code> exits 3 and reports a skip when the file doesn't exist or
+      the stack has no per-file runner — a skip, deliberately, rather than a fake green.
+    </p>
+  </div>
+</section>
+
+<section id="feature">
+  <div class="prose">
+    <h2>The feature object</h2>
+    <p>
+      Canonical definition: <code>schemas/feature.schema.json</code>, enforced by
+      <code>scripts/validate-features.py</code> and wired into the test suite. Ten fields
+      are required.
+    </p>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Required</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>id</code></td><td>yes</td><td>e.g. <code>F001</code>. Assigned by the lead, never reused</td></tr>
+        <tr><td><code>description</code></td><td>yes</td><td>What the feature is. Editing it after a spec is attached invalidates <code>spec.hash</code></td></tr>
+        <tr><td><code>priority</code></td><td>yes</td><td>Lower numbers claim first</td></tr>
+        <tr><td><code>status</code></td><td>yes</td><td><code>pending</code> · <code>in-progress</code> · <code>blocked</code> · <code>passing</code> · <code>failed</code></td></tr>
+        <tr><td><code>scope</code></td><td>yes</td><td>Directories and files this feature owns; pasted into agent prompts and enforced on Edit/Write</td></tr>
+        <tr><td><code>depends_on</code></td><td>yes</td><td>Feature ids that must reach <code>passing</code> first</td></tr>
+        <tr><td><code>assigned_to</code></td><td>yes</td><td>Agent name, <code>"single-session"</code>, or null</td></tr>
+        <tr><td><code>test_file</code></td><td>yes</td><td>The test proving this feature. Must be non-null once status is <code>passing</code></td></tr>
+        <tr><td><code>coverage</code></td><td>yes</td><td>Percentage on touched code, or a descriptive string where no tooling exists</td></tr>
+        <tr><td><code>notes</code></td><td>yes</td><td>Free-form: issue id, decisions, anything the other fields don't capture</td></tr>
+        <tr><td><code>correction_cycles</code></td><td>—</td><td>How many correction rounds this took. ≥3 in a scope is a signal to upgrade the next implementer</td></tr>
+        <tr><td><code>scope_expansions</code></td><td>—</td><td>Files added to scope after assignment. ≥3 means assign a broader initial scope next time</td></tr>
+        <tr><td><code>approaches_tried</code></td><td>—</td><td>What was attempted before the passing approach</td></tr>
+        <tr><td><code>failure_reason</code></td><td>—</td><td>Why it reached <code>failed</code></td></tr>
+        <tr><td><code>discovered_via</code></td><td>—</td><td>Id of the feature whose implementation revealed this one</td></tr>
+        <tr><td><code>spec</code></td><td>—</td><td>Spec-verification record. Absent or null means unverified — excluded from parallel batches</td></tr>
+        <tr><td><code>risk</code> / <code>require_plan_approval</code></td><td>—</td><td>Elevation flags; escalate the review stage, not the implementer</td></tr>
+        <tr><td><code>coverage_target</code></td><td>—</td><td>Overrides the default coverage gate</td></tr>
+        <tr><td><code>qa_binding</code> / <code>proof</code></td><td>—</td><td>Declared at prep time; claim-matched evidence recorded at completion</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="checklist">
+  <div class="prose">
+    <h2>Completion checklist</h2>
+    <p>Before declaring <em>any</em> task complete:</p>
+    <ul>
+      <li>All tests pass, including the new ones written via TDD</li>
+      <li>No uncommitted changes remain</li>
+      <li>Sub-agent and workflow-agent work validated against lead context</li>
+      <li>Documentation updated — existing docs only</li>
+      <li><code>context_summary.md</code> updated with decisions, patterns, or gotchas</li>
+      <li>The user told what changed</li>
+    </ul>
+    <p>And additionally, in a harness project:</p>
+    <ul>
+      <li><code>features.json</code> audited against the actual work — every touched feature has updated status, <code>test_file</code>, <code>coverage</code>; unmapped work gets a new entry with <code>discovered_via</code></li>
+      <li>Non-obvious root causes and gotchas recorded in <code>context_summary.md</code></li>
+      <li>Retrospective written under <code>## Meta-Session [DATE]</code> — mandatory even for single-session work</li>
+      <li><code>.harness/mld/YYYY-MM-DD-&lt;session-id&gt;.md</code> written — lead only, and <em>not</em> a substitute for the retrospective</li>
+      <li><code>claude-progress.txt</code> has the session handoff</li>
+      <li>Task list is current — no stale in-progress or pending tasks</li>
+    </ul>
+  </div>
+</section>
+
+<section id="mistakes">
+  <div class="prose">
+    <h2>Ten things newcomers get wrong</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Belief</th><th>Correction</th></tr></thead>
+      <tbody>
+        <tr><td>Installing the plugin sets up my repo</td><td>It does nothing to a repo until <code>/harness-init</code> runs</td></tr>
+        <tr><td><code>./.harness/init.sh</code> runs the quick check</td><td>Its default is <code>full_test</code>. Pass <code>smoke_test</code> explicitly</td></tr>
+        <tr><td>The retrospective and MLD are the same</td><td>The retrospective is read by future sessions; MLD is read by nothing, by guarantee</td></tr>
+        <tr><td>Elevated risk means a stronger implementer</td><td>It escalates the review. Executors stay on the execution tier</td></tr>
+        <tr><td>Fewer than 5 files ⇒ single-session</td><td>Two verified independent features beat single-session regardless of file count</td></tr>
+        <tr><td>Worktree isolation is always safer</td><td>Not when agents share an interface — they need to see each other's changes</td></tr>
+        <tr><td>No Workflow tool means no parallel work</td><td>Fall back to worktree-isolated subagents with the same agent types</td></tr>
+        <tr><td>The hooks make cheating impossible</td><td>Edit/Write enforcement is exact; Bash enforcement is pattern-based and evadable</td></tr>
+        <tr><td>A green task gate means the suite passes</td><td>It means smoke plus that one feature's test file. The suite runs at commit and session end</td></tr>
+        <tr><td>Coverage is measured for me</td><td>It is self-reported and compared against a target; it skips where no tooling exists</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="glossary">
+  <div class="prose"><h2>Glossary</h2></div>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Lead</h3>
+      <p>The orchestrating session. Owns <code>features.json</code>, <code>context_summary.md</code>, and <code>claude-progress.txt</code>; in workflow mode it never edits feature code.</p>
+    </div>
+    <div class="card">
+      <h3>Scope</h3>
+      <p>The directories and files a feature owns. Enforced mechanically on Edit/Write, best-effort on Bash.</p>
+    </div>
+    <div class="card">
+      <h3>Orientation</h3>
+      <p>The block the SessionStart hook injects before you type: feature status, next claimable, last handoff, Active Context, warnings.</p>
+    </div>
+    <div class="card">
+      <h3>Spec gate</h3>
+      <p>Read-only agents proving a spec is testable and unambiguous before implementation. PASS / ASK / BLOCK.</p>
+    </div>
+    <div class="card">
+      <h3>Readiness stamp</h3>
+      <p>Signed proof of spec verification posted to an issue, validated by hash and HMAC by an external consumer.</p>
+    </div>
+    <div class="card">
+      <h3>MLD</h3>
+      <p>Mistakes / Learnings / Desires. A raw per-session log, written by the lead, read back into context by nothing.</p>
+    </div>
+    <div class="card">
+      <h3>Worker epoch</h3>
+      <p>A period during which the model and coding agent are held constant. Material changes trigger a requalification pass.</p>
+    </div>
+    <div class="card">
+      <h3>SESSION_INCOMPLETE</h3>
+      <p>Discipline gaps recorded at session end and surfaced at the next session start. Self-healing, not preventive.</p>
+    </div>
+  </div>
+</section>
+
+<section id="budget">
+  <div class="prose">
+    <h2>What it costs to have loaded</h2>
+    <p>
+      Always-on overhead is <code>CLAUDE.md</code> at roughly 4.2K tokens. The rule files
+      are <strong>not</strong> auto-loaded — they cost tokens only when the model reads
+      them, following pointers in the orientation block:
+      <code>parallel-work.md</code> about 4K, <code>code-quality.md</code> about 0.3K.
+      That is down from roughly 14.7K always-on in v3.2.1. In a project without
+      <code>.harness/</code>, the orientation hook stays silent and neither rule file is
+      pointed to or read.
+    </p>
+  </div>
+</section>
+
+<section id="source">
+  <div class="prose">
+    <h2>Read the source</h2>
+    <p>
+      Everything on this site came out of the plugin repository. When this guide and the
+      repository disagree, the repository is right.
+    </p>
+    <ul>
+      <li><a href="https://github.com/oeftimie/vv-claude-harness">oeftimie/vv-claude-harness</a> — the plugin</li>
+      <li><a href="https://github.com/oeftimie/vv-claude-harness/blob/main/INSTALL.md">INSTALL.md</a> — full prerequisites, upgrades, optional telemetry and spec-gate signing</li>
+      <li><a href="https://github.com/oeftimie/vv-claude-harness/blob/main/docs/history.md">docs/history.md</a> — where the design came from, and how it changed across six major versions</li>
+      <li><a href="https://github.com/oeftimie/vv-claude-harness/tree/main/analysis">analysis/</a> — the working notes this site was built from, with citations</li>
+      <li><a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents">Effective harnesses for long-running agents</a> — the write-up that framed the shift problem</li>
+    </ul>
+  </div>
+</section>
+
+<div class="pager">
+  <a href="./parallel.html">← Parallel work</a>
+  <a href="./index.html">Back to the start →</a>
+</div>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div>
+      An unofficial field guide to <a href="https://github.com/oeftimie/vv-claude-harness">vv-harness</a>,
+      built from the plugin source at v6.0.2.
+    </div>
+    <div>Animations by <a href="https://animejs.com">anime.js</a> v4.</div>
+  </div>
+</footer>
+
+</body>
+</html>

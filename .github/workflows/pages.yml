@@ -1,0 +1,49 @@
+name: pages
+
+# Publishes site/ (the teaching site) to GitHub Pages. Deliberately runs only on
+# pushes to main and manual dispatch, never on pull_request: only checks that run on
+# pull_request may be added to main's required-status ruleset, and this one must never
+# become a merge blocker.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one in flight: a cancelled deploy can
+# leave the live site on a half-published artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # enablement: true turns Pages on via the API if it is not already enabled, so
+      # the first run does not need a manual visit to repository settings. If the token
+      # lacks permission the step fails loudly rather than deploying nowhere -- enable
+      # Pages (source: GitHub Actions) in Settings and re-run.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -18,6 +18,8 @@ This repo distributes VV Claude Code Harness — it is NOT an application codeba
 - `README.md` — Project documentation
 - `install` — Deprecation shim; prints the `/plugin` install instructions and exits
 - `clips/` — Screenshots and videos for README
+- `site/` — Source of the GitHub Pages field guide, deployed by `.github/workflows/pages.yml`. Static HTML/CSS/ES modules with no build step; it documents the plugin for newcomers and is not itself plugin content
+- `analysis/` — Working notes behind `site/`: the conceptual model with each claim cited to its source file, the teaching order, and the animation plan. Update these when the site's claims change
 
 ## Key Distinction
 

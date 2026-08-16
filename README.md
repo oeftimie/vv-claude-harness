@@ -9,6 +9,10 @@ tests, scope, and git identity mechanically rather than by asking politely.
 [Install](#install) · [What's in the box](#whats-in-the-box) · [Architecture](#architecture)
 · [CHANGELOG](./CHANGELOG.md) · [INSTALL.md](./INSTALL.md) · [History and design origins](./docs/history.md)
 
+New to the harness? The [field guide](https://oeftimie.github.io/vv-claude-harness/)
+walks through the install, one session end to end, the gates, and parallel work. Its
+source is in [`site/`](./site).
+
 ## The problem it solves
 
 Every AI coding agent has the same Achilles heel: memory. Not the technical kind (context
