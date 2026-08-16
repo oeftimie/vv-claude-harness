@@ -202,6 +202,11 @@ reached on REVISE/REJECT), leaves the parallel path: surfaced to the user with i
 structured findings — never auto-merged — then fixed directly by the lead in
 single-session mode, or re-launched with a corrected spec.
 
+**When you need a second verdict rather than a second implementation**: to re-review an
+existing branch or diff scope — a surfaced feature, or a branch recovered from an
+interrupted run — the `/vv-harness:review-branch` workflow does exactly that, read-only.
+`/harness-continue` Step 5b owns its launch details and `args` shape.
+
 ## Lead-owned state
 
 The lead is the only writer of `.harness/features.json`, `.harness/context_summary.md`,
