@@ -204,6 +204,58 @@ RC=$?
 assert_rc0 "$RC" "b: exits 0 in a plain directory"
 assert_empty "$OUT" "b: prints nothing in a plain directory"
 
+# OVI-155 WP1: wrapper-directory diagnostic. A session launched one level ABOVE a
+# harness repo gets no orientation -- the hook exits at the `[ -d "$H" ] || exit 0`
+# guard -- and got no diagnostic either, so the lead had no signal anything was wrong.
+# The silence in a genuine non-harness project (fixture b above) is the gate on this:
+# the notice fires only when an immediate child is itself a harness project.
+WRAP_NOTICE="harness: no .harness/ here"
+
+DIR_W1="$WORK/w1"
+make_fixture "$DIR_W1"
+OUT=$(run_session_start "$DIR_W1" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w1: harness-at-root exits 0"
+assert_not_contains "$OUT" "$WRAP_NOTICE" "w1: no wrapper notice when the root IS a harness project"
+
+DIR_W2="$WORK/w2"
+mkdir -p "$DIR_W2/not-a-project"
+OUT=$(run_session_start "$DIR_W2" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w2: plain wrapper exits 0"
+assert_empty "$OUT" "w2: silent when no immediate child is a harness project"
+
+DIR_W3="$WORK/w3"
+mkdir -p "$DIR_W3"
+make_fixture "$DIR_W3/proj-one"
+OUT=$(run_session_start "$DIR_W3" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w3: wrapper with one harness child exits 0"
+assert_contains "$OUT" "$WRAP_NOTICE" "w3: emits the wrapper notice"
+assert_contains "$OUT" "proj-one" "w3: names the qualifying child"
+W3_LINES=$(printf '%s\n' "$OUT" | grep -c .)
+if [ "$W3_LINES" = "1" ]; then
+  pass "w3: notice is exactly one line"
+else
+  fail "w3: notice must be exactly one line, got $W3_LINES"
+fi
+
+DIR_W4="$WORK/w4"
+mkdir -p "$DIR_W4"
+make_fixture "$DIR_W4/alpha"
+make_fixture "$DIR_W4/beta"
+OUT=$(run_session_start "$DIR_W4" '{"source":"startup"}')
+RC=$?
+assert_rc0 "$RC" "w4: wrapper with two harness children exits 0"
+assert_contains "$OUT" "alpha" "w4: names the first qualifying child"
+assert_contains "$OUT" "beta" "w4: names the second qualifying child"
+W4_LINES=$(printf '%s\n' "$OUT" | grep -c .)
+if [ "$W4_LINES" = "1" ]; then
+  pass "w4: two children still produce exactly one line"
+else
+  fail "w4: expected exactly one line, got $W4_LINES"
+fi
+
 DIR_C="$WORK/c"
 make_fixture "$DIR_C"
 OUT=$(run_session_start "$DIR_C" '{"source":"compact"}')
