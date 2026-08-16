@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The session loop — VV Claude Code Harness</title>
+<meta name="description" content="What actually happens in a harness session: orientation, the smoke test as a gate, mode choice, the three memory files, and compaction as a planned event.">
+<link rel="stylesheet" href="./assets/site.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%23b8482a'/></svg>">
+<script type="module" src="./assets/anim.js"></script>
+</head>
+<body>
+<div id="progress"></div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="./index.html"><span class="dot"></span>Harness field guide</a>
+    <a class="nav-link" href="./index.html">Why</a>
+    <a class="nav-link" href="./quickstart.html">Quickstart</a>
+    <a class="nav-link" href="./lifecycle.html" aria-current="page">Session loop</a>
+    <a class="nav-link" href="./gates.html">Gates</a>
+    <a class="nav-link" href="./parallel.html">Parallel work</a>
+    <a class="nav-link" href="./reference.html">Reference</a>
+  </div>
+</nav>
+
+<main>
+
+<section style="border: 0;">
+  <div class="prose">
+    <p class="eyebrow">Stop 3 of 6</p>
+    <h1>One session, end to end</h1>
+    <p class="lede">
+      A harness session is a cycle you re-enter, not a checklist you finish. The steps
+      below run in this order every time, and the ones that feel like ceremony are the
+      ones carrying the value.
+    </p>
+  </div>
+</section>
+
+<section id="loop">
+  <figure data-scene="loop">
+    <div class="loop-wrap">
+      <div class="loop-canvas">
+        <svg viewBox="0 0 320 200" role="img" aria-label="A closed loop representing the session cycle">
+          <path id="loop-path" d="M 160 24 A 130 76 0 1 1 159.5 24" />
+        </svg>
+        <div class="marker" aria-hidden="true"></div>
+      </div>
+      <ol class="loop-steps">
+        <li><b>1 · Orient</b></li>
+        <li><b>2 · Verify git identity</b></li>
+        <li><b>3 · Smoke test</b></li>
+        <li><b>4 · Worker epoch check</b></li>
+        <li><b>5 · Set effort</b></li>
+        <li><b>6 · Decide mode</b></li>
+        <li><b>7 · Work (TDD)</b></li>
+        <li><b>8 · Close out</b></li>
+      </ol>
+    </div>
+    <figcaption>
+      Step 8 writes what step 1 of the next session reads. Break that link and you are
+      back to onboarding a contractor every morning.
+    </figcaption>
+  </figure>
+</section>
+
+<section id="steps">
+  <div class="prose">
+    <h2>The steps, and why each one is there</h2>
+  </div>
+
+  <ol class="steps prose">
+    <li>
+      <h3>Orient</h3>
+      <p>
+        The SessionStart hook has <em>already</em> injected feature status, the next
+        claimable feature, the last handoff, Active Context, a git-identity warning on
+        mismatch, and any <code>SESSION_INCOMPLETE</code> gaps left by the previous
+        session. Use the injected block rather than re-reading the files — and resolve
+        surfaced gaps before starting new work.
+      </p>
+    </li>
+    <li>
+      <h3>Verify git identity</h3>
+      <p>
+        The hook already compared <code>git config user.email</code> against
+        <code>harness.json</code>. It does <em>not</em> check the SSH identity, so that
+        one is still on you: <code>ssh -T git@github.com</code>. In a multi-account setup
+        this is the difference between a push landing and a push landing as the wrong person.
+      </p>
+    </li>
+    <li>
+      <h3>Smoke test — a gate, not a diagnostic</h3>
+      <p>
+        Run <code>./.harness/init.sh smoke_test</code> within the first five actions of
+        every session. Its purpose is not to find bugs. It is to establish that the
+        environment was already good <em>before</em> you touched it, so any later failure
+        is provably yours. Fifteen seconds spent here prevents fifteen-minute debugging
+        sessions later.
+      </p>
+      <div class="callout wrong">
+        <span class="label">Footgun — pass the argument</span>
+        <p>
+          <code>init.sh</code>'s own default target is <code>full_test</code>, not
+          <code>smoke_test</code>. Run it bare and you silently execute the entire suite
+          instead of the fast gate this step describes.
+        </p>
+      </div>
+    </li>
+    <li>
+      <h3>Worker epoch check</h3>
+      <p>
+        Compares the live CLI version against the <code>worker</code> block recorded in
+        <code>harness.json</code> and prompts for a requalification pass on a large delta.
+        It degrades silently when the block is absent or the version will not parse — a
+        prompt, never a gate. The thesis behind it: hold the worker constant for one
+        epoch, and requalify on every material change.
+      </p>
+    </li>
+    <li>
+      <h3>Set effort</h3>
+      <p>
+        High for architecture decisions, debugging failing tests, and reviewing returned
+        agent work. Medium for the TDD loop and refactoring. Low for formatting, linting,
+        and boilerplate. Adjust as you move between phases — it is not a session-level setting.
+      </p>
+    </li>
+    <li>
+      <h3>Decide mode</h3>
+      <p>
+        Single-session or workflow. Declare the choice out loud — "running in
+        single-session mode, I'm both lead and implementer" — so it is a decision rather
+        than a default. <a href="./parallel.html">The full rule is on the parallel work page.</a>
+      </p>
+    </li>
+    <li>
+      <h3>Work, with TDD</h3>
+      <p>
+        Write the failing test that defines done. Confirm it fails — that is what proves
+        the test is valid. Write the minimum code to pass. Confirm it passes. Refactor.
+        Then run the full suite and check coverage on the code you touched.
+      </p>
+      <p>
+        Treat <code>context_summary.md</code> updates as part of the task, not after it.
+        After any bug fix that reveals a non-obvious root cause, write the gotcha down
+        <em>before</em> moving on. Thirty seconds now, permanent value later.
+      </p>
+    </li>
+    <li>
+      <h3>Close out</h3>
+      <p>
+        Full suite, then audit <code>features.json</code> against what you actually did —
+        touched a tracked feature, update its status, <code>test_file</code> and
+        <code>coverage</code>; did work that maps to no feature, create one with
+        <code>discovered_via</code>. Then the retrospective, the MLD file, the handoff, and
+        the commit. <a href="./reference.html#checklist">The checklist is in the reference.</a>
+      </p>
+    </li>
+  </ol>
+</section>
+
+<section id="memory">
+  <div class="prose">
+    <h2>Three files, three different jobs</h2>
+    <p>
+      Newcomers conflate these constantly. They are distinct by design, and all three are
+      <strong>lead-owned</strong>: <code>enforce-scope.sh</code> blocks edits to them
+      regardless of the editing agent's assigned scope. A spawned implementer physically
+      cannot write them. That is what stops five parallel agents racing on one JSON file.
+    </p>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>File</th><th>Read when</th><th>Answers</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>features.json</code></td>
+          <td>Every session start</td>
+          <td>What is the work, and where does it stand?</td>
+        </tr>
+        <tr>
+          <td><code>context_summary.md</code></td>
+          <td>Every session start</td>
+          <td>What did we learn that isn't in the code?</td>
+        </tr>
+        <tr>
+          <td><code>claude-progress.txt</code></td>
+          <td>Every session start</td>
+          <td>What was the last shift doing, and what's next?</td>
+        </tr>
+        <tr>
+          <td><code>mld/&lt;date&gt;-&lt;session&gt;.md</code></td>
+          <td><strong>Never</strong> — by guarantee</td>
+          <td>Raw Mistakes / Learnings / Desires, for human review</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="label">Comprehension checkpoint</span>
+    <p>
+      The retrospective and the MLD file are not the same thing. The retrospective is
+      cumulative analysis appended to <code>context_summary.md</code> that future sessions
+      read. MLD is a raw, undigested per-session log that <em>nothing</em> reads back into
+      model context — <code>session-start.sh</code> carries a hard, tested guarantee never
+      to read <code>.harness/mld/</code>. Writing one does not excuse skipping the other.
+    </p>
+  </div>
+</section>
+
+<section id="compaction">
+  <div class="prose">
+    <h2>Compaction is a planned event</h2>
+    <p>
+      Most people meet compaction by accident, mid-task, and lose the thread. In the
+      harness it is a move you make deliberately at a clean breakpoint — after tests pass
+      for a subtask, after a phase completes — with a focused instruction:
+    </p>
+    <pre><code>/compact Focus on: current feature F003 state, TDD progress,
+         decisions made about auth architecture</code></pre>
+  </div>
+
+  <figure data-scene="compact">
+    <button class="replay" type="button">replay</button>
+    <p class="eyebrow" style="margin-bottom: 0.9rem;">Context window → compact → re-injection</p>
+    <div class="ctx-bar"><div class="ctx-fill"></div></div>
+    <div class="reinject">
+      <span class="chip ok">features.json status</span>
+      <span class="chip ok">Active Context</span>
+      <span class="chip ok">last handoff</span>
+    </div>
+    <figcaption>
+      After compaction the SessionStart hook's <code>compact</code> matcher re-injects a
+      recovery block plus fresh orientation. It is a recovery path, not a crash.
+    </figcaption>
+  </figure>
+
+  <div class="prose">
+    <p>
+      The rule that falls out of this, and the one worth memorizing:
+      <strong>files and tasks survive compaction; conversation prose does not.</strong>
+      If a decision matters, it belongs in <code>context_summary.md</code> or a task —
+      not in a message you hope stays in the window.
+    </p>
+  </div>
+</section>
+
+<div class="pager">
+  <a href="./quickstart.html">← Quickstart</a>
+  <a href="./gates.html">The four gates →</a>
+</div>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div>
+      An unofficial field guide to <a href="https://github.com/oeftimie/vv-claude-harness">vv-harness</a>,
+      built from the plugin source at v6.0.2.
+    </div>
+    <div>Animations by <a href="https://animejs.com">anime.js</a> v4.</div>
+  </div>
+</footer>
+
+</body>
+</html>

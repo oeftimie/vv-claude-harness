@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VV Claude Code Harness — a field guide</title>
+<meta name="description" content="How to use the VV Claude Code Harness: memory across sessions, coordination between parallel agents, and quality rules an agent cannot skip.">
+<link rel="stylesheet" href="./assets/site.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%23b8482a'/></svg>">
+<script type="module" src="./assets/anim.js"></script>
+</head>
+<body>
+<div id="progress"></div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="./index.html"><span class="dot"></span>Harness field guide</a>
+    <a class="nav-link" href="./index.html" aria-current="page">Why</a>
+    <a class="nav-link" href="./quickstart.html">Quickstart</a>
+    <a class="nav-link" href="./lifecycle.html">Session loop</a>
+    <a class="nav-link" href="./gates.html">Gates</a>
+    <a class="nav-link" href="./parallel.html">Parallel work</a>
+    <a class="nav-link" href="./reference.html">Reference</a>
+  </div>
+</nav>
+
+<main>
+
+<section id="hero" data-scene="hero" style="border: 0;">
+  <div class="prose">
+    <p class="eyebrow hero-fade">vv-harness · a Claude Code plugin</p>
+    <h1>
+      <span class="hero-word">Your</span> <span class="hero-word">agent</span>
+      <span class="hero-word">forgets</span> <span class="hero-word">everything</span>
+      <span class="hero-word">at</span> <span class="hero-word">midnight.</span>
+    </h1>
+    <p class="lede hero-fade">
+      The harness is what it reads when it comes back. It gives a coding agent the three
+      things it structurally lacks: <strong>memory across sessions</strong>,
+      <strong>coordination when several run in parallel</strong>, and
+      <strong>quality rules it cannot skip</strong> — by writing state to plain files and
+      enforcing rules with shell exit codes instead of prose.
+    </p>
+    <div class="btn-row hero-fade">
+      <a class="btn primary" href="./quickstart.html">Start here — 10 minutes</a>
+      <a class="btn" href="https://github.com/oeftimie/vv-claude-harness">Source on GitHub</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>4</b><span>blocking hooks</span></div>
+      <div class="stat"><b>3</b><span>memory files</span></div>
+      <div class="stat"><b>2</b><span>work modes</span></div>
+      <div class="stat"><b>~4.2K</b><span>always-on tokens</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="problem">
+  <div class="prose">
+    <p class="eyebrow">The problem</p>
+    <h2>The shift problem</h2>
+    <p>
+      Every AI coding agent has the same Achilles heel, and it is not the context window.
+      Start a complex project, work for an hour, hit a limit or close the session, come
+      back tomorrow. The agent has no idea what happened. You are onboarding a new
+      contractor every morning who has never seen the codebase.
+    </p>
+    <p>
+      Anthropic's engineering team named it
+      <a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents">the
+      shift problem</a>: a project staffed by engineers working shifts, each arriving with
+      no memory of the last shift. Two failures follow, and you should be able to spot both.
+    </p>
+  </div>
+
+  <div class="grid grid-2" style="margin: 1.6rem 0 2rem;">
+    <div class="card">
+      <h3>Overreach</h3>
+      <p>
+        The agent tries to one-shot the whole project, runs out of context
+        mid-implementation, and leaves a half-built mess.
+      </p>
+    </div>
+    <div class="card">
+      <h3>Premature victory</h3>
+      <p>
+        The more insidious one. The agent looks around, sees working code, and declares
+        the project done at 30&nbsp;% complete.
+      </p>
+    </div>
+  </div>
+
+  <figure data-scene="shift">
+    <button class="replay" type="button">replay</button>
+    <p class="eyebrow" style="margin-bottom: 1rem;">What a session boundary does to state</p>
+    <div class="shift">
+      <div class="shift-col" data-kind="none">
+        <h4>Without a harness</h4>
+        <p class="sub">knowledge lives in the conversation</p>
+        <div class="session-band" data-band="1">
+          <div class="mem"></div><div class="mem"></div><div class="mem"></div>
+          <div class="mem"></div><div class="mem"></div>
+        </div>
+        <div class="boundary"><span>session ends</span></div>
+        <div class="session-band" data-band="2">
+          <div class="mem"></div><div class="mem"></div><div class="mem"></div>
+          <div class="mem"></div><div class="mem"></div>
+        </div>
+        <p class="lost">✗ session 2 starts from zero</p>
+      </div>
+
+      <div class="shift-col" data-kind="harness">
+        <h4>With the harness</h4>
+        <p class="sub">knowledge is written to .harness/</p>
+        <div class="session-band" data-band="1">
+          <div class="mem"></div><div class="mem"></div><div class="mem"></div>
+          <div class="mem"></div><div class="mem"></div>
+        </div>
+        <div class="boundary"><span>session ends</span></div>
+        <div class="session-band" data-band="2">
+          <div class="mem"></div><div class="mem"></div><div class="mem"></div>
+          <div class="mem"></div><div class="mem"></div>
+        </div>
+        <p class="persist">✓ handoff written → session 2 resumes</p>
+      </div>
+    </div>
+    <figcaption>
+      The difference is not intelligence. It is whether anything wrote the state down
+      before the shift ended.
+    </figcaption>
+  </figure>
+
+  <div class="prose">
+    <p>
+      The fix is not a bigger model. It is infrastructure: externalize state into files
+      the next session reads, and enforce the rules that matter with code instead of prose.
+    </p>
+  </div>
+</section>
+
+<section id="files">
+  <div class="prose">
+    <p class="eyebrow">The design choice</p>
+    <h2>Why files, and not a memory system</h2>
+    <p>
+      This looks primitive next to a vector store. It is deliberate, and the third reason
+      is the one people miss.
+    </p>
+  </div>
+
+  <div class="grid grid-3" style="margin: 1.5rem 0 2rem;">
+    <div class="card">
+      <h3>Simplicity</h3>
+      <p>Files need no infrastructure. The agent writes, the agent reads, done.</p>
+    </div>
+    <div class="card">
+      <h3>Transparency</h3>
+      <p>
+        When an agent goes off the rails you open the file and see what it thinks it is
+        doing. You cannot debug a vector database mid-hallucination.
+      </p>
+    </div>
+    <div class="card">
+      <h3>Structure</h3>
+      <p>
+        <code>features.json</code> is JSON because a model is less likely to
+        inappropriately change or overwrite JSON than Markdown. The format itself
+        enforces discipline.
+      </p>
+    </div>
+  </div>
+
+  <div class="prose">
+    <blockquote style="margin: 0 0 1.4rem; padding-left: 1.1rem; border-left: 3px solid var(--accent);">
+      <p style="margin: 0;">
+        The filesystem is connective tissue not because files are the optimal data
+        structure for agent memory — they are not — but because they are the optimal
+        trade-off between simplicity, transparency, and effectiveness.
+      </p>
+    </blockquote>
+  </div>
+</section>
+
+<section id="halves">
+  <div class="prose">
+    <p class="eyebrow">Mental model</p>
+    <h2>The install has two halves, and they live in different places</h2>
+    <p>
+      This is the single most common early confusion. Installing the plugin does
+      <em>nothing</em> to any repository. The plugin is the global half; the per-project
+      half only appears when you run <code>/harness-init</code> inside a repo.
+    </p>
+  </div>
+
+  <figure data-scene="tree">
+    <div class="grid grid-2">
+      <div>
+        <p class="eyebrow">Global — installed once, travels with you</p>
+        <div class="tree">
+          <div class="row"><b>vv-harness/</b>              <i># plugin root, versioned cache</i></div>
+          <div class="row">├── skills/          <i># /harness-init, /harness-continue, …</i></div>
+          <div class="row">├── agents/          <i># implementer, reviewer, spec-verification</i></div>
+          <div class="row">├── hooks/           <i># session-start, session-end, statusline</i></div>
+          <div class="row">├── rules/           <i># tdd, parallel-work, code-quality, …</i></div>
+          <div class="row">├── schemas/         <i># feature.schema.json, readiness-stamp</i></div>
+          <div class="row">└── templates/       <i># CLAUDE.md you copy by hand</i></div>
+        </div>
+      </div>
+      <div>
+        <p class="eyebrow">Per-project — written by /harness-init</p>
+        <div class="tree">
+          <div class="row"><b>your-repo/</b></div>
+          <div class="row">├── .claude/</div>
+          <div class="row">│   ├── settings.json   <i># hook wiring, permissions</i></div>
+          <div class="row">│   └── hooks/          <i># the four blocking gates</i></div>
+          <div class="row">└── .harness/</div>
+          <div class="row">    ├── harness.json         <i># config, git identity</i></div>
+          <div class="row">    ├── features.json        <i># the work</i></div>
+          <div class="row">    ├── context_summary.md   <i># the learnings</i></div>
+          <div class="row">    ├── claude-progress.txt  <i># the handoff</i></div>
+          <div class="row">    └── init.sh              <i># build/test script</i></div>
+        </div>
+      </div>
+    </div>
+    <figcaption>
+      <code>.harness/</code> is the project's memory. <code>.claude/hooks/</code> is the
+      project's immune system. The plugin ships neither — it ships the machinery that
+      writes them.
+    </figcaption>
+  </figure>
+</section>
+
+<section id="principles">
+  <div class="prose">
+    <p class="eyebrow">The thesis</p>
+    <h2>Mechanical over instructional</h2>
+    <p>
+      There are reliability tiers for agent coordination, and it matters which tier a rule
+      lives in. A rule that only exists as prose gets followed <em>most</em> of the time. A
+      rule that exists as an exit code gets followed <em>every</em> time.
+    </p>
+    <p>
+      The harness's own TDD rule says this about itself: the same discipline lived as
+      always-on prose for a full measurement window, and buggy code still led the friction
+      table at 33&nbsp;%. What measurably worked was wiring TDD to a gate.
+    </p>
+    <p>
+      Four more principles have held steady across every version: <strong>predictable
+      input</strong> (every sub-agent verifies the same initialization state, so it does
+      not wander off fixing things outside its prompt), <strong>prescribed output
+      format</strong> (every sub-agent has defined exit expectations, so work returns at
+      the same level of quality), <strong>progressive discovery</strong> (context storage
+      is hierarchical to protect the context window — drop MCP tools you do not need), and
+      <strong>filesystem as connective tissue</strong>.
+    </p>
+    <div class="btn-row">
+      <a class="btn primary" href="./quickstart.html">Install it and run one session</a>
+      <a class="btn" href="./gates.html">See the four gates</a>
+    </div>
+  </div>
+</section>
+
+<div class="pager">
+  <span></span>
+  <a href="./quickstart.html">Quickstart →</a>
+</div>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div>
+      An unofficial field guide to <a href="https://github.com/oeftimie/vv-claude-harness">vv-harness</a>,
+      built from the plugin source at v6.0.2.
+    </div>
+    <div>Animations by <a href="https://animejs.com">anime.js</a> v4.</div>
+  </div>
+</footer>
+
+</body>
+</html>

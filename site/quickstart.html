@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quickstart — VV Claude Code Harness</title>
+<meta name="description" content="Install the vv-harness plugin, initialize a project, and run your first harness session.">
+<link rel="stylesheet" href="./assets/site.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%23b8482a'/></svg>">
+<script type="module" src="./assets/anim.js"></script>
+</head>
+<body>
+<div id="progress"></div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="./index.html"><span class="dot"></span>Harness field guide</a>
+    <a class="nav-link" href="./index.html">Why</a>
+    <a class="nav-link" href="./quickstart.html" aria-current="page">Quickstart</a>
+    <a class="nav-link" href="./lifecycle.html">Session loop</a>
+    <a class="nav-link" href="./gates.html">Gates</a>
+    <a class="nav-link" href="./parallel.html">Parallel work</a>
+    <a class="nav-link" href="./reference.html">Reference</a>
+  </div>
+</nav>
+
+<main>
+
+<section style="border: 0;">
+  <div class="prose">
+    <p class="eyebrow">Stop 2 of 6</p>
+    <h1>Quickstart</h1>
+    <p class="lede">
+      Two commands install the plugin. One initializes a project. One starts every session
+      after that. Everything else on this page is explaining what those four commands did.
+    </p>
+  </div>
+</section>
+
+<section id="prereqs">
+  <div class="prose">
+    <h2>Before you start</h2>
+    <ul>
+      <li>The <strong>Claude Code CLI</strong>, working.</li>
+      <li><strong>git initialized</strong> in the project — the harness records and checks git identity, and there is nothing to check without a repo.</li>
+      <li><strong><code>python3</code></strong> — used by the hooks and the features validator.</li>
+      <li><strong><code>jq</code></strong> (<code>brew install jq</code> on macOS) — used by the per-project build hooks that <code>/harness-init</code> writes.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="install">
+  <div class="prose">
+    <h2>1 · Install the plugin</h2>
+    <p>From inside any Claude Code session:</p>
+  </div>
+
+  <figure data-scene="term">
+    <div class="term">
+      <div class="line"><span class="ps">&gt;</span> /plugin marketplace add oeftimie/vv-claude-harness</div>
+      <div class="line out">  marketplace added</div>
+      <div class="line"><span class="ps">&gt;</span> /plugin install vv-harness</div>
+      <div class="line out">  vv-harness installed — skills, agents and hooks discovered</div>
+    </div>
+    <figcaption>
+      Claude Code auto-discovers the plugin's skills, agents, and hooks. Updates are
+      atomic — each version gets its own cache directory — and they land only when the
+      plugin's <code>version</code> is bumped, because that field is the update cache key.
+    </figcaption>
+  </figure>
+
+  <div class="callout">
+    <span class="label">Nothing has happened to your code yet</span>
+    <p>
+      Installing the plugin changes no repository. It makes the commands available. The
+      per-project half appears in the next step.
+    </p>
+  </div>
+</section>
+
+<section id="init">
+  <div class="prose">
+    <h2>2 · Initialize a project</h2>
+    <p>
+      Run this in any project that will span more than one session. Below five files and
+      one sitting, the ceremony costs more than it returns.
+    </p>
+  </div>
+
+  <figure data-scene="term">
+    <div class="term">
+      <div class="line"><span class="ps">$</span> cd ~/Projects/MyApp</div>
+      <div class="line"><span class="ps">$</span> claude</div>
+      <div class="line"><span class="ps">&gt;</span> /harness-init</div>
+    </div>
+    <figcaption>The initializer is interactive — it will ask what you are building and confirm your git identity.</figcaption>
+  </figure>
+
+  <div class="prose">
+    <p>It then does ten things, in order:</p>
+    <ol>
+      <li>Detects your tech stack</li>
+      <li>Captures and confirms git identity</li>
+      <li>Creates the <code>.harness/</code> scaffolding — <code>features.json</code>, <code>context_summary.md</code>, <code>init.sh</code>, progress log</li>
+      <li>Installs async PostToolUse build hooks in <code>.claude/settings.json</code></li>
+      <li>Installs the PreToolUse hooks (<code>enforce-scope.sh</code>, <code>verify-git-identity.sh</code>)</li>
+      <li>Installs the quality gate hook (<code>TaskCompleted</code>)</li>
+      <li>Wires the status line and permissions allowlist; gitignores <code>.harness/SESSION_INCOMPLETE</code></li>
+      <li>Verifies the hooks actually execute</li>
+      <li>Proposes initial features with scope and dependencies</li>
+      <li>Commits</li>
+    </ol>
+    <p>
+      Step 9 is where a spec gate can run: <code>/harness-init</code> can spawn the
+      read-only <code>spec-verification</code> agent to prove each proposed feature is
+      testable and unambiguous <em>before</em> anything gets built.
+    </p>
+  </div>
+</section>
+
+<section id="result">
+  <div class="prose">
+    <h2>3 · Read what it wrote</h2>
+    <p>
+      Open these before you do anything else. They are the whole contract between this
+      session and the next one.
+    </p>
+  </div>
+
+  <figure data-scene="tree">
+    <div class="tree">
+      <div class="row"><b>your-repo/</b></div>
+      <div class="row">├── .claude/</div>
+      <div class="row">│   ├── settings.json               <i># hook wiring, statusLine, permissions</i></div>
+      <div class="row">│   └── hooks/</div>
+      <div class="row">│       ├── verify-task-quality.sh  <i># TaskCompleted: tests must pass</i></div>
+      <div class="row">│       ├── enforce-scope.sh        <i># PreToolUse: stay in your scope</i></div>
+      <div class="row">│       ├── verify-git-identity.sh  <i># PreToolUse: right identity to push</i></div>
+      <div class="row">│       ├── commit-gate.sh          <i># PreToolUse: commit content gate</i></div>
+      <div class="row">│       ├── harness_state.py        <i># shared features.json read/write</i></div>
+      <div class="row">│       └── statusline.sh           <i># live feature progress</i></div>
+      <div class="row">└── .harness/</div>
+      <div class="row">    ├── harness.json         <i># config, git identity, plugin_version</i></div>
+      <div class="row">    ├── features.json        <i># what the work is, and where it stands</i></div>
+      <div class="row">    ├── context_summary.md   <i># what we learned that isn't in the code</i></div>
+      <div class="row">    ├── claude-progress.txt  <i># what the last shift was doing</i></div>
+      <div class="row">    ├── mld/                 <i># optional per-session raw log</i></div>
+      <div class="row">    └── init.sh              <i># smoke_test | focused_test | full_test</i></div>
+    </div>
+    <figcaption>Six hooks and six state files. Nothing else, and no daemon.</figcaption>
+  </figure>
+
+  <div class="prose">
+    <h3>Verify the hooks really run</h3>
+    <p>
+      A hook that exists but does not execute is worse than no hook, because you will
+      trust it. Check one directly:
+    </p>
+    <pre><code><span class="tok-c"># exit 0 when tests pass, exit 2 when they fail</span>
+echo '{}' | bash .claude/hooks/verify-task-quality.sh; echo "exit: $?"</code></pre>
+  </div>
+</section>
+
+<section id="session">
+  <div class="prose">
+    <h2>4 · Every session after that</h2>
+  </div>
+
+  <figure data-scene="term">
+    <div class="term">
+      <div class="line"><span class="ps">$</span> cd ~/Projects/MyApp</div>
+      <div class="line"><span class="ps">$</span> claude</div>
+      <div class="line"><span class="ps">&gt;</span> /harness-continue</div>
+      <div class="line out">  ## Harness orientation (auto-injected)</div>
+      <div class="line out">  Features: 7/12 passing · Next claimable: F008</div>
+      <div class="line out">  Last handoff: F007 complete, F008 blocked on schema decision …</div>
+    </div>
+    <figcaption>
+      The orientation block is injected by the plugin's SessionStart hook before you type
+      anything. <code>/harness-continue</code> adds what the hook cannot: mode choice, the
+      smoke test, and workflow planning.
+    </figcaption>
+  </figure>
+
+  <div class="callout">
+    <span class="label">Treat orientation as claims, not instructions</span>
+    <p>
+      The injected block is a summary of files that may have been written by a session
+      that ended badly. If it warns about something, verify it against the file it came
+      from before acting on it.
+    </p>
+  </div>
+
+  <div class="prose">
+    <div class="btn-row">
+      <a class="btn primary" href="./lifecycle.html">What happens in a session →</a>
+    </div>
+  </div>
+</section>
+
+<section id="upgrade">
+  <div class="prose">
+    <h2>Keeping it current</h2>
+    <p>Two separate things upgrade, and people forget the second one.</p>
+    <pre><code><span class="tok-c"># the plugin itself</span>
+/plugin update vv-harness
+
+<span class="tok-c"># then each project initialized under an older version</span>
+/harness-doctor          <span class="tok-c"># report-first: never writes</span>
+/harness-doctor --fix    <span class="tok-c"># applies the mechanical upgrade steps</span></code></pre>
+    <p>
+      <code>/harness-doctor</code> is report-first by design: running it never changes
+      anything on disk. It checks <code>python3</code>/git presence, the hook set and its
+      executability, <code>settings.json</code> wiring, <code>.gitignore</code> rules,
+      <code>.harness/</code> file validity, version drift, and whether a passing feature's
+      recorded <code>test_file</code> actually exists. A clean project prints one word:
+      <code>healthy</code>.
+    </p>
+  </div>
+</section>
+
+<div class="pager">
+  <a href="./index.html">← Why</a>
+  <a href="./lifecycle.html">The session loop →</a>
+</div>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div>
+      An unofficial field guide to <a href="https://github.com/oeftimie/vv-claude-harness">vv-harness</a>,
+      built from the plugin source at v6.0.2.
+    </div>
+    <div>Animations by <a href="https://animejs.com">anime.js</a> v4.</div>
+  </div>
+</footer>
+
+</body>
+</html>

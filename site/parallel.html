@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parallel work — VV Claude Code Harness</title>
+<meta name="description" content="When to run features in parallel, what independent actually means, worktree isolation, the role-to-tier model policy, and when not to parallelize at all.">
+<link rel="stylesheet" href="./assets/site.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%23b8482a'/></svg>">
+<script type="module" src="./assets/anim.js"></script>
+</head>
+<body>
+<div id="progress"></div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="./index.html"><span class="dot"></span>Harness field guide</a>
+    <a class="nav-link" href="./index.html">Why</a>
+    <a class="nav-link" href="./quickstart.html">Quickstart</a>
+    <a class="nav-link" href="./lifecycle.html">Session loop</a>
+    <a class="nav-link" href="./gates.html">Gates</a>
+    <a class="nav-link" href="./parallel.html" aria-current="page">Parallel work</a>
+    <a class="nav-link" href="./reference.html">Reference</a>
+  </div>
+</nav>
+
+<main>
+
+<section style="border: 0;">
+  <div class="prose">
+    <p class="eyebrow">Stop 5 of 6</p>
+    <h1>Parallel work</h1>
+    <p class="lede">
+      Running several agents at once is the harness's most expensive capability and the
+      easiest one to misuse. The whole decision rests on one word — <em>independent</em> —
+      and that word has a mechanical definition.
+    </p>
+  </div>
+</section>
+
+<section id="independent">
+  <div class="prose">
+    <h2>What "independent" actually means</h2>
+    <p>
+      Two features may run in parallel when both hold:
+      <strong>empty <code>depends_on</code></strong> and
+      <strong>non-overlapping <code>scope</code></strong>. Not "they feel unrelated". Not
+      "different tickets". Those two fields, checked.
+    </p>
+  </div>
+
+  <figure data-scene="scopes">
+    <button class="replay" type="button">replay</button>
+    <p class="eyebrow" style="margin-bottom: 0.9rem;">Scope overlap between two features</p>
+    <div class="scopes">
+      <div class="scope-box">F004 — src/api/</div>
+      <div class="scope-box">F005 — src/api/, src/db/</div>
+    </div>
+    <p class="verdict">scope overlaps — two agents own the same files</p>
+    <figcaption>
+      Overlapping scope is not a merge problem you resolve later. It is two agents
+      believing they own the same file. Sequence them, or split the scope so they don't.
+    </figcaption>
+  </figure>
+</section>
+
+<section id="mode">
+  <div class="prose">
+    <h2>Choosing the mode</h2>
+  </div>
+
+  <div class="grid grid-2" style="margin-bottom: 1.6rem;">
+    <div class="card">
+      <h3>Single-session</h3>
+      <p>
+        One feature is next and it touches fewer than 5 files, or the work is sequential,
+        or you explicitly want focused work. You are both lead and implementer — say so
+        out loud, so it is a decision rather than a forgotten step.
+      </p>
+    </div>
+    <div class="card">
+      <h3>Workflow mode</h3>
+      <p>
+        Two or more <strong>independent, spec-verified</strong> features are ready. The
+        lead launches <code>/vv-harness:implement-features</code>: one implementer per
+        feature in an isolated worktree, then a reviewer per feature, returning structured
+        per-feature results the lead integrates.
+      </p>
+    </div>
+  </div>
+
+  <div class="callout wrong">
+    <span class="label">The rule people get backwards</span>
+    <p>
+      "Fewer than 5 files ⇒ single-session" is not the rule. When two verified independent
+      features each touch fewer than 5 files, <strong>workflow mode still wins</strong> —
+      the parallel gain outweighs single-session's simplicity once two independent verified
+      features exist. The 5-file threshold decides between one feature and one session, not
+      between one feature and two.
+    </p>
+  </div>
+</section>
+
+<section id="fanout">
+  <div class="prose">
+    <h2>What workflow mode does</h2>
+    <p>
+      Each agent gets a physically separate copy of the repository. That is the cleanest
+      separation available — scope violations become impossible rather than merely
+      detected. The lead never edits feature code in this mode: it prepares inputs,
+      launches, and integrates the returned results, so the task and commit gates fire in
+      the lead's own session.
+    </p>
+  </div>
+
+  <figure data-scene="fan">
+    <button class="replay" type="button">replay</button>
+    <div class="diagram-scroll">
+      <div class="fan">
+        <svg viewBox="0 0 600 260" role="img" aria-label="Lead fanning out to three isolated worktrees and merging back">
+          <path d="M 300 44 C 300 92, 100 76, 100 104" />
+          <path d="M 300 44 L 300 104" />
+          <path d="M 300 44 C 300 92, 500 76, 500 104" />
+          <path d="M 100 158 C 100 196, 300 188, 300 220" />
+          <path d="M 300 158 L 300 220" />
+          <path d="M 500 158 C 500 196, 300 188, 300 220" />
+        </svg>
+        <div class="node lead" style="left: 50%; top: 10%;">lead<span class="role">Opus · orchestrates, never edits</span></div>
+        <div class="node worker" style="left: 16.7%; top: 50%;">worktree · F004<span class="role">implementer → reviewer</span></div>
+        <div class="node worker" style="left: 50%; top: 50%;">worktree · F005<span class="role">implementer → reviewer</span></div>
+        <div class="node worker" style="left: 83.3%; top: 50%;">worktree · F006<span class="role">implementer → reviewer</span></div>
+        <div class="node worker lead" style="left: 50%; top: 89%;">integrate<span class="role">merge branches · gates fire here</span></div>
+      </div>
+    </div>
+    <figcaption>
+      Structured per-feature results come back to the lead. Sequencing stays with the
+      lead: it merges worktree branches at integration and only spawns dependent work
+      after its prerequisites are merged.
+    </figcaption>
+  </figure>
+
+  <div class="prose">
+    <h3>If the Workflow tool isn't available</h3>
+    <p>
+      Older CLI, or an organization that disabled it. <strong>Do not abort parallel
+      work.</strong> Fall back to plain subagents spawned with the same
+      <code>vv-harness:*</code> agent types, passing worktree isolation at spawn time for
+      independent scopes. Same isolation, same agents, sequencing still with the lead.
+    </p>
+  </div>
+</section>
+
+<section id="models">
+  <div class="prose">
+    <h2>Roles map to tiers, not to model names</h2>
+    <p>
+      Roles and their cognitive-demand tiers are protocol — they don't change when a model
+      generation ages out. Which model <em>name</em> fills each tier is a binding, updated
+      by a requalification pass.
+    </p>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Role</th><th>Tier</th><th>Reasoning</th></tr></thead>
+      <tbody>
+        <tr><td>Lead (coordinator)</td><td>Opus</td><td>Decomposition, synthesis, and quality judgment need deep reasoning</td></tr>
+        <tr><td>Feature implementer</td><td>Sonnet</td><td>Scoped TDD inside a well-defined directory</td></tr>
+        <tr><td>Layer implementer</td><td>Sonnet</td><td>Same</td></tr>
+        <tr><td>Researcher</td><td>Sonnet</td><td>Retrieval-heavy, not reasoning-heavy</td></tr>
+        <tr><td>Reviewer</td><td>Opus</td><td>Deep review catches subtle bugs; worth the cost</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="label">The subtlety worth internalizing</span>
+    <p>
+      <strong>Elevation escalates the review, not the implementer.</strong> A feature
+      marked <code>risk: "elevated"</code> buys a deeper review pass and, optionally, an
+      author-blind conformance check — both of which <em>judge</em> the work rather than
+      produce it. Executors stay on the execution tier. A feature is elevated when it
+      touches 10+ files or spans modules, changes a shared interface, is
+      security-sensitive, or is the first feature in a new codebase.
+    </p>
+  </div>
+</section>
+
+<section id="dont">
+  <div class="prose">
+    <h2>When not to parallelize</h2>
+    <p>Given equal weight in the source, and it should be given equal weight by you.</p>
+    <ul>
+      <li><strong>Only one feature is ready.</strong> Nothing to overlap.</li>
+      <li><strong>The work is sequential</strong> — step B needs step A's output and there is nothing else to run.</li>
+      <li><strong>Features touch fewer than 3 files each.</strong> Sequential single-session is cheaper; the lead runs for the whole session regardless of how many agents launch.</li>
+      <li><strong>Agents share an interface.</strong> Worktree isolation is exactly wrong here — they need to see each other's changes in real time. Give one feature the shared interface and sequence the rest behind it.</li>
+      <li><strong>Orchestration overhead exceeds the benefit.</strong> When in doubt, start with a single session and escalate if the task naturally decomposes.</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <span class="label">Also not this pipeline</span>
+    <p>
+      Research or competing-hypothesis work that genuinely needs agents to argue with each
+      other is not what an implement→review pipeline does. Spawn plain parallel subagents
+      for that instead.
+    </p>
+  </div>
+</section>
+
+<section id="specgate">
+  <div class="prose">
+    <h2>Only verified specs enter a batch</h2>
+    <p>
+      Unverified features are <em>excluded</em> from a parallel batch, never silently
+      included. Verification comes from the spec gate: read-only
+      <code>spec-verification</code> and <code>reverification-guard</code> agents prove a
+      spec is testable, unambiguous, and internally consistent before any implementation
+      starts. Verdicts are PASS, ASK, or BLOCK.
+    </p>
+    <p>
+      The framing: the harness is a <strong>mint</strong>. It verifies specs interactively,
+      where human judgment is cheap, and emits proof — a local <code>spec</code> field, or
+      a signed readiness stamp on an issue. An external runner is a <strong>consumer</strong>
+      that validates the stamp before trusting the issue for unattended work.
+    </p>
+    <p>
+      <code>reverification-guard</code> exists for one specific failure mode: when a human
+      answers the gate's questions, the guard re-runs every check against the amended text
+      and <strong>refuses to advance on pressure alone</strong>. Anti-sycophancy, encoded
+      as an agent rather than requested in a prompt.
+    </p>
+  </div>
+</section>
+
+<div class="pager">
+  <a href="./gates.html">← The gates</a>
+  <a href="./reference.html">Reference →</a>
+</div>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div>
+      An unofficial field guide to <a href="https://github.com/oeftimie/vv-claude-harness">vv-harness</a>,
+      built from the plugin source at v6.0.2.
+    </div>
+    <div>Animations by <a href="https://animejs.com">anime.js</a> v4.</div>
+  </div>
+</footer>
+
+</body>
+</html>

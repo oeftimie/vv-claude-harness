@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The gates — VV Claude Code Harness</title>
+<meta name="description" content="The four blocking hooks, the three reliability tiers, why the task gate is not the full suite, and exactly where enforcement is best-effort.">
+<link rel="stylesheet" href="./assets/site.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%23b8482a'/></svg>">
+<script type="module" src="./assets/anim.js"></script>
+</head>
+<body>
+<div id="progress"></div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="./index.html"><span class="dot"></span>Harness field guide</a>
+    <a class="nav-link" href="./index.html">Why</a>
+    <a class="nav-link" href="./quickstart.html">Quickstart</a>
+    <a class="nav-link" href="./lifecycle.html">Session loop</a>
+    <a class="nav-link" href="./gates.html" aria-current="page">Gates</a>
+    <a class="nav-link" href="./parallel.html">Parallel work</a>
+    <a class="nav-link" href="./reference.html">Reference</a>
+  </div>
+</nav>
+
+<main>
+
+<section style="border: 0;">
+  <div class="prose">
+    <p class="eyebrow">Stop 4 of 6</p>
+    <h1>The gates</h1>
+    <p class="lede">
+      A gate does not advise. It returns a non-zero exit code and the action does not
+      happen. This is the part of the harness that works when the agent is tired, the
+      context is long, and the prose at the top of <code>CLAUDE.md</code> has stopped
+      landing.
+    </p>
+  </div>
+</section>
+
+<section id="what-a-gate-is">
+  <figure data-scene="gate">
+    <button class="replay" type="button">replay</button>
+    <p class="eyebrow" style="margin-bottom: 0.9rem;">A commit meeting a gate</p>
+    <div class="diagram-scroll">
+      <div class="track">
+        <div class="token">git commit → F004 passing</div>
+        <div class="gate-bar"></div>
+        <div class="gate-label">commit-gate.sh</div>
+        <div class="main-label">main</div>
+      </div>
+    </div>
+    <figcaption>
+      The agent is not asked to reconsider. The tool call is denied, and the only way
+      forward is to make the check pass.
+    </figcaption>
+  </figure>
+</section>
+
+<section id="four-hooks">
+  <div class="prose">
+    <h2>Four hooks that block</h2>
+    <p>These fire on Claude Code lifecycle events and can stop the action outright.</p>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Hook</th><th>Event</th><th>What it enforces</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>verify-task-quality.sh</code></td>
+          <td>TaskCompleted</td>
+          <td>Tests must pass before a task may be marked complete</td>
+        </tr>
+        <tr>
+          <td><code>commit-gate.sh</code></td>
+          <td>PreToolUse (Bash)</td>
+          <td>The full suite must pass before a commit may flip a feature to <code>passing</code></td>
+        </tr>
+        <tr>
+          <td><code>enforce-scope.sh</code></td>
+          <td>PreToolUse (Edit/Write/MultiEdit)</td>
+          <td>Edits blocked outside the agent's assigned scope, and to the three lead-owned state files regardless of scope</td>
+        </tr>
+        <tr>
+          <td><code>verify-git-identity.sh</code></td>
+          <td>PreToolUse (Bash)</td>
+          <td>Push and pull blocked when identity doesn't match <code>harness.json</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="task-gate">
+  <div class="prose">
+    <h2>Why the task gate is not the full suite</h2>
+    <p>
+      This is the most interesting engineering trade-off in the harness, and it generalizes
+      well beyond it. Running the whole suite on every task completion sounds strict. In
+      practice it costs minutes per checkpoint, and — worse — it lets one unrelated red
+      test jam <em>every</em> completion in the session.
+    </p>
+    <p>So the gate is tiered:</p>
+  </div>
+
+  <figure data-scene="lanes">
+    <button class="replay" type="button">replay</button>
+    <p class="eyebrow" style="margin-bottom: 0.9rem;">What runs when a task is marked complete</p>
+    <div class="lanes">
+      <div class="lane pass">
+        <span class="mark">✓</span><span class="name">smoke_test</span>
+        <span>fast compile/syntax check, under 15 s</span>
+      </div>
+      <div class="lane pass">
+        <span class="mark">✓</span><span class="name">focused_test</span>
+        <span>only this feature's own recorded test file</span>
+      </div>
+      <div class="lane muted">
+        <span class="mark">·</span><span class="name">full_test</span>
+        <span>not here — runs at the commit that flips to <code>passing</code>, and at session end</span>
+      </div>
+    </div>
+    <figcaption>
+      The full suite runs where it actually decides something. And on a stack with no
+      per-file runner, <code>focused_test</code> reports a <strong>skip</strong> — not a
+      fake green.
+    </figcaption>
+  </figure>
+
+  <div class="prose">
+    <pre><code>.harness/init.sh [smoke_test | full_test | focused_test &lt;test_file&gt;]
+<span class="tok-c"># default target: full_test</span></code></pre>
+  </div>
+</section>
+
+<section id="tiers">
+  <div class="prose">
+    <h2>Three reliability tiers</h2>
+    <p>
+      It matters which tier a rule lives in. Same rule, different tier, different
+      compliance rate — and the tier is a design decision you make, not a property of the
+      rule.
+    </p>
+  </div>
+
+  <figure data-scene="tiers">
+    <button class="replay" type="button">replay</button>
+    <div class="tier" data-tier="mechanical" data-pct="96">
+      <div class="top"><b>Mechanical</b><span>shell hooks, exit codes</span></div>
+      <div class="rail"><div class="bar" style="width: 96%;"></div></div>
+    </div>
+    <div class="tier" data-tier="structural" data-pct="80">
+      <div class="top"><b>Structural</b><span>file existence, JSON schema</span></div>
+      <div class="rail"><div class="bar" style="width: 80%;"></div></div>
+    </div>
+    <div class="tier" data-tier="prompted" data-pct="74">
+      <div class="top"><b>Prompted</b><span>hooks with feedback — agent still decides</span></div>
+      <div class="rail"><div class="bar" style="width: 74%;"></div></div>
+    </div>
+    <div class="tier" data-tier="instructional" data-pct="42">
+      <div class="top"><b>Instructional</b><span>prose in CLAUDE.md, rules, skills</span></div>
+      <div class="rail"><div class="bar" style="width: 42%;"></div></div>
+    </div>
+    <figcaption>
+      Relative reliability, as the project describes it — very high for mechanical, high
+      for structural and prompted, medium for instructional, where compliance drifts over
+      long contexts. The bar widths illustrate that ordering; they are not measurements.
+    </figcaption>
+  </figure>
+
+  <div class="prose">
+    <p>
+      The harness's own TDD rule is the worked example. The exact discipline lived as
+      always-on prose for a full measurement window, and buggy code still led the friction
+      table at 33&nbsp;%. What measurably moved the number was wiring TDD to a gate — the
+      coverage threshold check and adversarial review. Hence the rule:
+      <strong>if something matters enough to write down, it matters enough to enforce with
+      a hook.</strong>
+    </p>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="prose">
+    <h2>Where enforcement stops</h2>
+    <p>
+      The project states its own limits, and you should learn them early — knowing exactly
+      which parts are exact is what makes them worth trusting.
+    </p>
+  </div>
+
+  <div class="grid grid-2" style="margin-bottom: 1.6rem;">
+    <div class="card">
+      <h3>Bash coverage is best-effort</h3>
+      <p>
+        <code>enforce-scope.sh</code> and <code>commit-gate.sh</code> inspect Bash commands
+        by <em>pattern</em> — <code>&gt;</code>, <code>tee</code>, <code>cp</code>,
+        <code>sed -i</code>, <code>rm</code>. That is evadable by construction. The goal is
+        stopping accidental drift, not defeating an adversarial agent. Edit/Write coverage
+        <em>is</em> exact, because the tool reports the real target.
+      </p>
+    </div>
+    <div class="card">
+      <h3>SessionEnd cannot block</h3>
+      <p>
+        The end-of-session discipline audit records gaps into
+        <code>SESSION_INCOMPLETE</code> and surfaces them at the next session start. By
+        platform design it cannot stop a session from ending with those gaps. Self-healing,
+        not preventive.
+      </p>
+    </div>
+    <div class="card">
+      <h3>Coverage is self-reported</h3>
+      <p>
+        The coverage gate compares the number a feature <em>records</em> against its
+        target. Where there is no coverage tooling the stage skips; a feature that declares
+        a target but records nothing is flagged rather than blocked.
+      </p>
+    </div>
+    <div class="card">
+      <h3>Lead resumption is partial</h3>
+      <p>
+        If the lead session dies mid-run, completed agents' worktree branches survive and
+        the run is resumable. The lead's own in-flight integration state is
+        <em>reconstructed</em> from <code>features.json</code> and
+        <code>claude-progress.txt</code> — not recovered.
+      </p>
+    </div>
+  </div>
+
+  <div class="callout wrong">
+    <span class="label">Do not conclude</span>
+    <p>
+      that a green task gate means the suite is green. It means <code>smoke_test</code>
+      passed and that one feature's own test file passed. The suite is verified at the
+      commit that flips the feature to <code>passing</code>, and again at session end.
+    </p>
+  </div>
+</section>
+
+<div class="pager">
+  <a href="./lifecycle.html">← Session loop</a>
+  <a href="./parallel.html">Parallel work →</a>
+</div>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div>
+      An unofficial field guide to <a href="https://github.com/oeftimie/vv-claude-harness">vv-harness</a>,
+      built from the plugin source at v6.0.2.
+    </div>
+    <div>Animations by <a href="https://animejs.com">anime.js</a> v4.</div>
+  </div>
+</footer>
+
+</body>
+</html>
