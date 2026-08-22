@@ -387,6 +387,24 @@ def check_stated_constants(rec: Recorder) -> None:
             f"cap={cap.group(1)} platform={platform.group(1)}",
         )
 
+    # A README that denies the existence of something sitting next to it is a
+    # navigational defect, not a nit: evals/README.md described the semi-manual
+    # method and stated there was "no automated scoring pipeline" while this
+    # suite ran in the same directory. Derived from the pipeline's own presence,
+    # so deleting the suite and leaving the prose fails just as loudly.
+    entrypoint = REPO_ROOT / "evals" / "hillclimb" / "run.py"
+    readme_path = REPO_ROOT / "evals" / "README.md"
+    if entrypoint.is_file() and rec.add(SUITE, "evals/README.md exists", readme_path.is_file()):
+        readme = readme_path.read_text(encoding="utf-8", errors="replace")
+        rec.add(SUITE, "evals/README.md names the automated suite", "evals/hillclimb/" in readme)
+        rec.add(SUITE, "evals/README.md names how to run it", "autoresearch.sh" in readme)
+        rec.add(
+            SUITE,
+            "evals/README.md does not deny the pipeline it ships beside",
+            "no automated scoring pipeline" not in readme,
+            "the README still claims no automated scoring pipeline exists",
+        )
+
 
 def run(rec: Recorder) -> None:
     check_manifests(rec)

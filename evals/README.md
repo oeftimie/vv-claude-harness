@@ -68,17 +68,38 @@ list is broader; this is the part that matters at vv's scale):
 
 vv evals are semi-manual by design: a person (or an agent, self-disclosed as
 such) reads each transcript and grades it against named, binary facts stated in
-advance. There is no CI wiring, no corpus, no automated scoring pipeline. A vv
-eval is a bounded, one-decision instrument -- its result supports a local
-decision about the intervention it tested, on the fixture and worker config it
-used, on the day it ran. It does not support a general claim about "how well
-Claude follows instructions" or any claim broader than the one named decision.
+advance. A vv eval is a bounded, one-decision instrument -- its result supports
+a local decision about the intervention it tested, on the fixture and worker
+config it used, on the day it ran. It does not support a general claim about
+"how well Claude follows instructions" or any claim broader than the one named
+decision.
 
 **Cost bound**: a vv eval at proportionate scale costs roughly what ~6 short
 sessions cost (2 conditions x 3+ runs, each a fresh short session) -- not a
 research-grade sample, and not meant to be one. If a decision genuinely needs
 more than that to settle, that itself is a finding worth stating plainly rather
 than quietly running a bigger eval than this method was designed for.
+
+## The other instrument in this directory
+
+`evals/hillclimb/` is not a vv eval and is not graded by the method above. It is
+a deterministic conformance suite over the shipped plugin -- the hooks and gates
+under adversarial input, the manifests and file pointers, output determinism,
+and `test/run-tests.sh` folded in as an aggregate. Run it with `bash
+autoresearch.sh` from the repo root; it prints `METRIC harness_score=<0..100>`,
+the weighted fraction of its checks that pass, plus one line per failing check.
+
+The two answer different questions and neither substitutes for the other. A vv
+eval asks whether an intervention changed what an agent *did*, which needs a
+model in the loop and a human reading transcripts. The hillclimb suite asks
+whether the plugin's own machinery behaves as specified, which needs no model at
+all: it is offline, hermetic per fixture, and byte-reproducible, so a change in
+its score is a change in the plugin rather than in the weather.
+
+Its checks are additive by policy. A check may be added; one may not be removed,
+weakened, or made conditional to raise the score, and `checks_total` must never
+decrease. When a mutation to shipped code leaves every check passing, that is a
+gap in the suite, not evidence the code is safe.
 
 ---
 
