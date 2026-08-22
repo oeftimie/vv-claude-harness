@@ -757,14 +757,29 @@ def run_checks(project_dir, plugin_root):
 def apply_fixes(project_dir, plugin_root, findings):
     from fixes import apply_fix  # local import: keeps fixers out of the report path
 
-    fix_ids = {f.fix_id for f in findings if f.fix_id}
+    # Sorted, not set-ordered: two fixers can touch the same file, and a health
+    # check that applies them in a different order run to run is not one.
+    fix_ids = sorted({f.fix_id for f in findings if f.fix_id})
+    blocked = []
     for fix_id in fix_ids:
-        apply_fix(project_dir, plugin_root, fix_id)
+        try:
+            apply_fix(project_dir, plugin_root, fix_id)
+        except (OSError, shutil.Error) as exc:
+            # A fixer that cannot write -- a read-only .claude/, a .gitignore
+            # owned by someone else, a plugin install missing the file it copies
+            # from -- is a repair this run could not make, which is exactly what
+            # a report is for. Raising here turned the health check itself into
+            # the failure and lost every other fixer queued behind it.
+            blocked.append(Finding(
+                f"fix '{fix_id}' could not be applied: {_one_line(exc, 160)}",
+                "resolve the write failure (permissions, or a missing plugin "
+                "install at CLAUDE_PLUGIN_ROOT) and re-run doctor --fix",
+            ))
     # Re-run fresh rather than trusting each fixer's per-call return value: a single
     # fixer invocation (e.g. add_settings_wiring) can resolve several findings that
     # share its fix_id at once, so a stale per-finding "did I just change something"
     # check would misreport the others as still-open.
-    return run_checks(project_dir, plugin_root)
+    return blocked + run_checks(project_dir, plugin_root)
 
 
 def report(findings):

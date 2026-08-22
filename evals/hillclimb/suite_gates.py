@@ -517,7 +517,7 @@ def run_commit_gate(rec: Recorder, root: Path) -> None:
 def run_doctor(rec: Recorder, root: Path) -> None:
     bindir = make_bin(root)
 
-    def doctor(project: Path, home: Path, args=(), timeout=60):
+    def doctor(project: Path, home: Path, args=(), timeout=60, plugin_root=str(REPO_ROOT)):
         env = {
             "PATH": f"{bindir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
             "HOME": str(home),
@@ -526,8 +526,9 @@ def run_doctor(rec: Recorder, root: Path) -> None:
             "TZ": "UTC",
             "GIT_CONFIG_GLOBAL": "/dev/null",
             "GIT_CONFIG_SYSTEM": "/dev/null",
-            "CLAUDE_PLUGIN_ROOT": str(REPO_ROOT),
         }
+        if plugin_root:
+            env["CLAUDE_PLUGIN_ROOT"] = plugin_root
         try:
             proc = subprocess.run(
                 ["python3", str(DOCTOR), *args, str(project)],
@@ -541,8 +542,8 @@ def run_doctor(rec: Recorder, root: Path) -> None:
         except subprocess.TimeoutExpired:
             return 124, b"", b"timeout"
 
-    def check(label, project: Path, home: Path, args=()):
-        rc, out, err = doctor(project, home, args)
+    def check(label, project: Path, home: Path, args=(), plugin_root=str(REPO_ROOT)):
+        rc, out, err = doctor(project, home, args, plugin_root=plugin_root)
         text = out.decode("utf-8", "replace")
         errtext = err.decode("utf-8", "replace")
         rec.add(SUITE, f"doctor[{label}] exits 0/1/2", rc in (0, 1, 2), f"rc={rc}")
@@ -612,6 +613,44 @@ def run_doctor(rec: Recorder, root: Path) -> None:
         text_second.strip() == text_report.strip(),
         f"second={text_second[:120]!r} report={text_report[:120]!r}",
     )
+
+    # A fixer that cannot write is the case doctor.py never handles: apply_fix's
+    # return value is discarded and the call is not wrapped, so a PermissionError
+    # from a read-only target propagates out of a health check whose entire
+    # contract is to report problems rather than become one.
+    readonly = build_project(root, "dr-fix-readonly", features=canonical_features())
+    (readonly.path / ".gitignore").write_text("build/\n", encoding="utf-8")
+    (readonly.path / ".gitignore").chmod(0o444)
+    git_commit_all(readonly.path)
+    try:
+        check("fix-readonly-gitignore", readonly.path, readonly.home, args=("--fix",))
+    finally:
+        (readonly.path / ".gitignore").chmod(0o644)
+
+    readonly_dir = build_project(root, "dr-fix-readonly-dir", features=canonical_features())
+    claude_dir = readonly_dir.path / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    (claude_dir / "settings.json").write_text("{}", encoding="utf-8")
+    git_commit_all(readonly_dir.path)
+    claude_dir.chmod(0o555)
+    try:
+        check("fix-readonly-claude-dir", readonly_dir.path, readonly_dir.home, args=("--fix",))
+    finally:
+        claude_dir.chmod(0o755)
+
+    # --fix with no plugin root: the fixers that copy shipped files have no
+    # source to copy from, which must be reported, not raised.
+    rootless = build_project(root, "dr-fix-no-plugin-root", features=canonical_features())
+    git_commit_all(rootless.path)
+    check("fix-no-plugin-root", rootless.path, rootless.home, args=("--fix",), plugin_root="")
+
+    # A plugin root that exists but is empty: every source path a fixer wants is
+    # missing, so shutil.copy has nothing to open.
+    empty_plugin = root / "empty-plugin"
+    empty_plugin.mkdir(parents=True, exist_ok=True)
+    hollow = build_project(root, "dr-fix-empty-plugin", features=canonical_features())
+    git_commit_all(hollow.path)
+    check("fix-empty-plugin-root", hollow.path, hollow.home, args=("--fix",), plugin_root=str(empty_plugin))
 
     # A plugin whose validator hangs must not hang the health check.
     slow_plugin = root / "slow-plugin"
