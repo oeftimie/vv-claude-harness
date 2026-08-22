@@ -308,8 +308,100 @@ def run_stamp(rec: Recorder, root: Path) -> None:
     rec.add(SUITE, "stamp[missing-answers] writes nothing", not _files(empty_target), str(sorted(_files(empty_target))[:6]))
 
 
+
+INIT_TEMPLATE = REPO_ROOT / "skills" / "harness-init" / "init.sh.template"
+
+
+def run_init_contract(rec: Recorder, root: Path) -> None:
+    """F106's skip protocol, exercised rather than grepped for.
+
+    doctor.py checks that a project's init.sh *mentions* the exit-3 markers.
+    Nothing until here ran the shipped template and confirmed the codes it
+    actually returns -- and exit 3 is load-bearing: verify-task-quality reads
+    it as "not run" and accepts on smoke alone, so a stack arm that returned 0
+    instead would hand back a fake green on every task.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+
+    def project(name, stack=None, harness_json="default"):
+        proj = root / name
+        (proj / ".harness").mkdir(parents=True, exist_ok=True)
+        init = proj / ".harness" / "init.sh"
+        init.write_bytes(INIT_TEMPLATE.read_bytes())
+        init.chmod(0o755)
+        if harness_json == "default":
+            harness_json = json.dumps({"stack": stack} if stack else {})
+        if harness_json is not None:
+            (proj / ".harness" / "harness.json").write_text(harness_json, encoding="utf-8")
+        return proj
+
+    def run_init(proj: Path, *args, timeout=60):
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": str(proj),
+            "LC_ALL": "C",
+            "TZ": "UTC",
+        }
+        try:
+            proc = subprocess.run(
+                ["bash", str(proj / ".harness" / "init.sh"), *args],
+                capture_output=True,
+                cwd=str(proj),
+                env=env,
+                timeout=timeout,
+            )
+            return proc.returncode, proc.stdout.decode("utf-8", "replace"), proc.stderr.decode("utf-8", "replace")
+        except subprocess.TimeoutExpired:
+            return 124, "", "timeout"
+
+    unknown = project("init-unknown", stack="unknown")
+
+    rc, out, err = run_init(unknown, "focused_test")
+    rec.add(SUITE, "init[focused_test/no-arg] exits 2", rc == 2, f"rc={rc}")
+    rec.add(SUITE, "init[focused_test/no-arg] says what is missing", "requires a test file" in err, err[:160])
+
+    rc, out, err = run_init(unknown, "focused_test", "tests/does_not_exist.py")
+    rec.add(SUITE, "init[focused_test/missing-file] exits 3, not 0", rc == 3, f"rc={rc} out={out[-160:]!r}")
+    rec.add(SUITE, "init[focused_test/missing-file] names the skip", "skipped (exit 3)" in out, out[-200:])
+
+    (unknown / "tests").mkdir(parents=True, exist_ok=True)
+    (unknown / "tests" / "test_thing.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    rc, out, err = run_init(unknown, "focused_test", "tests/test_thing.py")
+    rec.add(SUITE, "init[focused_test/no-runner] exits 3, not 0", rc == 3, f"rc={rc} out={out[-160:]!r}")
+    rec.add(SUITE, "init[focused_test/no-runner] names the skip", "skipped (exit 3)" in out, out[-200:])
+
+    for verb in ("smoke_test", "full_test"):
+        rc, out, err = run_init(unknown, verb)
+        rec.add(SUITE, f"init[{verb}/unknown-stack] exits 0", rc == 0, f"rc={rc} err={err[-160:]!r}")
+        rec.add(SUITE, f"init[{verb}/unknown-stack] prints its completion banner",
+                f"=== {verb} Complete ===" in out, out[-200:])
+        rec.add(SUITE, f"init[{verb}/unknown-stack] reports the stack it chose", "Stack: " in out, out[:160])
+
+    # The recorded stack wins over detection, and a corrupt harness.json falls
+    # back to detection instead of taking the script down.
+    recorded = project("init-recorded", stack="rust")
+    rc, out, err = run_init(recorded, "focused_test", "tests/x.rs")
+    rec.add(SUITE, "init[recorded-stack] honours harness.json's stack", "Stack: rust" in out, out[:200])
+
+    corrupt = project("init-corrupt", harness_json="{ not json")
+    rc, out, err = run_init(corrupt, "smoke_test")
+    rec.add(SUITE, "init[corrupt-harness.json] exits 0", rc == 0, f"rc={rc} err={err[-160:]!r}")
+    rec.add(SUITE, "init[corrupt-harness.json] raises no traceback", TRACEBACK not in err, err[-200:])
+    rec.add(SUITE, "init[corrupt-harness.json] falls back to stack detection", "Stack: " in out, out[:200])
+
+    missing = project("init-no-harness-json", harness_json=None)
+    rc, out, err = run_init(missing, "smoke_test")
+    rec.add(SUITE, "init[no-harness.json] exits 0", rc == 0, f"rc={rc} err={err[-160:]!r}")
+
+    # An unrecognized verb must not be silently treated as a passing full_test.
+    rc, out, err = run_init(unknown, "definitely_not_a_verb")
+    rec.add(SUITE, "init[unknown-verb] exits 0 or a documented code", rc in (0, 1, 2), f"rc={rc}")
+    rec.add(SUITE, "init[unknown-verb] raises no traceback", TRACEBACK not in err, err[-200:])
+
+
 def run(rec: Recorder, root: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
     run_validator(rec, root / "validator")
     check_schema_agreement(rec)
     run_stamp(rec, root / "stamp")
+    run_init_contract(rec, root / "init")

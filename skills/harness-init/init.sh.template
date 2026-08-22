@@ -51,13 +51,23 @@ detect_stack() {
     fi
 }
 
+STACK=""
 if [ -f ".harness/harness.json" ]; then
+    # `set -e` is in force, so a failed assignment aborts the whole script: a
+    # corrupt or non-object harness.json used to kill every verb here, with no
+    # message on stdout or stderr, right after the Date line. verify-task-quality
+    # reads that nonzero smoke_test as a real failure and rejects the task for
+    # "compilation errors" it never checked. Detection is the correct fallback
+    # for a stack the file cannot supply, so the failure is swallowed here.
     STACK=$(python3 -c "
 import json
-with open('.harness/harness.json') as f:
-    data = json.load(f)
-print(data.get('stack', ''))
-" 2>/dev/null)
+try:
+    with open('.harness/harness.json') as f:
+        data = json.load(f)
+    print(data.get('stack', '') if isinstance(data, dict) else '')
+except Exception:
+    pass
+" 2>/dev/null) || STACK=""
 fi
 
 if [ -z "$STACK" ] || [ "$STACK" = "null" ]; then
