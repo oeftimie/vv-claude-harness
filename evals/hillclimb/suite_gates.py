@@ -277,11 +277,27 @@ def run_verify_git_identity(rec: Recorder, root: Path) -> None:
 
     mismatched = project("vgi-mismatch", {"user_name": "Someone Else", "user_email": "other@example.com"})
     mhook = mismatched.path / ".claude" / "hooks" / "verify-git-identity.sh"
+    # Spellings of the same network operation must reach the same verdict. A git
+    # global option sitting between the binary and the subcommand is the gap
+    # that mattered: `git -c user.email=... push` is the canonical way to push
+    # under an identity other than the configured one, so it is precisely what
+    # this hook exists to catch.
     for label, command in [
         ("space", "git push"),
         ("tab", "git\tpush"),
         ("multi-space", "git   push"),
         ("env-prefix", "GIT_DIR=x git push"),
+        ("absolute-path", "/usr/bin/git push"),
+        ("escaped", "\\git push"),
+        ("dash-c-identity", "git -c user.email=x@y.z push"),
+        ("dash-c-other", "git -c http.sslVerify=false push"),
+        ("no-pager", "git --no-pager push"),
+        ("git-dir-option", "git --git-dir=.git push"),
+        ("chained", "cd /tmp && git push"),
+        ("with-args", "git push origin main"),
+        ("force", "git push --force"),
+        ("pull", "git pull"),
+        ("fetch", "git fetch origin"),
         ("clone", "git clone https://example.com/x.git"),
     ]:
         run = run_hook(mhook, mismatched.path, mismatched.home, stdin=payload(tool_input={"command": command}), cwd=mismatched.path)
@@ -292,6 +308,18 @@ def run_verify_git_identity(rec: Recorder, root: Path) -> None:
             run.rc == 2,
             f"rc={run.rc}",
         )
+
+    # The other half: a local-only git command must not be blocked by an
+    # identity the network was never going to see.
+    for label, command in [
+        ("status", "git status"),
+        ("log", "git log --oneline"),
+        ("commit", 'git commit -m "x"'),
+        ("non-git", "ls -la"),
+    ]:
+        run = run_hook(mhook, mismatched.path, mismatched.home, stdin=payload(tool_input={"command": command}), cwd=mismatched.path)
+        check_gate(rec, f"verify-git-identity[local/{label}]", run, allowed_rc=(0,))
+        rec.add(SUITE, f"verify-git-identity[local/{label}] allows a local command", run.rc == 0, f"rc={run.rc}")
 
     # A newline in user_name shifts the fixed-line-index recovery of
     # user_email, so the hook compares against a value that appears nowhere in
