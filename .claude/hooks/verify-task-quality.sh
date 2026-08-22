@@ -28,7 +28,16 @@
 set -euo pipefail
 
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-cd "$PROJECT_ROOT"
+# `set -e` is in force, so an unguarded cd here killed the hook at rc 1 -- which
+# Claude Code reads as neither an accept nor a block, leaving the gate
+# disengaged with only a raw shell error to explain it. An unresolvable project
+# root is an ENVIRONMENT failure, and the harness's posture for those is
+# fail-open with a diagnostic (see enforce-scope.sh's header); every sibling
+# hook already answers one with `cd ... || exit 0`.
+cd "$PROJECT_ROOT" 2>/dev/null || {
+    echo "verify-task-quality: cannot enter PROJECT_ROOT '$PROJECT_ROOT'; skipping the quality gate." >&2
+    exit 0
+}
 
 # Read hook input from stdin
 INPUT=$(cat)

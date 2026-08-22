@@ -413,6 +413,27 @@ def run_verify_task_quality(rec: Recorder, root: Path) -> None:
             run.stderr_text[-160:],
         )
 
+    # An unresolvable project root is an environment failure, and every sibling
+    # hook answers one with `cd ... || exit 0`. This gate runs under `set -e`
+    # with an unguarded cd, so it dies at rc 1 -- neither accept nor block, and
+    # with only a raw shell error to explain it.
+    missing_root = root / "vtq-nonexistent-root"
+    run = run_hook(
+        hook,
+        healthy.path,
+        healthy.home,
+        stdin=task_payload(),
+        cwd=healthy.path,
+        env_extra={"CLAUDE_PROJECT_DIR": str(missing_root)},
+    )
+    rec.add(SUITE, "verify-task-quality[missing-project-root] never exits 1", run.rc in (0, 2), f"rc={run.rc}")
+    rec.add(
+        SUITE,
+        "verify-task-quality[missing-project-root] explains itself",
+        "verify-task-quality" in run.stderr_text,
+        f"rc={run.rc} stderr={run.stderr_text[-200:]!r}",
+    )
+
 
 # --- commit-gate.sh ---------------------------------------------------------
 
