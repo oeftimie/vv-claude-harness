@@ -494,9 +494,42 @@ def run_commit_gate(rec: Recorder, root: Path) -> None:
     fire(clean, "non-git", "ls -la", expect="allow")
     # F109: a redirection after the subcommand is not a pathspec.
     fire(clean, "no-edit-redirect", "git commit --no-edit 2>&1", expect="allow")
-    # Staging inside the commit is the gate's core rule.
-    fire(clean, "compound-stage-commit", 'git add . && git commit -m "x"', expect="deny")
-    fire(clean, "commit-dash-a", 'git commit -a -m "x"', expect="deny")
+    # Staging inside the commit is the gate's core rule, and its whole value is
+    # that no spelling of it slips through. Each of these stages and commits in
+    # one tool call; a miss on any one is a working bypass of the rule.
+    for label, command in [
+        ("compound-and", 'git add . && git commit -m "x"'),
+        ("compound-semicolon", 'git add . ; git commit -m "x"'),
+        ("compound-or", 'git add . || git commit -m "x"'),
+        ("compound-stage-verb", 'git stage . && git commit -m "x"'),
+        ("dash-a", 'git commit -a -m "x"'),
+        ("dash-a-clustered", 'git commit -am "x"'),
+        ("long-all", 'git commit --all -m "x"'),
+        ("long-include", 'git commit --include src/a.py -m "x"'),
+        ("bare-pathspec", 'git commit -m "x" .'),
+        ("after-double-dash", 'git commit -m "x" -- src/'),
+        ("absolute-git", '/usr/bin/git commit -a -m "x"'),
+        ("escaped-git", '\\git commit -a -m "x"'),
+        ("env-prefixed", 'GIT_DIR=.git git commit -a -m "x"'),
+        ("redirected", 'git commit -a -m "x" > /tmp/vv-eval-out.txt'),
+        ("clobber-redirected", 'git commit -a -m "x" >| /tmp/vv-eval-out.txt'),
+    ]:
+        fire(clean, f"staging/{label}", command, expect="deny")
+
+    # The other half of the same rule: an ordinary commit must not be blocked.
+    for label, command in [
+        ("plain", 'git commit -m "x"'),
+        ("no-edit", "git commit --no-edit"),
+        # F109: a redirection after the subcommand is not a bare pathspec.
+        ("no-edit-fd-redirect", "git commit --no-edit 2>&1"),
+        ("stderr-redirect", 'git commit -m "x" 2> /tmp/vv-eval-err.txt'),
+        # git itself rejects --al as ambiguous (--allow-empty vs
+        # --allow-empty-message), so no commit happens and blocking it here
+        # would only be a false positive on a command that cannot run.
+        ("ambiguous-abbreviation", 'git commit --al -m "x"'),
+        ("mentioned-in-a-string", 'echo "git commit -a -m x"'),
+    ]:
+        fire(clean, f"staging/{label}", command, expect="allow")
 
     # The passing-flip gate: a commit that flips a feature to passing must not
     # land while the full suite fails. FULL_TAIL is capped in that deny reason
