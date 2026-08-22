@@ -160,6 +160,47 @@ def run_enforce_scope(rec: Recorder, root: Path) -> None:
     fire(wt, hook, payload(tool_name="Bash", tool_input={"command": "cp x .harness/mld/"}), "bash/mld-slash", expect="deny")
     fire(wt, hook, payload(tool_name="Bash", tool_input={"command": "cp x .harness/mld"}), "bash/mld-bare", expect="deny")
 
+    # The guard's core rule: every lead-owned target, every spelling of it that
+    # resolves to the same file on any platform. Deliberately excludes case
+    # variants -- ".Harness/features.json" is the same file on a case-insensitive
+    # macOS volume and a different file on Linux, so neither verdict is correct
+    # everywhere and demanding one would be wrong rather than protective.
+    lead_owned = [
+        ".harness/features.json",
+        ".harness/context_summary.md",
+        ".harness/claude-progress.txt",
+        ".harness/harness.json",
+        ".harness/mld/2026-01-01-abc.md",
+    ]
+    for owned in lead_owned:
+        stem = owned.rsplit("/", 1)[-1]
+        for form, spelling in [
+            ("plain", owned),
+            ("dot-prefix", f"./{owned}"),
+            ("double-slash", owned.replace("/", "//", 1)),
+            ("dot-dot-return", f".harness/../{owned}"),
+            ("absolute", str(wt / owned)),
+            ("absolute-dot", f"{wt}/./{owned}"),
+            ("absolute-escape-return", f"{wt}/../{wt.name}/{owned}"),
+        ]:
+            fire(
+                wt,
+                hook,
+                payload(tool_name="Edit", tool_input={"file_path": spelling}),
+                f"edit/{stem}/{form}",
+                expect="deny",
+            )
+
+    # Near misses that are genuinely different files and must stay editable.
+    for label, path in [
+        ("ordinary-source", "src/app.py"),
+        ("similar-dir", ".harness2/features.json"),
+        ("no-dot", "harness/features.json"),
+        ("suffixed-dir", ".harnessX/features.json"),
+        ("nested-elsewhere", "docs/.harness/features.json"),
+    ]:
+        fire(wt, hook, payload(tool_name="Edit", tool_input={"file_path": path}), f"edit/allowed/{label}", expect="allow")
+
     fire(
         wt,
         hook,
