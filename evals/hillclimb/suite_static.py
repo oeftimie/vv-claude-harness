@@ -282,6 +282,112 @@ def check_links(rec: Recorder) -> None:
         rec.add(SUITE, f"{rel} resolves every local asset", not broken, ", ".join(sorted(set(broken))[:5]))
 
 
+#: Documents that state the coverage gate as a number an agent is told to meet.
+#: skills/harness-init/SKILL.md is deliberately excluded: it discusses threshold
+#: POLICY and cites 95% and 99% side by side as examples of fixed thresholds to
+#: reserve, so a single-value assertion there would be wrong, not protective.
+COVERAGE_DOCS = [
+    "rules/parallel-work.md",
+    "skills/harness-continue/SKILL.md",
+    "agents/feature-implementer.md",
+    "agents/layer-implementer.md",
+    "agents/reviewer.md",
+    "templates/CLAUDE.md",
+    "schemas/feature.schema.json",
+]
+COVERAGE_MENTION = re.compile(
+    r"coverage[^.\n]{0,40}?(\d{2,3})\s?%|(\d{2,3})\s?%[^.\n]{0,20}?coverage", re.I
+)
+
+#: Documents that name the CLI version below which workflow mode is unavailable.
+CLI_FLOOR_DOCS = [
+    "skills/harness-continue/SKILL.md",
+    "skills/harness-doctor/SKILL.md",
+    "INSTALL.md",
+]
+
+
+def check_stated_constants(rec: Recorder) -> None:
+    """Numbers the prose states must be the numbers the code enforces.
+
+    A harness governs agents with instructions, so a threshold stated in a rule
+    and a different one enforced in a gate is not a documentation nit: it is two
+    contradictory instructions, and the agent has no way to tell which binds.
+    Every expected value below is DERIVED from the enforcing code, so drift in
+    either direction fails.
+    """
+    gate = (REPO_ROOT / "skills" / "harness-init" / "verify-task-quality.sh.template").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"^\s*target = (\d+)\s*$", gate, re.M)
+    rec.add(SUITE, "the coverage gate's default is extractable from verify-task-quality", bool(match))
+    if match:
+        default = match.group(1)
+        for rel in COVERAGE_DOCS:
+            path = REPO_ROOT / rel
+            if not rec.add(SUITE, f"{rel} exists to state the coverage gate", path.is_file()):
+                continue
+            stated = {
+                m.group(1) or m.group(2)
+                for m in COVERAGE_MENTION.finditer(path.read_text(encoding="utf-8", errors="replace"))
+            }
+            rec.add(
+                SUITE,
+                f"{rel} states the coverage gate the code enforces ({default}%)",
+                stated == {default},
+                f"stated={sorted(stated)} enforced={default}",
+            )
+
+    doctor_src = (REPO_ROOT / "skills" / "harness-doctor" / "doctor.py").read_text(encoding="utf-8")
+    floor_match = re.search(r"WORKFLOW_MIN_CLI_VERSION = \((\d+), (\d+), (\d+)\)", doctor_src)
+    rec.add(SUITE, "the workflow CLI floor is extractable from doctor.py", bool(floor_match))
+    if floor_match:
+        floor = ".".join(floor_match.groups())
+        for rel in CLI_FLOOR_DOCS:
+            path = REPO_ROOT / rel
+            if not rec.add(SUITE, f"{rel} exists to state the CLI floor", path.is_file()):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            rec.add(
+                SUITE,
+                f"{rel} names the workflow CLI floor doctor.py enforces ({floor})",
+                floor in text,
+                f"floor={floor}",
+            )
+
+    # The F106 skip protocol is a number agreed across three files: init.sh
+    # emits it, verify-task-quality reads it as "not run", and doctor looks for
+    # the marker text naming it. Any one of them drifting turns a skip into a
+    # fake green or a real failure into an accepted skip.
+    init_src = (REPO_ROOT / "skills" / "harness-init" / "init.sh.template").read_text(encoding="utf-8")
+    emitted = set(re.findall(r"skipped \(exit (\d+)\)", init_src))
+    consumed = set(re.findall(r"FOCUSED_RC\" -eq (\d+)", gate))
+    marker = set(re.findall(r"skipped \(exit (\d+)\)", doctor_src))
+    rec.add(SUITE, "init.sh emits exactly one skip exit code", len(emitted) == 1, str(sorted(emitted)))
+    rec.add(SUITE, "verify-task-quality consumes exactly one skip exit code", len(consumed) == 1, str(sorted(consumed)))
+    rec.add(
+        SUITE,
+        "the skip protocol's exit code agrees across init.sh, verify-task-quality, and doctor",
+        bool(emitted) and emitted == consumed == marker,
+        f"emitted={sorted(emitted)} consumed={sorted(consumed)} doctor={sorted(marker)}",
+    )
+
+    # session-start's own safety cap must stay under the platform cap its header
+    # states, or the cap is decoration.
+    start_src = (REPO_ROOT / "hooks" / "session-start.sh").read_text(encoding="utf-8")
+    cap = re.search(r"ORIENTATION_CHAR_CAP=(\d+)", start_src)
+    platform = re.search(r"capped at ([\d,]+) chars", start_src)
+    rec.add(SUITE, "session-start declares an orientation cap", bool(cap))
+    rec.add(SUITE, "session-start's header states the platform cap", bool(platform))
+    if cap and platform:
+        rec.add(
+            SUITE,
+            "session-start's safety cap stays under the platform cap it documents",
+            int(cap.group(1)) < int(platform.group(1).replace(",", "")),
+            f"cap={cap.group(1)} platform={platform.group(1)}",
+        )
+
+
 def run(rec: Recorder) -> None:
     check_manifests(rec)
     check_hooks_json(rec)
@@ -291,3 +397,4 @@ def run(rec: Recorder) -> None:
     check_reachability(rec)
     check_orientation_contract(rec)
     check_links(rec)
+    check_stated_constants(rec)
