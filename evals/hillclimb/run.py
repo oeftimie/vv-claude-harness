@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Hillclimb eval for the vv-harness plugin.
 
-Scores the shipped harness on four suites and prints the aggregate as
+Scores the shipped harness on five suites and prints the aggregate as
 ``METRIC harness_score=<0..100>``:
 
-    behavior     (0.40)  the hooks, run against an adversarial fixture corpus
-    regression   (0.25)  test/run-tests.sh, the contract the plugin already ships
-    static       (0.20)  the plugin's own contracts: manifests, frontmatter,
+    behavior     (0.30)  session-start/statusline/session-end/dashboard-log,
+                         run against an adversarial fixture corpus
+    gates        (0.20)  the enforcement surface -- enforce-scope, commit-gate,
+                         verify-task-quality, verify-git-identity, doctor, and
+                         harness_state's lock -- run against hostile input
+    regression   (0.20)  test/run-tests.sh, the contract the plugin already ships
+    static       (0.15)  the plugin's own contracts: manifests, frontmatter,
                          file pointers, link and reachability integrity
     determinism  (0.15)  identical inputs produce identical model context
 
@@ -27,11 +31,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import suite_behavior  # noqa: E402
 import suite_determinism  # noqa: E402
+import suite_gates  # noqa: E402
 import suite_regression  # noqa: E402
 import suite_static  # noqa: E402
 from harnesslib import CONTEXT_CAP, Recorder  # noqa: E402
 
-WEIGHTS = {"behavior": 0.40, "regression": 0.25, "static": 0.20, "determinism": 0.15}
+WEIGHTS = {
+    "behavior": 0.30,
+    "gates": 0.20,
+    "regression": 0.20,
+    "static": 0.15,
+    "determinism": 0.15,
+}
 MAX_FAILURES_SHOWN = 60
 
 
@@ -41,6 +52,7 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="vv-hillclimb."))
     try:
         behavior = suite_behavior.run(rec, work / "behavior")
+        suite_gates.run(rec, work / "gates")
         suite_static.run(rec)
         suite_determinism.run(rec, work / "determinism")
         suite_regression.run(rec)
