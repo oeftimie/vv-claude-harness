@@ -200,6 +200,31 @@ def run_enforce_scope(rec: Recorder, root: Path) -> None:
         run = run_hook(hook, wt, home, stdin=body, cwd=wt)
         check_gate(rec, f"enforce-scope[{label}]", run, allowed_rc=(0, 2))
 
+    # Spellings of the same write must reach the same verdict. These are the
+    # redirect operators bash treats as a family; ">|" is the clobber-override
+    # form and writes exactly like ">".
+    for label, operator in [("gt", ">"), ("append", ">>"), ("clobber", ">|")]:
+        fire(
+            wt,
+            hook,
+            payload(tool_name="Bash", tool_input={"command": f"echo x {operator} .harness/features.json"}),
+            f"bash/redirect-{label}",
+            expect="deny",
+        )
+    for label, command in [
+        ("dot-prefix", "echo x > ./.harness/features.json"),
+        ("double-slash", "echo x > .//.harness/features.json"),
+        ("dot-dot-return", "echo x > .harness/../.harness/features.json"),
+        ("single-quoted", "echo x > '.harness/features.json'"),
+        ("double-quoted", 'echo x > ".harness/features.json"'),
+        ("subshell", "( echo x > .harness/features.json )"),
+        ("and-chained", "true && echo x > .harness/features.json"),
+    ]:
+        fire(wt, hook, payload(tool_name="Bash", tool_input={"command": command}), f"bash/{label}", expect="deny")
+
+    fire(wt, hook, payload(tool_name="Bash", tool_input={"command": "cat .harness/features.json"}), "bash/read-only", expect="allow")
+    fire(wt, hook, payload(tool_name="Bash", tool_input={"command": "echo 'a >| b' > src/out.txt"}), "bash/quoted-operator", expect="allow")
+
     # The dashboard log is the only file this hook writes; a hostile session_id
     # must not steer it out of .harness/dashboard/.
     hostile = json.dumps(

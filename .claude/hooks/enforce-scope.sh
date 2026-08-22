@@ -757,7 +757,14 @@ def segments_of(command):
     masked = mask_quotes(joined)
     segments = []
     start = 0
-    for m in re.finditer(r"[|;\n]|(?<!>)&", masked):
+    # A "|" is NOT a segment separator when it immediately follows a ">":
+    # bash lexes ">|" as one clobber-override redirect operator, the same
+    # single-token situation as ">&" below. Splitting there fragmented the
+    # redirect, leaving a dangling ">" with no target for redirect_targets()
+    # to find and the real target stranded at the head of the next segment --
+    # so `echo x >| .harness/features.json` was ALLOWED while the identical
+    # `>` and `>>` spellings both denied.
+    for m in re.finditer(r"(?<!>)[|]|[;\n]|(?<!>)&", masked):
         segments.append(joined[start:m.start()])
         start = m.end()
     segments.append(joined[start:])
@@ -823,7 +830,7 @@ def redirect_targets(segment):
     masked = mask_quotes(segment)
     targets = [
         segment[m.start(1):m.end(1)]
-        for m in re.finditer(r">>?\s*([^\s<>|&;]+)", masked)
+        for m in re.finditer(r">>?\|?\s*([^\s<>|&;]+)", masked)
     ]
     # `>&word` with word NOT purely digits/"-" is `&>word`, an ordinary FILE
     # redirect (bash: `echo x >&outfile.txt` genuinely creates outfile.txt),
@@ -1636,7 +1643,7 @@ def strip_redirects(segment):
     pattern = (
         FD_PREFIX + r">&(?:\d+|-)(?![^\s<>|&;])|"
         + FD_PREFIX + r">&\s*[^\s<>|&;]+|"
-        + FD_PREFIX + r">>?\s*[^\s<>|&;]+"
+        + FD_PREFIX + r">>?\|?\s*[^\s<>|&;]+"
     )
     for m in re.finditer(pattern, masked):
         kept.append(segment[last:m.start()])
