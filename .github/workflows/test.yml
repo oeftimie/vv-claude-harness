@@ -60,3 +60,37 @@ jobs:
       - name: Record metadata-only skip
         if: steps.changes.outputs.mode == 'metadata'
         run: echo "Only operational metadata changed; the full suite is not affected." >> "$GITHUB_STEP_SUMMARY"
+
+  # Deliberately a SEPARATE job, never a step inside `test`. The branch ruleset
+  # on main requires the status-check context named `test`; folding this in
+  # would change what that context covers, and renaming or restructuring the job
+  # key stops the required check matching at all -- which blocks every merge and
+  # needs admin (the owner account) to repair. As its own job it runs in
+  # parallel, so wall-clock is unaffected, and it can be promoted to required
+  # later in the UI without touching this file.
+  hillclimb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Shallow is fine here, unlike the `test` job above: nothing in the
+      # conformance suite shells out to git against THIS repo. It builds its own
+      # throwaway fixture repos, so it needs no tags and no history.
+      - uses: actions/checkout@v4
+
+      # No change classification, unlike `test`. The suite covers documentation
+      # as well as code -- a broken link or a coverage threshold stated in prose
+      # that no longer matches the gate both fail it -- so there is no category
+      # of change that is safely skippable. At ~50s the saving would not be
+      # worth the reasoning, and "always runs" is the property that keeps a
+      # conformance suite from rotting.
+      #
+      # --skip regression: the `test` job above already runs test/run-tests.sh,
+      # which this suite otherwise folds in as its regression aggregate. A
+      # denylist rather than a spelled-out --suite list, so a suite added later
+      # is covered here by default instead of being silently dropped.
+      #
+      # --strict: the runner reports pass/fail by exit code. Without it the
+      # suite exits 0 and reports failures in its output, which is what the
+      # research harness wants and exactly what CI must not do.
+      - name: Run the conformance suite
+        run: python3 evals/hillclimb/run.py --skip regression --strict

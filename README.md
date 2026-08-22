@@ -316,8 +316,21 @@ present but never read, or read but change nothing. Method: [evals/README.md](./
 behaves as specified, and needs no model at all:
 
 ```bash
-bash autoresearch.sh        # ~200s, prints METRIC harness_score=<0..100>
+bash autoresearch.sh                                  # ~200s, METRIC harness_score=<0..100>
+python3 evals/hillclimb/run.py --suite gates          # one suite, for iterating (~40s)
+python3 evals/hillclimb/run.py --list                 # suite names and weights
 ```
+
+A partial run prints per-suite results but deliberately no `harness_score`: the score is
+a weighted sum over every suite, and renormalizing it across a subset would produce a
+number that looks like the real one but isn't — and the cheapest way to raise it would
+be to drop the suite you are failing.
+
+CI runs it on every push and pull request as the `hillclimb` job in
+`.github/workflows/test.yml`, with `--skip regression` (the `test` job already runs
+`test/run-tests.sh`) and `--strict` (report pass/fail by exit code). It is a separate
+job from `test` on purpose: the branch ruleset requires that exact status-check context,
+so restructuring it would block merges.
 
 Roughly 4,200 boolean checks across six weighted suites — behavior (0.25), gates
 (0.20), regression (0.20), contracts (0.15), static (0.10), determinism (0.10). Every
