@@ -242,9 +242,23 @@ def run_enforce_scope(rec: Recorder, root: Path) -> None:
         check_gate(rec, f"enforce-scope[{label}]", run, allowed_rc=(0, 2))
 
     # Spellings of the same write must reach the same verdict. These are the
-    # redirect operators bash treats as a family; ">|" is the clobber-override
-    # form and writes exactly like ">".
-    for label, operator in [("gt", ">"), ("append", ">>"), ("clobber", ">|")]:
+    # redirect operators bash treats as a family, including the fd-prefixed and
+    # ampersand forms; ">|" is the clobber-override form and writes exactly like
+    # ">". The fd-prefixed clobber ("1>|") is where a regression in the ">|" fix
+    # would hide, since it exercises the prefix stripper and the target
+    # extractor together.
+    for label, operator in [
+        ("gt", ">"),
+        ("append", ">>"),
+        ("clobber", ">|"),
+        ("both-streams", "&>"),
+        ("both-streams-append", "&>>"),
+        ("csh-style", ">&"),
+        ("fd-stdout", "1>"),
+        ("fd-stderr", "2>"),
+        ("fd-stderr-append", "2>>"),
+        ("fd-clobber", "1>|"),
+    ]:
         fire(
             wt,
             hook,
@@ -252,6 +266,17 @@ def run_enforce_scope(rec: Recorder, root: Path) -> None:
             f"bash/redirect-{label}",
             expect="deny",
         )
+    for label, command in [
+        ("dup-then-write", "echo x 2>&1 > .harness/features.json"),
+        ("write-then-dup", "echo x > .harness/features.json 2>&1"),
+        ("discard-then-write", "echo x 2>/dev/null > .harness/features.json"),
+    ]:
+        fire(wt, hook, payload(tool_name="Bash", tool_input={"command": command}), f"bash/{label}", expect="deny")
+    for label, command in [
+        ("dup-out-of-scope", "echo x 2>&1 > src/out.txt"),
+        ("both-streams-out-of-scope", "echo x &> src/out.txt"),
+    ]:
+        fire(wt, hook, payload(tool_name="Bash", tool_input={"command": command}), f"bash/{label}", expect="allow")
     for label, command in [
         ("dot-prefix", "echo x > ./.harness/features.json"),
         ("double-slash", "echo x > .//.harness/features.json"),
