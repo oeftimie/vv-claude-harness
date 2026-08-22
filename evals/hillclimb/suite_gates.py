@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -267,8 +268,11 @@ def run_verify_git_identity(rec: Recorder, root: Path) -> None:
             f"rc={run.rc}",
         )
 
-    # An identity whose name carries a newline must not become a permanent
-    # false block: the git config below matches the intended values exactly.
+    # A newline in user_name shifts the fixed-line-index recovery of
+    # user_email, so the hook compares against a value that appears nowhere in
+    # harness.json. Blocking here is correct -- git cannot store a name
+    # containing a newline, so the identities genuinely differ -- but the
+    # expected email it names must be the configured one.
     forged = project(
         "vgi-newline",
         {"user_name": "Fixture User\nattacker@example.com", "user_email": "fixture@example.com"},
@@ -277,11 +281,19 @@ def run_verify_git_identity(rec: Recorder, root: Path) -> None:
     fhook = forged.path / ".claude" / "hooks" / "verify-git-identity.sh"
     run = run_hook(fhook, forged.path, forged.home, stdin=payload(tool_input={"command": "git push"}), cwd=forged.path)
     check_gate(rec, "verify-git-identity[newline-identity]", run, allowed_rc=(0, 2))
+    expected_block = run.stderr_text.split("Current:")[0]
+    expected_emails = re.findall(r"<([^>]*)>", expected_block)
     rec.add(
         SUITE,
-        "verify-git-identity[newline-identity] does not block an identity that matches",
-        run.rc == 0,
-        f"rc={run.rc} stderr={run.stderr_text[:160]!r}",
+        "verify-git-identity[newline-identity] expects the configured user_email",
+        expected_emails == ["fixture@example.com"] or run.rc == 0,
+        f"rc={run.rc} expected_emails={expected_emails} stderr={run.stderr_text[:200]!r}",
+    )
+    rec.add(
+        SUITE,
+        "verify-git-identity[newline-identity] names the configured email in its expectation",
+        "fixture@example.com" in run.stderr_text.split("Current:")[0] or run.rc == 0,
+        f"rc={run.rc} stderr={run.stderr_text[:200]!r}",
     )
 
     # Degenerate harness.json shapes are documented fail-open.

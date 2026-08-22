@@ -329,9 +329,22 @@ try:
     path = data.get('tool_input', {}).get('file_path', '')
     project_root = sys.argv[1]
     if path:
-        if path.startswith(project_root + '/'):
-            path = path[len(project_root) + 1:]
-        path = os.path.normpath(path)
+        # Resolve against the project root BEFORE relativizing. Stripping the
+        # root prefix first left a path that leaves the project and comes back
+        # ('<root>/../<root>/.harness/features.json') as an uncollapsed
+        # '../<root>/.harness/features.json', which matched no lead-owned arm
+        # below and was allowed -- the guard's own target, reachable by
+        # spelling. normpath is lexical on purpose: resolving symlinks here
+        # would rewrite a worktree's own path and break the arming contract.
+        absolute = path if os.path.isabs(path) else os.path.join(project_root, path)
+        absolute = os.path.normpath(absolute)
+        root = os.path.normpath(project_root)
+        if absolute == root:
+            path = '.'
+        elif absolute.startswith(root + os.sep):
+            path = absolute[len(root) + 1:]
+        else:
+            path = absolute
     print(path)
 except Exception:
     sys.exit(1)
@@ -389,19 +402,16 @@ if [ -n "$FILE_PATH" ]; then
         # entry above) a glob is needed here -- bash `case` patterns are shell
         # globs natively, so this arm needs no new mechanism, but the mirrored
         # python-side LEAD_OWNED check below does (see is_lead_owned_prefix()).
-        # Documented residual (found by adversarial review of PR #96): a
-        # bare-directory destination WITHOUT a trailing slash (`cp f
-        # .harness/mld`, `mv f .harness/mld`, `rm -rf .harness/mld`) normalizes
-        # to `.harness/mld` (no trailing "/"), which matches neither this glob
-        # arm nor the mirrored python prefix check, so a file landing INSIDE the
-        # directory via one of these forms is not caught -- `cp -t .harness/mld/
-        # f` (trailing slash preserved) correctly DENIES, so the two spellings
-        # disagree. Accepted, not fixed: this is a deliberate-evasion-only route
-        # (the natural path an agent takes is Write, or a `>`-redirect, both
-        # covered), and `.harness/` itself can already be `rm -rf`'d wholesale
-        # regardless of this fix, so directory-level destruction is a broader,
-        # pre-existing hole this narrower guard doesn't attempt to close.
-        .harness/mld/*)
+        # The bare-directory spelling is matched too. A destination written
+        # WITHOUT a trailing slash (`cp f .harness/mld`, `mv f .harness/mld`,
+        # `rm -rf .harness/mld`) normalizes to `.harness/mld`, and for a long
+        # time matched neither this glob nor the mirrored python prefix check
+        # while `cp -t .harness/mld/ f` denied -- two spellings of the same
+        # destination reaching opposite verdicts. Both now deny. This does not
+        # claim to stop wholesale destruction of `.harness/` itself, which
+        # remains a broader pre-existing hole this narrower guard does not
+        # attempt to close.
+        .harness/mld|.harness/mld/*)
             deny_json "state file is lead-owned; report the needed change in your final result instead of editing it. $ANNOTATION" \
                 "scope-violation:lead-owned-mld"
             ;;
@@ -447,7 +457,11 @@ LEAD_OWNED_PREFIXES = (".harness/mld/",)
 
 
 def is_lead_owned_prefix(norm):
-    return any(norm.startswith(p) for p in LEAD_OWNED_PREFIXES)
+    # The directory itself counts, not only paths under it: `cp f .harness/mld`
+    # normalizes without the trailing slash and lands a file inside exactly the
+    # same directory that `cp -t .harness/mld/ f` does. Mirrors the bash case
+    # arm above, which matches both spellings for the same reason.
+    return any(norm == p.rstrip("/") or norm.startswith(p) for p in LEAD_OWNED_PREFIXES)
 
 
 ANNOTATION = "(verified live 2026-07-24 on Claude Code 2.1.218)"

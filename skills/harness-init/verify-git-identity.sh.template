@@ -27,14 +27,25 @@ if [ ! -f ".harness/harness.json" ]; then
     exit 0
 fi
 
-# Extract expected identity from harness.json (one parse of the file for both fields)
+# Extract expected identity from harness.json (one parse of the file for both
+# fields). Both values are flattened to a single line first: they are recovered
+# below by fixed line index, so a newline inside user_name shifted user_email
+# out of position and the hook then blocked every push against an "expected"
+# email that appears nowhere in harness.json.
 GIT_IDENTITY=$(python3 -c "
-import json
+import json, re
+CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 with open('.harness/harness.json') as f:
     data = json.load(f)
 identity = data.get('git_identity', {})
-print(identity.get('user_name', ''))
-print(identity.get('user_email', ''))
+
+
+def one_line(value):
+    return CONTROL.sub(' ', value if isinstance(value, str) else str(value))
+
+
+print(one_line(identity.get('user_name', '')))
+print(one_line(identity.get('user_email', '')))
 " 2>/dev/null)
 EXPECTED_NAME=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '1p')
 EXPECTED_EMAIL=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '2p')

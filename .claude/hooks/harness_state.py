@@ -9,6 +9,9 @@ LOCK_TIMEOUT_SECONDS = 5
 LOCK_POLL_SECONDS = 0.05
 #: features.json could not be read or parsed at all.
 EXIT_FEATURES_UNAVAILABLE = 4
+#: the targeted feature exists but a field this module owns holds a value it
+#: did not write, so mutating it would destroy state rather than update it.
+EXIT_FEATURE_INVALID = 5
 
 
 def read_features(path):
@@ -195,7 +198,23 @@ def cmd_increment_correction_cycles(path, feature_id):
         if match.get("status") != "in-progress":
             return 0
         current = match.get("correction_cycles")
-        match["correction_cycles"] = (current if current is not None else 0) + 1
+        if current is None:
+            current = 0
+        if not isinstance(current, int) or isinstance(current, bool):
+            # Refuse rather than coerce. A non-numeric counter means the file
+            # was written by something other than this module, and silently
+            # resetting it to 1 would destroy the only record of how many
+            # correction cycles a feature has actually taken -- the number the
+            # 4-cycle escalation threshold reads. Adding to it raised an
+            # uncaught TypeError, which surfaced as a traceback rather than a
+            # diagnostic.
+            print(
+                f"harness_state: {feature_id}'s correction_cycles is not a number "
+                f"({type(current).__name__}); refusing to increment",
+                file=sys.stderr,
+            )
+            return EXIT_FEATURE_INVALID
+        match["correction_cycles"] = current + 1
         return 0 if _write_atomic(path, data) else 1
 
     # The read, the mutation, and the write all happen inside do_increment,
