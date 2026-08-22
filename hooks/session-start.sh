@@ -347,13 +347,25 @@ if [ -f "$H/context_summary.md" ]; then
     | print_budgeted_block ".harness/context_summary.md" || true
 fi
 
-# One parse of harness.json for both fields.
+# One parse of harness.json for both fields. Both are flattened to a single
+# line first: they are recovered below by fixed line index, so a newline inside
+# user_name shifted user_email out of position and the orientation then warned
+# about a mismatch against an "expected" email that appears nowhere in
+# harness.json. Same defect, same fix, as verify-git-identity.sh's own copy.
 GIT_IDENTITY=$(python3 -c '
-import json, sys
+import json, re, sys
+
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def one_line(value):
+    return CONTROL.sub(" ", value if isinstance(value, str) else str(value))
+
+
 try:
     identity = json.load(open(sys.argv[1])).get("git_identity", {})
-    print(identity.get("user_name", ""))
-    print(identity.get("user_email", ""))
+    print(one_line(identity.get("user_name", "")))
+    print(one_line(identity.get("user_email", "")))
 except Exception:
     pass
 ' "$H/harness.json" 2>/dev/null || true)

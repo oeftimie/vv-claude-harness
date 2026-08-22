@@ -232,6 +232,23 @@ def _fixtures() -> list[Fixture]:
         ),
         expect=Expect(contains=["test_file does not exist"]),
     )
+    # harness.json's identity fields are recovered by fixed line index, so a
+    # newline in user_name shifts user_email: the orientation then warns about
+    # an expected email that appears nowhere in the file.
+    add(
+        "harness_json_newline_identity",
+        lambda r: _canonical(
+            r,
+            "identity_newline",
+            harness_json={
+                "git_identity": {
+                    "user_name": "Fixture User\nattacker@example.com",
+                    "user_email": "fixture@example.com",
+                }
+            },
+        ),
+        expect=Expect(contains=["WARNING: git identity mismatch"], absent=["<attacker@example.com>"]),
+    )
 
     # --- oversized context blocks ----------------------------------------
     add(
