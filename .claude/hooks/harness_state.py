@@ -7,16 +7,32 @@ import time
 CLAIMABLE_STATUSES = ("pending", "failed")
 LOCK_TIMEOUT_SECONDS = 5
 LOCK_POLL_SECONDS = 0.05
+#: features.json could not be read or parsed at all.
+EXIT_FEATURES_UNAVAILABLE = 4
 
 
-def load_valid_features(path):
+def read_features(path):
+    """Return (features, ok). ok is False when features.json could not be read
+    or parsed at all, which is a different fact from a file that parses to zero
+    features. A caller that cannot tell the two apart reports "0 features" for
+    an unreadable file -- a fabricated picture of the project, and the exact
+    failure the test_file and spec-drift warnings exist to prevent elsewhere.
+    """
     try:
         with open(path) as fh:
             data = json.load(fh)
     except (OSError, ValueError) as exc:
         print(f"harness_state: cannot parse {path}: {exc}", file=sys.stderr)
-        return []
-    features = data.get("features", []) if isinstance(data, dict) else []
+        return [], False
+    # A document that parses but is not a features document (a bare array, a
+    # literal null, a "features" key holding a string) is unavailable, not
+    # empty. Silently normalizing it to zero features is the same fabrication
+    # as doing so for a truncated file. An object with no "features" key is a
+    # different case: it genuinely describes zero features.
+    if not isinstance(data, dict) or not isinstance(data.get("features", []), list):
+        print(f"harness_state: {path} is not a features document", file=sys.stderr)
+        return [], False
+    features = data.get("features", [])
     valid = []
     for entry in features:
         try:
@@ -25,7 +41,14 @@ def load_valid_features(path):
             print(f"harness_state: skipping malformed feature entry: {entry!r}", file=sys.stderr)
             continue
         valid.append(entry)
-    return valid
+    return valid, True
+
+
+def load_valid_features(path):
+    """The feature list alone, empty when the file is unreadable. Callers that
+    print a count or a claim about the project must use read_features instead.
+    """
+    return read_features(path)[0]
 
 
 def compute_claimable(valid):
@@ -129,7 +152,10 @@ def cmd_load(path):
 
 
 def cmd_next_claimable(path):
-    claimable = compute_claimable(load_valid_features(path))
+    valid, ok = read_features(path)
+    if not ok:
+        return EXIT_FEATURES_UNAVAILABLE
+    claimable = compute_claimable(valid)
     if not claimable:
         print("no claimable feature")
         return 0
@@ -139,7 +165,12 @@ def cmd_next_claimable(path):
 
 
 def cmd_counts(path):
-    valid = load_valid_features(path)
+    # An unreadable features.json is reported by saying nothing: "0/0 passing"
+    # would tell the session this project has no features, and orientation
+    # printing a fact it does not have is worse than orientation printing less.
+    valid, ok = read_features(path)
+    if not ok:
+        return EXIT_FEATURES_UNAVAILABLE
     passing = sum(1 for f in valid if f.get("status") == "passing")
     in_progress = [f.get("id") for f in valid if f.get("status") == "in-progress"]
     print(json.dumps({"passing": passing, "total": len(valid), "in_progress": in_progress}))
