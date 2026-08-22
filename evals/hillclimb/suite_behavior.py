@@ -150,6 +150,29 @@ def run_statusline(rec: Recorder, root: Path) -> None:
         )
         rec.add(suite, f"{p} stays under 200 chars", len(run.text) <= 200, f"{len(run.text)} chars")
 
+    # Shape assertions alone would pass on an empty line. The status line's
+    # whole job is reporting the three facts below.
+    canonical_run = run_hook(
+        STATUSLINE,
+        cases["canonical"].path,
+        cases["canonical"].home,
+        stdin=json.dumps({"workspace": {"project_dir": str(cases["canonical"].path)}}).encode(),
+    )
+    rec.add(suite, "statusline reports the passing count", "1/3 passing" in canonical_run.text, canonical_run.text[:120])
+    rec.add(suite, "statusline names the in-progress feature", "F002" in canonical_run.text, canonical_run.text[:120])
+    incomplete_run = run_hook(
+        STATUSLINE,
+        cases["incomplete"].path,
+        cases["incomplete"].home,
+        stdin=json.dumps({"workspace": {"project_dir": str(cases["incomplete"].path)}}).encode(),
+    )
+    rec.add(
+        suite,
+        "statusline flags an incomplete previous session",
+        "incomplete" in incomplete_run.text,
+        incomplete_run.text[:120],
+    )
+
     # Malformed input must not produce a status line at all.
     project = cases["canonical"]
     for label, payload in [("garbage", b"not json"), ("empty", b""), ("array", b"[]")]:
@@ -189,6 +212,23 @@ def run_session_end(rec: Recorder, root: Path, timings: dict) -> None:
         "session-end[malformed] never writes an empty gap file",
         not (malformed.path / ".harness" / "SESSION_INCOMPLETE").is_file()
         or (malformed.path / ".harness" / "SESSION_INCOMPLETE").read_text().strip() != "",
+    )
+
+    # The in-progress gap is the audit's substantive finding: a session ending
+    # with a feature still in-progress must be told so at the next start.
+    # Asserting only that the file EXISTS lets the whole check be removed
+    # without notice, since the uncommitted-metadata gap writes the same file.
+    wip = build_project(root, "se_wip", features=canonical_features())
+    git_commit_all(wip.path)
+    run_hook(SESSION_END, wip.path, wip.home)
+    gap_file = wip.path / ".harness" / "SESSION_INCOMPLETE"
+    gap_text = gap_file.read_text() if gap_file.is_file() else ""
+    rec.add(suite, "session-end records a gap for a feature left in-progress", bool(gap_text), "no gap file")
+    rec.add(
+        suite,
+        "session-end names the in-progress feature in the gap",
+        "F002" in gap_text,
+        gap_text[:200],
     )
 
 

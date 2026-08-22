@@ -269,6 +269,22 @@ def _fixtures() -> list[Fixture]:
             line_prefix_max={"FAKE:": 0},
         ),
     )
+    # Next-claimable is an ORDERED choice, not just a filter: the array below
+    # lists the low-priority feature first, so a lost sort names the wrong one
+    # and every session starts on the wrong work.
+    add(
+        "claimable_priority_order",
+        lambda r: build_project(
+            r,
+            "priority_order",
+            features=[
+                feature("F001", status="pending", priority=9, description="Low priority work"),
+                feature("F002", status="pending", priority=1, description="High priority work"),
+            ],
+        ),
+        expect=Expect(next_claimable="F002", absent=["Next claimable: F001"]),
+        both_paths=True,
+    )
 
     # --- oversized context blocks ----------------------------------------
     add(

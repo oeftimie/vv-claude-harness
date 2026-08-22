@@ -288,6 +288,22 @@ def run_enforce_scope(rec: Recorder, root: Path) -> None:
                 f"bash/{stem}/{form}",
                 expect="deny",
             )
+
+    # Quoted text is data, not syntax. Without quote masking a ">" inside an
+    # argument reads as a real redirect, so an ordinary echo naming a
+    # lead-owned path in its message would be denied.
+    for label, command in [
+        ("quoted-redirect-text", 'echo "x > .harness/features.json"'),
+        ("single-quoted-redirect-text", "echo 'writes > .harness/harness.json'"),
+        ("quoted-path-only", 'echo "see .harness/features.json for detail"'),
+    ]:
+        fire(wt, hook, payload(tool_name="Bash", tool_input={"command": command}), f"bash/{label}", expect="allow")
+
+    # Heredoc bodies are excluded from scanning by design, precisely so payload
+    # text can never trigger a false denial. Pin that: the body below names a
+    # lead-owned write and the command must still be allowed.
+    heredoc = "cat <<'EOF' > src/notes.txt\necho x > .harness/features.json\nEOF"
+    fire(wt, hook, payload(tool_name="Bash", tool_input={"command": heredoc}), "bash/heredoc-body-not-scanned", expect="allow")
     # Spellings of the same write must reach the same verdict. These are the
     # redirect operators bash treats as a family, including the fd-prefixed and
     # ampersand forms; ">|" is the clobber-override form and writes exactly like
@@ -766,6 +782,27 @@ def run_commit_gate(rec: Recorder, root: Path) -> None:
     url_creds = project("cg-url", {"docs/setup.md": "clone https://user:hunter2pass@example.com/x.git\n"})
     fire(url_creds, "url-credentials", 'git commit -m "docs"', expect="deny")
 
+    # The exemption is keyed on the path git reports, so a staged file whose
+    # CONTENT looks like a diff header must not be able to claim it lives at an
+    # exempt path. Only a header before the first @@ hunk marker is a real
+    # header; after that, "+++ " is just added content.
+    #
+    # The content lines below carry one fewer "+" than the forgery needs,
+    # because `git diff` prefixes every added line with its own "+": a source
+    # line of "++ b/decoy.env.example" is what reaches the scanner as
+    # "+++ b/decoy.env.example".
+    forged_header = project(
+        "cg-forged-header",
+        {
+            "notes.patch": (
+                "-- a/real.py\n"
+                "++ b/decoy.env.example\n"
+                'API_KEY = "AKIAIOSFODNN7EXAMPLEKEY123"\n'
+            )
+        },
+    )
+    fire(forged_header, "forged-diff-header", 'git commit -m "patch"', expect="deny")
+
     # Malformed envelopes: two neighbouring shapes reach opposite verdicts by
     # design (rc 2 fails open, rc 1 fails closed). Both must be crash-free and
     # well-formed, which is what pins the split.
@@ -997,6 +1034,48 @@ def run_doctor(rec: Recorder, root: Path) -> None:
     except subprocess.TimeoutExpired:
         terminated, rc = False, 124
     rec.add(SUITE, "doctor[hanging-validator] terminates within 25s", terminated, f"rc={rc}")
+
+    # doctor's two report-only structural checks. Nothing asserted that either
+    # actually FIRES -- only that hostile text could not forge their output --
+    # so both could be disabled without any check noticing.
+    claimed = canonical_features()
+    claimed[0]["test_file"] = "tests/parser/never_written.py"
+    proj = build_project(root, "dr-missing-test-file", features=claimed, make_test_files=False)
+    git_commit_all(proj.path)
+    _rc, text = check("missing-test-file-reported", proj.path, proj.home)
+    rec.add(
+        SUITE,
+        "doctor reports a passing feature whose test_file does not exist",
+        any("never_written.py" in line and line.startswith("FINDING: ") for line in text.split("\n")),
+        text[:240],
+    )
+
+    # The non-injection guarantee: a plugin whose session-start.sh names the
+    # telemetry directory must be reported, and only when the project actually
+    # has one.
+    breached_plugin = root / "breached-plugin"
+    (breached_plugin / "hooks").mkdir(parents=True, exist_ok=True)
+    (breached_plugin / "hooks" / "session-start.sh").write_text(
+        "#!/usr/bin/env bash\n# reads .harness/" + "mld" + "/ into context\n", encoding="utf-8"
+    )
+    proj = build_project(root, "dr-mld-breach", features=canonical_features())
+    (proj.path / ".harness" / "mld").mkdir(parents=True, exist_ok=True)
+    (proj.path / ".harness" / "mld" / "2026-01-01-x.md").write_text("note\n", encoding="utf-8")
+    git_commit_all(proj.path)
+    _rc, text = check("mld-breach", proj.path, proj.home, plugin_root=str(breached_plugin))
+    rec.add(
+        SUITE,
+        "doctor reports a broken non-injection guarantee",
+        "non-injection guarantee broken" in text,
+        text[:240],
+    )
+    _rc, text = check("mld-intact", proj.path, proj.home)
+    rec.add(
+        SUITE,
+        "doctor stays silent about non-injection when the plugin is clean",
+        "non-injection guarantee broken" not in text,
+        text[:240],
+    )
 
 
 # --- harness_state.py concurrency ------------------------------------------
