@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """Hillclimb eval for the vv-harness plugin.
 
-Scores the shipped harness on five suites and prints the aggregate as
+Scores the shipped harness on six suites and prints the aggregate as
 ``METRIC harness_score=<0..100>``:
 
-    behavior     (0.30)  session-start/statusline/session-end/dashboard-log,
+    behavior     (0.25)  session-start/statusline/session-end/dashboard-log,
                          run against an adversarial fixture corpus
     gates        (0.20)  the enforcement surface -- enforce-scope, commit-gate,
                          verify-task-quality, verify-git-identity, doctor, and
                          harness_state's lock -- run against hostile input
     regression   (0.20)  test/run-tests.sh, the contract the plugin already ships
-    static       (0.15)  the plugin's own contracts: manifests, frontmatter,
+    contracts    (0.15)  the features.json oracle (validate-features.py, its
+                         agreement with the schema) and the initializer's
+                         new/upgrade write promises
+    static       (0.10)  the plugin's own contracts: manifests, frontmatter,
                          file pointers, link and reachability integrity
-    determinism  (0.15)  identical inputs produce identical model context
+    determinism  (0.10)  identical inputs produce identical model context
 
 Every check is a boolean, so the score is the weighted fraction of checks the
 harness passes. Higher is better. Runs offline, with a hermetic environment per
@@ -30,6 +33,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import suite_behavior  # noqa: E402
+import suite_contracts  # noqa: E402
 import suite_determinism  # noqa: E402
 import suite_gates  # noqa: E402
 import suite_regression  # noqa: E402
@@ -37,11 +41,12 @@ import suite_static  # noqa: E402
 from harnesslib import CONTEXT_CAP, Recorder  # noqa: E402
 
 WEIGHTS = {
-    "behavior": 0.30,
+    "behavior": 0.25,
     "gates": 0.20,
     "regression": 0.20,
-    "static": 0.15,
-    "determinism": 0.15,
+    "contracts": 0.15,
+    "static": 0.10,
+    "determinism": 0.10,
 }
 MAX_FAILURES_SHOWN = 60
 
@@ -53,6 +58,7 @@ def main() -> int:
     try:
         behavior = suite_behavior.run(rec, work / "behavior")
         suite_gates.run(rec, work / "gates")
+        suite_contracts.run(rec, work / "contracts")
         suite_static.run(rec)
         suite_determinism.run(rec, work / "determinism")
         suite_regression.run(rec)
