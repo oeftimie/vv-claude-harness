@@ -188,11 +188,31 @@ fi
 # written once here, not copy-pasted per path.
 print_next_claimable_line() {
   python3 - "$1" <<'PYEOF' 2>/dev/null || true
-import json, sys
+import json, re, sys
+
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def one_line(value):
+    # A feature's id, description, and scope are free text authored upstream of
+    # this hook (an issue, a spec pipeline, a hand edit) and are printed into
+    # the most authoritative position in a session's context. A newline in any
+    # of them forges a second harness-authored line -- an orientation header or
+    # a rival "Next claimable:" -- and every other control byte reaches the
+    # model raw. Collapsing the whole C0 range to a space closes both, and
+    # coercing to str first keeps a non-string field (a description that came
+    # back as a number) from raising and dropping this line entirely.
+    return CONTROL.sub(" ", value if isinstance(value, str) else str(value))
+
+
 try:
     f = json.loads(sys.argv[1])
     scope_list = f.get("scope") or []
-    scope = ", ".join(scope_list)
+    # A single path written as a bare string, not a list, would otherwise be
+    # joined character by character.
+    if isinstance(scope_list, str):
+        scope_list = [scope_list]
+    scope = ", ".join(one_line(p) for p in scope_list)
     # F085: scope is the same unbounded-field class as description (382 chars
     # real on this repo, 711 in the suite's 12-path adversarial fixture) --
     # cap it with the same truncate-and-point treatment, marker naming the
@@ -201,12 +221,12 @@ try:
     if len(scope) > SCOPE_LIMIT:
         noun = "path" if len(scope_list) == 1 else "paths"
         scope = scope[:SCOPE_LIMIT] + f"... ({len(scope_list)} {noun} total, see .harness/features.json)"
-    desc = f.get("description", "")
+    desc = one_line(f.get("description", ""))
     DESC_LIMIT = 200
     if len(desc) > DESC_LIMIT:
         full_len = len(desc)
         desc = desc[:DESC_LIMIT] + f"... ({full_len} chars total, see .harness/features.json for the full description)"
-    print(f"Next claimable: {f.get('id', '?')} - {desc} (scope: {scope})")
+    print(f"Next claimable: {one_line(f.get('id', '?'))} - {desc} (scope: {scope})")
 except Exception:
     pass
 PYEOF
@@ -255,10 +275,19 @@ fi
 # one check can't silently skip the other the way a single shared try/except
 # would -- matching the original's per-block failure isolation.
 python3 - "$ROOT" "$H/features.json" <<'PYEOF' 2>/dev/null || true
-import hashlib, json, os, sys
+import hashlib, json, os, re, sys
 
 root, features_path = sys.argv[1], sys.argv[2]
 feats = json.load(open(features_path)).get("features", [])
+
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def feature_id(f):
+    # Same untrusted-text rule as print_next_claimable_line's one_line: an id
+    # carrying a newline would forge a harness-authored line out of a warning.
+    value = f.get("id", "?")
+    return CONTROL.sub(" ", value if isinstance(value, str) else str(value))
 
 try:
     drifted = []
@@ -269,7 +298,7 @@ try:
             continue
         current = hashlib.sha256((f.get("description") or "").encode("utf-8")).hexdigest()
         if current != expected:
-            drifted.append(f.get("id", "?"))
+            drifted.append(feature_id(f))
     if drifted:
         print("")
         print("WARNING: spec drift: description changed after verification for "
@@ -291,7 +320,7 @@ try:
         if not test_file:
             continue
         if not os.path.isfile(os.path.join(root, test_file)):
-            missing.append(f.get("id", "?"))
+            missing.append(feature_id(f))
     if missing:
         shown = ", ".join(missing[:5])
         more = f" (+{len(missing) - 5} more)" if len(missing) > 5 else ""
@@ -392,6 +421,15 @@ else
   FINAL="$ORIENTATION
 $FOOTER"
 fi
+# Single choke point for control bytes. Everything above pours untrusted
+# .harness/ content into this buffer -- feature text, the last handoff, the
+# Active Context block, CRLF line endings from an editor on another platform --
+# and a raw ESC, BEL, or CR reaching model context is a defect regardless of
+# which block produced it. Field-level sanitization stays where it is (only the
+# field owner knows a newline there is a forgery, not a line break); this strips
+# the rest of the C0 range plus DEL, keeping tab and newline. Applied before the
+# length check so the cap measures exactly what the model receives.
+FINAL=$(printf '%s' "$FINAL" | tr -d '\000-\010\013-\037\177')
 if [ "${#FINAL}" -gt "$ORIENTATION_CHAR_CAP" ]; then
   printf '%s\n' "${FINAL:0:$ORIENTATION_CHAR_CAP}"
 else
