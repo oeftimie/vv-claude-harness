@@ -1035,6 +1035,37 @@ def run_doctor(rec: Recorder, root: Path) -> None:
         terminated, rc = False, 124
     rec.add(SUITE, "doctor[hanging-validator] terminates within 25s", terminated, f"rc={rc}")
 
+    # The two list-driven checks: emptying either constant is a silent
+    # disarming, since nothing asserted their findings ever appear. A bare
+    # project is missing every required hook and every required .gitignore
+    # line, so both must fire here.
+    bare = build_project(root, "dr-bare", features=canonical_features())
+    # A .gitignore that EXISTS but lacks the required entries: an absent file
+    # collapses to one "is missing" finding and would never exercise the
+    # per-line list at all.
+    (bare.path / ".gitignore").write_text("build/\n*.log\n", encoding="utf-8")
+    git_commit_all(bare.path)
+    _rc, text = check("bare-project", bare.path, bare.home)
+    for hook_name in ("verify-task-quality.sh", "enforce-scope.sh", "verify-git-identity.sh", "statusline.sh"):
+        rec.add(
+            SUITE,
+            f"doctor reports the missing required hook {hook_name}",
+            any(hook_name in line and line.startswith("FINDING: ") for line in text.split("\n")),
+            text[:240],
+        )
+    for ignore_line in (
+        ".harness/SESSION_INCOMPLETE",
+        ".harness/features.json.lock",
+        ".harness/dashboard/",
+        ".harness/last_gate.json",
+    ):
+        rec.add(
+            SUITE,
+            f"doctor reports the missing .gitignore entry {ignore_line}",
+            ignore_line in text,
+            text[:240],
+        )
+
     # doctor's two report-only structural checks. Nothing asserted that either
     # actually FIRES -- only that hostile text could not forge their output --
     # so both could be disabled without any check noticing.
