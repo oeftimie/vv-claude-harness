@@ -473,6 +473,45 @@ def run_commit_gate(rec: Recorder, root: Path) -> None:
     fire(clean, "compound-stage-commit", 'git add . && git commit -m "x"', expect="deny")
     fire(clean, "commit-dash-a", 'git commit -a -m "x"', expect="deny")
 
+    # The passing-flip gate: a commit that flips a feature to passing must not
+    # land while the full suite fails. FULL_TAIL is capped in that deny reason
+    # with a comment naming the exact failure mode -- an oversized argv fails
+    # the exec and silently converts the DENY into an allow -- but the feature
+    # id list interpolated into the same string is not, and its length comes
+    # from the staged file.
+    def flip_project(name, ids, id_len=8):
+        committed = [
+            {"id": f"F{i:03d}".ljust(id_len, "x"), "status": "in-progress"} for i in range(1, ids + 1)
+        ]
+        proj = build_project(root, name, features=committed)
+        (proj.path / ".harness" / "init.sh").write_text(
+            "#!/usr/bin/env bash\ncase \"$1\" in\n  full_test) echo 'suite failed'; exit 1 ;;\n"
+            "  *) exit 0 ;;\nesac\n",
+            encoding="utf-8",
+        )
+        git_commit_all(proj.path)
+        flipped = [dict(f, status="passing") for f in committed]
+        (proj.path / ".harness" / "features.json").write_text(
+            json.dumps({"features": flipped}), encoding="utf-8"
+        )
+        env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
+        subprocess.run(
+            ["git", "-C", str(proj.path), "add", ".harness/features.json"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        install_gate(proj.path, "commit-gate")
+        return proj
+
+    fire(flip_project("cg-flip-small", 2), "passing-flip-failing-suite", 'git commit -m "done"', expect="deny")
+    fire(
+        flip_project("cg-flip-oversized", 24, id_len=90000),
+        "passing-flip-oversized-id-list",
+        'git commit -m "done"',
+        expect="deny",
+    )
+
     secret = project(
         "cg-secret",
         {"src/config.py": 'API_KEY = "AKIAIOSFODNN7EXAMPLEKEY123"\n'},

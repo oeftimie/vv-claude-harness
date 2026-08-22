@@ -1509,18 +1509,28 @@ except Exception:
 PYEOF
 ) || FLIPPED=""
     if [ -n "$FLIPPED" ]; then
+        # Both interpolations below are bounded. The FULL_TAIL cap alone was not
+        # enough: this id list comes from the staged features.json, so its length
+        # is attacker-controlled too, and an oversized deny_json argv fails the
+        # exec exactly the same way -- rc 0, no output, a DENY silently served as
+        # an allow. Verified: 24 ids of 90k characters inverted this gate.
+        FLIPPED_MAX_LEN=512
+        FLIPPED_SHOWN="${FLIPPED:0:$FLIPPED_MAX_LEN}"
+        if [ "${#FLIPPED}" -gt "$FLIPPED_MAX_LEN" ]; then
+            FLIPPED_SHOWN="$FLIPPED_SHOWN... (truncated; see .harness/features.json for the full list)"
+        fi
         if [ -f ".harness/init.sh" ]; then
-            echo "commit-gate: staged features.json flips $FLIPPED to passing; running full_test..." >&2
+            echo "commit-gate: staged features.json flips $FLIPPED_SHOWN to passing; running full_test..." >&2
             FULL_OUTPUT=$(bash .harness/init.sh full_test 2>&1) || {
                 # tail -15 bounds the line count but not the character count; an
                 # oversized tail on deny_json's argv would fail the exec (ARG_MAX)
                 # and silently convert this DENY into an allow (rc=0, no output).
                 FULL_TAIL_MAX_LEN=2048
                 FULL_TAIL=$(printf '%s\n' "$FULL_OUTPUT" | tail -15)
-                deny_json "passing-flip-full-test-failed: this commit flips $FLIPPED to 'passing' but the full test suite fails. Fix the failures or keep the feature in-progress. Full test output (last 15 lines): ${FULL_TAIL:0:$FULL_TAIL_MAX_LEN}"
+                deny_json "passing-flip-full-test-failed: this commit flips $FLIPPED_SHOWN to 'passing' but the full test suite fails. Fix the failures or keep the feature in-progress. Full test output (last 15 lines): ${FULL_TAIL:0:$FULL_TAIL_MAX_LEN}"
             }
         else
-            echo "commit-gate: staged features.json flips $FLIPPED to passing, but .harness/init.sh is" \
+            echo "commit-gate: staged features.json flips $FLIPPED_SHOWN to passing, but .harness/init.sh is" \
                  "missing -- cannot verify full_test; allowing (fail-open)." >&2
         fi
     fi
