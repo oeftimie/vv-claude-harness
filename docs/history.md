@@ -213,7 +213,7 @@ epoch record with a requalification checklist (including a mandatory subtraction
 an author-blind conformance tester that derives tests from a verified spec alone, never
 the implementation diff; an optional dual-engine review; and a root `AGENTS.md` routing
 layer for non-Claude agents working on this repo. Full detail in the
-[v5.0.0 changelog entry](./CHANGELOG.md).
+[v5.0.0 changelog entry](../CHANGELOG.md).
 
 Dogfooding the upgrade on this repo's own harness surfaced 48 further defects beyond the
 21 planned — mostly hardening `enforce-scope.sh`/`commit-gate.sh` against parsing and
@@ -255,7 +255,7 @@ v5.2.0 adds an opt-in live dashboard: set `VV_HARNESS_DASHBOARD=1` before starti
 session you want to watch, then run `/harness-dashboard` to open an animated
 hub-and-spoke node graph of that session's agent activity — the lead, each
 spoke, quality-gate verdicts, and judge subagents — served locally with no external
-dependencies. See [INSTALL.md](./INSTALL.md), "Optional: Live Session Dashboard", for
+dependencies. See [INSTALL.md](../INSTALL.md), "Optional: Live Session Dashboard", for
 setup and its known limitations.
 
 v5.3.0-alpha marks the dashboard as alpha quality for broader testing before it's

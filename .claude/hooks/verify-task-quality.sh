@@ -28,7 +28,16 @@
 set -euo pipefail
 
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-cd "$PROJECT_ROOT"
+# `set -e` is in force, so an unguarded cd here killed the hook at rc 1 -- which
+# Claude Code reads as neither an accept nor a block, leaving the gate
+# disengaged with only a raw shell error to explain it. An unresolvable project
+# root is an ENVIRONMENT failure, and the harness's posture for those is
+# fail-open with a diagnostic (see enforce-scope.sh's header); every sibling
+# hook already answers one with `cd ... || exit 0`.
+cd "$PROJECT_ROOT" 2>/dev/null || {
+    echo "verify-task-quality: cannot enter PROJECT_ROOT '$PROJECT_ROOT'; skipping the quality gate." >&2
+    exit 0
+}
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -300,14 +309,41 @@ PROOF_WARNING=""
 IN_PROGRESS=0
 TEST_FILE=""
 if [ -f ".harness/features.json" ]; then
-    _CHECKS=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF'
+    _CHECKS=$(python3 - ".harness/features.json" "$FEATURE_ID" <<'PYEOF' || true
 import json
+import re
 import sys
 
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def one_line(value, limit=400):
+    """One bounded line per field.
+
+    The four values printed below are recovered in the shell by fixed line
+    index (sed -n '1p'..'4p'), so a newline anywhere in feature text shifts
+    every field after it: an embedded newline in a qa_binding or an
+    evidence_type was enough to hand the in-progress count a non-numeric
+    string, which then failed `[ "$IN_PROGRESS" -gt 0 ]` and turned an
+    accepted task into a rejected one. features.json must not be able to
+    forge this gate's verdict.
+    """
+    text = value if isinstance(value, str) else str(value)
+    return CONTROL.sub(" ", text)[:limit]
+
+
 path, feature_id = sys.argv[1], sys.argv[2]
-with open(path) as fh:
-    data = json.load(fh)
-features = data.get("features", [])
+# A corrupt or non-object features.json must not take the gate down with it:
+# this hook's job is to run the test stages, and an exception here exits 1,
+# which Claude Code reads as neither an accept nor a block -- the gate simply
+# stops enforcing. Degrade to "no feature-derived checks" instead.
+try:
+    with open(path) as fh:
+        data = json.load(fh)
+except (OSError, ValueError):
+    data = None
+raw_features = data.get("features") if isinstance(data, dict) else None
+features = [f for f in raw_features if isinstance(f, dict)] if isinstance(raw_features, list) else []
 match = next((f for f in features if f.get("id") == feature_id), None) if feature_id else None
 
 # Coverage target gate: compare the targeted feature's own recorded `coverage`
@@ -338,7 +374,7 @@ if match is not None:
         # OVI-147's field sessions reported is lead-discipline at close-out, not
         # something this per-task hook can carry without becoming noise.
         coverage_result = "unrecorded"
-print(coverage_result)
+print(one_line(coverage_result))
 
 # Claim-matched proof: warn (never block) when this feature accepts with no
 # proof recorded, or with proof whose evidence_type doesn't match its declared
@@ -366,7 +402,7 @@ if match is not None:
             f"'{proof.get('evidence_type')}' does not match its declared "
             f"qa_binding '{qa_binding}'. Fix the proof or the binding."
         )
-print(proof_warning)
+print(one_line(proof_warning))
 
 # Remind about stale in-progress features. Matches the original's exact
 # f['status'] indexing (not .get) and its own fallback: any exception here
@@ -385,7 +421,7 @@ if match is not None:
     candidate = match.get("test_file")
     if isinstance(candidate, str):
         test_file = candidate
-print(test_file)
+print(one_line(test_file))
 PYEOF
 )
     COVERAGE_RESULT=$(printf '%s\n' "$_CHECKS" | sed -n '1p')

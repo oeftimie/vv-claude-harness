@@ -13,7 +13,8 @@ No build step, no framework — plain HTML/CSS/ES modules, matching this repo's
 | `lifecycle.html` | The `/harness-continue` loop step by step; the three memory files; compaction | stop 3 |
 | `gates.html` | Four hooks, three tiers, the tiered task gate, the stated limits | stop 4 |
 | `parallel.html` | Independence, worktrees, model tiers, the fallback, when not to | stop 5 |
-| `reference.html` | Commands, feature object, statuses, test targets, completion checklist, glossary | stop 6 |
+| `evals.html` | The two instruments, the six suites, what the suite found, mutation testing, how to run it | stop 6 |
+| `reference.html` | Commands, feature object, statuses, test targets, completion checklist, glossary | stop 7 |
 
 Shared: `assets/site.css`, `assets/anim.js` (single module, imported by every page),
 `assets/nav` markup inlined per page (no client-side routing, no fetch — Pages serves

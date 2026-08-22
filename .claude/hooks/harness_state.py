@@ -7,16 +7,35 @@ import time
 CLAIMABLE_STATUSES = ("pending", "failed")
 LOCK_TIMEOUT_SECONDS = 5
 LOCK_POLL_SECONDS = 0.05
+#: features.json could not be read or parsed at all.
+EXIT_FEATURES_UNAVAILABLE = 4
+#: the targeted feature exists but a field this module owns holds a value it
+#: did not write, so mutating it would destroy state rather than update it.
+EXIT_FEATURE_INVALID = 5
 
 
-def load_valid_features(path):
+def read_features(path):
+    """Return (features, ok). ok is False when features.json could not be read
+    or parsed at all, which is a different fact from a file that parses to zero
+    features. A caller that cannot tell the two apart reports "0 features" for
+    an unreadable file -- a fabricated picture of the project, and the exact
+    failure the test_file and spec-drift warnings exist to prevent elsewhere.
+    """
     try:
         with open(path) as fh:
             data = json.load(fh)
     except (OSError, ValueError) as exc:
         print(f"harness_state: cannot parse {path}: {exc}", file=sys.stderr)
-        return []
-    features = data.get("features", []) if isinstance(data, dict) else []
+        return [], False
+    # A document that parses but is not a features document (a bare array, a
+    # literal null, a "features" key holding a string) is unavailable, not
+    # empty. Silently normalizing it to zero features is the same fabrication
+    # as doing so for a truncated file. An object with no "features" key is a
+    # different case: it genuinely describes zero features.
+    if not isinstance(data, dict) or not isinstance(data.get("features", []), list):
+        print(f"harness_state: {path} is not a features document", file=sys.stderr)
+        return [], False
+    features = data.get("features", [])
     valid = []
     for entry in features:
         try:
@@ -25,7 +44,14 @@ def load_valid_features(path):
             print(f"harness_state: skipping malformed feature entry: {entry!r}", file=sys.stderr)
             continue
         valid.append(entry)
-    return valid
+    return valid, True
+
+
+def load_valid_features(path):
+    """The feature list alone, empty when the file is unreadable. Callers that
+    print a count or a claim about the project must use read_features instead.
+    """
+    return read_features(path)[0]
 
 
 def compute_claimable(valid):
@@ -129,7 +155,10 @@ def cmd_load(path):
 
 
 def cmd_next_claimable(path):
-    claimable = compute_claimable(load_valid_features(path))
+    valid, ok = read_features(path)
+    if not ok:
+        return EXIT_FEATURES_UNAVAILABLE
+    claimable = compute_claimable(valid)
     if not claimable:
         print("no claimable feature")
         return 0
@@ -139,7 +168,12 @@ def cmd_next_claimable(path):
 
 
 def cmd_counts(path):
-    valid = load_valid_features(path)
+    # An unreadable features.json is reported by saying nothing: "0/0 passing"
+    # would tell the session this project has no features, and orientation
+    # printing a fact it does not have is worse than orientation printing less.
+    valid, ok = read_features(path)
+    if not ok:
+        return EXIT_FEATURES_UNAVAILABLE
     passing = sum(1 for f in valid if f.get("status") == "passing")
     in_progress = [f.get("id") for f in valid if f.get("status") == "in-progress"]
     print(json.dumps({"passing": passing, "total": len(valid), "in_progress": in_progress}))
@@ -164,7 +198,23 @@ def cmd_increment_correction_cycles(path, feature_id):
         if match.get("status") != "in-progress":
             return 0
         current = match.get("correction_cycles")
-        match["correction_cycles"] = (current if current is not None else 0) + 1
+        if current is None:
+            current = 0
+        if not isinstance(current, int) or isinstance(current, bool):
+            # Refuse rather than coerce. A non-numeric counter means the file
+            # was written by something other than this module, and silently
+            # resetting it to 1 would destroy the only record of how many
+            # correction cycles a feature has actually taken -- the number the
+            # 4-cycle escalation threshold reads. Adding to it raised an
+            # uncaught TypeError, which surfaced as a traceback rather than a
+            # diagnostic.
+            print(
+                f"harness_state: {feature_id}'s correction_cycles is not a number "
+                f"({type(current).__name__}); refusing to increment",
+                file=sys.stderr,
+            )
+            return EXIT_FEATURE_INVALID
+        match["correction_cycles"] = current + 1
         return 0 if _write_atomic(path, data) else 1
 
     # The read, the mutation, and the write all happen inside do_increment,

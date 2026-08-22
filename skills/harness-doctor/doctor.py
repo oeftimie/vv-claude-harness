@@ -9,9 +9,60 @@ found is reported but left untouched.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+
+#: Every subprocess this module spawns is bounded. A health check that hangs
+#: is worse than one that reports a failure: the caller is a slash command a
+#: human is waiting on, and an unbounded child (a stalled git, a validator
+#: from a half-installed plugin) hangs it with no diagnostic at all.
+GIT_TIMEOUT_SECONDS = 5
+VALIDATOR_TIMEOUT_SECONDS = 20
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _one_line(value, limit=200):
+    """Untrusted text, flattened to one bounded line for a report.
+
+    Feature ids and test_file paths come from .harness/features.json, which is
+    written upstream of this module. A newline in one of them splits a FINDING
+    across lines that read as separate findings -- a file can otherwise forge
+    the doctor's own output -- and a control byte reaches the terminal raw.
+    """
+    text = value if isinstance(value, str) else str(value)
+    text = _CONTROL.sub(" ", text)
+    return text if len(text) <= limit else f"{text[:limit]}... ({len(text)} chars total)"
+
+
+def _read_text_file(path):
+    """(text, error). Presence is not readability: os.path.isfile passes for a
+    file that is not valid UTF-8 and for one this process cannot open."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read(), None
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"cannot be read: {_one_line(exc, 120)}"
+
+
+def _load_json_object(path):
+    """(document, error) where document is a dict.
+
+    json.load succeeding is not proof the document is an object. Every caller
+    below immediately does .get() on the result, so a bare array, a literal
+    null, or a top-level string turns a health report into an AttributeError.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
+        return None, f"does not parse: {_one_line(exc, 120)}"
+    if not isinstance(data, dict):
+        return None, f"is not a JSON object (found {type(data).__name__})"
+    return data, None
+
 
 HARD_REQUIRED_HOOKS = (
     "verify-task-quality.sh",
@@ -69,7 +120,7 @@ def classify_drift(project_dir, rel_path):
         return "no committed history for this file; treating as local"
     diff = subprocess.run(
         ["git", "-C", project_dir, "diff", "--quiet", "HEAD", "--", rel_path],
-        capture_output=True,
+        capture_output=True, timeout=GIT_TIMEOUT_SECONDS,
     )
     if diff.returncode == 0:
         return "matches the last commit; any problem here is committed, not local"
@@ -177,39 +228,52 @@ SETTINGS_WIRING_CHECKS = (
 
 
 def _hook_wired(settings, event, script_name, matcher=None):
-    for entry in settings.get("hooks", {}).get(event, []):
+    # Every level of this structure is user-editable JSON, so every level is
+    # shape-checked: a "hooks" key holding a list parses fine and then fails
+    # the .get() below, which used to crash all four wiring checks at once.
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return False
+    entries = hooks.get(event)
+    if not isinstance(entries, list):
+        return False
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
         if matcher is not None and entry.get("matcher") != matcher:
             continue
-        for hook in entry.get("hooks", []):
-            if script_name in hook.get("command", ""):
+        inner = entry.get("hooks")
+        if not isinstance(inner, list):
+            continue
+        for hook in inner:
+            if not isinstance(hook, dict):
+                continue
+            command = hook.get("command")
+            if isinstance(command, str) and script_name in command:
                 return True
     return False
 
 
 def _read_settings(project_dir):
-    """Loads .claude/settings.json, or None when it is missing or unparseable.
-    check_settings reports both of those cases with their own messages, so
-    every other reader just declines to run rather than duplicating them."""
+    """Loads .claude/settings.json, or None when it is missing, unparseable, or
+    not a JSON object. check_settings reports all of those cases with their own
+    messages, so every other reader just declines to run rather than
+    duplicating them."""
     path = os.path.join(project_dir, ".claude", "settings.json")
     if not os.path.isfile(path):
         return None
-    try:
-        with open(path) as fh:
-            return json.load(fh)
-    except (OSError, ValueError):
-        return None
+    settings, _error = _load_json_object(path)
+    return settings
 
 
 def check_settings(project_dir):
     path = os.path.join(project_dir, ".claude", "settings.json")
     if not os.path.isfile(path):
         return [Finding(".claude/settings.json is missing", "run /harness-init to generate it")]
-    try:
-        with open(path) as fh:
-            settings = json.load(fh)
-    except (OSError, ValueError) as exc:
+    settings, error = _load_json_object(path)
+    if error:
         return [Finding(
-            f".claude/settings.json does not parse: {exc}", "fix the JSON syntax error"
+            f".claude/settings.json {error}", "fix the JSON syntax error"
         )]
     findings = []
     for _, present, label in SETTINGS_WIRING_CHECKS:
@@ -369,7 +433,10 @@ def check_gitignore(project_dir):
         return [Finding(
             ".gitignore is missing", "create one; see INSTALL.md's Per-Project Setup section"
         )]
-    lines = _gitignore_lines(open(path).read())
+    text, error = _read_text_file(path)
+    if error:
+        return [Finding(f".gitignore {error}", "make it a readable UTF-8 text file")]
+    lines = _gitignore_lines(text)
     findings = []
     if any(line in (".claude/", ".claude/*", ".claude") for line in lines):
         if not any(line in ("!.claude/hooks/", "!.claude/settings.json") for line in lines):
@@ -405,11 +472,9 @@ def _check_json_file(harness_dir, name):
     path = os.path.join(harness_dir, name)
     if not os.path.isfile(path):
         return [Finding(f".harness/{name} is missing", "run /harness-init to generate it")]
-    try:
-        with open(path) as fh:
-            json.load(fh)
-    except (OSError, ValueError) as exc:
-        return [Finding(f".harness/{name} does not parse: {exc}", "fix the JSON syntax error")]
+    _document, error = _load_json_object(path)
+    if error:
+        return [Finding(f".harness/{name} {error}", "fix the JSON syntax error")]
     return []
 
 
@@ -417,13 +482,26 @@ def _run_features_validator(plugin_root, features_path):
     validator = os.path.join(plugin_root, "scripts", "validate-features.py")
     if not os.path.isfile(validator):
         return []
-    result = subprocess.run(
-        ["python3", validator, features_path], capture_output=True, text=True
-    )
+    try:
+        result = subprocess.run(
+            ["python3", validator, features_path],
+            capture_output=True, text=True, timeout=VALIDATOR_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return [Finding(
+            f".harness/features.json could not be validated: the validator did not "
+            f"finish within {VALIDATOR_TIMEOUT_SECONDS}s",
+            "check the plugin install at CLAUDE_PLUGIN_ROOT/scripts/validate-features.py",
+        )]
+    except OSError as exc:
+        return [Finding(
+            f".harness/features.json could not be validated: {_one_line(exc, 120)}",
+            "check the plugin install at CLAUDE_PLUGIN_ROOT/scripts/validate-features.py",
+        )]
     if result.returncode == 0:
         return []
     return [Finding(
-        f".harness/features.json fails validation: {result.stderr.strip()}",
+        f".harness/features.json fails validation: {_one_line(result.stderr.strip(), 400)}",
         "fix the reported field(s); see schemas/feature.schema.json",
     )]
 
@@ -434,7 +512,11 @@ def _check_context_summary(harness_dir):
         return [Finding(
             ".harness/context_summary.md is missing", "run /harness-init to generate it"
         )]
-    text = open(path).read()
+    text, error = _read_text_file(path)
+    if error:
+        return [Finding(
+            f".harness/context_summary.md {error}", "make it a readable UTF-8 text file"
+        )]
     missing = [h for h in REQUIRED_CONTEXT_HEADINGS if h not in text]
     if "## Domain: " not in text and "## Domain:" not in text:
         missing.append("## Domain: <name>")
@@ -458,22 +540,26 @@ def check_feature_test_files(project_dir):
     features_path = os.path.join(project_dir, ".harness", "features.json")
     if not os.path.isfile(features_path):
         return []  # already reported by check_harness_state_files
-    try:
-        with open(features_path) as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
+    data, error = _load_json_object(features_path)
+    if error:
         return []  # already reported by check_harness_state_files
+    features = data.get("features")
+    if not isinstance(features, list):
+        return []  # already reported by the features validator
     findings = []
-    for feature in data.get("features", []):
-        if feature.get("status") not in TEST_FILE_CHECK_STATUSES:
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue  # reported by the features validator, not walkable here
+        status = feature.get("status")
+        if status not in TEST_FILE_CHECK_STATUSES:
             continue
         test_file = feature.get("test_file")
-        if not test_file:
+        if not test_file or not isinstance(test_file, str):
             continue
         if not os.path.isfile(os.path.join(project_dir, test_file)):
             findings.append(Finding(
-                f"{feature.get('id', '?')} is {feature['status']} but its test_file "
-                f"'{test_file}' does not exist in the working tree",
+                f"{_one_line(feature.get('id', '?'), 60)} is {_one_line(status, 30)} but its "
+                f"test_file '{_one_line(test_file, 120)}' does not exist in the working tree",
                 "correct test_file to the real path, or reset the feature's status "
                 "if the work it claims was never actually committed",
             ))
@@ -496,21 +582,19 @@ def check_version_drift(project_dir, plugin_root):
     manifest_path = os.path.join(plugin_root, ".claude-plugin", "plugin.json")
     if not os.path.isfile(manifest_path):
         return []
-    try:
-        with open(manifest_path) as fh:
-            current = json.load(fh).get("version")
-    except (OSError, ValueError):
+    manifest, error = _load_json_object(manifest_path)
+    if error:
         return []
+    current = manifest.get("version")
     if not current:
         return []
     harness_path = os.path.join(project_dir, ".harness", "harness.json")
     if not os.path.isfile(harness_path):
         return []  # already reported by check_harness_state_files
-    try:
-        with open(harness_path) as fh:
-            recorded = json.load(fh).get("plugin_version")
-    except (OSError, ValueError):
+    harness_document, error = _load_json_object(harness_path)
+    if error:
         return []  # already reported by check_harness_state_files
+    recorded = harness_document.get("plugin_version")
     if recorded == current:
         return []
     if not recorded:
@@ -542,7 +626,12 @@ def check_focused_test_skip_contract(project_dir):
     init_path = os.path.join(project_dir, ".harness", "init.sh")
     if not os.path.isfile(init_path):
         return []  # already reported by verify-task-quality's own missing-init.sh gate
-    text = open(init_path).read()
+    text, error = _read_text_file(init_path)
+    if error:
+        return [Finding(
+            f".harness/init.sh {error}",
+            "make it a readable UTF-8 shell script",
+        )]
     non_comment = "\n".join(
         line for line in text.splitlines() if not line.strip().startswith("#")
     )
@@ -591,7 +680,14 @@ def check_mld_non_injection(project_dir, plugin_root):
     session_start = os.path.join(plugin_root, "hooks", "session-start.sh")
     if not os.path.isfile(session_start):
         return []
-    if "mld" in open(session_start).read():
+    session_start_text, error = _read_text_file(session_start)
+    if error:
+        return [Finding(
+            f"the plugin's session-start.sh {error}, so the non-injection guarantee "
+            "could not be verified",
+            "reinstall the plugin",
+        )]
+    if "mld" in session_start_text:
         return [Finding(
             "the plugin's session-start.sh references .harness/mld/ "
             "(non-injection guarantee broken)",
@@ -661,14 +757,29 @@ def run_checks(project_dir, plugin_root):
 def apply_fixes(project_dir, plugin_root, findings):
     from fixes import apply_fix  # local import: keeps fixers out of the report path
 
-    fix_ids = {f.fix_id for f in findings if f.fix_id}
+    # Sorted, not set-ordered: two fixers can touch the same file, and a health
+    # check that applies them in a different order run to run is not one.
+    fix_ids = sorted({f.fix_id for f in findings if f.fix_id})
+    blocked = []
     for fix_id in fix_ids:
-        apply_fix(project_dir, plugin_root, fix_id)
+        try:
+            apply_fix(project_dir, plugin_root, fix_id)
+        except (OSError, shutil.Error) as exc:
+            # A fixer that cannot write -- a read-only .claude/, a .gitignore
+            # owned by someone else, a plugin install missing the file it copies
+            # from -- is a repair this run could not make, which is exactly what
+            # a report is for. Raising here turned the health check itself into
+            # the failure and lost every other fixer queued behind it.
+            blocked.append(Finding(
+                f"fix '{fix_id}' could not be applied: {_one_line(exc, 160)}",
+                "resolve the write failure (permissions, or a missing plugin "
+                "install at CLAUDE_PLUGIN_ROOT) and re-run doctor --fix",
+            ))
     # Re-run fresh rather than trusting each fixer's per-call return value: a single
     # fixer invocation (e.g. add_settings_wiring) can resolve several findings that
     # share its fix_id at once, so a stale per-finding "did I just change something"
     # check would misreport the others as still-open.
-    return run_checks(project_dir, plugin_root)
+    return blocked + run_checks(project_dir, plugin_root)
 
 
 def report(findings):

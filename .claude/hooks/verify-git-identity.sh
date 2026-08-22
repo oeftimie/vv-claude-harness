@@ -27,14 +27,25 @@ if [ ! -f ".harness/harness.json" ]; then
     exit 0
 fi
 
-# Extract expected identity from harness.json (one parse of the file for both fields)
+# Extract expected identity from harness.json (one parse of the file for both
+# fields). Both values are flattened to a single line first: they are recovered
+# below by fixed line index, so a newline inside user_name shifted user_email
+# out of position and the hook then blocked every push against an "expected"
+# email that appears nowhere in harness.json.
 GIT_IDENTITY=$(python3 -c "
-import json
+import json, re
+CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 with open('.harness/harness.json') as f:
     data = json.load(f)
 identity = data.get('git_identity', {})
-print(identity.get('user_name', ''))
-print(identity.get('user_email', ''))
+
+
+def one_line(value):
+    return CONTROL.sub(' ', value if isinstance(value, str) else str(value))
+
+
+print(one_line(identity.get('user_name', '')))
+print(one_line(identity.get('user_email', '')))
 " 2>/dev/null)
 EXPECTED_NAME=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '1p')
 EXPECTED_EMAIL=$(printf '%s\n' "$GIT_IDENTITY" | sed -n '2p')
@@ -88,8 +99,62 @@ if [ "$COMMAND_RC" -eq 1 ]; then
     exit 2
 fi
 
-# Only check git push, pull, clone, fetch commands
-if ! echo "$COMMAND" | grep -qE 'git\s+(push|pull|clone|fetch)'; then
+# Only check git push, pull, clone, fetch commands.
+#
+# The substring test this used to be ('git\s+(push|pull|clone|fetch)') misses
+# every invocation that puts a git GLOBAL OPTION between the binary and the
+# subcommand -- including `git -c user.email=x push`, which is the canonical way
+# to push under an identity other than the configured one and therefore the
+# exact command this hook exists to catch. `git --no-pager push` and
+# `git -c http.sslVerify=false push` slipped past for the same reason.
+#
+# The matcher below is a UNION, deliberately: the original substring test still
+# runs first, so nothing it caught (a wrapped `bash -c "git push"`, an `eval`,
+# any form where the verb merely appears) stops being caught. The tokenizer
+# pass then adds the option-carrying spellings. Coverage only grows.
+#
+# Fed over stdin, not argv: a command is untrusted and unbounded, and an
+# oversized argv fails the exec -- the same failure that silently converted a
+# DENY into an allow in commit-gate's own deny path.
+IFS= read -r -d '' _VERB_MATCHER <<'PYEOF' || true
+import re
+import sys
+
+NETWORK_VERBS = {"push", "pull", "clone", "fetch"}
+# git global options that take a SEPARATE value; every other "-" token consumes
+# only itself. An "--opt=value" form carries its own value and never consumes
+# the next token.
+VALUE_FLAGS = {
+    "-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path",
+    "--config-env", "--super-prefix",
+}
+ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+command = sys.stdin.read()
+
+if re.search(r"git\s+(push|pull|clone|fetch)", command):
+    sys.exit(0)
+
+for segment in re.split(r"\|\||&&|[|;\n]", command):
+    tokens = segment.split()
+    index = 0
+    while index < len(tokens) and ENV_ASSIGNMENT.match(tokens[index]):
+        index += 1
+    if index >= len(tokens):
+        continue
+    binary = tokens[index].lstrip("\\").strip("\"'")
+    if binary.rsplit("/", 1)[-1] != "git":
+        continue
+    index += 1
+    while index < len(tokens) and tokens[index].startswith("-"):
+        name = tokens[index].split("=", 1)[0]
+        index += 2 if name in VALUE_FLAGS and "=" not in tokens[index] else 1
+    if index < len(tokens) and tokens[index] in NETWORK_VERBS:
+        sys.exit(0)
+
+sys.exit(1)
+PYEOF
+if ! printf '%s' "$COMMAND" | python3 -c "$_VERB_MATCHER" 2>/dev/null; then
     exit 0
 fi
 

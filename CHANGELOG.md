@@ -2,6 +2,97 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v6.1.0 (2026-08-22)
+
+A deterministic conformance suite for the plugin's own machinery, and the eight
+defects it found. Three of those were silent: the guard returned success while
+doing nothing.
+
+1. **`evals/hillclimb/` — a scored, offline conformance suite.** `bash
+   autoresearch.sh` runs the shipped hooks, gates and scripts against adversarial
+   fixtures and prints `METRIC harness_score=<0..100>`, the weighted fraction of
+   its ~4,200 boolean checks that pass, plus one line per failure. Six suites:
+   behavior (0.25), gates (0.20), regression (0.20), contracts (0.15), static
+   (0.10), determinism (0.10). No network, no model, no API key; a fresh temp
+   fixture with its own `HOME`, no git config, fixed timezone and locale per
+   case, so two concurrent runs are byte-identical and a score change is a plugin
+   change. `test/run-tests.sh` is folded in whole as the regression aggregate,
+   which is what makes trading an existing guarantee for a new one visible.
+
+2. **`verify-git-identity.sh` no longer misses `git -c user.email=… push`.** The
+   matcher searched the command for the text `git\s+(push|pull|clone|fetch)`, so
+   any git global option between the binary and the subcommand hid the operation
+   — including the canonical way to push under an identity other than the
+   configured one. `git --no-pager push` and `git -c http.sslVerify=false push`
+   slipped for the same reason. The matcher is now a union: the original
+   substring test still runs first, so nothing it caught can regress, and a
+   tokenizer pass that skips env prefixes and git's value-taking global options
+   adds the rest. Fed over stdin rather than argv.
+
+3. **`enforce-scope.sh` closes two write paths.** `echo x >| .harness/features.json`
+   was allowed while `>` and `>>` denied: bash lexes `>|` as one clobber-override
+   redirect token, and the segment splitter read its `|` as a pipe, stranding the
+   target in the next segment. Handled the same way the existing `>&` case is. A
+   `file_path` that leaves the project and returns
+   (`<root>/../<root>/.harness/features.json`) is now resolved against the project
+   root before being relativized, and the bare `.harness/mld` spelling denies like
+   `.harness/mld/`.
+
+4. **`commit-gate.sh` can no longer serve a DENY as an allow.** The passing-flip
+   deny reason capped `FULL_TAIL` with a comment naming the exact failure — an
+   oversized `deny_json` argv fails the exec, so the hook exits 0 with no output
+   and the blocked commit proceeds — but left the `$FLIPPED` feature-id list
+   beside it uncapped, and that list comes from the staged file. Reproduced with
+   24 ids of 90k characters. Both are bounded now.
+
+5. **Two gates stopped enforcing without saying so.** `verify-task-quality.sh`
+   exited 1 on a corrupt or non-object `features.json` — neither an accept nor a
+   block, so the gate silently disengaged; it now degrades to "no feature-derived
+   checks" and still runs the test stages. `init.sh` died under `set -e` when
+   `.harness/harness.json` did not parse, with no output on either stream, which
+   the task gate then reported as a smoke-test compilation failure; the stack read
+   now falls back to detection. `verify-task-quality.sh` also fails open with a
+   named diagnostic when `CLAUDE_PROJECT_DIR` cannot be entered, matching every
+   sibling hook.
+
+6. **`doctor.py` and `fixes.py` survive the documents they are asked to read.**
+   `json.load` succeeding was treated as proof the document was an object, so a
+   bare array in `features.json`, `harness.json`, `plugin.json` or
+   `settings.json` turned a health report into an uncaught `AttributeError`;
+   `os.path.isfile` was treated as proof of readability, so a non-UTF-8
+   `.gitignore` raised `UnicodeDecodeError`. Shared `_load_json_object` and
+   `_read_text_file` helpers now report both as findings. Feature text is
+   flattened before it reaches a `FINDING:` line (it could forge one), both
+   remaining unbounded subprocesses got timeouts (`git diff` 5s, the features
+   validator 20s), and a fixer that cannot write — a read-only `.claude/`, a
+   missing plugin install — becomes a finding naming the fix instead of a
+   traceback out of `apply_fixes`.
+
+7. **Untrusted `.harness/` text no longer reaches model context raw.**
+   `session-start.sh` flattens a feature's id, description and scope, and the
+   identity fields it reads from `harness.json`, before printing them: a newline
+   in any of them forged a second orientation header or a rival "Next claimable:"
+   line, and ANSI, BEL, backspace and CR bytes passed through verbatim. A single
+   choke point strips the rest of the C0 range from the assembled buffer before
+   the length cap. A non-string description used to raise and delete the
+   next-claimable line entirely.
+
+8. **`harness_state.py` distinguishes "unreadable" from "empty".** `counts` and
+   `next-claimable` reported `Features: 0/0 passing` for a file that could not be
+   parsed, and for a document that parses but is not a features document, where
+   the inline fallback correctly stayed silent — half of all projects got a
+   fabricated picture. Both verbs now exit 4 and print nothing. A non-numeric
+   `correction_cycles` is refused with a diagnostic and exit 5 rather than
+   coerced or tracebacked. `cmd_load`'s contract is unchanged.
+
+9. **Documentation.** A new "Evidence" stop on the field guide covers both
+   instruments, what the suite found, and the mutation testing behind it.
+   `evals/README.md` no longer states that no automated scoring pipeline exists
+   while one ships in the same directory, and the static suite now asserts that
+   the constants the prose states (the 95% coverage gate, the workflow CLI floor,
+   the F106 skip exit code) are the ones the code enforces, derived from the code
+   so drift in either direction fails. Two broken links in `docs/history.md`.
+
 ### v6.0.2 (2026-08-14)
 
 Documentation restructure plus the release-consistency repair.
