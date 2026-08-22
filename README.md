@@ -159,6 +159,7 @@ In non-harness projects, only CLAUDE.md loads (~4.2K). The orientation hook stay
 | `templates/CLAUDE.md` | Core engineering standards template (manual copy to `~/.claude/`) |
 | `test/` | Fixture-based hook test suite, run in CI |
 | `evals/` | Proportionate behavioral evals: does an intervention change what the agent actually does, not just its terminology (semi-manual, not CI-wired) |
+| `evals/hillclimb/` + `autoresearch.sh` | Deterministic conformance suite over the shipped plugin — `harness_score`, 0–100, offline (see [How the harness is checked](#how-the-harness-is-checked)) |
 
 ## Architecture
 
@@ -298,6 +299,44 @@ The `features.json` envelope and the 16-field feature object have a single owner
 wired into `test/run-tests.sh`. The worked example lives in the Feature Schema section of
 `rules/parallel-work.md` — this README and `skills/harness-init/SKILL.md` link there
 instead of restating the field list.
+
+## How the harness is checked
+
+The gates decide whether your work may proceed. Something has to decide whether the
+gates still work — a separate question needing a separate instrument. There are two,
+and they are not interchangeable.
+
+**Behavioral evals** (`evals/*.md`) ask whether an intervention changed what an agent
+actually *did*. Two conditions, three runs each, fresh sessions, one named decision;
+a person reads the transcripts and grades them against binary facts stated in advance.
+Availability, retrieval and relevance are recorded separately — an intervention can be
+present but never read, or read but change nothing. Method: [evals/README.md](./evals/README.md).
+
+**The hillclimb suite** (`evals/hillclimb/`) asks whether the plugin's own machinery
+behaves as specified, and needs no model at all:
+
+```bash
+bash autoresearch.sh        # ~200s, prints METRIC harness_score=<0..100>
+```
+
+Roughly 4,200 boolean checks across six weighted suites — behavior (0.25), gates
+(0.20), regression (0.20), contracts (0.15), static (0.10), determinism (0.10). Every
+check runs the real shipped file against a fixture built fresh in a temp directory with
+its own `HOME`, no git config, and a fixed timezone and locale, so two concurrent runs
+are byte-identical and a score change is a plugin change. `test/run-tests.sh` is folded
+in whole as the regression aggregate: without it, the cheapest way to raise the score
+would be to trade an existing guarantee for a new one.
+
+Failing checks print one line each naming what failed and why, so the output is a work
+list rather than a verdict.
+
+The checks are additive by policy — one may be added, but not removed, weakened, or
+made conditional to raise the score, and the total may never decrease. The suite is
+itself mutation-tested: deliberate breakages are introduced into shipped files one at a
+time to confirm a check notices. When a mutation leaves every check passing, that is a
+gap in the suite, not evidence the code is safe. The recurring gap it exposes is
+asserting *shape* instead of *content* — "the report is well-formed" still passes after
+the thing being reported has been removed.
 
 ## Known limitations
 

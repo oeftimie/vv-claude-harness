@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evidence — VV Claude Code Harness</title>
+<meta name="description" content="Two instruments: a semi-manual behavioral eval for questions about agents, and a deterministic 4,200-check conformance suite for questions about the plugin's own machinery.">
+<link rel="stylesheet" href="./assets/site.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%23b8482a'/></svg>">
+<script type="module" src="./assets/anim.js"></script>
+</head>
+<body>
+<div id="progress"></div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="./index.html"><span class="dot"></span>Harness field guide</a>
+    <a class="nav-link" href="./index.html">Why</a>
+    <a class="nav-link" href="./quickstart.html">Quickstart</a>
+    <a class="nav-link" href="./lifecycle.html">Session loop</a>
+    <a class="nav-link" href="./gates.html">Gates</a>
+    <a class="nav-link" href="./parallel.html">Parallel work</a>
+    <a class="nav-link" href="./evals.html" aria-current="page">Evidence</a>
+    <a class="nav-link" href="./reference.html">Reference</a>
+  </div>
+</nav>
+
+<main>
+
+<section style="border: 0;">
+  <div class="prose">
+    <p class="eyebrow">Stop 6 of 7</p>
+    <h1>How the harness is checked</h1>
+    <p class="lede">
+      The gates decide whether your work may proceed. Something has to decide whether
+      the gates still work. That is a separate question, and it needs a separate
+      instrument — one that runs the guards against inputs designed to defeat them
+      and counts what holds.
+    </p>
+  </div>
+</section>
+
+<section id="two-instruments">
+  <div class="prose">
+    <h2>Two instruments, two questions</h2>
+    <p>
+      They are not interchangeable, and neither one substitutes for the other. The
+      difference is whether a model has to be in the loop.
+    </p>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th></th><th>Behavioral eval</th><th>Hillclimb suite</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Asks</td>
+          <td>Did this intervention change what the agent actually <em>did</em>?</td>
+          <td>Does the plugin's machinery behave as specified?</td>
+        </tr>
+        <tr>
+          <td>Lives in</td>
+          <td><code>evals/*.md</code></td>
+          <td><code>evals/hillclimb/</code></td>
+        </tr>
+        <tr>
+          <td>Needs a model</td>
+          <td>Yes — fresh sessions, transcripts read and graded</td>
+          <td>No — offline, hermetic, no network</td>
+        </tr>
+        <tr>
+          <td>Graded by</td>
+          <td>A person, against binary facts stated in advance</td>
+          <td><code>bash autoresearch.sh</code>, in about 200 seconds</td>
+        </tr>
+        <tr>
+          <td>Result</td>
+          <td>Keep, simplify, or remove one mechanism</td>
+          <td><code>harness_score</code>, 0–100</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>
+      The behavioral method is deliberately small — two conditions, three runs each,
+      one decision. It is described in full in <code>evals/README.md</code>, and its
+      honesty rule is worth repeating: an intervention can be <em>available</em> but
+      never <em>retrieved</em>, or retrieved but not <em>relevant</em>. Only all three
+      together justify keeping a mechanism.
+    </p>
+  </div>
+</section>
+
+<section id="suites">
+  <div class="prose">
+    <h2>What the hillclimb suite measures</h2>
+    <p>
+      Six suites, each a set of boolean checks, weighted into one number. Every check
+      runs the real shipped file — no mocks, no re-implementations — against a fixture
+      built fresh in a temp directory with its own <code>HOME</code>, no git config, a
+      fixed timezone and a fixed locale.
+    </p>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Suite</th><th>Weight</th><th>What it runs</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>behavior</td><td>0.25</td>
+          <td>session-start, session-end, statusline and dashboard-log against ~49 adversarial fixtures</td>
+        </tr>
+        <tr>
+          <td>gates</td><td>0.20</td>
+          <td>enforce-scope, commit-gate, verify-task-quality, verify-git-identity, doctor, and the state lock, under hostile input</td>
+        </tr>
+        <tr>
+          <td>regression</td><td>0.20</td>
+          <td><code>test/run-tests.sh</code> in full, folded in as an aggregate</td>
+        </tr>
+        <tr>
+          <td>contracts</td><td>0.15</td>
+          <td>the <code>features.json</code> validator, its agreement with the schema, <code>stamp.sh</code>'s write promises, <code>init.sh</code>'s skip protocol</td>
+        </tr>
+        <tr>
+          <td>static</td><td>0.10</td>
+          <td>manifests, frontmatter, file pointers, links, and the constants the prose states versus the ones the code enforces</td>
+        </tr>
+        <tr>
+          <td>determinism</td><td>0.10</td>
+          <td>same input, same output across repeats, timezones, working directories, and both state-module code paths</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>
+      Folding the existing test suite in at 0.20 is the load-bearing choice. Without it,
+      the fastest way to raise the score would be to trade an old guarantee for a new
+      one. With it, that trade is visible and costly.
+    </p>
+  </div>
+</section>
+
+<section id="what-it-found">
+  <div class="prose">
+    <h2>What it found</h2>
+    <p>
+      The suite was written against the plugin as it stood, not to confirm it. Three of
+      the defects it surfaced were silent — the guard returned success while doing
+      nothing.
+    </p>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Input</th><th>Expected</th><th>Actual</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>git -c user.email=x@y.z push</code></td>
+          <td>Blocked — identity does not match</td>
+          <td><strong>Allowed.</strong> The matcher searched for <code>git&nbsp;push</code> as text, and a global option between the binary and the subcommand hid it</td>
+        </tr>
+        <tr>
+          <td><code>echo x &gt;| .harness/features.json</code></td>
+          <td>Denied — lead-owned state</td>
+          <td><strong>Allowed.</strong> <code>&gt;|</code> is one redirect token; the splitter read its <code>|</code> as a pipe and lost the target</td>
+        </tr>
+        <tr>
+          <td>A commit flipping features to <code>passing</code> with a long id list, suite failing</td>
+          <td>Denied</td>
+          <td><strong>Allowed.</strong> The deny payload outgrew the argument limit, the exec failed, and the hook exited 0 with no output</td>
+        </tr>
+        <tr>
+          <td>A corrupt <code>features.json</code> at task completion</td>
+          <td>Accept or block</td>
+          <td><strong>Neither.</strong> The gate exited 1 — read as "not a block" — and stopped enforcing</td>
+        </tr>
+        <tr>
+          <td>A corrupt <code>harness.json</code> at <code>init.sh</code></td>
+          <td>Fall back to stack detection</td>
+          <td><strong>Silent death</strong> under <code>set -e</code>, which the task gate then reported as a compilation failure</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="mutation">
+  <div class="prose">
+    <h2>Testing the tester</h2>
+    <p>
+      A suite that passes proves nothing until you know it can fail. So the checks were
+      mutation-tested: 66 deliberate breakages introduced into shipped files one at a
+      time, each reverted afterwards, asking whether any check noticed.
+    </p>
+    <p>
+      Sixty-three were caught. Four were proven harmless by running the mutated hook
+      directly. Eighteen initially slipped through — and <strong>every one of those was
+      a hole in the suite, not in the plugin</strong>.
+    </p>
+    <p>
+      They shared a single mistake, and it is the most useful thing on this page:
+      <strong>asserting shape instead of content</strong>. "The report is well-formed."
+      "The status line is one line." "A gap file exists." "The exit code is 0 or 2."
+      Every one of those still passes after the thing being checked has been removed
+      entirely. A check has to assert the fact the code exists to produce.
+    </p>
+  </div>
+</section>
+
+<section id="running-it">
+  <div class="prose">
+    <h2>Running it</h2>
+    <p>From the repository root:</p>
+    <pre><code>bash autoresearch.sh</code></pre>
+    <p>
+      It prints one <code>METRIC harness_score=…</code> line, a per-suite breakdown, and
+      one line per failing check naming what failed and why. No network, no API key, no
+      configuration. Two concurrent runs produce byte-identical output, so a change in
+      the score is a change in the plugin.
+    </p>
+    <p>
+      The checks are additive by policy: one may be added, but not removed, weakened, or
+      made conditional to raise the score, and the total may never decrease. When a
+      mutation leaves every check passing, that is a gap in the suite — not evidence the
+      code is safe.
+    </p>
+  </div>
+</section>
+
+<div class="pager">
+  <a href="./parallel.html">← Parallel work</a>
+  <a href="./reference.html">Reference →</a>
+</div>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div>
+      An unofficial field guide to <a href="https://github.com/oeftimie/vv-claude-harness">vv-harness</a>,
+      built from the plugin source at v6.1.0.
+    </div>
+    <div>Animations by <a href="https://animejs.com">anime.js</a> v4.</div>
+  </div>
+</footer>
+
+</body>
+</html>

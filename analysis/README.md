@@ -20,6 +20,11 @@ used, in order of authority:
 3. `skills/*/SKILL.md` — canonical for what each slash command actually does
 4. `README.md`, `INSTALL.md`, `AGENTS.md` — canonical for install, architecture, posture
 5. `skills/harness-init/init.sh.template` — canonical for the test targets
+6. `evals/hillclimb/` and `evals/README.md` — canonical for what the two evaluation
+   instruments measure, their weights, and the defects the conformance suite found.
+   The `evals.html` stop cites the suite modules themselves rather than any summary of
+   them: the suite names and weights come from `evals/hillclimb/run.py`'s `WEIGHTS`,
+   and each defect claim from the fixture that reproduces it.
 
 Where the repo states a limitation, the site states it too. A teaching site that only
 shows the happy path teaches an engineer to be surprised later.

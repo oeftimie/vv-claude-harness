@@ -1,7 +1,7 @@
 {
   "name": "vv-harness",
   "displayName": "VV Claude Code Harness",
-  "version": "6.0.2",
+  "version": "6.1.0",
   "description": "Multi-session continuity, worktree-isolated parallel workflows, and mechanical quality enforcement for Claude Code.",
   "author": {
     "name": "oeftimie",
