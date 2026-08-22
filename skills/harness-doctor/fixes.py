@@ -16,7 +16,8 @@ def apply_fix(project_dir, plugin_root, fix_id):
 def _remove_postcompact(project_dir, plugin_root):
     path = os.path.join(project_dir, ".claude", "settings.json")
     settings = _load_json(path)
-    if settings is None or "PostCompact" not in settings.get("hooks", {}):
+    hooks = settings.get("hooks") if settings else None
+    if not isinstance(hooks, dict) or "PostCompact" not in hooks:
         return False
     del settings["hooks"]["PostCompact"]
     _write_json(path, settings)
@@ -91,7 +92,13 @@ def _add_settings_wiring(project_dir, plugin_root):
         if key not in settings:
             settings[key] = CANONICAL_WIRING[key]
             changed = True
-    settings.setdefault("hooks", {})
+    # A "hooks" key holding a list or a string parses fine and then fails the
+    # item assignment below. Replace it: doctor already reports the malformed
+    # shape separately, and a fixer whose whole job is to install wiring cannot
+    # merge into a container that cannot hold it.
+    if not isinstance(settings.get("hooks"), dict):
+        settings["hooks"] = {}
+        changed = True
     for event, blocks in CANONICAL_WIRING["hooks"].items():
         if event not in settings["hooks"]:
             settings["hooks"][event] = blocks
@@ -266,13 +273,21 @@ def _remove_teammate_scope(project_dir, plugin_root):
 
 
 def _load_json(path):
+    """The document only when it is a JSON object, else None.
+
+    Every caller mutates the result by key. json.load succeeding says nothing
+    about the document being an object, and a bare array or a top-level string
+    reached the fixers as a TypeError rather than as the malformed-settings
+    finding doctor already reports separately.
+    """
     if not os.path.isfile(path):
         return None
     try:
         with open(path) as fh:
-            return json.load(fh)
+            data = json.load(fh)
     except (OSError, ValueError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def _write_json(path, data):

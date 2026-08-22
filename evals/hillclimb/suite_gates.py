@@ -597,13 +597,28 @@ def run_doctor(rec: Recorder, root: Path) -> None:
         git_commit_all(proj.path)
         check(label, proj.path, proj.home)
 
-    # settings.json parses but 'hooks' is not a dict.
-    for label, settings in [("settings-hooks-list", '{"hooks": []}'), ("settings-hooks-string", '{"hooks": "none"}')]:
+    # settings.json parses but 'hooks' is not a dict. Report mode only reads it;
+    # --fix writes through it, so both paths are exercised -- the fixers keep
+    # their own loader, and it did not share the report path's shape guard.
+    for label, settings in [
+        ("settings-hooks-list", '{"hooks": []}'),
+        ("settings-hooks-string", '{"hooks": "none"}'),
+        ("settings-array", "[]"),
+        ("settings-string", '"none"'),
+    ]:
         proj = build_project(root, f"dr-{label}", features=canonical_features())
         (proj.path / ".claude").mkdir(parents=True, exist_ok=True)
         (proj.path / ".claude" / "settings.json").write_text(settings, encoding="utf-8")
         git_commit_all(proj.path)
         check(label, proj.path, proj.home)
+        check(f"{label}/fix", proj.path, proj.home, args=("--fix",))
+        written = (proj.path / ".claude" / "settings.json").read_text()
+        try:
+            json.loads(written)
+            ok = True
+        except ValueError:
+            ok = False
+        rec.add(SUITE, f"doctor[{label}/fix] leaves settings.json valid JSON", ok, written[:120])
 
     # Presence is not readability: these are all guarded by isfile() only.
     proj = build_project(root, "dr-unreadable", features=canonical_features())
