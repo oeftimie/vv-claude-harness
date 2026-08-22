@@ -51,6 +51,22 @@ def make_bin(root: Path) -> Path:
     return bindir
 
 
+#: A python3 that fails immediately. Every hook here shells out to python3 for
+#: JSON work, and several run under `set -e`, where a failing command
+#: substitution aborts the whole script. The guards that absorb that failure are
+#: invisible to any fixture where python3 works.
+BROKEN_PYTHON = "#!/bin/sh\nexit 1\n"
+
+
+def make_broken_python(root: Path) -> Path:
+    bindir = root / "broken-python-bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    shim = bindir / "python3"
+    shim.write_text(BROKEN_PYTHON, encoding="utf-8")
+    shim.chmod(0o755)
+    return bindir
+
+
 def install_gate(project: Path, name: str) -> Path:
     hooks = project / ".claude" / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
@@ -159,6 +175,12 @@ def run_enforce_scope(rec: Recorder, root: Path) -> None:
     # two spellings must reach the same verdict.
     fire(wt, hook, payload(tool_name="Bash", tool_input={"command": "cp x .harness/mld/"}), "bash/mld-slash", expect="deny")
     fire(wt, hook, payload(tool_name="Bash", tool_input={"command": "cp x .harness/mld"}), "bash/mld-bare", expect="deny")
+    # The Edit path resolves the bare directory through a different mechanism
+    # (the shell `case` arm, not the python prefix check), so it needs its own
+    # coverage: writing a FILE at .harness/mld replaces the directory the lead
+    # owns with a regular file.
+    fire(wt, hook, payload(tool_name="Edit", tool_input={"file_path": ".harness/mld"}), "edit/mld-bare", expect="deny")
+    fire(wt, hook, payload(tool_name="Edit", tool_input={"file_path": ".harness/mld/"}), "edit/mld-slash", expect="deny")
 
     # The guard's core rule: every lead-owned target, every spelling of it that
     # resolves to the same file on any platform. Deliberately excludes case
@@ -241,6 +263,31 @@ def run_enforce_scope(rec: Recorder, root: Path) -> None:
         run = run_hook(hook, wt, home, stdin=body, cwd=wt)
         check_gate(rec, f"enforce-scope[{label}]", run, allowed_rc=(0, 2))
 
+    # The Bash write path resolves targets against its OWN lead-owned set, not
+    # the shell `case` arm the Edit path uses, so testing only features.json
+    # here left the other three entries unguarded on this path entirely.
+    for owned in [
+        ".harness/features.json",
+        ".harness/context_summary.md",
+        ".harness/claude-progress.txt",
+        ".harness/harness.json",
+    ]:
+        stem = owned.rsplit("/", 1)[-1]
+        for form, command in [
+            ("redirect", f"echo x > {owned}"),
+            ("copy", f"cp src/a {owned}"),
+            ("move", f"mv src/a {owned}"),
+            ("remove", f"rm -f {owned}"),
+            ("tee", f"tee {owned} < src/a"),
+            ("sed-in-place", f"sed -i.bak s/a/b/ {owned}"),
+        ]:
+            fire(
+                wt,
+                hook,
+                payload(tool_name="Bash", tool_input={"command": command}),
+                f"bash/{stem}/{form}",
+                expect="deny",
+            )
     # Spellings of the same write must reach the same verdict. These are the
     # redirect operators bash treats as a family, including the fd-prefixed and
     # ampersand forms; ">|" is the clobber-override form and writes exactly like
@@ -494,6 +541,49 @@ def run_verify_task_quality(rec: Recorder, root: Path) -> None:
         "verify-task-quality[newline-fields] is not flipped to a rejection by feature text",
         run.rc == 0,
         f"rc={run.rc} stderr={run.stderr_text[-200:]!r}",
+    )
+    # The shift is only half-visible in the exit code: `[ "$IN_PROGRESS" -gt 0 ]`
+    # is a conditional, so a garbage value there errors without tripping
+    # `set -e`. What it actually corrupts is the field after it -- the test_file
+    # Stage 2 runs -- and the hook names that file in its own stage banner, so
+    # the corruption is observable there whether or not the stage passes.
+    banner = "Stage 2: Focused test (tests/hooks/test_hooks.py)"
+    watched = project("vtq-focused-arg", canonical_features())
+    hk = watched.path / ".claude" / "hooks" / "verify-task-quality.sh"
+    run = run_hook(hk, watched.path, watched.home, stdin=task_payload(), cwd=watched.path)
+    rec.add(
+        SUITE,
+        "verify-task-quality runs the focused stage on the feature's own test_file",
+        banner in run.stderr_text,
+        run.stderr_text[-300:],
+    )
+    shifted = project("vtq-focused-arg-shifted", newline_feats)
+    hk = shifted.path / ".claude" / "hooks" / "verify-task-quality.sh"
+    run = run_hook(hk, shifted.path, shifted.home, stdin=task_payload(), cwd=shifted.path)
+    rec.add(
+        SUITE,
+        "feature text cannot redirect the focused stage to another file",
+        banner in run.stderr_text,
+        run.stderr_text[-300:],
+    )
+
+    # python3 failing is not the same as python3 working: the guards that absorb
+    # a failed command substitution under `set -e` are invisible otherwise.
+    broken_bin = make_broken_python(root)
+    run = run_hook(
+        hook,
+        healthy.path,
+        healthy.home,
+        stdin=task_payload(),
+        cwd=healthy.path,
+        env_extra={"PATH": f"{broken_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}"},
+    )
+    rec.add(SUITE, "verify-task-quality[python3-failing] never exits 1", run.rc in (0, 2), f"rc={run.rc}")
+    rec.add(
+        SUITE,
+        "verify-task-quality[python3-failing] still reaches the smoke stage",
+        "Stage 1" in run.stderr_text,
+        run.stderr_text[-200:],
     )
 
     # A hostile feature id reaches last_gate.json keys and harness_state argv.

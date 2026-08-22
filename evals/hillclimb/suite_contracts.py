@@ -335,9 +335,9 @@ def run_init_contract(rec: Recorder, root: Path) -> None:
             (proj / ".harness" / "harness.json").write_text(harness_json, encoding="utf-8")
         return proj
 
-    def run_init(proj: Path, *args, timeout=60):
+    def run_init(proj: Path, *args, timeout=60, path=None):
         env = {
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "PATH": path or os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(proj),
             "LC_ALL": "C",
             "TZ": "UTC",
@@ -397,6 +397,25 @@ def run_init_contract(rec: Recorder, root: Path) -> None:
     rc, out, err = run_init(unknown, "definitely_not_a_verb")
     rec.add(SUITE, "init[unknown-verb] exits 0 or a documented code", rc in (0, 1, 2), f"rc={rc}")
     rec.add(SUITE, "init[unknown-verb] raises no traceback", TRACEBACK not in err, err[-200:])
+
+    # python3 failing is a different case from harness.json being corrupt: the
+    # script runs under `set -e`, so the STACK assignment aborting takes the
+    # whole run down before any verb executes. Only the assignment's own
+    # fallback absorbs that, and it is invisible while python3 works.
+    broken_bin = root / "broken-python-bin"
+    broken_bin.mkdir(parents=True, exist_ok=True)
+    shim = broken_bin / "python3"
+    shim.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    shim.chmod(0o755)
+    broken_path = f"{broken_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}"
+    rc, out, err = run_init(unknown, "smoke_test", path=broken_path)
+    rec.add(SUITE, "init[python3-failing] exits 0", rc == 0, f"rc={rc} err={err[-160:]!r}")
+    rec.add(
+        SUITE,
+        "init[python3-failing] still reaches its completion banner",
+        "=== smoke_test Complete ===" in out,
+        out[-200:],
+    )
 
 
 def run(rec: Recorder, root: Path) -> None:
