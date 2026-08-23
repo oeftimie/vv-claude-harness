@@ -116,7 +116,6 @@ def _add_settings_wiring(project_dir, plugin_root):
 REQUIRED_GITIGNORE_LINES = (
     ".harness/SESSION_INCOMPLETE",
     ".harness/features.json.lock",
-    ".harness/dashboard/",
     ".harness/last_gate.json",
 )
 

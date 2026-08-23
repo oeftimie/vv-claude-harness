@@ -255,8 +255,7 @@ v5.2.0 adds an opt-in live dashboard: set `VV_HARNESS_DASHBOARD=1` before starti
 session you want to watch, then run `/harness-dashboard` to open an animated
 hub-and-spoke node graph of that session's agent activity — the lead, each
 spoke, quality-gate verdicts, and judge subagents — served locally with no external
-dependencies. See [INSTALL.md](../INSTALL.md), "Optional: Live Session Dashboard", for
-setup and its known limitations.
+dependencies. The dashboard was removed in v6.2.0.
 
 v5.3.0-alpha marks the dashboard as alpha quality for broader testing before it's
 folded into a stable release — pin a single project to it via `extraKnownMarketplaces`

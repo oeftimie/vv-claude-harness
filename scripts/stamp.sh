@@ -26,7 +26,7 @@
 # and reported as a customization, never silently overwritten. Always exits
 # 0 (skipping a customization is success, not failure).
 #
-# The .gitignore SESSION_INCOMPLETE, features.json.lock, and dashboard/ lines
+# The .gitignore SESSION_INCOMPLETE, features.json.lock, and last_gate.json lines
 # (F088) are appended idempotently in both modes, independent of collision
 # handling for the other files. Kept in sync with skills/harness-doctor/
 # doctor.py's REQUIRED_GITIGNORE_LINES by hand -- no shared constant exists
@@ -252,9 +252,6 @@ if ! grep -qxF '.harness/SESSION_INCOMPLETE' "$GITIGNORE"; then
 fi
 if ! grep -qxF '.harness/features.json.lock' "$GITIGNORE"; then
   echo '.harness/features.json.lock' >> "$GITIGNORE"
-fi
-if ! grep -qxF '.harness/dashboard/' "$GITIGNORE"; then
-  echo '.harness/dashboard/' >> "$GITIGNORE"
 fi
 if ! grep -qxF '.harness/last_gate.json' "$GITIGNORE"; then
   echo '.harness/last_gate.json' >> "$GITIGNORE"

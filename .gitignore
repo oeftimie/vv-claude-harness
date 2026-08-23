@@ -7,7 +7,6 @@
 # Harness transient session state
 .harness/SESSION_INCOMPLETE
 .harness/features.json.lock
-.harness/dashboard/
 .harness/last_gate.json
 
 # OS files
@@ -33,10 +32,6 @@ Thumbs.db
 # Dependencies
 node_modules/
 vendor/
-# F091: hooks/dashboard/vendor/ is committed on purpose -- a vendored,
-# no-CDN, no-build-step copy of animejs the dashboard frontend ships with.
-!hooks/dashboard/vendor/
-!hooks/dashboard/vendor/*
 __pycache__/
 *.pyc
 .venv/

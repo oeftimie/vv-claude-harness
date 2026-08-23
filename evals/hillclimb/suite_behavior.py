@@ -29,7 +29,6 @@ from harnesslib import (
 SESSION_START = HOOKS / "session-start.sh"
 SESSION_END = HOOKS / "session-end.sh"
 STATUSLINE = HOOKS / "statusline.sh"
-DASHBOARD_LOG = HOOKS / "dashboard-log.sh"
 
 ORIENTATION_HEADER = "## Harness orientation"
 FOOTER_MARK = "Run /harness-continue"
@@ -232,40 +231,6 @@ def run_session_end(rec: Recorder, root: Path, timings: dict) -> None:
     )
 
 
-def run_dashboard_log(rec: Recorder, root: Path) -> None:
-    suite = "behavior"
-    project = build_project(root, "dash", features=canonical_features())
-    payloads = {
-        "valid": json.dumps({"hook_event_name": "SessionStart", "session_id": "s1"}).encode(),
-        "garbage": b"not json",
-        "empty": b"",
-        "hostile": json.dumps(
-            {"hook_event_name": "SessionStart", "session_id": "../../escape", "tool_name": "\x1b[31mx"}
-        ).encode(),
-    }
-    for label, payload in payloads.items():
-        run = run_hook(
-            DASHBOARD_LOG, project.path, project.home, stdin=payload, env_extra={"VV_HARNESS_DASHBOARD": "1"}
-        )
-        p = f"dashboard-log[{label}]"
-        rec.add(suite, f"{p} exits 0", run.rc == 0, f"rc={run.rc}")
-        rec.add(suite, f"{p} keeps stderr silent", not run.err.strip(), run.stderr_text[:200])
-
-    logs = sorted((project.path / ".harness" / "dashboard").glob("*.jsonl"))
-    rec.add(suite, "dashboard-log writes a session log", bool(logs), "no .jsonl produced")
-    for log in logs:
-        rec.add(
-            suite,
-            f"dashboard-log[{log.name}] writes one JSON object per line",
-            all(json.loads(line) for line in log.read_text().splitlines() if line.strip()),
-        )
-        rec.add(
-            suite,
-            f"dashboard-log[{log.name}] stays inside .harness/dashboard/",
-            log.resolve().is_relative_to((project.path / ".harness" / "dashboard").resolve()),
-        )
-
-
 def run(rec: Recorder, root: Path) -> dict:
     timings: dict = {}
     sizes: dict = {}
@@ -273,5 +238,4 @@ def run(rec: Recorder, root: Path) -> dict:
     run_session_start_corpus(rec, root, timings, sizes)
     run_statusline(rec, root / "statusline")
     run_session_end(rec, root / "sessionend", timings)
-    run_dashboard_log(rec, root / "dashboard")
     return {"timings": timings, "sizes": sizes}
