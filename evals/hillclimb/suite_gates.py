@@ -354,17 +354,6 @@ def run_enforce_scope(rec: Recorder, root: Path) -> None:
     fire(wt, hook, payload(tool_name="Bash", tool_input={"command": "cat .harness/features.json"}), "bash/read-only", expect="allow")
     fire(wt, hook, payload(tool_name="Bash", tool_input={"command": "echo 'a >| b' > src/out.txt"}), "bash/quoted-operator", expect="allow")
 
-    # The dashboard log is the only file this hook writes; a hostile session_id
-    # must not steer it out of .harness/dashboard/.
-    hostile = json.dumps(
-        {"hook_event_name": "PreToolUse", "session_id": "../../escape", "tool_input": {"file_path": "src/a.py"}}
-    ).encode()
-    before = _tree(wt)
-    run_hook(hook, wt, home, stdin=hostile, cwd=wt, env_extra={"VV_HARNESS_DASHBOARD": "1"})
-    new = _tree(wt) - before
-    outside = [p for p in new if not p.startswith(".harness/dashboard/")]
-    rec.add(SUITE, "enforce-scope[hostile session_id] writes only inside .harness/dashboard/", not outside, str(sorted(outside)[:4]))
-
 
 def _tree(root: Path) -> set:
     out = set()
@@ -834,21 +823,6 @@ def run_commit_gate(rec: Recorder, root: Path) -> None:
         )
         check_gate(rec, f"commit-gate[timeout-{label}]", run, allowed_rc=(0,))
 
-    # The dashboard log must stay inside .harness/dashboard/.
-    before = _tree(clean.path)
-    run_hook(
-        hook,
-        clean.path,
-        clean.home,
-        stdin=json.dumps(
-            {"hook_event_name": "PreToolUse", "session_id": "../../escape", "tool_input": {"command": "git status"}}
-        ).encode(),
-        cwd=clean.path,
-        env_extra={"VV_HARNESS_DASHBOARD": "1"},
-    )
-    outside = [p for p in _tree(clean.path) - before if not p.startswith(".harness/dashboard/")]
-    rec.add(SUITE, "commit-gate[hostile session_id] writes only inside .harness/dashboard/", not outside, str(sorted(outside)[:4]))
-
 
 # --- doctor.py --------------------------------------------------------------
 
@@ -1056,7 +1030,6 @@ def run_doctor(rec: Recorder, root: Path) -> None:
     for ignore_line in (
         ".harness/SESSION_INCOMPLETE",
         ".harness/features.json.lock",
-        ".harness/dashboard/",
         ".harness/last_gate.json",
     ):
         rec.add(

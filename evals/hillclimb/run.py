@@ -4,7 +4,7 @@
 Scores the shipped harness on six suites and prints the aggregate as
 ``METRIC harness_score=<0..100>``:
 
-    behavior     (0.25)  session-start/statusline/session-end/dashboard-log,
+    behavior     (0.25)  session-start/statusline/session-end,
                          run against an adversarial fixture corpus
     gates        (0.20)  the enforcement surface -- enforce-scope, commit-gate,
                          verify-task-quality, verify-git-identity, doctor, and

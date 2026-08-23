@@ -78,86 +78,6 @@ INPUT=$(cat)
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$PROJECT_ROOT" 2>/dev/null || exit 0
 
-# F089: opt-in dashboard event log for this gate's block/allow/skipped
-# verdicts. Duplicates hooks/dashboard-log.sh's (F088) JSON-line schema and
-# redaction/atomicity conventions inline -- a project-level hook installed
-# into .claude/hooks/ cannot reach a plugin-root file. Never aborts the
-# gate: every risky step below is guarded, and every call site is itself
-# suffixed with `|| true`.
-_dashboard_log() {
-    [ "${VV_HARNESS_DASHBOARD:-}" = "1" ] || return 0
-    [ -d ".harness" ] || return 0
-    local verdict="$1" finding="${2:-}" session_id
-    session_id=$(printf '%s' "$INPUT" | python3 -c '
-import json, sys
-try:
-    print(json.load(sys.stdin).get("session_id") or "")
-except Exception:
-    pass
-' 2>/dev/null || true)
-    session_id=$(printf '%s' "$session_id" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)
-    [ -n "$session_id" ] || return 0
-    mkdir -p ".harness/dashboard" 2>/dev/null || return 0
-    # F089 round 2 (adversarial review): the JSON payload is fed via STDIN,
-    # never argv -- a large Write/Edit payload on argv can exceed the OS's
-    # exec() argument-list size limit (~1MB on macOS, as low as 128KB
-    # per-argument on Linux), which fails this whole call silently (it's
-    # `|| true`) and drops the event with no error surfaced anywhere. Only
-    # small, bounded values (the log path, session id, verdict, finding)
-    # stay on argv.
-    #
-    # The python source is read into a variable via a TOP-LEVEL heredoc
-    # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- a heredoc
-    # nested inside a DOUBLE-QUOTED command substitution parses fine under
-    # bash 5.x but fails `bash -n` outright under real bash 3.2.57 (this
-    # repo's own declared minimum) whenever the heredoc body's own single-
-    # quote count is odd: bash 3.2's lexer still scans the heredoc BODY for
-    # quote balance while looking for the closing double-quote of the
-    # substitution, even though heredoc content isn't supposed to be
-    # subject to quote-parity rules at all. Invisible under Homebrew bash
-    # (5.x) on PATH, which is exactly why it shipped uncaught -- and because
-    # this function is defined at file-load time, unconditionally, a parse
-    # failure here breaks the ENTIRE gate script for every stock-bash user,
-    # not just one gated behind VV_HARNESS_DASHBOARD (bash must successfully
-    # PARSE the whole file before any runtime check, including that env-var
-    # gate, ever executes).
-    IFS= read -r -d '' _DASHBOARD_LOG_PY <<'PYEOF' || true
-import json
-import sys
-import time
-
-log_path, session_id, verdict, finding = sys.argv[1:5]
-stdin_json = sys.stdin.read()
-try:
-    try:
-        data = json.loads(stdin_json)
-    except Exception:
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-    line = {
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "hook_event_name": data.get("hook_event_name", ""),
-        "session_id": session_id,
-        "gate": "enforce-scope",
-        "verdict": verdict,
-    }
-    if finding:
-        line["finding"] = finding
-    for key in ("agent_id", "agent_type"):
-        value = data.get(key)
-        if value:
-            line[key] = value
-    with open(log_path, "a") as fh:
-        fh.write(json.dumps(line) + "\n")
-except Exception:
-    pass
-PYEOF
-    printf '%s' "$INPUT" | python3 -c "$_DASHBOARD_LOG_PY" \
-        ".harness/dashboard/$session_id.jsonl" "$session_id" "$verdict" "$finding" \
-        >/dev/null 2>/dev/null || true
-}
-
 # Structural arming (OVI-144): only enforce inside a git worktree, which
 # identifies "workflow agent, not lead" -- workflow mode runs every parallel
 # agent in its own worktree, while the lead works in the main checkout. The
@@ -173,7 +93,6 @@ PYEOF
 GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || true)
 GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null || true)
 if [ -z "$GIT_DIR" ] || [ -z "$GIT_COMMON_DIR" ] || [ "$GIT_DIR" = "$GIT_COMMON_DIR" ]; then
-    _dashboard_log "skipped" || true
     exit 0
 fi
 
@@ -185,10 +104,10 @@ deny_json() {
     # per-call-site argument (default "scope-violation:deny-json" for any
     # caller that doesn't pass one) rather than a single hardcoded
     # "scope-violation" string -- that hardcoded value made this function's
-    # distinct call sites indistinguishable from each other in the
-    # dashboard log, unlike the legacy exit-2 site (which carries its own
-    # "scope-violation:unsafe-extraction" suffix). Every call site below
-    # names its own, following the same "scope-violation:<site>" convention.
+    # distinct call sites indistinguishable from each other, unlike the legacy
+    # exit-2 site (which carries its own "scope-violation:unsafe-extraction"
+    # suffix). Every call site below names its own, following the same
+    # "scope-violation:<site>" convention.
     local finding="${2:-scope-violation:deny-json}"
     # F089 round 2: the JSON payload is fed via STDIN, never argv -- a large
     # Write/Edit payload on argv can exceed the OS's exec() argument-list
@@ -214,15 +133,21 @@ deny_json() {
     # is lead-owned...") were always bounded regardless.
     #
     # The python source is read into a variable via a TOP-LEVEL heredoc
-    # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- see
-    # _dashboard_log()'s own comment above (same file, same fix, same
-    # bash-3.2-specific parse hazard) for the full explanation.
+    # (F094 round 2), NOT `python3 -c "$(cat <<'PYEOF' ...)"` -- a heredoc
+    # nested inside a DOUBLE-QUOTED command substitution parses fine under
+    # bash 5.x but fails `bash -n` outright under real bash 3.2.57 (this
+    # repo's own declared minimum) whenever the heredoc body's own
+    # single-quote count is odd: bash 3.2's lexer still scans the heredoc
+    # BODY for quote balance while looking for the closing double-quote of
+    # the substitution, even though heredoc content isn't supposed to be
+    # subject to quote-parity rules at all. Invisible under Homebrew bash
+    # (5.x) on PATH, which is exactly why this shipped uncaught -- and
+    # because this function is defined at file-load time, unconditionally,
+    # a parse failure here breaks the ENTIRE gate script for every
+    # stock-bash user before any runtime check ever executes.
     IFS= read -r -d '' _DENY_JSON_PY <<'PYEOF' || true
 import json
-import os
-import re
 import sys
-import time
 
 reason = sys.argv[1]
 finding = sys.argv[2]
@@ -235,39 +160,6 @@ print(json.dumps({
         "permissionDecisionReason": reason,
     }
 }))
-
-# F089: dashboard event logging, folded into this SAME python3 process (no
-# new subprocess) since deny_json() is the single chokepoint every scope
-# denial in this file routes through -- one instrumented site covers all
-# five call sites. Best-effort and never affects the deny decision above,
-# which has already been printed.
-try:
-    if os.environ.get("VV_HARNESS_DASHBOARD") == "1" and os.path.isdir(".harness"):
-        try:
-            data = json.loads(stdin_json)
-        except Exception:
-            data = {}
-        if not isinstance(data, dict):
-            data = {}
-        session_id = re.sub(r"[^A-Za-z0-9._-]", "", str(data.get("session_id") or ""))[:64]
-        if session_id:
-            os.makedirs(".harness/dashboard", exist_ok=True)
-            line = {
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "hook_event_name": data.get("hook_event_name", ""),
-                "session_id": session_id,
-                "gate": "enforce-scope",
-                "verdict": "block",
-                "finding": finding,
-            }
-            for key in ("agent_id", "agent_type"):
-                value = data.get(key)
-                if value:
-                    line[key] = value
-            with open(f".harness/dashboard/{session_id}.jsonl", "a") as fh:
-                fh.write(json.dumps(line) + "\n")
-except Exception:
-    pass
 PYEOF
     printf '%s' "$INPUT" | python3 -c "$_DENY_JSON_PY" "$reason" "$finding"
     exit 0
@@ -359,7 +251,6 @@ if [ "$FILE_PATH_RC" -eq 1 ]; then
     # every real PreToolUse block (F053; F046 fixed the identical defect in
     # a since-retired hook).
     echo "Edit blocked: file_path could not be safely extracted from tool input (refusing to check it against lead-owned state). $ANNOTATION" >&2
-    _dashboard_log "block" "scope-violation:unsafe-extraction" || true
     exit 2
 fi
 
@@ -1982,9 +1873,4 @@ PYEOF
     fi
 fi
 
-# F089 round 2: an ordinary allowed (or write-free) Bash or Edit/Write call
-# reaches this final exit 0 with no prior _dashboard_log() call anywhere on
-# this path -- unlike every deny_json()/legacy-exit-2 site, this was the one
-# decision point in this file that logged nothing at all.
-_dashboard_log "allow" || true
 exit 0

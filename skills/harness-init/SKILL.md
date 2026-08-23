@@ -94,8 +94,8 @@ On success this writes, byte-verbatim or rendered from a template in
   below, so the stamp writes it directly rather than deferring it to a follow-up step;
   `git_identity` is left `null` here (this step is the decision that fills it), and
   `workflow.size_guideline` is absent until Step 6 decides whether to write it.
-- `.gitignore` gains `.harness/SESSION_INCOMPLETE`, `.harness/features.json.lock`, `.harness/dashboard/`, and `.harness/last_gate.json`
-  (OVI-107), all four appended idempotently.
+- `.gitignore` gains `.harness/SESSION_INCOMPLETE`, `.harness/features.json.lock`, and `.harness/last_gate.json`
+  (OVI-107), all three appended idempotently.
 
 **`.harness/features.json`'s feature schema.** Each feature's shape (the 16 fields, which
 are required vs. optional, the status enum) is defined once in

@@ -2,6 +2,42 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v6.2.0 (2026-08-23)
+
+The live session dashboard is removed. It rendered, but it could not show what a
+session was doing. The event log it read carries five fixed fields and no free
+text, so there was nothing to label a node with, and a finished agent was erased
+from the graph on `SubagentStop` — a completed session always ended as an empty
+circle.
+
+1. **Removed.** `/harness-dashboard`, `hooks/dashboard/` (the SSE server, the
+   node-graph page, the vendored animejs), `hooks/dashboard-log.sh` with its
+   `dashboard-log.py`, and the `VV_HARNESS_DASHBOARD` opt-in. Anyone with that
+   command or env var in a runbook will find it gone.
+
+2. **Six hooks stop firing.** `hooks/hooks.json` routed `PreToolUse`,
+   `PostToolUse`, `SubagentStart`, `SubagentStop`, `PermissionRequest` and
+   `PermissionDenied` to `dashboard-log.sh` and nothing else. Only `SessionStart`
+   and `SessionEnd` remain, so no session pays a hook per tool call for this.
+
+3. **The three quality gates lose their instrumentation.** `_dashboard_log()`
+   and every call site are gone from `enforce-scope.sh`, `commit-gate.sh` and
+   `verify-task-quality.sh`, and from the three `harness-init` templates, which
+   stay byte-identical. No verdict, exit code, stderr message or deny-JSON shape
+   changed: the conformance suite's `gates` scores 1024/1024.
+
+4. **`.harness/dashboard/` is neither created nor gitignored.** Dropped from
+   `.gitignore`, from `doctor.py` and `fixes.py`'s `REQUIRED_GITIGNORE_LINES`,
+   and from `scripts/stamp.sh`'s idempotent appends. The canonical list is now
+   `.harness/SESSION_INCOMPLETE`, `.harness/features.json.lock`,
+   `.harness/last_gate.json`. An upgraded project keeps its stale ignore line
+   until someone removes it by hand; nothing writes there any more.
+
+5. **Test and eval surface.** `test/run-tests.sh` drops 1,858 lines of dashboard
+   assertions; the hillclimb behavior and gates suites drop their dashboard-log
+   checks. The `F088`–`F116` feature records stay in `.harness/features.json` as
+   history.
+
 ### v6.1.0 (2026-08-22)
 
 A deterministic conformance suite for the plugin's own machinery, and the eight
