@@ -2,6 +2,23 @@
 
 Version history for the VV Claude Code Harness. The current version lives in `.claude-plugin/plugin.json`.
 
+### v6.2.1 (2026-09-17)
+
+`harness-issue-prep` was invisible to any loader that parses SKILL.md frontmatter
+as strict YAML. Claude Code tolerated it; GitHub Copilot CLI rejected the file
+outright and, because a rejected skill is simply absent, gave no indication the
+skill existed at all.
+
+1. **Fixed.** `skills/harness-issue-prep/SKILL.md` declared `description` as a
+   plain scalar containing `Sources: `. YAML reads that embedded `key: ` as a
+   nested mapping, so the whole frontmatter failed with `mapping values are not
+   allowed in this context at line 2 column 111`. The description is now a
+   folded block scalar (`>-`). Quoting was not an option — the value contains
+   literal double quotes.
+
+Skill content is unchanged; this is a frontmatter-only fix, valid under both
+Claude Code and Copilot CLI.
+
 ### v6.2.0 (2026-08-23)
 
 The live session dashboard is removed. It rendered, but it could not show what a
