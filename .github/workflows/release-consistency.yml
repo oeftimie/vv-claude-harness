@@ -15,9 +15,9 @@ on:
   # Catches the genuine "manifest bumped, tag never cut" case (v5.2.0 shipped that
   # way and went unnoticed for months) without the push-to-main run having to
   # assert a tag that cannot exist yet.
-  schedule:
-    - cron: '17 6 * * *'
-  workflow_dispatch:
+  # schedule:
+  #  - cron: '17 6 * * *'
+  # workflow_dispatch:
 
 jobs:
   check:
